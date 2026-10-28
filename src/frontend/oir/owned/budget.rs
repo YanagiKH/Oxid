@@ -148,6 +148,7 @@ pub(super) fn account_builtin_descriptors(
 /// Each producer establishes its own concrete keys; no descriptors are inferred.
 pub(super) fn account_vector_descriptors(
     keys: &[crate::frontend::builtin_catalog::vector::Function],
+    records: usize,
     limits: Limits,
     program: &mut ProgramCounts,
 ) -> Result<(), OwnedFailure> {
@@ -173,7 +174,7 @@ pub(super) fn account_vector_descriptors(
     program.usage.work = cap(
         add(
             program.usage.work,
-            builtins::vector_descriptor_visits(keys)?,
+            builtins::vector_descriptor_visits(keys, records)?,
         )?,
         limits.work,
         "ownership work",
@@ -392,7 +393,12 @@ pub(super) fn preflight(
     .map_err(DeclarationError::from)?;
     account_enum_declarations(enums, limits, &mut program)?;
     account_builtin_descriptors(raw.builtins, limits, &mut program)?;
-    account_vector_descriptors(&raw.vector_functions, limits, &mut program)?;
+    account_vector_descriptors(
+        &raw.vector_functions,
+        raw.records.len(),
+        limits,
+        &mut program,
+    )?;
     // Account allocator over-allocation as retained storage too.
     program.usage.metadata_bytes = cap(
         add(
@@ -524,7 +530,9 @@ pub(super) fn preflight(
                         c.composite_fields = add(c.composite_fields, fields.len())?;
                         c.max_constructor_fields = c.max_constructor_fields.max(fields.len());
                     }
-                    OwnedInstruction::ReadProjection { path, .. }
+                    OwnedInstruction::CopyIndexInitialize { path, .. }
+                    | OwnedInstruction::CopyIndexWrite { path, .. }
+                    | OwnedInstruction::ReadProjection { path, .. }
                     | OwnedInstruction::WriteProjection { path, .. }
                     | OwnedInstruction::ProjectionLength { path, .. } => {
                         cap(path.len(), MAX_CONTAINMENT_DEPTH, "record projection depth")?;

@@ -404,12 +404,22 @@ pub(super) fn resource_borrow(
     if declaration.projection.is_empty() {
         matches!(
             indexed_base(f, declaration.authority),
-            BorrowedTy::Exact(AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_))
+            BorrowedTy::Exact(
+                AggregateTy::ByteBuf
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)
+                    | AggregateTy::RecordVector(_)
+            )
         )
     } else {
         matches!(
             projection(plan, f, declaration.authority, &declaration.projection).0,
-            ValueTy::Owned(AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_))
+            ValueTy::Owned(
+                AggregateTy::ByteBuf
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)
+                    | AggregateTy::RecordVector(_)
+            )
         )
     }
 }
@@ -440,19 +450,21 @@ pub(super) fn borrow(
             BorrowedTy::Exact(aggregate),
         )
     };
-    if let BorrowedTy::Exact(AggregateTy::Vector(element)) = actual {
-        vector::borrow(
-            storage,
-            name,
-            loan,
-            &pointer,
-            element,
-            range,
-            diagnostics,
-            span,
-            out,
-        );
-        return;
+    if let BorrowedTy::Exact(aggregate) = actual {
+        if let Some(element) = super::super::vector_type::VectorTy::from_aggregate(aggregate) {
+            vector::borrow(
+                storage,
+                name,
+                loan,
+                &pointer,
+                element,
+                range,
+                diagnostics,
+                span,
+                out,
+            );
+            return;
+        }
     }
     if actual == BorrowedTy::Exact(AggregateTy::File) {
         writeln!(
@@ -496,14 +508,22 @@ pub(super) fn borrow(
     }
     let length = match actual {
         BorrowedTy::Exact(AggregateTy::FixedArray(array)) => array.length().to_string(),
-        BorrowedTy::ScalarSlice(_) => {
+        BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => {
             index_length(out, f, &format!("{name}_extent"), declaration.authority)
         }
         _ => unreachable!("checked byte range"),
     };
     writeln!(out, "  %{name}_start_ok = icmp sge i32 {start}, 0\n  %{name}_ordered = icmp sle i32 {start}, {end}\n  %{name}_end_ok = icmp sle i32 {end}, {length}\n  %{name}_prefix_ok = and i1 %{name}_start_ok, %{name}_ordered\n  %{name}_range_ok = and i1 %{name}_prefix_ok, %{name}_end_ok\n  br i1 %{name}_range_ok, label %{name}_bounds_ok, label %{name}_bounds_error\n{name}_bounds_error:").unwrap();
     emit_failure(out, diagnostics, FailureKind::Bounds, span);
-    let stride = element_stride(actual.element().expect("checked scalar range element"));
+    let stride = match actual {
+        BorrowedTy::RecordSlice(record) => storage
+            .execution()
+            .witness()
+            .declarations()
+            .record_packed_bytes(record)
+            .expect("checked record slice stride"),
+        _ => element_stride(actual.element().expect("checked scalar range element")),
+    };
     if stride == 1 {
         writeln!(out, "{name}_bounds_ok:\n  %{name}_start64 = zext i32 {start} to i64\n  %{name}_pointer = getelementptr i8, ptr {pointer}, i64 %{name}_start64\n  %{name}_range_length = sub i32 {end}, {start}\n  store ptr %{name}_pointer, ptr %r{}, align 8\n  store i32 %{name}_range_length, ptr %ll{}, align 4", storage.loan_slot(loan), loan.0).unwrap();
     } else {

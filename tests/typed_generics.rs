@@ -20,6 +20,14 @@ impl Project {
         Self(root)
     }
     fn unavailable_multifile(&self) -> bool {
+        if cfg!(all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )) {
+            return false;
+        }
         self.unavailable_source_policy(
             "error[E0005] (source): module source policy is not qualified on this host",
         )

@@ -7,6 +7,7 @@ pub(in crate::frontend::oir) enum ResourceKind {
     ByteBuf,
     File,
     Vector(hir::Ty),
+    RecordVector(u32),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -208,7 +209,10 @@ pub(super) fn summaries(
                     top.contains |= matches!(
                         ty,
                         ValueTy::Owned(
-                            AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+                            AggregateTy::ByteBuf
+                                | AggregateTy::File
+                                | AggregateTy::Vector(_)
+                                | AggregateTy::RecordVector(_)
                         )
                     );
                     top.next += 1;
@@ -227,7 +231,10 @@ impl Declarations {
     ) -> Result<bool, DeclarationError> {
         self.check_aggregate_type(aggregate)?;
         match aggregate {
-            AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_) => return Ok(true),
+            AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_) => return Ok(true),
             AggregateTy::FixedArray(_) => return Ok(false),
             _ => {}
         }
@@ -264,22 +271,43 @@ impl Declarations {
 
     /// Inspect each direct checked field/payload once. Nested vectors must have
     /// a direct declaration somewhere in these already bounded tables.
-    pub(in crate::frontend::oir) fn has_vector_declarations(&self) -> bool {
+    pub(in crate::frontend::oir) fn has_record_vector_declarations(&self) -> bool {
         self.fields
             .iter()
-            .any(|field| matches!(field.ty, ValueTy::Owned(AggregateTy::Vector(_))))
+            .any(|field| matches!(field.ty, ValueTy::Owned(AggregateTy::RecordVector(_))))
             || self.enums.enums().iter().any(|enumeration| {
                 self.enums
                     .variants(enumeration.id())
-                    .expect("checked enumeration")
+                    .expect("checked enum")
                     .iter()
                     .any(|variant| {
                         matches!(
                             variant.value_payload(),
-                            Some(ValueTy::Owned(AggregateTy::Vector(_)))
+                            Some(ValueTy::Owned(AggregateTy::RecordVector(_)))
                         )
                     })
             })
+    }
+    pub(in crate::frontend::oir) fn has_vector_declarations(&self) -> bool {
+        self.fields.iter().any(|field| {
+            matches!(
+                field.ty,
+                ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
+            )
+        }) || self.enums.enums().iter().any(|enumeration| {
+            self.enums
+                .variants(enumeration.id())
+                .expect("checked enumeration")
+                .iter()
+                .any(|variant| {
+                    matches!(
+                        variant.value_payload(),
+                        Some(ValueTy::Owned(
+                            AggregateTy::Vector(_) | AggregateTy::RecordVector(_)
+                        ))
+                    )
+                })
+        })
     }
 
     /// The cache is populated only after a direct resource declaration is found.
@@ -320,6 +348,16 @@ where
                     return Ok(Some(ResourceLeaf {
                         offset,
                         kind: ResourceKind::ByteBuf,
+                    }));
+                }
+                ValueTy::Owned(AggregateTy::RecordVector(record)) => {
+                    self.length -= 1;
+                    return Ok(Some(ResourceLeaf {
+                        offset,
+                        kind: ResourceKind::RecordVector(
+                            u32::try_from(record.0)
+                                .map_err(|_| DeclarationError::LayoutOverflow)?,
+                        ),
                     }));
                 }
                 ValueTy::Owned(AggregateTy::Vector(element)) => {

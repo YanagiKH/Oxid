@@ -311,9 +311,10 @@ constructor can exceed the narrower native per-function slot cap and be refused
 before tools/output. Native project builds support Linux and macOS on x86_64 and ARM64 with LLVM19.1.7 at
 O0 and O2.
 
-## Growable scalar vectors
+## Growable vectors
 
-`alloc::vec::Vec<T>` owns a growable collection of one scalar `Copy` element type.
+`alloc::vec::Vec<T>` owns a growable collection of one scalar or finite checked
+Copy record element type.
 The type is affine; moving a vector transfers its allocation, and destruction
 releases it. Records and finite enum payloads may contain vectors. `Vec<u8>` is
 a distinct type from `alloc::bytes::ByteBuf`.
@@ -327,9 +328,27 @@ lengths and capacity arguments are i32 element counts. Reads and writes require
 an initialized element and obey the existing whole-owner loan rules.
 
 Shared or exclusive scalar slices borrow matching arrays, vectors or existing
-slices, including call-only ranges. Elements cannot be owned aggregates or
-references. The vector API, supported scalar types and examples are documented
-in [Growable vectors](../docs/VECTORS.md).
+slices, including call-only ranges. Record slices borrow a vector of the exact
+checked Copy record type or a matching existing record slice. Generic slice
+parameters with `T: Copy` specialize both scalar and checked record elements.
+An indexed record read initializes an independent owned Copy value; a whole
+indexed assignment copies a matching value through exclusive authority.
+
+Record element payloads contain only initialized scalar leaves in declaration
+order, including a Unit sentinel for empty records. Activation padding is
+neither read nor copied. Record identity and dense stride come from the checked
+nominal declaration and the compiler's read-only native schema catalog. All
+leaf and descriptor validation precedes initialized destination writes. The
+private vector descriptor and allocation header remain 16 and 48 bytes.
+Record validation work is bounded by `(2D+3)*B`, where `D=64` is the maximum
+containment depth and `B` is the initialized dense byte count. Pack/unpack
+operations pay the corresponding bound over expanded initialized leaves.
+No heap or compiler resource ceiling is raised.
+
+Non-Copy records, resource or enum elements, nested vectors, arrays of records,
+individual element references, and stored or returned references remain
+unavailable. The vector API and examples are documented in
+[Growable vectors](../docs/VECTORS.md).
 
 ## Growable byte buffers and partial binary I/O
 
@@ -481,8 +500,9 @@ unchanged.
 
 The attribute does not add user-defined traits or a general `Clone` operation.
 Aggregate field reads remain unavailable: extract nested records with a record
-pattern or pass the complete record. Vectors and scalar slices still require
-scalar elements; `Copy` alone does not authorize a record element type.
+pattern or pass the complete record. Finite checked Copy records can be vector
+and borrowed-slice elements; arrays of records and element references remain
+unavailable.
 
 ## Call-only projected array slices
 
@@ -901,12 +921,20 @@ produce one complete verified program. There is no per-file fallback. Run and
 native compile require an original zero-argument scalar `main` declared in root;
 an imported or child `main` never supplies the entry. Check requires no main.
 
-Declared-child filesystem loading currently admits Linux only; non-Linux hosts
-reject it with E0005/source. Linux x86_64 has the predecessor filesystem evidence;
-other Linux architectures are not qualified. A module-free root has no discovery
-host gate, including root-only visibility/import/absolute-path syntax. Native
-supports Linux and macOS on x86_64 and ARM64 with LLVM 19.1.7; project profiles select O0 or O2. The loader checks a stable filesystem;
-it does not promise a concurrent-filesystem snapshot or sandbox.
+Declared-child filesystem loading is implemented on Linux and macOS, and on
+Windows x86_64 with 64-bit little-endian pointers and a local NTFS volume. On
+Windows, source-entry `check` and pure Result `run` share the checked module graph;
+native builds, package/workspace commands, process I/O and source bundles remain
+unsupported. Module paths require exact case and regular files under the
+canonical root. Child symbolic links, junctions, other reparse points, network
+paths and non-NTFS volumes are rejected. The inspected Windows handles are retained
+through source reads. Actual Windows execution qualification is separate from
+cross-target compilation checks. Other unsupported hosts report E0005/source.
+A module-free root has no discovery host gate, including root-only
+visibility/import/absolute-path syntax. Native supports Linux and macOS on
+x86_64 and ARM64 with LLVM 19.1.7; project profiles select O0 or O2.
+The loader checks a stable filesystem; it does not promise a concurrent-filesystem
+snapshot or sandbox.
 
 Source bytes (1 MiB), non-EOF tokens including trivia (100,000), syntax nodes
 (100,000), declaration/verifier/storage limits and execution fuel are aggregate,
@@ -945,7 +973,8 @@ arguments. Name resolution stays in the definition's module and package.
 Reference parameters `&T` and `&mut T` infer a supported owned referent; references
 cannot be returned or stored as values. Other trait bounds remain unavailable.
 Function type arguments cannot be applied to enum variants or functions without
-type parameters. Vector builtin operations accept their scalar element argument;
+type parameters. Vector builtin operations accept a scalar or finite checked
+Copy record element argument;
 `alloc::vec::new::<T>()` requires it explicitly. Enum type arguments precede the
 variant name instead.
 

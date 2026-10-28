@@ -41,8 +41,42 @@ zero and NaN payloads.
 
 `Vec<T>` owns its allocation. Moving it transfers ownership; leaving its scope
 releases its storage. A vector is not `Copy`, including when `T` is `Copy`.
-Vectors can be fields and enum payloads. Vectors of records, vectors of vectors,
-and stored or returned references are not supported yet.
+Vectors can be fields and enum payloads. A finite record declared with
+`#[derive(Copy)]` can also be an element. Its fields must be scalar values or
+other checked Copy records. Vectors of vectors, records containing owned
+resources, enum elements, and stored or returned references are unavailable.
+
+## Store records
+
+Declare a record Copy, then use the same vector functions:
+
+```oxid
+#[derive(Copy)]
+struct Point { x: i32, y: i32 }
+
+fn first(points: &[Point]) -> Point { return points[0]; }
+
+fn main() -> i32 {
+    let point = Point { x: 20, y: 1 };
+    let mut points = new::<Point>();
+    try_push(&mut points, point);
+    let snapshot = first(&points);
+    points[0] = Point { x: 22, y: 1 };
+    let changed = first(&points);
+    return snapshot.x + changed.x;
+}
+```
+
+Import `new` and `try_push` as in the first example. This program prints `42`.
+An indexed read produces an independent value. `try_push`, `try_resize` and
+whole-element assignment also leave their Copy argument available. Distinct
+record declarations remain distinct types even when their fields match.
+
+Use `&[Point]`, `&mut [Point]`, or a generic `&[T]` with `T: Copy` to borrow
+record elements. Record slices come from vectors; fixed arrays still require
+scalar elements. References to an individual element or field are unavailable.
+The [complete record-vector example](../examples/copy-record-vectors) covers
+all nine operations and generic slice helpers.
 
 ## Add, resize and move values
 
@@ -80,7 +114,7 @@ fn second<T: Copy>(values: &[T]) -> T {
 }
 ```
 
-The same slice functions accept fixed arrays. A shared borrow prevents changes
+For scalar elements, the same slice functions also accept fixed arrays. A shared borrow prevents changes
 to its owner; an exclusive borrow prevents other access until the call ends.
 Forward a slice parameter with `&*values` or `&*values[start..end]`.
 

@@ -11,12 +11,27 @@ pub(super) const OUTPUT_SCRATCH_BYTES: usize = 1024;
 /// any canonical row is inspected. This never synthesizes unused functions.
 pub(super) fn vector_descriptor_visits(
     keys: &[crate::frontend::builtin_catalog::vector::Function],
+    records: usize,
 ) -> Result<usize, OwnedFailure> {
-    if keys.len() > 9 * 17 {
+    // Scalar claims keep their153-key bound even when nominal declarations
+    // exist. Only real declaration ordinals contribute a separate record domain.
+    if records > 4096 || keys.len() > 9 * (17 + records) {
         return Err(missing());
     }
     let mut visits = keys.len() * keys.len().saturating_sub(1) / 2;
+    let (mut scalars, mut record_keys) = (0usize, 0usize);
     for key in keys {
+        if let Some(record) = key.record_id() {
+            record_keys += 1;
+            if record.0 >= records || record_keys > 9 * records {
+                return Err(missing());
+            }
+        } else {
+            scalars += 1;
+            if scalars > 153 {
+                return Err(missing());
+            }
+        }
         let signature = key.signature(EnumId(0));
         visits += 7
             + 2 * signature.parameters().len()
@@ -117,7 +132,7 @@ pub(super) fn check(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
 /// This cannot produce an executable witness or bypass ordinary proofs. The
 /// production entry above remains the sole builtin admission gate.
 pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
-    vector_descriptor_visits(&raw.vector_functions)?;
+    vector_descriptor_visits(&raw.vector_functions, raw.records.len())?;
     let ids = BuiltinIds {
         enumeration_base: EnumId(
             raw.enums

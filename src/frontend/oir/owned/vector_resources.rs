@@ -88,6 +88,153 @@ impl Element {
     }
 }
 
+mod sealed {
+    pub trait Sealed {}
+}
+pub(in crate::frontend::oir::owned) trait VectorType:
+    sealed::Sealed + Copy
+{
+    fn tag(self) -> u32;
+    fn size(self) -> usize;
+    fn canonical(self, bytes: &[u8]) -> bool;
+    fn validation_work(self, bytes: usize) -> Option<usize> {
+        Some(bytes)
+    }
+}
+impl sealed::Sealed for Element {}
+impl VectorType for Element {
+    fn tag(self) -> u32 {
+        self.tag()
+    }
+    fn size(self) -> usize {
+        self.size()
+    }
+    fn canonical(self, bytes: &[u8]) -> bool {
+        self.canonical(bytes)
+    }
+}
+
+/// A runtime element witness can only borrow an independently checked table.
+#[derive(Clone, Copy)]
+pub(in crate::frontend::oir::owned) struct RecordElement<'a> {
+    declarations: &'a crate::frontend::oir::owned_types::Declarations,
+    record: crate::frontend::oir::owned_types::RecordId,
+    bytes: usize,
+}
+impl<'a> RecordElement<'a> {
+    pub(in crate::frontend::oir::owned) fn check(
+        declarations: &'a crate::frontend::oir::owned_types::Declarations,
+        record: crate::frontend::oir::owned_types::RecordId,
+    ) -> Result<Self> {
+        if record.0 >= 4096 {
+            return Err(Failure::Descriptor);
+        }
+        let bytes = declarations
+            .record_packed_bytes(record)
+            .map_err(|_| Failure::Descriptor)?;
+        Ok(Self {
+            declarations,
+            record,
+            bytes,
+        })
+    }
+    pub(in crate::frontend::oir::owned) fn tag(self) -> u32 {
+        0x8000_0000 | self.record.0 as u32
+    }
+    pub(in crate::frontend::oir::owned) fn size(self) -> usize {
+        self.bytes
+    }
+    pub(in crate::frontend::oir::owned) fn canonical(self, bytes: &[u8]) -> bool {
+        if !bytes.len().is_multiple_of(self.bytes) {
+            return false;
+        }
+        for value in bytes.chunks_exact(self.bytes) {
+            let Ok(leaves) =
+                self.declarations
+                    .leaves(crate::frontend::oir::owned_types::AggregateTy::Record(
+                        self.record,
+                    ))
+            else {
+                return false;
+            };
+            let mut cursor = 0usize;
+            for leaf in leaves {
+                let scalar = super::super::vector_type::element(leaf.ty);
+                let end = cursor + scalar.size();
+                if end > value.len() || !scalar.canonical(&value[cursor..end]) {
+                    return false;
+                }
+                cursor = end;
+            }
+            if cursor != value.len() {
+                return false;
+            }
+        }
+        true
+    }
+}
+impl sealed::Sealed for RecordElement<'_> {}
+impl VectorType for RecordElement<'_> {
+    fn validation_work(self, bytes: usize) -> Option<usize> {
+        // Every initialized leaf occupies >=1 dense byte. A finite tree of
+        // depth D with L leaves has at most (D+1)*L visited nodes, even for
+        // unary record chains. Two iterator transitions plus scalar admission
+        // are bounded by (2*D+3)*bytes; this does not assume L <= D.
+        bytes.checked_mul(2 * crate::frontend::oir::owned_types::MAX_CONTAINMENT_DEPTH + 3)
+    }
+    fn tag(self) -> u32 {
+        self.tag()
+    }
+    fn size(self) -> usize {
+        self.size()
+    }
+    fn canonical(self, bytes: &[u8]) -> bool {
+        self.canonical(bytes)
+    }
+}
+
+/// A closed sum of scalar authority and a checked nominal record witness.
+#[derive(Clone, Copy)]
+pub(in crate::frontend::oir::owned) enum CheckedElement<'a> {
+    Scalar(Element),
+    Record(RecordElement<'a>),
+}
+impl CheckedElement<'_> {
+    pub(in crate::frontend::oir::owned) fn tag(self) -> u32 {
+        VectorType::tag(self)
+    }
+    pub(in crate::frontend::oir::owned) fn size(self) -> usize {
+        VectorType::size(self)
+    }
+}
+impl sealed::Sealed for CheckedElement<'_> {}
+impl VectorType for CheckedElement<'_> {
+    fn validation_work(self, bytes: usize) -> Option<usize> {
+        match self {
+            Self::Scalar(value) => value.validation_work(bytes),
+            Self::Record(value) => value.validation_work(bytes),
+        }
+    }
+    fn tag(self) -> u32 {
+        match self {
+            Self::Scalar(value) => value.tag(),
+            Self::Record(value) => value.tag(),
+        }
+    }
+    fn size(self) -> usize {
+        match self {
+            Self::Scalar(value) => value.size(),
+            Self::Record(value) => value.size(),
+        }
+    }
+    fn canonical(self, bytes: &[u8]) -> bool {
+        match self {
+            Self::Scalar(value) => value.canonical(bytes),
+            Self::Record(value) => value.canonical(bytes),
+        }
+    }
+}
+
 /// Move-only descriptor, encoded in activations exactly as three integer words.
 /// The expected element is supplied from the verified type at every lookup.
 #[derive(Debug, PartialEq, Eq)]
@@ -136,7 +283,7 @@ const _: () = {
     assert!(std::mem::offset_of!(VectorHeader, capacity) == 32);
 };
 
-fn vector_layout(element: Element, capacity: i32) -> Option<Layout> {
+fn vector_layout(element: impl VectorType, capacity: i32) -> Option<Layout> {
     let payload = usize::try_from(capacity)
         .ok()?
         .checked_mul(element.size())?;
@@ -179,7 +326,7 @@ impl Heap {
     fn locate_vector(
         &self,
         value: &VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
     ) -> Result<Option<NonNull<Header>>> {
         if value.identity == 0 {
             return if value.length == 0 && value.capacity == 0 {
@@ -219,7 +366,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_descriptor(
         &self,
         bytes: &[u8],
-        element: Element,
+        element: impl VectorType,
     ) -> Result<VectorDescriptor> {
         let bytes = bytes.get(..16).ok_or(Failure::Descriptor)?;
         let value = VectorDescriptor {
@@ -233,14 +380,14 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_validate(
         &self,
         value: &VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
     ) -> Result<()> {
         self.locate_vector(value, element).map(|_| ())
     }
     pub(in crate::frontend::oir::owned) fn vector_len(
         &self,
         value: &VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
     ) -> Result<i32> {
         self.vector_validate(value, element)?;
         Ok(value.length)
@@ -248,7 +395,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_capacity(
         &self,
         value: &VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
     ) -> Result<i32> {
         self.vector_validate(value, element)?;
         Ok(value.capacity)
@@ -256,7 +403,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_range<'a>(
         &'a self,
         value: &VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         start: i32,
         end: i32,
     ) -> Result<&'a [u8]> {
@@ -276,7 +423,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) unsafe fn vector_range_mut<'a>(
         &'a mut self,
         value: &VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         start: i32,
         end: i32,
     ) -> Result<&'a mut [u8]> {
@@ -292,7 +439,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_try_reserve(
         &mut self,
         value: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         additional: i32,
         fuel: &mut usize,
     ) -> Result<GrowStatus> {
@@ -308,7 +455,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_try_push(
         &mut self,
         value: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         scalar: &[u8],
         fuel: &mut usize,
     ) -> Result<GrowStatus> {
@@ -320,7 +467,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_try_extend(
         &mut self,
         value: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         values: &[u8],
         fuel: &mut usize,
     ) -> Result<GrowStatus> {
@@ -339,7 +486,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_try_extend_vector(
         &mut self,
         value: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         source: &VectorDescriptor,
         start: i32,
         end: i32,
@@ -360,7 +507,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_try_resize(
         &mut self,
         value: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         length: i32,
         scalar: &[u8],
         fuel: &mut usize,
@@ -377,7 +524,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_truncate(
         &mut self,
         value: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         length: i32,
     ) -> Result<()> {
         let node = self.locate_vector(value, element)?;
@@ -397,7 +544,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_release(
         &mut self,
         value: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
     ) -> Result<()> {
         if let Some(node) = self.locate_vector(value, element)? {
             self.unlink(node);
@@ -408,7 +555,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_take(
         &mut self,
         value: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
     ) -> Result<VectorDescriptor> {
         self.locate_vector(value, element)?;
         Ok(std::mem::replace(value, VectorDescriptor::empty()))
@@ -418,7 +565,7 @@ impl Heap {
     pub(in crate::frontend::oir::owned) fn vector_move(
         &mut self,
         source: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         destination: &mut VectorDescriptor,
     ) -> Result<()> {
         self.locate_vector(source, element)?;
@@ -432,7 +579,7 @@ impl Heap {
     fn vector_change(
         &mut self,
         value: &mut VectorDescriptor,
-        element: Element,
+        element: impl VectorType,
         required: i32,
         mutation: Mutation<'_>,
         fuel: &mut usize,
@@ -457,9 +604,9 @@ impl Heap {
         } else {
             0
         };
-        let work = scratch
-            .len()
-            .checked_add(writes)
+        let work = element
+            .validation_work(scratch.len())
+            .and_then(|work| work.checked_add(writes))
             .and_then(|work| work.checked_add(copy_bytes))
             .ok_or(Failure::Fuel)?;
         if overlaps(
@@ -605,3 +752,7 @@ impl Heap {
 #[cfg(test)]
 #[path = "vector_resources_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "record_vector_resources_tests.rs"]
+mod record_tests;

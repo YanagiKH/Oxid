@@ -246,7 +246,16 @@ fn project_depths_share_one_namespace_schedule_and_work_total() {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn private_child_discovery_rejects_unqualified_hosts_before_child_io() {
     let fixture = Fixture::new(&[("app.ox", "mod missing; fn main()->i32{return 0;}")]);

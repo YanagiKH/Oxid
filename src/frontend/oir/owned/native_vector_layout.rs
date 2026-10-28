@@ -79,10 +79,56 @@ pub(in crate::frontend::oir::owned) fn frame_bytes(
 ) -> Result<usize, AdmissionFailure> {
     for block in &f.blocks {
         for statement in &block.statements {
-            if indexed(declarations, f, &statement.kind)?.is_some() {
+            if matches!(
+                statement.kind,
+                OwnedInstruction::CopyIndexInitialize { .. }
+                    | OwnedInstruction::CopyIndexWrite { .. }
+            ) || indexed(declarations, f, &statement.kind)?.is_some()
+            {
                 return Ok(INDEX_BYTES);
             }
         }
     }
     Ok(0)
+}
+
+/// One reusable dense record value, paid as real activation/native payload.
+pub(in crate::frontend::oir::owned) fn record_scratch_bytes(
+    declarations: &Declarations,
+    f: &RawOwnedFunction,
+) -> Result<usize, AdmissionFailure> {
+    let mut bytes = 0;
+    for block in &f.blocks {
+        for statement in &block.statements {
+            let record = match &statement.kind {
+                OwnedInstruction::CopyIndexWrite { source, .. } => {
+                    match f.owners[source.0].aggregate() {
+                        AggregateTy::Record(id) => Some(id),
+                        _ => {
+                            return Err(AdmissionFailure::new(
+                                "record vector source type",
+                                Some(statement.span),
+                            ))
+                        }
+                    }
+                }
+                OwnedInstruction::Vector { operation, .. }
+                    if matches!(
+                        operation.operation(),
+                        crate::frontend::builtin_catalog::vector::Operation::TryPush
+                            | crate::frontend::builtin_catalog::vector::Operation::TryResize
+                    ) =>
+                {
+                    operation.record_id()
+                }
+                _ => None,
+            };
+            if let Some(record) = record {
+                bytes = bytes.max(declarations.record_packed_bytes(record).map_err(|_| {
+                    AdmissionFailure::new("record vector packed extent", Some(statement.span))
+                })?);
+            }
+        }
+    }
+    Ok(bytes)
 }

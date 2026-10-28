@@ -71,12 +71,28 @@ fn checked_copy_rejections_do_not_publish_artifacts_or_enter_the_backend() {
         "#[derive(Copy)]struct P{items:[i32;1]}fn main()->i32{return 0;}",
         "use alloc::vec::Vec;#[derive(Copy)]struct P{items:Vec<i32>}fn main()->i32{return 0;}",
         "#[derive(Copy)]struct P{x:i32}fn read(p:&mut P,copy:P)->i32{return copy.x;}fn main()->i32{let mut p=P{x:21};return read(&mut p,p);}",
-        "#[derive(Copy)]struct P{x:i32}use alloc::vec::new;fn main()->i32{let values=new::<P>();return 0;}",
     ]{
         let project=Project::new(source,"hosted");let output=project.invoke(&["check"]);
         assert_eq!(output.status.code(),Some(1),"{source}: {output:?}");assert!(output.stdout.is_empty(),"{output:?}");
         let error=String::from_utf8_lossy(&output.stderr);assert!(error.contains("error[E03")&&!error.contains("E0500"),"{source}: {output:?}");
         for path in [".oxid","cache","oxid.lock"]{assert!(!project.0.join(path).exists(),"{path}");}
+    }
+}
+#[test]
+fn checked_copy_vectors_check_and_run_without_publishing_artifacts() {
+    let source = "#[derive(Copy)]struct P{x:i32}use alloc::vec::new;fn main()->i32{let values=new::<P>();return 0;}";
+    for policy in ["bounded", "hosted"] {
+        let project = Project::new(source, policy);
+        let checked = project.invoke(&["check"]);
+        assert!(checked.status.success(), "{policy}: {checked:?}");
+        assert!(checked.stderr.is_empty(), "{checked:?}");
+        let output = project.invoke(&["run"]);
+        assert!(output.status.success(), "{policy}: {output:?}");
+        assert_eq!(output.stdout, b"0\n");
+        assert!(output.stderr.is_empty(), "{output:?}");
+        for path in [".oxid", "cache", "oxid.lock"] {
+            assert!(!project.0.join(path).exists(), "{policy}: {path}");
+        }
     }
 }
 #[test]

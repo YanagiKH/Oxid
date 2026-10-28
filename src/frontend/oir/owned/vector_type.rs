@@ -2,6 +2,66 @@
 //! Only a verified HIR scalar type supplies vector element authority.
 use super::byte_buffer::VectorElement;
 use crate::frontend::hir;
+use crate::frontend::oir::owned_types::{AggregateTy, BorrowedTy, RecordId, ValueTy};
+
+/// The nominal identity is retained separately from scalar layout authority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum VectorTy {
+    Scalar(hir::Ty),
+    Record(RecordId),
+}
+impl VectorTy {
+    pub(super) const fn aggregate(self) -> AggregateTy {
+        match self {
+            Self::Scalar(ty) => AggregateTy::Vector(ty),
+            Self::Record(id) => AggregateTy::RecordVector(id),
+        }
+    }
+    pub(super) const fn slice(self) -> BorrowedTy {
+        match self {
+            Self::Scalar(ty) => BorrowedTy::ScalarSlice(ty),
+            Self::Record(id) => BorrowedTy::RecordSlice(id),
+        }
+    }
+    pub(super) const fn value(self) -> ValueTy {
+        match self {
+            Self::Scalar(ty) => ValueTy::Scalar(ty),
+            Self::Record(id) => ValueTy::Owned(AggregateTy::Record(id)),
+        }
+    }
+    pub(super) const fn from_aggregate(ty: AggregateTy) -> Option<Self> {
+        match ty {
+            AggregateTy::Vector(ty) => Some(Self::Scalar(ty)),
+            AggregateTy::RecordVector(id) => Some(Self::Record(id)),
+            _ => None,
+        }
+    }
+    pub(super) const fn from_borrowed(ty: BorrowedTy) -> Option<Self> {
+        match ty {
+            BorrowedTy::Exact(ty) => Self::from_aggregate(ty),
+            BorrowedTy::ScalarSlice(ty) => Some(Self::Scalar(ty)),
+            BorrowedTy::RecordSlice(id) => Some(Self::Record(id)),
+        }
+    }
+    pub(super) const fn function(key: crate::frontend::builtin_catalog::vector::Function) -> Self {
+        match key.record_id() {
+            Some(id) => Self::Record(id),
+            None => Self::Scalar(key.element()),
+        }
+    }
+}
+
+pub(super) fn checked<'a>(
+    ty: VectorTy,
+    declarations: &'a crate::frontend::oir::owned_types::Declarations,
+) -> Result<super::byte_buffer::CheckedVectorElement<'a>, super::byte_buffer::Failure> {
+    Ok(match ty {
+        VectorTy::Scalar(ty) => super::byte_buffer::CheckedVectorElement::Scalar(element(ty)),
+        VectorTy::Record(id) => super::byte_buffer::CheckedVectorElement::Record(
+            super::byte_buffer::RecordVectorElement::check(declarations, id)?,
+        ),
+    })
+}
 
 pub(super) const fn element(ty: hir::Ty) -> VectorElement {
     match ty {

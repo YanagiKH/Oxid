@@ -769,6 +769,11 @@ fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
         )?,
         if plan.uses_vectors() {
             vector::control_bytes()
+                + if plan.uses_record_vectors() {
+                    vector::record_control_bytes()
+                } else {
+                    0
+                }
         } else if plan.uses_typed_ranges() {
             vector::range_control_bytes()
         } else {
@@ -1148,6 +1153,11 @@ fn runtime_storage_bytes(
                 0
             } + if plan.uses_vectors() {
                 vector::RUNTIME_BYTES
+                    + if plan.uses_record_vectors() {
+                        vector::RECORD_RUNTIME_BYTES
+                    } else {
+                        0
+                    }
             } else {
                 0
             } + if plan.uses_wide_scalars() {
@@ -1750,7 +1760,9 @@ fn diagnostic_occurrences(
                     OwnedInstruction::ArrayLength { base, .. }
                         if matches!(
                             indexed_base(f, *base),
-                            BorrowedTy::Exact(AggregateTy::Vector(_))
+                            BorrowedTy::Exact(
+                                AggregateTy::Vector(_) | AggregateTy::RecordVector(_)
+                            )
                         ) =>
                     {
                         visit(FailureKind::Bounds, plan::instruction_span(statement))?;
@@ -1758,7 +1770,7 @@ fn diagnostic_occurrences(
                     OwnedInstruction::ProjectionLength { base, path, .. }
                         if matches!(
                             projection(plan, f, *base, path).0,
-                            ValueTy::Owned(AggregateTy::Vector(_))
+                            ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
                         ) =>
                     {
                         visit(FailureKind::Bounds, plan::instruction_span(statement))?;
@@ -1815,7 +1827,9 @@ fn diagnostic_occurrences(
                         value: Rvalue::CheckedNegateI32 { operator_span, .. },
                         ..
                     })) => visit(FailureKind::Overflow, *operator_span)?,
-                    OwnedInstruction::ReadIndex { .. }
+                    OwnedInstruction::CopyIndexInitialize { .. }
+                    | OwnedInstruction::CopyIndexWrite { .. }
+                    | OwnedInstruction::ReadIndex { .. }
                     | OwnedInstruction::WriteIndex { .. }
                     | OwnedInstruction::ReadProjection { index: Some(_), .. }
                     | OwnedInstruction::WriteProjection { index: Some(_), .. } => {
@@ -2295,7 +2309,12 @@ fn field_pointer(out: &mut Emission, name: &str, base: &str, offset: usize) -> S
 fn slice_reference_count(f: &RawOwnedFunction) -> usize {
     f.references
         .iter()
-        .filter(|reference| matches!(reference.referent(), BorrowedTy::ScalarSlice(_)))
+        .filter(|reference| {
+            matches!(
+                reference.referent(),
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+            )
+        })
         .count()
 }
 fn indexed_base(f: &RawOwnedFunction, base: AccessBase) -> BorrowedTy {
@@ -2308,7 +2327,7 @@ fn indexed_base(f: &RawOwnedFunction, base: AccessBase) -> BorrowedTy {
 fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: AccessBase) -> String {
     match indexed_base(f, base) {
         BorrowedTy::Exact(AggregateTy::FixedArray(array)) => array.length().to_string(),
-        BorrowedTy::ScalarSlice(_) => {
+        BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => {
             match base {
                 AccessBase::Parameter(reference) => writeln!(
                     out,
@@ -2331,7 +2350,8 @@ fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: Acce
             | AggregateTy::Enum(_)
             | AggregateTy::ByteBuf
             | AggregateTy::File
-            | AggregateTy::Vector(_),
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_),
         ) => {
             unreachable!("verified indexed base")
         }
@@ -3340,7 +3360,10 @@ fn active_transfer_with_intent(
     }
     if !matches!(
         aggregate,
-        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+        AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_)
     ) {
         for (index, leaf) in plan
             .witness()
@@ -3467,7 +3490,10 @@ fn transfer(
     let record = match aggregate {
         AggregateTy::Record(record) => record,
         AggregateTy::Enum(_) => unreachable!("enum transfers require checked tag-directed path"),
-        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_) => {
+        AggregateTy::ByteBuf
+        | AggregateTy::File
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_) => {
             resources::leaves(
                 out,
                 plan,
@@ -3553,7 +3579,10 @@ fn transfer_leaves(
     );
     if matches!(
         aggregate,
-        AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_)
+        AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_)
     ) {
         return;
     }
@@ -3635,6 +3664,7 @@ fn emit_selected<R: EmittedFunctions>(
     out.resources = plan.uses_dynamic_resources();
     let guarded = storage.guarded();
     out.write_str(if cfg!(all(target_os="macos",target_arch="aarch64")) { "; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"aarch64-apple-darwin\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n" } else if cfg!(all(target_os="macos",target_arch="x86_64")) { "; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-apple-darwin\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n" } else if cfg!(all(target_os="linux",target_arch="aarch64")) { "; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"aarch64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n" } else { "; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n" }).unwrap();
+    vector::schemas(plan, out);
     if out.policy.recursive() {
         hosted_frames::globals(out);
     }
@@ -3685,7 +3715,7 @@ fn emit_selected<R: EmittedFunctions>(
     if out.resources {
         out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare i32 @__oxid_file_valid(ptr)\ndeclare void @__oxid_file_drop(ptr)\ndeclare i32 @__oxid_file_delivery(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
         if plan.uses_vectors() {
-            out.write_str("declare i32 @__oxid_vector_valid(ptr, i32)\ndeclare void @__oxid_vector_drop(ptr, i32)\ndeclare i32 @__oxid_vector_operation(i32, i32, ptr, i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare i32 @__oxid_vector_view(ptr, i32, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_vector_index(ptr, i32, i32, ptr)\ndeclare i32 @__oxid_vector_length(ptr, i32, ptr)\n").unwrap();
+            out.write_str("declare i32 @__oxid_vector_valid(ptr, i32)\ndeclare void @__oxid_vector_drop(ptr, i32)\ndeclare i32 @__oxid_vector_operation(i32, i32, ptr, i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare i32 @__oxid_vector_view(ptr, i32, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_vector_index(ptr, i32, i32, ptr)\ndeclare i32 @__oxid_vector_length(ptr, i32, ptr)\ndeclare i32 @__oxid_record_vector_pack(i32, ptr, ptr)\ndeclare i32 @__oxid_record_vector_unpack(i32, ptr, ptr)\ndeclare i32 @__oxid_record_vector_write(i32, ptr, ptr)\ndeclare i32 @__oxid_record_vector_index_slice(ptr, i32, i32, i32, ptr)\n").unwrap();
             if out.policy.hosted() {
                 out.write_str("declare i32 @__oxid_vector_operation_hosted(i32, i32, ptr, i32, ptr, ptr, i32, ptr, ptr, i64)\n").unwrap();
             }
@@ -3891,7 +3921,7 @@ fn continuation(
         OwnedInstruction::ArrayLength { base, .. }
             if matches!(
                 indexed_base(f, *base),
-                BorrowedTy::Exact(AggregateTy::Vector(_))
+                BorrowedTy::Exact(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
             ) =>
         {
             Continuation::Vector
@@ -3899,7 +3929,7 @@ fn continuation(
         OwnedInstruction::ProjectionLength { base, path, .. }
             if matches!(
                 projection(plan, f, *base, path).0,
-                ValueTy::Owned(AggregateTy::Vector(_))
+                ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
             ) =>
         {
             Continuation::Vector
@@ -3912,7 +3942,9 @@ fn continuation(
         OwnedInstruction::ConsumeVariant { .. }
         | OwnedInstruction::ConsumeOwnedVariant { .. }
         | OwnedInstruction::ConstructOwnedEnum { .. } => Continuation::Enum,
-        OwnedInstruction::CopyInitialize { .. } => Continuation::Aggregate,
+        OwnedInstruction::CopyInitialize { .. }
+        | OwnedInstruction::CopyIndexInitialize { .. }
+        | OwnedInstruction::CopyIndexWrite { .. } => Continuation::Aggregate,
         OwnedInstruction::MoveInitialize { source, .. }
         | OwnedInstruction::Replace { source, .. }
         | OwnedInstruction::PrepareOwned { source, .. }
@@ -4057,7 +4089,7 @@ fn emit_function(
         if let ParameterBinding::Reference(reference) = parameter {
             if matches!(
                 f.references[reference.0].referent(),
-                BorrowedTy::ScalarSlice(_)
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
             ) {
                 write!(out, ", i32 %arg{i}_length").unwrap();
             }
@@ -4103,6 +4135,14 @@ fn emit_function(
             "  %owners = alloca [{} x i8], align {}",
             storage.owner_bytes(),
             storage.owner_alignment()
+        )
+        .unwrap();
+    }
+    if let Some(scratch) = plan.record_vector_scratch_range(f.id) {
+        writeln!(
+            out,
+            "  %record_vector_scratch = getelementptr i8, ptr %owners, i64 {}",
+            scratch.start
         )
         .unwrap();
     }
@@ -4245,7 +4285,10 @@ fn emit_function(
             ),
             ParameterBinding::Reference(r) => {
                 writeln!(out, "  store ptr %arg{i}, ptr %r{}, align 8", r.0).unwrap();
-                if matches!(f.references[r.0].referent(), BorrowedTy::ScalarSlice(_)) {
+                if matches!(
+                    f.references[r.0].referent(),
+                    BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                ) {
                     writeln!(out, "  store i32 %arg{i}_length, ptr %rl{}, align 4", r.0).unwrap();
                 }
             }
@@ -4895,19 +4938,21 @@ fn emit_statement(
             writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(element)).unwrap();
         }
         OwnedInstruction::ArrayLength { destination, base } => {
-            if let BorrowedTy::Exact(AggregateTy::Vector(element)) = indexed_base(f, *base) {
-                vector::length(
-                    out,
-                    f,
-                    name,
-                    *base,
-                    None,
-                    element,
-                    *destination,
-                    diagnostics,
-                    plan::instruction_span(statement),
-                );
-                return;
+            if let BorrowedTy::Exact(aggregate) = indexed_base(f, *base) {
+                if let Some(element) = super::vector_type::VectorTy::from_aggregate(aggregate) {
+                    vector::length(
+                        out,
+                        f,
+                        name,
+                        *base,
+                        None,
+                        element,
+                        *destination,
+                        diagnostics,
+                        plan::instruction_span(statement),
+                    );
+                    return;
+                }
             }
             let length = index_length(out, f, name, *base);
             store_slot(
@@ -4924,19 +4969,21 @@ fn emit_statement(
             path,
         } => {
             let (value, offset) = projection(plan, f, *base, path);
-            if let ValueTy::Owned(AggregateTy::Vector(element)) = value {
-                vector::length(
-                    out,
-                    f,
-                    name,
-                    *base,
-                    Some(offset),
-                    element,
-                    *destination,
-                    diagnostics,
-                    plan::instruction_span(statement),
-                );
-                return;
+            if let ValueTy::Owned(aggregate) = value {
+                if let Some(element) = super::vector_type::VectorTy::from_aggregate(aggregate) {
+                    vector::length(
+                        out,
+                        f,
+                        name,
+                        *base,
+                        Some(offset),
+                        element,
+                        *destination,
+                        diagnostics,
+                        plan::instruction_span(statement),
+                    );
+                    return;
+                }
             }
             let ValueTy::Owned(AggregateTy::FixedArray(array)) = value else {
                 unreachable!("verified projected array length")
@@ -5175,6 +5222,9 @@ fn emit_statement(
                 .unwrap();
             }
         }
+        OwnedInstruction::CopyIndexInitialize { .. } | OwnedInstruction::CopyIndexWrite { .. } => {
+            vector::record_index(storage, name, statement, diagnostics, out)
+        }
         OwnedInstruction::CopyInitialize {
             destination,
             source,
@@ -5360,7 +5410,10 @@ fn emit_statement(
                 storage.loan_slot(*loan)
             )
             .unwrap();
-            if matches!(declaration.referent(), BorrowedTy::ScalarSlice(_)) {
+            if matches!(
+                declaration.referent(),
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+            ) {
                 // Stage the target view's length when its loan begins, alongside
                 // the pointer, before evaluating any later call argument.
                 let length = projected_length.map_or_else(
@@ -5904,7 +5957,10 @@ fn emit_terminator(
                         )
                         .unwrap();
                         args.push(format!("ptr %{name}_arg{i}"));
-                        if matches!(f.loans[l.0].referent(), BorrowedTy::ScalarSlice(_)) {
+                        if matches!(
+                            f.loans[l.0].referent(),
+                            BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                        ) {
                             writeln!(
                                 out,
                                 "  %{name}_arg{i}_length = load i32, ptr %ll{}, align 4",
@@ -6907,3 +6963,7 @@ fn owned_enum_native_shared_branch_counts_and_exact_ir_admission() {
 #[cfg(test)]
 #[path = "copy_record_native_tests.rs"]
 mod copy_record_tests;
+
+#[cfg(test)]
+#[path = "record_vector_native_tests.rs"]
+mod record_vector_tests;

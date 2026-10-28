@@ -128,7 +128,8 @@ def load_tests(loader, tests, pattern):
         self.assertEqual(set(runner.PREDECESSOR_ONLY), {
             "test_byte_buffer_compatibility", "test_hosted_execution_compatibility",
             "test_buffer_transfer_compatibility", "test_byte_string_compatibility",
-            "test_arm64_host_compatibility"})
+            "test_arm64_host_compatibility", "test_checked_copy_compatibility",
+            "test_typed_vector_compatibility"})
         for module, (_, revision, _) in runner.PREDECESSOR_ONLY.items():
             name = module + ".py"
             for source in (FROZEN_SOURCES[name] + PASSING.encode(), None):

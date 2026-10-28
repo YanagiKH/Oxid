@@ -77,7 +77,8 @@ impl fmt::Display for Aggregate {
             AggregateTy::Enum(_)
             | AggregateTy::ByteBuf
             | AggregateTy::File
-            | AggregateTy::Vector(_) => {
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_) => {
                 unreachable!("aggregate source gate")
             }
             AggregateTy::FixedArray(array) => write!(
@@ -94,6 +95,9 @@ impl fmt::Display for Borrowed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             BorrowedTy::Exact(aggregate) => Aggregate(aggregate).fmt(f),
+            BorrowedTy::RecordSlice(_) => {
+                unreachable!("record vector slice outside this predecessor observation domain")
+            }
             BorrowedTy::ScalarSlice(element) => {
                 write!(f, "[\"scalar-slice\",{}]", ScalarType(element))
             }
@@ -1042,7 +1046,9 @@ impl fmt::Display for Instruction<'_> {
         match self.0 {
             I::AcquireLocalBorrow(id) => write!(f, "[\"acquire-local-borrow\",{}]", id.0),
             I::ReleaseLocalBorrow(id) => write!(f, "[\"release-local-borrow\",{}]", id.0),
-            I::CopyInitialize { .. } => unreachable!("Copy record observer gate"),
+            I::CopyInitialize { .. } | I::CopyIndexInitialize { .. } | I::CopyIndexWrite { .. } => {
+                unreachable!("Copy record observer gate")
+            }
             I::DestructureRecord { .. } => unreachable!("record pattern observer gate"),
             I::PrepareBorrowRange { .. }
             | I::Experimental { .. }

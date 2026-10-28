@@ -52,7 +52,10 @@ impl Iterator for NativeSliceMappings<'_> {
             (true, logical, self.function.loans.get(logical)?.referent())
         };
         self.pointer += 1;
-        let offset = if matches!(referent, BorrowedTy::ScalarSlice(_)) {
+        let offset = if matches!(
+            referent,
+            BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+        ) {
             let offset = self
                 .length
                 .checked_mul(4)
@@ -128,12 +131,22 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         let slices = f
             .references
             .iter()
-            .filter(|r| matches!(r.referent(), BorrowedTy::ScalarSlice(_)))
+            .filter(|r| {
+                matches!(
+                    r.referent(),
+                    BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                )
+            })
             .count();
         let loans = f
             .loans
             .iter()
-            .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_)))
+            .filter(|l| {
+                matches!(
+                    l.referent(),
+                    BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                )
+            })
             .count();
         Ok(Self {
             execution,
@@ -204,6 +217,21 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
                 require(range.is_none())?;
             }
         }
+        let record_scratch = super::plan::native_vector_layout::record_scratch_bytes(
+            self.execution.witness.declarations(),
+            f,
+        )?;
+        if record_scratch == 0 {
+            require(
+                self.execution
+                    .record_vector_scratch_range(self.id)
+                    .is_none(),
+            )?;
+        } else {
+            let next = add(end, record_scratch)?;
+            require(self.execution.record_vector_scratch_range(self.id) == Some(end..next))?;
+            end = next;
+        }
         require(end == u.payload_bytes && align(end, self.owner_alignment())? == self.owner_bytes)?;
         let (mut arguments, mut owned, mut borrowed) = (0, 0, 0);
         for (call, cp) in f.calls.iter().zip(&p.calls) {
@@ -263,7 +291,7 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
             .map(|r| r.referent())
             .chain(f.loans.iter().map(|l| l.referent()))
         {
-            if matches!(ty, BorrowedTy::ScalarSlice(_)) {
+            if matches!(ty, BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)) {
                 slices = add(slices, 1)?;
             }
         }
@@ -314,13 +342,14 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
                 } else {
                     self.raw().references[logical].referent()
                 };
-                let expected = if matches!(ty, BorrowedTy::ScalarSlice(_)) {
-                    let offset = mul(next, 4)?;
-                    next = add(next, 1)?;
-                    Some(offset)
-                } else {
-                    None
-                };
+                let expected =
+                    if matches!(ty, BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)) {
+                        let offset = mul(next, 4)?;
+                        next = add(next, 1)?;
+                        Some(offset)
+                    } else {
+                        None
+                    };
                 let row = mappings
                     .next()
                     .ok_or_else(|| AdmissionFailure::new("native slice mapping", None))?;

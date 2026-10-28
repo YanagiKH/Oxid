@@ -2,6 +2,12 @@
 //! originate in checked declarations; no scalar can act as an allocation ID.
 use super::*;
 
+fn vector_type_error_mapper(
+    span: &Span,
+) -> impl FnOnce(byte_buffer::Failure) -> OwnedRunFailure + '_ {
+    move |_| bad("record vector type", *span)
+}
+
 fn tag_reader(
     bytes: &[u8],
 ) -> impl FnMut(usize) -> std::result::Result<usize, DeclarationError> + '_ {
@@ -27,7 +33,11 @@ struct ReferenceWalkCarriers {
     descriptor_return: std::result::Result<byte_buffer::Descriptor, byte_buffer::Failure>,
     file_descriptor: byte_buffer::FileDescriptor,
     file_descriptor_return: std::result::Result<byte_buffer::FileDescriptor, byte_buffer::Failure>,
-    vector_element: byte_buffer::VectorElement,
+    vector_type: super::super::vector_type::VectorTy,
+    vector_element_return:
+        std::result::Result<byte_buffer::CheckedVectorElement<'static>, byte_buffer::Failure>,
+    mapped_vector_element_return: Result<byte_buffer::CheckedVectorElement<'static>>,
+    vector_element: byte_buffer::CheckedVectorElement<'static>,
     vector_descriptor: byte_buffer::VectorDescriptor,
     vector_descriptor_return:
         std::result::Result<byte_buffer::VectorDescriptor, byte_buffer::Failure>,
@@ -55,9 +65,19 @@ fn mapped_factory_bytes<F>(_: &F) -> usize {
 
 pub(super) fn control_bytes() -> usize {
     let reader = tag_reader(&[]);
+    // Select the actual mapper's closure type without invoking it. This const
+    // is only a borrowed layout input and cannot grant runtime source authority.
+    const LAYOUT_SPAN: Span = Span {
+        file: crate::frontend::source::SourceFileId(0),
+        start: 0,
+        end: 0,
+    };
     resource_walk_control_bytes(&reader)
         + mapped_factory_bytes(&reader)
         + size_of::<ReferenceWalkCarriers>()
+        // Preflight and release select elements sequentially; they share this
+        // one nonrecursive caller bank, independently of vector operation banks.
+        + std::mem::size_of_val(&vector_type_error_mapper(&LAYOUT_SPAN))
 }
 
 fn leaves<'a>(
@@ -100,8 +120,16 @@ pub(super) fn preflight(
                 heap.file_descriptor(&source[source_extent])
                     .map_err(|_| bad("file descriptor", span))?;
             }
-            ResourceKind::Vector(ty) => {
-                let element = super::super::vector_type::element(ty);
+            ResourceKind::Vector(_) | ResourceKind::RecordVector(_) => {
+                let ty = match leaf.kind {
+                    ResourceKind::Vector(ty) => super::super::vector_type::VectorTy::Scalar(ty),
+                    ResourceKind::RecordVector(id) => {
+                        super::super::vector_type::VectorTy::Record(RecordId(id as usize))
+                    }
+                    _ => unreachable!(),
+                };
+                let element = super::super::vector_type::checked(ty, declarations)
+                    .map_err(vector_type_error_mapper(&span))?;
                 let value = heap
                     .vector_descriptor(&source[source_extent], element)
                     .map_err(|_| bad("resource descriptor", span))?;
@@ -161,8 +189,16 @@ pub(super) fn release(
                     .file_close(&mut value)
                     .map_err(|_| bad("file release", span))?;
             }
-            ResourceKind::Vector(ty) => {
-                let element = super::super::vector_type::element(ty);
+            ResourceKind::Vector(_) | ResourceKind::RecordVector(_) => {
+                let ty = match leaf.kind {
+                    ResourceKind::Vector(ty) => super::super::vector_type::VectorTy::Scalar(ty),
+                    ResourceKind::RecordVector(id) => {
+                        super::super::vector_type::VectorTy::Record(RecordId(id as usize))
+                    }
+                    _ => unreachable!(),
+                };
+                let element = super::super::vector_type::checked(ty, declarations)
+                    .map_err(vector_type_error_mapper(&span))?;
                 let mut value = heap
                     .vector_descriptor(&bytes[range], element)
                     .map_err(|_| bad("resource descriptor", span))?;

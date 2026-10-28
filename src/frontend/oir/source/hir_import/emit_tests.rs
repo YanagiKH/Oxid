@@ -489,7 +489,16 @@ fn checked_hir_import_emit_genuine_rich_and_public_project_text_survives_backing
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn checked_hir_import_emit_project_child_policy_stays_e0005_on_unqualified_hosts() {
     use crate::frontend::project::{ProjectLimits, ProjectSources};

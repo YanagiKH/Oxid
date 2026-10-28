@@ -1085,7 +1085,16 @@ mod output_layout_feasibility {
             fixture.0.join("main.ox").to_str().unwrap(),
             ProjectLimits::default(),
         );
-        if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        if !cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                target_os = "windows",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        )) {
             assert_module_policy_denial(
                 result.unwrap_err(),
                 Span {
@@ -1842,7 +1851,16 @@ fn bounded_stdout_private_borrowed_anchors_preserve_dependency_and_module_order(
             ProjectLimits::default(),
             &mut Allocator::default(),
         );
-        if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        if !cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                target_os = "windows",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        )) {
             assert_module_policy_denial(
                 result.unwrap_err(),
                 Span {

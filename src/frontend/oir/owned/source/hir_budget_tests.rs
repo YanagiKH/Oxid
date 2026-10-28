@@ -995,7 +995,10 @@ fn c3_t1_passive_checker_components_have_independent_measured_slopes() {
     assert_eq!(
         components,
         (
-            33448 + 64 * 152 + file_projection_successor_bytes(),
+            33448
+                + 64 * 152
+                + file_projection_successor_bytes()
+                + record_vector_projection_successor_bytes(),
             1920 + size_of::<&mut type_storage::TypedObserved>() + 472,
             24,
             784,
@@ -1388,7 +1391,10 @@ fn c3_t1_inhabited_denied_selector_grows_only_the_existing_fixed_return_charge()
         assert_eq!(
             checker_only_components(),
             (
-                33448 + 64 * 152 + file_projection_successor_bytes(),
+                33448
+                    + 64 * 152
+                    + file_projection_successor_bytes()
+                    + record_vector_projection_successor_bytes(),
                 1928 + 472,
                 24,
                 784,

@@ -68,9 +68,10 @@ fn function(id: usize, result: ValueTy, span: Span) -> RawOwnedFunction {
 
 /// No catalog signature/member builder supplies these expected declarations.
 fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction {
+    let element = key.element();
     use vector::Operation::*;
-    let result = match key.operation {
-        New | Take => ValueTy::Owned(AggregateTy::Vector(key.element)),
+    let result = match key.operation() {
+        New | Take => ValueTy::Owned(AggregateTy::Vector(key.element())),
         Len | Capacity => ValueTy::Scalar(hir::Ty::I32),
         Truncate => ValueTy::Scalar(hir::Ty::Unit),
         TryReserve | TryPush | TryExtend | TryResize => {
@@ -78,13 +79,13 @@ fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction
         }
     };
     let mut raw = function(id, result, span);
-    if key.operation != New {
+    if key.operation() != New {
         raw.parameters
             .push(ParameterBinding::Reference(ReferenceParamId(0)));
         raw.references.push(ReferenceDecl {
-            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Vector(key.element)))
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Vector(key.element())))
                 .unwrap(),
-            kind: if matches!(key.operation, Len | Capacity) {
+            kind: if matches!(key.operation(), Len | Capacity) {
                 BorrowKind::Shared
             } else {
                 BorrowKind::Exclusive
@@ -93,10 +94,10 @@ fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction
             span,
         });
     }
-    let scalar_parameters: &[hir::Ty] = match key.operation {
+    let scalar_parameters: &[hir::Ty] = match key.operation() {
         TryReserve | Truncate => &[hir::Ty::I32],
-        TryPush => std::slice::from_ref(&key.element),
-        TryResize => &[hir::Ty::I32, key.element],
+        TryPush => std::slice::from_ref(&element),
+        TryResize => &[hir::Ty::I32, key.element()],
         _ => &[],
     };
     for ty in scalar_parameters {
@@ -108,11 +109,11 @@ fn vector_body(id: usize, key: vector::Function, span: Span) -> RawOwnedFunction
             span,
         });
     }
-    if key.operation == TryExtend {
+    if key.operation() == TryExtend {
         raw.parameters
             .push(ParameterBinding::Reference(ReferenceParamId(1)));
         raw.references.push(ReferenceDecl {
-            referent: BorrowedSlot::check(BorrowedTy::ScalarSlice(key.element)).unwrap(),
+            referent: BorrowedSlot::check(BorrowedTy::ScalarSlice(key.element())).unwrap(),
             kind: BorrowKind::Shared,
             position: 1,
             span,
@@ -177,7 +178,7 @@ fn program(keys: &[vector::Function]) -> (SourceMap, RawOwnedProgram) {
     for key in keys {
         raw.builtins = raw.builtins.admit(BuiltinItem::Vector(key.item()));
         grow |= matches!(
-            key.operation,
+            key.operation(),
             vector::Operation::TryReserve
                 | vector::Operation::TryPush
                 | vector::Operation::TryExtend
@@ -205,14 +206,16 @@ fn program(keys: &[vector::Function]) -> (SourceMap, RawOwnedProgram) {
     (sources, raw)
 }
 pub(super) fn one_element_program(element: hir::Ty) -> (SourceMap, RawOwnedProgram) {
-    program(&OPERATIONS.map(|operation| vector::Function { operation, element }))
+    program(&OPERATIONS.map(|operation| vector::Function::new(operation, element).unwrap()))
 }
 
 #[test]
 fn vector_raw_all_operations_and_elements_require_complete_proof() {
     let keys: Vec<_> = ELEMENTS
         .into_iter()
-        .flat_map(|element| OPERATIONS.map(|operation| vector::Function { operation, element }))
+        .flat_map(|element| {
+            OPERATIONS.map(|operation| vector::Function::new(operation, element).unwrap())
+        })
         .collect();
     assert_eq!(keys.len(), 153);
     let (sources, raw) = program(&keys);
@@ -235,10 +238,13 @@ fn vector_raw_claim_key_signature_body_and_site_mutations_fail() {
             r.builtins = BuiltinOrigins::None;
         }),
         ("element key", |r| {
-            r.vector_functions[0].element = hir::Ty::U64;
+            r.vector_functions[0] =
+                vector::Function::new(r.vector_functions[0].operation(), hir::Ty::U64).unwrap();
         }),
         ("operation key", |r| {
-            r.vector_functions[0].operation = vector::Operation::Take;
+            r.vector_functions[0] =
+                vector::Function::new(vector::Operation::Take, r.vector_functions[0].element())
+                    .unwrap();
         }),
         ("duplicate key", |r| {
             r.vector_functions.push(r.vector_functions[0]);
@@ -291,10 +297,7 @@ fn vector_raw_claim_key_signature_body_and_site_mutations_fail() {
             });
         }),
     ];
-    let key = vector::Function {
-        operation: vector::Operation::New,
-        element: hir::Ty::I64,
-    };
+    let key = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
     for (name, mutate) in mutations {
         let (sources, mut raw) = program(&[key]);
         mutate(&mut raw);
@@ -305,20 +308,16 @@ fn vector_raw_claim_key_signature_body_and_site_mutations_fail() {
         vector::Operation::TryPush,
         vector::Operation::TryExtend,
     ] {
-        let (sources, mut raw) = program(&[vector::Function {
-            operation,
-            element: hir::Ty::I64,
-        }]);
+        let (sources, mut raw) =
+            program(&[vector::Function::new(operation, hir::Ty::I64).unwrap()]);
         raw.functions[0].references[0].kind = BorrowKind::Shared;
         assert!(
             verify_owned(raw, &sources).is_err(),
             "exclusive parameter: {operation:?}"
         );
     }
-    let (sources, mut raw) = program(&[vector::Function {
-        operation: vector::Operation::TryPush,
-        element: hir::Ty::I64,
-    }]);
+    let (sources, mut raw) =
+        program(&[vector::Function::new(vector::Operation::TryPush, hir::Ty::I64).unwrap()]);
     raw.functions[0].locals[0].ty = hir::Ty::U64;
     assert!(
         verify_owned(raw, &sources).is_err(),
@@ -328,10 +327,7 @@ fn vector_raw_claim_key_signature_body_and_site_mutations_fail() {
 
 #[test]
 fn vector_raw_matching_ordinary_and_unreachable_bodies_never_gain_identity() {
-    let key = vector::Function {
-        operation: vector::Operation::New,
-        element: hir::Ty::I64,
-    };
+    let key = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
     for unreachable in [false, true] {
         let (sources, mut raw) = program(&[key]);
         let mut ordinary = raw.functions[0].clone();
@@ -405,10 +401,7 @@ fn vector_suffix_preserves_fixed_builtin_ids_and_experimental_rank() {
         ),
     });
     raw.functions.push(count);
-    let key = vector::Function {
-        operation: vector::Operation::New,
-        element: hir::Ty::I64,
-    };
+    let key = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
     raw.vector_functions.push(key);
     raw.functions.push(vector_body(4, key, span));
     let witness = verify_owned(raw, &sources).unwrap();
@@ -430,7 +423,7 @@ fn vector_raw_capacity_work_and_metadata_refuse_before_allocating() {
     // Nine independently specified bodies cost 106 visits; their duplicate
     // comparisons cost 9*8/2. This is not computed from the checker signature.
     assert_eq!(
-        builtins::vector_descriptor_visits(&raw.vector_functions).unwrap(),
+        builtins::vector_descriptor_visits(&raw.vector_functions, raw.records.len()).unwrap(),
         142
     );
     let usage = budget::preflight(&raw, budget::Limits::DEFAULT).unwrap();
@@ -462,10 +455,7 @@ fn vector_raw_capacity_work_and_metadata_refuse_before_allocating() {
         },
     )
     .unwrap();
-    let key = vector::Function {
-        operation: vector::Operation::New,
-        element: hir::Ty::I64,
-    };
+    let key = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
     let (_, narrow) = program(&[key]);
     let (_, mut spare) = program(&[key]);
     spare.vector_functions.reserve_exact(7);
@@ -761,4 +751,32 @@ fn vector_raw_allocator_refusal_never_produces_a_witness() {
         failure.kind,
         OwnedFailureKind::Resource("injected allocation failure")
     );
+}
+
+#[test]
+fn record_vector_key_domains_cannot_borrow_unused_scalar_or_nominal_capacity() {
+    let scalar = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
+    let (sources, mut raw) = program(&[scalar]);
+    let span = raw.functions[0].span;
+    let mut record = consumer_fixtures::record(&[hir::Ty::I32], span);
+    record.is_copy = true;
+    raw.records.push(record);
+    // A real record cannot license the154th scalar claim.
+    raw.vector_functions.resize(154, scalar);
+    budget::fail_allocation_after(0, || {
+        assert!(budget::preflight(&raw, budget::Limits::DEFAULT).is_err())
+    });
+    raw.vector_functions =
+        vec![vector::Function::record(vector::Operation::New, RecordId(1)).unwrap()];
+    budget::fail_allocation_after(0, || {
+        assert!(budget::preflight(&raw, budget::Limits::DEFAULT).is_err())
+    });
+    // One nominal declaration licenses9 record operation identities; unused
+    // scalar-domain room cannot pay for a tenth duplicate record claim.
+    raw.vector_functions =
+        vec![vector::Function::record(vector::Operation::New, RecordId(0)).unwrap(); 10];
+    budget::fail_allocation_after(0, || {
+        assert!(budget::preflight(&raw, budget::Limits::DEFAULT).is_err())
+    });
+    let _ = sources;
 }

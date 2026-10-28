@@ -34,11 +34,29 @@ pub(super) struct Nominals {
     pub(super) emitted_records: Vec<usize>,
 }
 
+/// Read-only ranking introduces no arena allocation. Price its independent
+/// synchronous arguments, iterator and result transports only on record keys.
+#[allow(dead_code)]
+struct RecordVectorKeyControls {
+    value: Value,
+    arena: &'static [RecordApplication],
+    selected: &'static RecordApplication,
+    prefix: std::slice::Iter<'static, RecordApplication>,
+    rank: usize,
+    id: RecordId,
+    checked_id: Option<RecordId>,
+    result: Result<RecordId, Box<Diagnostic>>,
+    caller_result: Result<RecordId, Box<Diagnostic>>,
+    function: Option<vector::Function>,
+    work: &'static WorkMeter,
+    origin: Span,
+}
+
 impl Nominals {
     pub(super) fn concrete(&self, value: Value) -> bool {
         match value {
             Value::Concrete(_) => true,
-            Value::Vector(element) => matches!(element, Element::Concrete(_)),
+            Value::Vector(element) => self.concrete(element.value()),
             Value::Parameter { .. } => false,
             Value::Enumeration(id) => self.enumerations[id].concrete,
             Value::Record(id) => self.records[id].concrete,
@@ -74,6 +92,11 @@ impl Nominals {
     pub(super) fn copy(&self, value: Value) -> bool {
         match value {
             Value::Concrete(ValueTy::Scalar(_)) | Value::Parameter { copy: true, .. } => true,
+            Value::Concrete(ValueTy::Owned(AggregateTy::Record(id))) => self
+                .emitted_records
+                .get(id.0)
+                .and_then(|slot| self.records.get(*slot))
+                .is_some_and(|record| record.complete && record.is_copy),
             Value::Record(id) => self
                 .records
                 .get(id)
@@ -150,7 +173,7 @@ impl Nominals {
                             depth + 1,
                         )?
                         .value(argument.span)?;
-                    let value = Value::Vector(Element::check(value, argument.span)?);
+                    let value = Value::Vector(Element::checked(value, self, argument.span)?);
                     Ok(match syntax.kind {
                         TypeSyntaxKind::AppliedReference { mutable, .. } => Type::Reference {
                             value,
@@ -223,6 +246,41 @@ impl Nominals {
                 },
                 _ => Type::Value(value),
             });
+        }
+        if let TypeSyntaxKind::GenericSliceReference { mutable, element } = syntax.kind {
+            storage.enter_vector(syntax.span)?;
+            let result = (|| {
+                let span = index.sources().path_span(ItemPathRef {
+                    file: syntax.span.file,
+                    path: element,
+                })?;
+                let value = self
+                    .syntax(
+                        index,
+                        work,
+                        storage,
+                        allocator,
+                        module,
+                        declaration,
+                        arguments,
+                        ast::TypeSyntax {
+                            kind: TypeSyntaxKind::Name(element),
+                            span,
+                        },
+                        depth + 1,
+                    )?
+                    .value(span)?;
+                Ok(Type::Slice {
+                    element: Element::checked(value, self, span)?,
+                    kind: if mutable {
+                        BorrowKind::Exclusive
+                    } else {
+                        BorrowKind::Shared
+                    },
+                })
+            })();
+            storage.leave_vector(syntax.span)?;
+            return result;
         }
         let vector_frame = matches!(syntax.kind, TypeSyntaxKind::GenericSliceReference { .. });
         if vector_frame {
@@ -492,6 +550,10 @@ impl Nominals {
             return Err(exhausted(at));
         }
         work.debit(1, at, "nominal argument visibility")?;
+        if let Value::Vector(element) = value {
+            self.exposure(index, work, owner, element.value(), at, depth + 1)?;
+        }
+
         let (nominal, arguments): (NominalId, &[Value]) = match value {
             Value::Record(id) => (
                 NominalId::Record(self.records[id].template),
@@ -507,9 +569,10 @@ impl Nominals {
             Value::Concrete(ValueTy::Owned(AggregateTy::Enum(id))) => (NominalId::Enum(id), &[]),
             Value::Concrete(ValueTy::Owned(AggregateTy::ByteBuf)) => (NominalId::ByteBuf, &[]),
             Value::Concrete(ValueTy::Owned(AggregateTy::File)) => (NominalId::File, &[]),
-            Value::Vector(_) | Value::Concrete(ValueTy::Owned(AggregateTy::Vector(_))) => {
-                (NominalId::Vector, &[])
-            }
+            Value::Vector(_)
+            | Value::Concrete(ValueTy::Owned(
+                AggregateTy::Vector(_) | AggregateTy::RecordVector(_),
+            )) => (NominalId::Vector, &[]),
             _ => return Ok(()),
         };
         let exposure =
@@ -673,7 +736,13 @@ impl Nominals {
                 .map(|id| ValueTy::Owned(AggregateTy::Record(id)))
                 .ok_or_else(|| bad(at)),
             Value::Parameter { .. } => Err(bad(at)),
-            Value::Vector(element) => Ok(ValueTy::Owned(AggregateTy::Vector(element.scalar(at)?))),
+            Value::Vector(element) => match self.value(element.value(), at)? {
+                ValueTy::Scalar(ty) => Ok(ValueTy::Owned(AggregateTy::Vector(ty))),
+                ValueTy::Owned(AggregateTy::Record(id)) if self.record_is_copy(id, at)? => {
+                    Ok(ValueTy::Owned(AggregateTy::RecordVector(id)))
+                }
+                _ => Err(bad(at)),
+            },
         }
     }
 
@@ -684,11 +753,60 @@ impl Nominals {
                 value: Value::Concrete(self.value(value, at)?),
                 kind,
             },
-            _ => ty,
+            Type::Slice { element, kind } => Type::Slice {
+                element: match self.value(element.value(), at)? {
+                    ValueTy::Scalar(ty) => Element::Concrete(ty),
+                    ValueTy::Owned(AggregateTy::Record(id)) if self.record_is_copy(id, at)? => {
+                        Element::ConcreteRecord(id)
+                    }
+                    _ => return Err(bad(at)),
+                },
+                kind,
+            },
         };
         ty.parameter(at)
     }
 
+    /// Final record ordinals are the ranks of concrete applications, in arena
+    /// order. Computing a prefix rank here does not mint a declaration witness
+    /// or allocate/freeze tables before the complete worklist has been checked.
+    pub(super) fn vector_record_id(
+        &self,
+        value: Value,
+        storage: &Storage,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<RecordId, Box<Diagnostic>> {
+        if storage
+            .live_after(size_of::<RecordVectorKeyControls>())
+            .is_none_or(|bytes| bytes > MAX_STORAGE)
+        {
+            return Err(exhausted(at));
+        }
+        match value {
+            Value::Record(id) => {
+                let record = self.records.get(id).ok_or_else(|| bad(at))?;
+                if !record.complete || !record.concrete || !record.is_copy {
+                    return Err(bad(at));
+                }
+                let mut rank = 0usize;
+                for record in &self.records[..id] {
+                    work.debit(1, at, "vector record identity rank")?;
+                    rank += usize::from(record.concrete);
+                }
+                if rank >= 4096 {
+                    return Err(exhausted(at));
+                }
+                Ok(RecordId(rank))
+            }
+            Value::Concrete(ValueTy::Owned(AggregateTy::Record(id)))
+                if self.record_is_copy(id, at)? =>
+            {
+                Ok(id)
+            }
+            _ => Err(bad(at)),
+        }
+    }
     pub(super) fn record_is_copy(
         &self,
         record: RecordId,

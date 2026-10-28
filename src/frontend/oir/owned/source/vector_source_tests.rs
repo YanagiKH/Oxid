@@ -349,7 +349,7 @@ fn all_seventeen_scalar_vector_views_and_forwarded_ranges_preserve_element_ident
         let text = format!("use alloc::vec::new;fn whole(items:&[{spelling}])->(){{return;}}fn exclusive(items:&mut [{spelling}])->(){{return;}}fn forward(items:&[{spelling}])->(){{whole(&*items[0..0]);return;}}fn main()->i32{{let mut values=new::<{spelling}>();whole(&values);whole(&values[0..0]);exclusive(&mut values[0..0]);forward(&values);return 0;}}");
         with_typed(&text, |typed, _| {
             let raw = lower::lower(typed).unwrap();
-            let element = typed.index().vector_functions()[0].element;
+            let element = typed.index().vector_functions()[0].element();
             let mut ranges = 0;
             for function in &raw.functions[..typed.index().source_function_count()] {
                 for loan in &function.loans {

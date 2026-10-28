@@ -47,6 +47,8 @@ discord = true
 # scripts/verify_repo.py. Their binary OXS1 corpus requires no .ox exclusion.
 # Other .ox files under tests/ and examples/ remain runnable language tests.
 [test-fixtures]
+"examples/copy-record-vectors/src/main.ox" = true
+"examples/copy-record-vectors/tests/records.ox" = true
 "examples/copy-records/src/main.ox" = true
 "examples/copy-records/tests/copies.ox" = true
 "tests/fixtures/copy_records/all_scalars.ox" = true

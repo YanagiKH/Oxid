@@ -23,7 +23,7 @@ _Static_assert(offsetof(oxid_vector_header, capacity) == 32, "vector metadata of
 #define OXID_VECTOR_ALIGNED_ALLOC aligned_alloc
 #endif
 
-static size_t vector_element_size(uint32_t element) {
+static size_t vector_scalar_size(uint32_t element) {
     switch (element) {
     case OXID_VECTOR_BOOL: case OXID_VECTOR_UNIT:
     case OXID_VECTOR_I8: case OXID_VECTOR_U8: return 1;
@@ -36,6 +36,41 @@ static size_t vector_element_size(uint32_t element) {
     case OXID_VECTOR_I128: case OXID_VECTOR_U128: return 16;
     default: return 0;
     }
+}
+static const oxid_vector_record_schema *vector_record_schema(uint32_t element) {
+#ifndef OXID_RECORD_VECTOR_SCHEMAS
+    (void)element;
+    return NULL;
+#else
+    if (!(element & OXID_VECTOR_RECORD_BIT)) return NULL;
+    uint32_t ordinal = element & ~OXID_VECTOR_RECORD_BIT;
+    if (__oxid_record_vector_schema_count > OXID_VECTOR_RECORD_LIMIT ||
+        ordinal >= __oxid_record_vector_schema_count) return NULL;
+    const oxid_vector_record_schema *schema = &__oxid_record_vector_schemas[ordinal];
+    if (schema->element != element || !schema->stride || !schema->owner_bytes ||
+        !schema->leaf_count || schema->leaf_count > schema->stride || !schema->leaves) return NULL;
+    return schema;
+#endif
+}
+static size_t vector_element_size(uint32_t element) {
+    size_t scalar = vector_scalar_size(element);
+    if (scalar) return scalar;
+    const oxid_vector_record_schema *schema = vector_record_schema(element);
+    return schema ? schema->stride : 0;
+}
+static int vector_record_layout_valid(const oxid_vector_record_schema *schema) {
+    size_t dense = 0, owner = 0;
+    for (uint32_t i = 0; i < schema->leaf_count; ++i) {
+        const oxid_vector_record_leaf *leaf = &schema->leaves[i];
+        size_t width = vector_scalar_size(leaf->element);
+        if (!width || leaf->dense_offset != dense || leaf->owner_offset < owner ||
+            dense > schema->stride || width > schema->stride - dense ||
+            leaf->owner_offset > schema->owner_bytes || width > schema->owner_bytes - leaf->owner_offset)
+            return 0;
+        dense += width;
+        owner = (size_t)leaf->owner_offset + width;
+    }
+    return dense == schema->stride;
 }
 static int vector_layout(uint32_t element, int32_t capacity, size_t *bytes) {
     size_t width = vector_element_size(element);
@@ -54,7 +89,7 @@ static int vector_overlaps(const void *a, size_t a_length, const void *b, size_t
     uintptr_t left = (uintptr_t)a, right = (uintptr_t)b;
     return left <= right ? right - left < a_length : left - right < b_length;
 }
-static int vector_canonical(uint32_t element, const uint8_t *bytes, size_t length) {
+static int vector_scalar_canonical(uint32_t element, const uint8_t *bytes, size_t length) {
     if (element == OXID_VECTOR_BOOL || element == OXID_VECTOR_UNIT) {
         uint8_t maximum = element == OXID_VECTOR_BOOL ? 1 : 0;
         for (size_t i = 0; i < length; ++i) if (bytes[i] > maximum) return 0;
@@ -65,6 +100,51 @@ static int vector_canonical(uint32_t element, const uint8_t *bytes, size_t lengt
             if (value > UINT32_C(0x10ffff) ||
                 (value >= UINT32_C(0xd800) && value <= UINT32_C(0xdfff))) return 0;
         }
+    }
+    return 1;
+}
+
+static int vector_canonical(uint32_t element, const uint8_t *bytes, size_t length) {
+    size_t width = vector_element_size(element);
+    if (!width || length % width || (length && !bytes)) return 0;
+    if (!(element & OXID_VECTOR_RECORD_BIT)) return vector_scalar_canonical(element, bytes, length);
+    if (!length) return 1;
+    const oxid_vector_record_schema *schema = vector_record_schema(element);
+    if (!schema || !vector_record_layout_valid(schema)) return 0;
+    for (size_t offset = 0; offset < length; offset += width) {
+        for (uint32_t i = 0; i < schema->leaf_count; ++i) {
+            const oxid_vector_record_leaf *leaf = &schema->leaves[i];
+            if (!vector_scalar_canonical(leaf->element, bytes + offset + leaf->dense_offset,
+                    vector_scalar_size(leaf->element))) return 0;
+        }
+    }
+    return 1;
+}
+
+/* A source intersecting a registered allocation must be an initialized dense
+ * range of this exact nominal vector, including element-aligned subranges. */
+static int vector_record_source(oxid_byte_heap *heap, uint32_t element,
+    const uint8_t *source, size_t length) {
+    if (!(element & OXID_VECTOR_RECORD_BIT) || !length) return 1;
+    size_t width = vector_element_size(element);
+    if (!width || length % width) return 0;
+    for (oxid_allocation *node = heap->head; node; node = node->next) {
+        uint64_t charge = node->capacity == OXID_VECTOR_NODE
+            ? ((const oxid_vector_header *)node)->allocation_bytes
+            : OXID_BYTEBUF_HEADER + (node->capacity == UINT32_MAX ? 0 : (uint64_t)node->capacity);
+        if (charge > SIZE_MAX) return 0;
+        if (!vector_overlaps(source, length, node, (size_t)charge)) continue;
+        if (node->capacity != OXID_VECTOR_NODE) return 0;
+        const oxid_vector_header *header = (const oxid_vector_header *)node;
+        size_t checked_charge;
+        if (header->element != element || header->capacity > INT32_MAX ||
+            node->initialized > header->capacity || (size_t)node->initialized > SIZE_MAX / width ||
+            !vector_layout(element, (int32_t)header->capacity, &checked_charge) || checked_charge != charge) return 0;
+        uintptr_t first = (uintptr_t)vector_data(node), selected = (uintptr_t)source;
+        size_t initialized = (size_t)node->initialized * width;
+        if (selected < first || selected - first > initialized ||
+            (selected - first) % width || length > initialized - (selected - first)) return 0;
+        return 1;
     }
     return 1;
 }
@@ -158,13 +238,21 @@ static int32_t change_vector(oxid_byte_heap *heap, oxid_vector *value, uint32_t 
     int32_t length = mutation == VECTOR_RESERVE ? value->length : required;
     size_t writes = length > value->length ? (size_t)(length - value->length) * width : 0;
     size_t copy_bytes = grows ? (size_t)value->length * width : 0;
-    uint64_t work = (uint64_t)scratch_bytes + writes + copy_bytes;
+    uint64_t validation = (uint64_t)scratch_bytes;
+    if (element & OXID_VECTOR_RECORD_BIT) {
+        if (validation > UINT64_MAX / OXID_VECTOR_RECORD_VALIDATION_WORK) return OXID_BUFFER_FUEL;
+        validation *= OXID_VECTOR_RECORD_VALIDATION_WORK;
+    }
+    if (validation > UINT64_MAX - writes || validation + writes > UINT64_MAX - copy_bytes)
+        return OXID_BUFFER_FUEL;
+    uint64_t work = validation + writes + copy_bytes;
     if (vector_overlaps(scratch, scratch_bytes, value, sizeof(*value)) ||
         vector_overlaps(scratch, scratch_bytes, fuel, sizeof(*fuel)) ||
         (old && vector_overlaps(scratch, scratch_bytes, old, (size_t)oxid_vector_node_charge(old))))
         return OXID_BUFFER_DESCRIPTOR;
     if (*fuel < work) return OXID_BUFFER_FUEL;
-    if (!vector_canonical(element, scratch, scratch_bytes)) return OXID_BUFFER_DESCRIPTOR;
+    if (!vector_record_source(heap, element, scratch, scratch_bytes) ||
+        !vector_canonical(element, scratch, scratch_bytes)) return OXID_BUFFER_DESCRIPTOR;
     if (grows && ((uint64_t)charge > heap->limit || heap->ledger.live_bytes > heap->limit - charge))
         return OXID_MEMORY_LIMIT;
     if (grows && heap->next_identity == UINT64_MAX) return OXID_BUFFER_IDENTITY;

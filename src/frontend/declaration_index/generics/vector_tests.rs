@@ -320,7 +320,7 @@ fn vector_calls_freeze_after_late_user_instances_and_after_the_fixed_suffix() {
                                 index.sources().eof()
                             )
                             .unwrap(),
-                        Some(key.operation)
+                        Some(key.operation())
                     );
                     assert_eq!(
                         index
@@ -517,11 +517,11 @@ fn all_nine_vector_operations_use_only_the_requested_unit_specializations() {
         |plan, index, _| {
             assert_eq!(plan.vector_count(), 9);
             for key in plan.vector_functions() {
-                assert_eq!(key.element, Ty::Unit);
+                assert_eq!(key.element(), Ty::Unit);
             }
             let grow = index.experimental_enum_id(experimental::Enumeration::Grow).unwrap();
             for key in plan.vector_functions() {
-                if key.operation.requires_grow_status() {
+                if key.operation().requires_grow_status() {
                     assert_eq!(key.signature(grow).result, ValueTy::Owned(AggregateTy::Enum(grow)));
                 }
             }

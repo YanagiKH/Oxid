@@ -410,6 +410,7 @@ impl VerifiedOwnedProgram {
             ) if *base == requested && *field == target => (*base, ProjectionAccess::Write),
             (
                 OwnedInstruction::ReadProjection { base, path, .. }
+                | OwnedInstruction::CopyIndexInitialize { base, path, .. }
                 | OwnedInstruction::ProjectionLength { base, path, .. },
                 ProjectionRequest::Path {
                     base: requested,
@@ -423,7 +424,8 @@ impl VerifiedOwnedProgram {
                 (*base, ProjectionAccess::Read)
             }
             (
-                OwnedInstruction::WriteProjection { base, path, .. },
+                OwnedInstruction::WriteProjection { base, path, .. }
+                | OwnedInstruction::CopyIndexWrite { base, path, .. },
                 ProjectionRequest::Path {
                     base: requested,
                     path: target,
@@ -587,7 +589,7 @@ fn prepare(
     for _ in 0..builtins::descriptor_visits(raw.builtins) {
         meter.visit()?;
     }
-    for _ in 0..builtins::vector_descriptor_visits(&raw.vector_functions)? {
+    for _ in 0..builtins::vector_descriptor_visits(&raw.vector_functions, raw.records.len())? {
         meter.visit()?;
     }
     Ok((usage, declarations, meter))

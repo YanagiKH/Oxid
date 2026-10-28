@@ -251,6 +251,10 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                     ValueTy::Owned(AggregateTy::Vector(element))
                         if bytes.len() == 16
                             && f.owners[owner.0].aggregate() == AggregateTy::Vector(element) => {}
+                    ValueTy::Owned(AggregateTy::RecordVector(record))
+                        if bytes.len() == 16
+                            && f.owners[owner.0].aggregate()
+                                == AggregateTy::RecordVector(record) => {}
                     ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
                         let variants = self
                             .plan

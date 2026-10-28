@@ -110,6 +110,7 @@ fn record(aggregate: AggregateTy, s: Span) -> Result<RecordId, OwnedFailure> {
         | AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
         | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_)
         | AggregateTy::File => Err(bad(Malformed::Type, s)),
     }
 }
@@ -120,13 +121,14 @@ fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> 
         | AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
         | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_)
         | AggregateTy::File => Err(bad(Malformed::Type, s)),
     }
 }
 fn borrowed_record(ty: BorrowedTy, s: Span) -> Result<RecordId, OwnedFailure> {
     match ty {
         BorrowedTy::Exact(aggregate) => record(aggregate, s),
-        BorrowedTy::ScalarSlice(_) => Err(bad(Malformed::Type, s)),
+        BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => Err(bad(Malformed::Type, s)),
     }
 }
 fn array_element(ty: BorrowedTy, s: Span) -> Result<hir::Ty, OwnedFailure> {
@@ -134,6 +136,36 @@ fn array_element(ty: BorrowedTy, s: Span) -> Result<hir::Ty, OwnedFailure> {
         return Err(bad(Malformed::Type, s));
     }
     ty.element().ok_or_else(|| bad(Malformed::Type, s))
+}
+fn indexed_record(
+    d: &Declarations,
+    f: &RawOwnedFunction,
+    authority: AccessBase,
+    path: &[FieldId],
+    s: Span,
+) -> Result<RecordId, OwnedFailure> {
+    let (referent, _) = base(f, authority, s)?;
+    let vector = if path.is_empty() {
+        match referent {
+            BorrowedTy::Exact(aggregate) => aggregate,
+            BorrowedTy::RecordSlice(id) => AggregateTy::RecordVector(id),
+            _ => return Err(bad(Malformed::Type, s)),
+        }
+    } else {
+        let BorrowedTy::Exact(root) = referent else {
+            return Err(bad(Malformed::Type, s));
+        };
+        let (value, _) = d.projection(root, path)?;
+        let ValueTy::Owned(aggregate) = value else {
+            return Err(bad(Malformed::Type, s));
+        };
+        aggregate
+    };
+    let AggregateTy::RecordVector(record) = vector else {
+        return Err(bad(Malformed::Type, s));
+    };
+    d.check_aggregate_type(vector)?;
+    Ok(record)
 }
 pub(super) fn base(
     f: &RawOwnedFunction,
@@ -220,7 +252,7 @@ pub(super) fn signatures(
     let permitted = |value| match value {
         ValueTy::Owned(AggregateTy::ByteBuf) => resource_authority,
         ValueTy::Owned(AggregateTy::File) => file_authority,
-        ValueTy::Owned(AggregateTy::Vector(_)) => vector_authority,
+        ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_)) => vector_authority,
         _ => true,
     };
     if d.has_resource_declarations() && !resource_authority && !file_authority && !vector_authority
@@ -495,6 +527,9 @@ pub(super) fn check_with_conversion_authority(
                 }
                 ValueTy::Owned(AggregateTy::Vector(element)) => {
                     BorrowedTy::Exact(AggregateTy::Vector(element))
+                }
+                ValueTy::Owned(AggregateTy::RecordVector(record)) => {
+                    BorrowedTy::Exact(AggregateTy::RecordVector(record))
                 }
                 ValueTy::Owned(AggregateTy::ByteBuf) => BorrowedTy::Exact(AggregateTy::ByteBuf),
                 ValueTy::Owned(AggregateTy::File) => BorrowedTy::Exact(AggregateTy::File),
@@ -944,8 +979,14 @@ pub(super) fn check_with_conversion_authority(
                     for _ in path {
                         meter.visit()?;
                     }
-                    let (ValueTy::Owned(AggregateTy::FixedArray(_) | AggregateTy::Vector(_)), _) =
-                        d.projection(root, path)?
+                    let (
+                        ValueTy::Owned(
+                            AggregateTy::FixedArray(_)
+                            | AggregateTy::Vector(_)
+                            | AggregateTy::RecordVector(_),
+                        ),
+                        _,
+                    ) = d.projection(root, path)?
                     else {
                         return Err(bad(Malformed::Type, s));
                     };
@@ -1037,6 +1078,53 @@ pub(super) fn check_with_conversion_authority(
                         value.span,
                     )?;
                 }
+                OwnedInstruction::CopyIndexInitialize {
+                    destination,
+                    base: authority,
+                    path,
+                    index,
+                } => {
+                    for _ in path {
+                        meter.visit()?;
+                    }
+                    let record = indexed_record(d, f, *authority, path, s)?;
+                    let target = ordinary(f, *destination, s)?;
+                    if !matches!(target.kind, OwnerKind::Temporary | OwnerKind::Local { .. }) {
+                        return Err(bad(Malformed::OwnerClass, s));
+                    }
+                    same_aggregate(
+                        d,
+                        target.aggregate(),
+                        AggregateTy::Record(record),
+                        Malformed::Type,
+                        s,
+                    )?;
+                    equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
+                    let previous = &mut owners[destination.0].initialize;
+                    if previous.is_some() {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    *previous = Some(site);
+                }
+                OwnedInstruction::CopyIndexWrite {
+                    base: authority,
+                    path,
+                    index,
+                    source,
+                } => {
+                    for _ in path {
+                        meter.visit()?;
+                    }
+                    let record = indexed_record(d, f, *authority, path, s)?;
+                    same_aggregate(
+                        d,
+                        ordinary(f, *source, s)?.aggregate(),
+                        AggregateTy::Record(record),
+                        Malformed::Type,
+                        s,
+                    )?;
+                    equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
+                }
                 OwnedInstruction::ReadIndex {
                     destination,
                     base: b,
@@ -1062,7 +1150,13 @@ pub(super) fn check_with_conversion_authority(
                     base: b,
                 } => {
                     let (aggregate, _) = base(f, *b, s)?;
-                    array_element(aggregate, s)?;
+                    if !matches!(
+                        aggregate,
+                        BorrowedTy::Exact(AggregateTy::RecordVector(_))
+                            | BorrowedTy::RecordSlice(_)
+                    ) {
+                        array_element(aggregate, s)?;
+                    }
                     equal(local(f, *destination, s)?, hir::Ty::I32, s)?;
                 }
                 OwnedInstruction::OpenCall(c) => {
@@ -1153,10 +1247,14 @@ pub(super) fn check_with_conversion_authority(
                         // projection and exact element type. Ranges only select
                         // a narrower extent of that same scalar view; imports
                         // cannot authorize a different type or byte reinterpretation.
-                        let BorrowedTy::ScalarSlice(element) = loan(f, *l, s)?.referent() else {
+                        let referent = loan(f, *l, s)?.referent();
+                        if !matches!(
+                            referent,
+                            BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                        ) {
                             return Err(bad(Malformed::Type, s));
-                        };
-                        d.check_borrowed_type(BorrowedTy::ScalarSlice(element))?;
+                        }
+                        d.check_borrowed_type(referent)?;
                     }
                     let decl = call(f, *c, s)?;
                     if decl.arguments.get(*argument) != Some(&ArgumentSlot::Borrow(*l)) {

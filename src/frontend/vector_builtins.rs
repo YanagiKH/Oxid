@@ -167,43 +167,118 @@ pub(in crate::frontend) const fn scalar_admitted(element: hir::Ty) -> bool {
     )
 }
 
-/// A concrete specialization key, independent from import aliases and call IDs.
+/// Canonical operation/type key. Dense disjoint scalar and checked-record
+/// domains fit two bytes without changing retained key payload or alignment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(in crate::frontend) struct Function {
-    pub operation: Operation,
-    pub element: hir::Ty,
-}
+pub(in crate::frontend) struct Function([u8; 2]);
+
+const SCALARS: [hir::Ty; 17] = [
+    hir::Ty::Bool,
+    hir::Ty::Unit,
+    hir::Ty::I8,
+    hir::Ty::U8,
+    hir::Ty::I16,
+    hir::Ty::U16,
+    hir::Ty::I32,
+    hir::Ty::U32,
+    hir::Ty::I64,
+    hir::Ty::U64,
+    hir::Ty::Isize,
+    hir::Ty::Usize,
+    hir::Ty::F32,
+    hir::Ty::F64,
+    hir::Ty::Char,
+    hir::Ty::I128,
+    hir::Ty::U128,
+];
+const OPERATIONS: u16 = 9;
+const RECORDS: usize = 4096;
 
 impl Function {
     pub const fn new(operation: Operation, element: hir::Ty) -> Option<Self> {
-        if scalar_admitted(element) {
-            Some(Self { operation, element })
-        } else {
+        let mut index = 0;
+        while index < SCALARS.len() {
+            if SCALARS[index] as u8 == element as u8 {
+                return Some(Self(
+                    ((index as u16) * OPERATIONS + operation as u16).to_le_bytes(),
+                ));
+            }
+            index += 1;
+        }
+        None
+    }
+    pub const fn record(
+        operation: Operation,
+        record: crate::frontend::oir::owned_types::RecordId,
+    ) -> Option<Self> {
+        if record.0 >= RECORDS {
+            return None;
+        }
+        Some(Self(
+            (((SCALARS.len() + record.0) as u16) * OPERATIONS + operation as u16).to_le_bytes(),
+        ))
+    }
+    pub const fn operation(self) -> Operation {
+        Operation::ALL[(u16::from_le_bytes(self.0) % OPERATIONS) as usize]
+    }
+    pub const fn record_id(self) -> Option<crate::frontend::oir::owned_types::RecordId> {
+        let index = (u16::from_le_bytes(self.0) / OPERATIONS) as usize;
+        if index < SCALARS.len() {
             None
+        } else {
+            Some(crate::frontend::oir::owned_types::RecordId(
+                index - SCALARS.len(),
+            ))
+        }
+    }
+    pub const fn element(self) -> hir::Ty {
+        let index = (u16::from_le_bytes(self.0) / OPERATIONS) as usize;
+        assert!(
+            index < SCALARS.len(),
+            "record operation reached scalar dispatcher"
+        );
+        SCALARS[index]
+    }
+    pub const fn aggregate(self) -> AggregateTy {
+        match self.record_id() {
+            Some(id) => AggregateTy::RecordVector(id),
+            None => AggregateTy::Vector(self.element()),
+        }
+    }
+    pub const fn element_value(self) -> ValueTy {
+        match self.record_id() {
+            Some(id) => ValueTy::Owned(AggregateTy::Record(id)),
+            None => ValueTy::Scalar(self.element()),
+        }
+    }
+    pub const fn slice(self) -> BorrowedTy {
+        match self.record_id() {
+            Some(id) => BorrowedTy::RecordSlice(id),
+            None => BorrowedTy::ScalarSlice(self.element()),
         }
     }
 
     pub const fn item(self) -> Item {
-        self.operation.item()
+        self.operation().item()
     }
 
     pub const fn name(self) -> &'static str {
-        self.operation.name()
+        self.operation().name()
     }
 
     pub const fn path(self) -> [&'static str; 3] {
-        self.operation.path()
+        self.operation().path()
     }
 
     pub const fn parameter_count(self) -> usize {
-        self.operation.parameter_count()
+        self.operation().parameter_count()
     }
 
     /// The caller supplies the canonical existing GrowStatus identity. No
     /// element-specific status enum is allocated or synthesized.
     pub const fn result(self, grow_status: EnumId) -> ValueTy {
-        match self.operation {
-            Operation::New | Operation::Take => ValueTy::Owned(AggregateTy::Vector(self.element)),
+        match self.operation() {
+            Operation::New | Operation::Take => ValueTy::Owned(self.aggregate()),
             Operation::Len | Operation::Capacity => ValueTy::Scalar(hir::Ty::I32),
             Operation::Truncate => ValueTy::Scalar(hir::Ty::Unit),
             Operation::TryReserve
@@ -216,20 +291,20 @@ impl Function {
     pub const fn signature(self, grow_status: EnumId) -> Signature {
         let unit = ParameterTy::Value(ValueTy::Scalar(hir::Ty::Unit));
         let shared = ParameterTy::Reference {
-            referent: BorrowedTy::Exact(AggregateTy::Vector(self.element)),
+            referent: BorrowedTy::Exact(self.aggregate()),
             kind: BorrowKind::Shared,
         };
         let exclusive = ParameterTy::Reference {
-            referent: BorrowedTy::Exact(AggregateTy::Vector(self.element)),
+            referent: BorrowedTy::Exact(self.aggregate()),
             kind: BorrowKind::Exclusive,
         };
         let count = ParameterTy::Value(ValueTy::Scalar(hir::Ty::I32));
-        let value = ParameterTy::Value(ValueTy::Scalar(self.element));
+        let value = ParameterTy::Value(self.element_value());
         let elements = ParameterTy::Reference {
-            referent: BorrowedTy::ScalarSlice(self.element),
+            referent: self.slice(),
             kind: BorrowKind::Shared,
         };
-        let parameters = match self.operation {
+        let parameters = match self.operation() {
             Operation::New => [unit; 3],
             Operation::Len | Operation::Capacity => [shared, unit, unit],
             Operation::Take => [exclusive, unit, unit],

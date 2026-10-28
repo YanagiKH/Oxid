@@ -276,7 +276,16 @@ fn linked_scalar_modules_and_inferred_full_width_temporaries_select_complete_sto
             "pub fn number()->i128{return 18446744073709551616i128;}",
         )
         .unwrap();
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                target_os = "windows",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        )) {
             project.result("i128", "18446744073709551617");
         } else {
             project.refused_modules();

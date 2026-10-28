@@ -311,6 +311,7 @@ enum TypeName<'a> {
     ByteBuf,
     File,
     Vector(Ty),
+    RecordVector(PreparedTypeName<'a>),
     Scalar(Ty),
     Array(FixedArrayTy),
     Record(PreparedTypeName<'a>),
@@ -321,6 +322,7 @@ impl std::fmt::Display for TypeName<'_> {
             Self::ByteBuf => write!(f, "alloc::bytes::ByteBuf"),
             Self::File => write!(f, "std::fs::File"),
             Self::Vector(element) => write!(f, "alloc::vec::Vec<{element}>"),
+            Self::RecordVector(element) => write!(f, "alloc::vec::Vec<{element}>"),
             Self::Scalar(ty) => write!(f, "{ty}"),
             Self::Array(ty) => write!(f, "[{}; {}]", ty.element(), ty.length()),
             Self::Record(name) => write!(f, "{name}"),
@@ -337,6 +339,9 @@ fn type_name<'a>(
         ValueTy::Owned(AggregateTy::ByteBuf) => Ok(TypeName::ByteBuf),
         ValueTy::Owned(AggregateTy::File) => Ok(TypeName::File),
         ValueTy::Owned(AggregateTy::Vector(element)) => Ok(TypeName::Vector(element)),
+        ValueTy::Owned(AggregateTy::RecordVector(record)) => program
+            .prepare_name(record, span)
+            .map(TypeName::RecordVector),
         ValueTy::Owned(AggregateTy::Record(record)) => {
             program.prepare_name(record, span).map(TypeName::Record)
         }
@@ -1298,7 +1303,7 @@ pub(super) mod semantic_carriers {
         slice, vec,
     };
 
-    type ArrayProjection = (Option<Projection>, AccessBase, Option<Ty>);
+    type ArrayProjection = (Option<Projection>, AccessBase, Option<ValueTy>);
     type FrameState = (BodyBlockId, usize, FlowSummary, Option<LoopId>);
     type CallComparison =
         Enumerate<Zip<vec::IntoIter<(ParameterTy, Span)>, slice::Iter<'static, ParameterTy>>>;
@@ -1307,7 +1312,7 @@ pub(super) mod semantic_carriers {
     // One nonrecursive bank: array projection can enclose field projection, but
     // neither helper types a child, and each path is cached before a later child.
     macro_rules! projection_carrier_model {
-        ($name:ident, $array:ty, $element:ty, $($extra:tt)*) => {
+        ($name:ident, $array:ty, $element:ty, $whole_element:ty, $($extra:tt)*) => {
     pub(in crate::frontend::oir::owned::source) struct $name {
         programs: [&'static ResolvedOwnedProgram<'static>; 2],
         functions: [&'static Function; 2],
@@ -1375,30 +1380,43 @@ pub(super) mod semantic_carriers {
             &'static [Option<ParameterTy>],
         ),
         whole_array_parameter: ParameterTy,
-        whole_array_constructed: (AccessBase, Ty),
-        whole_array_returned: Result<(AccessBase, Ty), Box<Diagnostic>>,
+        whole_array_constructed: (AccessBase, $whole_element),
+        whole_array_returned: Result<(AccessBase, $whole_element), Box<Diagnostic>>,
         // These are the caller's two named pattern values, not another full
         // tuple success carrier (already inside whole_array_returned).
         whole_array_caller_base: AccessBase,
-        whole_array_caller_ty: Ty,
+        whole_array_caller_ty: $whole_element,
     }
         };
     }
-    projection_carrier_model!(ProjectionSemanticCarriers, ArrayProjection, Option<Ty>, indexed_element: Ty,);
+    projection_carrier_model!(ProjectionSemanticCarriers, ArrayProjection, Option<ValueTy>, ValueTy, indexed_element: ValueTy,);
     // Exact predecessor role types, retained only to explain the physical
     // successor. Runtime/source admission uses the complete current model.
     #[cfg(test)]
     type PreFileArrayProjection = (Option<Projection>, AccessBase, Ty);
     #[cfg(test)]
+    type ScalarArrayProjection = (Option<Projection>, AccessBase, Option<Ty>);
+    #[cfg(test)]
     projection_carrier_model!(
         PreFileProjectionSemanticCarriers,
         PreFileArrayProjection,
         Ty,
+        Ty,
     );
+    // R1 retains the File optional element and all original scalar transports.
+    // It is a distinct predecessor, not a partly widened current bank.
+    #[cfg(test)]
+    projection_carrier_model!(ScalarProjectionSemanticCarriers, ScalarArrayProjection, Option<Ty>, Ty, indexed_element: Ty,);
     #[cfg(test)]
     pub(in crate::frontend::oir::owned::source) const fn file_projection_successor_bytes() -> usize
     {
-        size_of::<ProjectionSemanticCarriers>() - size_of::<PreFileProjectionSemanticCarriers>()
+        size_of::<ScalarProjectionSemanticCarriers>()
+            - size_of::<PreFileProjectionSemanticCarriers>()
+    }
+    #[cfg(test)]
+    pub(in crate::frontend::oir::owned::source) const fn record_vector_projection_successor_bytes(
+    ) -> usize {
+        size_of::<ProjectionSemanticCarriers>() - size_of::<ScalarProjectionSemanticCarriers>()
     }
 
     // Closure invocation values are separate from their opaque object captures.
@@ -1738,6 +1756,106 @@ pub(super) mod semantic_carriers {
         }};
     }
     #[test]
+    fn record_vector_projection_transports_preserve_scalar_banks_and_pay_eight_value_roles() {
+        use std::mem::align_of;
+
+        // These function items are never called. Their return types check the
+        // real helper signatures against the separately declared carrier types.
+        type ProjectedHelper =
+            for<'a, 'b, 'c, 'd, 'e, 'f> fn(
+                &'a ResolvedOwnedProgram<'b>,
+                &'c Function,
+                BindingId,
+                Span,
+                Span,
+                &'d [Option<ParameterTy>],
+                bool,
+                Option<&'e mut BodyPaid<'f>>,
+            ) -> Result<ArrayProjection, Box<Diagnostic>>;
+        type WholeHelper = for<'a, 'b> fn(
+            &'a Function,
+            BindingId,
+            Span,
+            &'b [Option<ParameterTy>],
+        )
+            -> Result<(AccessBase, ValueTy), Box<Diagnostic>>;
+        let _: ProjectedHelper = projected_array_access;
+        let _: WholeHelper = array_access;
+
+        macro_rules! transport {
+            ($field:ident: $before:ty => $after:ty) => {{
+                let _: for<'a> fn(&'a ScalarProjectionSemanticCarriers) -> &'a $before =
+                    |model| &model.$field;
+                let _: for<'a> fn(&'a ProjectionSemanticCarriers) -> &'a $after =
+                    |model| &model.$field;
+                (
+                    size_of::<$before>(),
+                    size_of::<$after>(),
+                    align_of::<$before>(),
+                    align_of::<$after>(),
+                )
+            }};
+        }
+        let transports = [
+            transport!(constructed_array: ScalarArrayProjection => ArrayProjection),
+            transport!(array_return: Result<ScalarArrayProjection, Box<Diagnostic>>
+                => Result<ArrayProjection, Box<Diagnostic>>),
+            transport!(array_caller_tuple: ScalarArrayProjection => ArrayProjection),
+            transport!(caller_element: Option<Ty> => Option<ValueTy>),
+            transport!(indexed_element: Ty => ValueTy),
+            transport!(whole_array_constructed: (AccessBase, Ty) => (AccessBase, ValueTy)),
+            transport!(whole_array_returned: Result<(AccessBase, Ty), Box<Diagnostic>>
+                => Result<(AccessBase, ValueTy), Box<Diagnostic>>),
+            transport!(whole_array_caller_ty: Ty => ValueTy),
+        ];
+        // Freeze the pre-File whole-element transports as scalar types too.
+        // A shared macro change must not silently reclassify a historical bank.
+        let _: for<'a> fn(&'a PreFileProjectionSemanticCarriers) -> &'a (AccessBase, Ty) =
+            |model| &model.whole_array_constructed;
+        type ScalarWholeArrayReturn = Result<(AccessBase, Ty), Box<Diagnostic>>;
+        let _: for<'a> fn(&'a PreFileProjectionSemanticCarriers) -> &'a ScalarWholeArrayReturn =
+            |model| &model.whole_array_returned;
+        let _: for<'a> fn(&'a PreFileProjectionSemanticCarriers) -> &'a Ty =
+            |model| &model.whole_array_caller_ty;
+
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(
+                transports,
+                [
+                    (80, 88, 8, 8),
+                    (80, 88, 8, 8),
+                    (80, 88, 8, 8),
+                    (1, 16, 1, 8),
+                    (1, 16, 1, 8),
+                    (24, 32, 8, 8),
+                    (24, 32, 8, 8),
+                    (1, 16, 1, 8),
+                ]
+            );
+            assert_eq!(align_of::<ProjectionSemanticCarriers>(), 8);
+            assert_eq!(align_of::<ScalarProjectionSemanticCarriers>(), 8);
+            // The unchanged non-word roles are borrow:bool, the selected
+            // BorrowKind and FixedArrayTy. All other common roles occupy whole
+            // eight-byte units, so they do not affect the final rounding delta.
+            let common_tail =
+                size_of::<bool>() + size_of::<BorrowKind>() + size_of::<FixedArrayTy>();
+            assert_eq!(common_tail, 6);
+            let before = transports.iter().map(|row| row.0).sum::<usize>();
+            let after = transports.iter().map(|row| row.1).sum::<usize>();
+            assert_eq!((before, after, after - before), (291, 376, 85));
+            let before_padding = (before + common_tail).next_multiple_of(8) - before - common_tail;
+            let after_padding = (after + common_tail).next_multiple_of(8) - after - common_tail;
+            assert_eq!((before_padding, after_padding), (7, 2));
+            let growth = after + after_padding - before - before_padding;
+            assert_eq!(growth, 80);
+            assert_eq!(record_vector_projection_successor_bytes(), growth);
+            // The earlier File optional-element role still spends its own
+            // original aligned bank; the record successor cannot absorb it.
+            assert_eq!(file_projection_successor_bytes(), 8);
+        }
+    }
+    #[test]
     fn c3_t1_explicit_semantic_role_schemas_cover_each_named_typed_field() {
         roles!(EnumConstructorCarriers, 10, true;
             variant_pattern: &'static VariantId, payload_pattern: &'static Option<ExprId>,
@@ -1817,8 +1935,8 @@ pub(super) mod semantic_carriers {
             array_caller_tuple: ArrayProjection,
             caller_projection: Option<Projection>,
             caller_access: AccessBase,
-            caller_element: Option<Ty>,
-            indexed_element: Ty,
+            caller_element: Option<ValueTy>,
+            indexed_element: ValueTy,
             borrow_conversion: Result<Projection, Box<Diagnostic>>,
             borrow_receiver: Projection,
             borrow_row: BorrowProjection,
@@ -1827,10 +1945,10 @@ pub(super) mod semantic_carriers {
             sparse_room: Result<(), Box<Diagnostic>>,
             whole_array_input: ( &'static Function, BindingId, Span, &'static [Option<ParameterTy>], ),
             whole_array_parameter: ParameterTy,
-            whole_array_constructed: (AccessBase, Ty),
-            whole_array_returned: Result<(AccessBase, Ty), Box<Diagnostic>>,
+            whole_array_constructed: (AccessBase, ValueTy),
+            whole_array_returned: Result<(AccessBase, ValueTy), Box<Diagnostic>>,
             whole_array_caller_base: AccessBase,
-            whole_array_caller_ty: Ty,
+            whole_array_caller_ty: ValueTy,
         );
         roles!(PredicateInvocationCarriers, 8, true;
             start_inputs: [&'static Token; 2],
@@ -2208,7 +2326,7 @@ fn projected_array_access(
     bindings: &[Option<ParameterTy>],
     borrow: bool,
     paid: Option<&mut BodyPaid<'_>>,
-) -> Result<(Option<Projection>, AccessBase, Option<Ty>), Box<Diagnostic>> {
+) -> Result<(Option<Projection>, AccessBase, Option<ValueTy>), Box<Diagnostic>> {
     let requester = program.requester(function.id)?;
     let ast = program.index().sources().ast(requester)?;
     let start = ast
@@ -2230,9 +2348,12 @@ fn projected_array_access(
     let element = match program.records()[projection.field.record.0].fields[projection.field.index]
         .ty
     {
-        ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(array.element()),
-        ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Some(Ty::U8),
-        ValueTy::Owned(AggregateTy::Vector(element)) => Some(element),
+        ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(ValueTy::Scalar(array.element())),
+        ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Some(ValueTy::Scalar(Ty::U8)),
+        ValueTy::Owned(AggregateTy::Vector(element)) => Some(ValueTy::Scalar(element)),
+        ValueTy::Owned(AggregateTy::RecordVector(record)) => {
+            Some(ValueTy::Owned(AggregateTy::Record(record)))
+        }
         ValueTy::Owned(AggregateTy::File) if borrow => None,
         ValueTy::Owned(AggregateTy::Record(_)) if borrow => None,
         _ => {
@@ -2256,21 +2377,33 @@ fn array_access(
     binding: BindingId,
     access_span: Span,
     bindings: &[Option<ParameterTy>],
-) -> Result<(AccessBase, Ty), Box<Diagnostic>> {
+) -> Result<(AccessBase, ValueTy), Box<Diagnostic>> {
     match bindings[binding.0].expect("resolved array base initialized") {
         ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array))) => {
-            Ok((AccessBase::Owner(binding), array.element()))
+            Ok((AccessBase::Owner(binding), ValueTy::Scalar(array.element())))
         }
         ParameterTy::Value(ValueTy::Owned(AggregateTy::Vector(element))) => {
-            Ok((AccessBase::Owner(binding), element))
+            Ok((AccessBase::Owner(binding), ValueTy::Scalar(element)))
         }
+        ParameterTy::Value(ValueTy::Owned(AggregateTy::RecordVector(record))) => Ok((
+            AccessBase::Owner(binding),
+            ValueTy::Owned(AggregateTy::Record(record)),
+        )),
+        ParameterTy::Reference {
+            referent:
+                BorrowedTy::RecordSlice(record) | BorrowedTy::Exact(AggregateTy::RecordVector(record)),
+            kind,
+        } => Ok((
+            AccessBase::Reference { binding, kind },
+            ValueTy::Owned(AggregateTy::Record(record)),
+        )),
         ParameterTy::Reference { referent, kind }
             if referent.element().is_some()
                 && referent != BorrowedTy::Exact(AggregateTy::ByteBuf) =>
         {
             Ok((
                 AccessBase::Reference { binding, kind },
-                referent.element().expect("array or slice"),
+                ValueTy::Scalar(referent.element().expect("array or slice")),
             ))
         }
         _ => Err(error(
@@ -2777,11 +2910,22 @@ fn expression_type(
                                         resource @ (AggregateTy::Record(_)
                                         | AggregateTy::ByteBuf
                                         | AggregateTy::Vector(_)
+                                        | AggregateTy::RecordVector(_)
                                         | AggregateTy::File),
                                     ) => BorrowedTy::Exact(resource),
-                                    _ => BorrowedTy::ScalarSlice(
-                                        element.expect("array borrowing has an element"),
-                                    ),
+                                    _ => match element.expect("array borrowing has an element") {
+                                        ValueTy::Scalar(ty) => BorrowedTy::ScalarSlice(ty),
+                                        ValueTy::Owned(AggregateTy::Record(id)) => {
+                                            BorrowedTy::RecordSlice(id)
+                                        }
+                                        _ => {
+                                            return Err(error(
+                                                "E0500",
+                                                "invalid indexed borrow element",
+                                                *span,
+                                            ))
+                                        }
+                                    },
                                 },
                                 kind: *kind,
                             }
@@ -2807,6 +2951,7 @@ fn expression_type(
                                         referent: BorrowedTy::ScalarSlice(element), kind,
                                     }
                                 }
+                                ParameterTy::Reference { referent: BorrowedTy::Exact(AggregateTy::RecordVector(record)) | BorrowedTy::RecordSlice(record), kind } => ParameterTy::Reference { referent: BorrowedTy::RecordSlice(record), kind },
                                 ParameterTy::Reference {
                                     referent: BorrowedTy::Exact(AggregateTy::FixedArray(array)), kind,
                                 } if crate::frontend::builtin_catalog::vector::scalar_admitted(array.element()) => {
@@ -3007,7 +3152,7 @@ fn expression_type(
                     function.expressions[index.0].span,
                 ));
             }
-            scalar(element)
+            element
         }
         ExprKind::ArrayLength { base, base_span } => {
             program.work().debit(1, expr.span, "array type length")?;
@@ -3744,7 +3889,7 @@ fn check_body(
             } => {
                 let actual = borrow_type(function, kind, place, borrow_span, &bindings)?;
                 if let ParameterTy::Reference {
-                    referent: BorrowedTy::ScalarSlice(_),
+                    referent: BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_),
                     ..
                 } = actual
                 {
@@ -3917,7 +4062,7 @@ fn check_body(
                     ));
                 }
                 let actual = expressions[value.0].expect("typed store value");
-                let expected = ValueTy::Scalar(element);
+                let expected = element;
                 if actual != expected {
                     return Err(mismatch(
                         program,

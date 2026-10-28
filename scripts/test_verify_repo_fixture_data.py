@@ -77,6 +77,13 @@ COPY_PROJECTS = {
     ),
 }
 COPY_MEMBERS = {member for members in COPY_PROJECTS.values() for member in members}
+RECORD_VECTOR_PROJECTS = {
+    "examples/copy-record-vectors": (
+        "examples/copy-record-vectors/src/main.ox",
+        "examples/copy-record-vectors/tests/records.ox",
+    ),
+}
+RECORD_VECTOR_MEMBERS = {member for members in RECORD_VECTOR_PROJECTS.values() for member in members}
 COPY_DATA = Path("tests/fixtures/copy_records")
 COPY_DATA_SOURCES = ("tests/fixtures/copy_records/all_scalars.ox",
                      "tests/fixtures/copy_records/wide_unicode.ox")
@@ -271,6 +278,34 @@ def copy_predecessor_report(text):
     return text
 
 
+def record_vector_predecessor_report(text):
+    """Remove only the independently pinned record-vector manifest project."""
+    report = list(re.finditer(
+        r"^repository verification passed: (?P<language>\d+) language sources, "
+        r"(?P<checks>\d+) checks, (?P<runs>\d+) runnable programs "
+        r"\(\d+ legacy sources, \d+ legacy runnable programs, "
+        r"(?P<members>\d+) typed source members / (?P<entries>\d+) typed entry runs; "
+        r"\d+ v2 overlay source members / \d+ materialized typed checks in a \d+-module closure; "
+        r"\d+ wide parser overlay members / 2 materialized typed checks; "
+        r"(?P<projects>\d+) manifest projects checked; (?P<project_runs>\d+) run; "
+        r"(?P<project_tests>\d+) tested\)", text, re.M))
+    if len(report) != 1:
+        raise AssertionError("expected one complete repository summary")
+    deltas = {"language": len(RECORD_VECTOR_MEMBERS), "checks": len(RECORD_VECTOR_PROJECTS),
+              "runs": len(RECORD_VECTOR_PROJECTS), "members": len(RECORD_VECTOR_MEMBERS),
+              "entries": len(RECORD_VECTOR_PROJECTS), "projects": len(RECORD_VECTOR_PROJECTS),
+              "project_runs": len(RECORD_VECTOR_PROJECTS), "project_tests": len(RECORD_VECTOR_PROJECTS)}
+    edits = []
+    for name, delta in deltas.items():
+        value = int(report[0].group(name))
+        if value < delta:
+            raise AssertionError("record-vector successor exceeds its reported category")
+        edits.append((*report[0].span(name), str(value - delta)))
+    for start, end, value in sorted(edits, reverse=True):
+        text = text[:start] + value + text[end:]
+    return text
+
+
 class PublishedRegistrationTests(unittest.TestCase):
     def test_full_published_inputs_and_exact_predecessor_inventory(self):
         root = verify_repo.ROOT
@@ -318,6 +353,27 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        # Pin the new exact project before projecting it from the historical
+        # inventories. No directory, DATA class or predecessor selector changes.
+        self.assertEqual([name for name in language if name in RECORD_VECTOR_MEMBERS],
+                         sorted(RECORD_VECTOR_MEMBERS))
+        self.assertFalse(any(name in RECORD_VECTOR_MEMBERS
+                             for name, _ in check_inventory + run_inventory))
+        self.assertEqual([row for row in check_inventory if row[0] in RECORD_VECTOR_PROJECTS],
+                         [("examples/copy-record-vectors", True)])
+        self.assertEqual([row for row in run_inventory if row[0] in RECORD_VECTOR_PROJECTS],
+                         [("examples/copy-record-vectors", True)])
+        self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+                          if name in RECORD_VECTOR_PROJECTS}, RECORD_VECTOR_PROJECTS)
+        self.assertFalse(RECORD_VECTOR_MEMBERS & (COPY_MEMBERS | GROWABLE_VECTOR_MEMBERS))
+        predecessor_manifest_projects = {name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+                                         if name not in RECORD_VECTOR_PROJECTS}
+        language = [name for name in language if name not in RECORD_VECTOR_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in RECORD_VECTOR_PROJECTS]
+        run_inventory = [row for row in run_inventory if row[0] not in RECORD_VECTOR_PROJECTS]
+        typed_members -= len(RECORD_VECTOR_MEMBERS)
+        typed_entries = [path for path in typed_entries
+                         if path.relative_to(root).as_posix() not in RECORD_VECTOR_PROJECTS]
         # Project only the closed Copy successor before all predecessor assertions.
         self.assertEqual([name for name in language if name in COPY_DATA_SOURCES], sorted(COPY_DATA_SOURCES))
         self.assertEqual([name for name in language if name in COPY_MEMBERS], sorted(COPY_MEMBERS))
@@ -354,7 +410,7 @@ class PublishedRegistrationTests(unittest.TestCase):
             application + "/src/main.ox", application + "/tests/counts.ox",
             application + "/packages/counts/src/lib.ox", application + "/packages/report/src/lib.ox",
         )
-        self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+        self.assertEqual({name: members for name, members in predecessor_manifest_projects.items()
                           if name not in COPY_PROJECTS},
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS, **GROWABLE_VECTOR_PROJECTS})
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
@@ -622,8 +678,18 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
                              for name in COPY_DATA_SOURCES + tuple(COPY_MEMBERS)
                              for call in run.call_args_list))
-        predecessor_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") != copy_root]
-        output = io.StringIO(copy_predecessor_report(output.getvalue()))
+        record_vector_root = verify_repo.ROOT / "examples/copy-record-vectors"
+        record_vector_calls = [call for call in run.call_args_list
+                               if call.kwargs.get("cwd") == record_vector_root]
+        self.assertEqual([call.args[0] for call in record_vector_calls],
+                         [[str(Path(sys.executable).resolve()), command] for command in ("check", "run", "test")])
+        self.assertTrue(all(call.kwargs.get("input_text") == "" for call in record_vector_calls[1:]))
+        self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
+                             for name in RECORD_VECTOR_MEMBERS for call in run.call_args_list))
+        before_record_vector_calls = [call for call in run.call_args_list
+                                      if call.kwargs.get("cwd") != record_vector_root]
+        predecessor_calls = [call for call in before_record_vector_calls if call.kwargs.get("cwd") != copy_root]
+        output = io.StringIO(copy_predecessor_report(record_vector_predecessor_report(output.getvalue())))
         application = verify_repo.ROOT / "apps/byte-count"
         application_calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == application]
         self.assertEqual([call.args[0] for call in application_calls],

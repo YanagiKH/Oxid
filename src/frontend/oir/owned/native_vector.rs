@@ -1,5 +1,6 @@
 //! Native vector dispatch from the authenticated canonical suffix. No source
 //! integer, descriptor shape or coincident function signature supplies a tag.
+use super::super::vector_type::{self, VectorTy};
 use super::*;
 use crate::frontend::builtin_catalog::vector::{Function, Operation};
 
@@ -156,6 +157,7 @@ struct CoreFrame {
     grows: i32,
     writes: usize,
     copy_bytes: usize,
+    validation: u64,
     work: u64,
     allocation_bytes: usize,
     pending: *mut (),
@@ -180,17 +182,108 @@ struct RuntimeCarriers {
 }
 pub(super) const RUNTIME_BYTES: usize = size_of::<RuntimeCarriers>();
 
+pub(super) fn schemas(plan: &ExecutionPlan<'_>, out: &mut Emission) {
+    let declarations = plan.witness().declarations();
+    if !plan.uses_record_vectors() {
+        return;
+    }
+    let count = declarations.records().len();
+    writeln!(
+        out,
+        "@__oxid_record_vector_schema_count = constant i32 {count}, align 4"
+    )
+    .unwrap();
+    for record in declarations.records() {
+        if out.exceeded {
+            return;
+        }
+        out.ordinary_visits += 1;
+        if !record.is_copy() {
+            continue;
+        }
+        let id = record.id();
+        let leaves = declarations
+            .aggregate_width(AggregateTy::Record(id))
+            .expect("checked Copy record leaves");
+        writeln!(
+            out,
+            "@__oxid_record_vector_leaves_{} = private constant [{leaves} x {{ i32, i32, i32 }}] [",
+            id.0
+        )
+        .unwrap();
+        let mut dense = 0;
+        let mut separator = "";
+        for leaf in declarations
+            .leaves(AggregateTy::Record(id))
+            .expect("checked Copy record leaves")
+        {
+            if out.exceeded {
+                return;
+            }
+            out.ordinary_visits += 1;
+            let element = vector_type::element(leaf.ty);
+            writeln!(
+                out,
+                "{separator}{{ i32, i32, i32 }} {{ i32 {dense}, i32 {}, i32 {} }}",
+                leaf.offset,
+                element.tag()
+            )
+            .unwrap();
+            separator = ", ";
+            dense += element.size();
+        }
+        writeln!(out, "], align 4").unwrap();
+        assert_eq!(
+            dense,
+            declarations
+                .record_packed_bytes(id)
+                .expect("checked record stride")
+        );
+    }
+    writeln!(
+        out,
+        "@__oxid_record_vector_schemas = constant [{count} x {{ i32, i32, i32, i32, ptr }}] ["
+    )
+    .unwrap();
+    let mut separator = "";
+    for record in declarations.records() {
+        if out.exceeded {
+            return;
+        }
+        out.ordinary_visits += 1;
+        if record.is_copy() {
+            let id = record.id();
+            let tag = 0x8000_0000u32 | id.0 as u32;
+            let stride = declarations
+                .record_packed_bytes(id)
+                .expect("checked Copy record stride");
+            let leaves = declarations
+                .aggregate_width(AggregateTy::Record(id))
+                .expect("checked Copy record width");
+            writeln!(out, "{separator}{{ i32, i32, i32, i32, ptr }} {{ i32 {tag}, i32 {stride}, i32 {}, i32 {leaves}, ptr @__oxid_record_vector_leaves_{} }}", record.layout().size(), id.0).unwrap();
+        } else {
+            writeln!(
+                out,
+                "{separator}{{ i32, i32, i32, i32, ptr }} zeroinitializer"
+            )
+            .unwrap();
+        }
+        separator = ", ";
+    }
+    writeln!(out, "], align 8").unwrap();
+}
+
 pub(super) fn borrow_splits(plan: &ExecutionPlan<'_>, f: &RawOwnedFunction, loan: LoanId) -> bool {
     let declaration = &f.loans[loan.0];
     if declaration.projection.is_empty() {
         matches!(
             indexed_base(f, declaration.authority),
-            BorrowedTy::Exact(AggregateTy::Vector(_))
+            BorrowedTy::Exact(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
         )
     } else {
         matches!(
             projection(plan, f, declaration.authority, &declaration.projection).0,
-            ValueTy::Owned(AggregateTy::Vector(_))
+            ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
         )
     }
 }
@@ -225,8 +318,10 @@ pub(super) fn operation(
         Some(key),
         "canonical vector function/key"
     );
-    let tag = super::super::vector_type::element(key.element).tag();
-    let pointer = if key.operation == Operation::New {
+    let tag = vector_type::checked(VectorTy::function(key), plan.witness().declarations())
+        .expect("checked vector element")
+        .tag();
+    let pointer = if key.operation() == Operation::New {
         "null".to_owned()
     } else {
         base_pointer(
@@ -237,7 +332,7 @@ pub(super) fn operation(
         )
     };
     let count = if matches!(
-        key.operation,
+        key.operation(),
         Operation::TryReserve | Operation::TryResize | Operation::Truncate
     ) {
         load_operand(
@@ -255,12 +350,29 @@ pub(super) fn operation(
     // Native scalar slots already contain each initialized typed byte prefix:
     // signed/narrow integers, bool/unit, chars, floats and 128-bit integers.
     // Passing that prefix avoids an unpriced alloca and a by-value C scalar.
-    let scalar = match key.operation {
-        Operation::TryPush => "%s0",
-        Operation::TryResize => "%s1",
-        _ => "null",
+    let scalar = if key.record_id().is_some()
+        && matches!(key.operation(), Operation::TryPush | Operation::TryResize)
+    {
+        let owner = "%o0";
+        writeln!(out, "  %{name}_pack_status = call i32 @__oxid_record_vector_pack(i32 {tag}, ptr {owner}, ptr %record_vector_scratch)").unwrap();
+        experimental::status(
+            out,
+            diagnostics,
+            &format!("{name}_pack"),
+            &format!("%{name}_pack_status"),
+            "packed_ok",
+            span,
+            false,
+        );
+        "%record_vector_scratch"
+    } else {
+        match key.operation() {
+            Operation::TryPush => "%s0",
+            Operation::TryResize => "%s1",
+            _ => "null",
+        }
     };
-    let (source, length) = if key.operation == Operation::TryExtend {
+    let (source, length) = if key.operation() == Operation::TryExtend {
         (
             base_pointer(
                 out,
@@ -282,7 +394,7 @@ pub(super) fn operation(
         CallResult::Owned(_) => "%result".to_owned(),
         CallResult::Scalar(local) => format!("%s{}", local.0),
     };
-    let code = match key.operation {
+    let code = match key.operation() {
         Operation::New => 0,
         Operation::Len => 1,
         Operation::Capacity => 2,
@@ -354,7 +466,7 @@ pub(super) fn length(
     name: &str,
     base: AccessBase,
     offset: Option<usize>,
-    element: hir::Ty,
+    element: VectorTy,
     destination: LocalId,
     diagnostics: &Diagnostics,
     span: Span,
@@ -364,7 +476,10 @@ pub(super) fn length(
         Some(offset) => field_pointer(out, &format!("{name}_projection"), &pointer, offset),
         None => pointer,
     };
-    let tag = super::super::vector_type::element(element).tag();
+    let tag = match element {
+        VectorTy::Scalar(ty) => vector_type::element(ty).tag(),
+        VectorTy::Record(id) => 0x8000_0000u32 | id.0 as u32,
+    };
     writeln!(
         out,
         "  %{name}_status = call i32 @__oxid_vector_length(ptr {pointer}, i32 {tag}, ptr %s{})",
@@ -388,7 +503,7 @@ pub(super) fn borrow(
     name: &str,
     loan: LoanId,
     pointer: &str,
-    element: hir::Ty,
+    element: VectorTy,
     range: Option<(Operand, Operand)>,
     diagnostics: &Diagnostics,
     span: Span,
@@ -396,8 +511,11 @@ pub(super) fn borrow(
 ) {
     let f = storage.raw();
     let declaration = &f.loans[loan.0];
-    let tag = super::super::vector_type::element(element).tag();
-    if declaration.referent() == BorrowedTy::Exact(AggregateTy::Vector(element)) {
+    let tag = match element {
+        VectorTy::Scalar(ty) => vector_type::element(ty).tag(),
+        VectorTy::Record(id) => 0x8000_0000u32 | id.0 as u32,
+    };
+    if declaration.referent() == BorrowedTy::Exact(element.aggregate()) {
         assert!(range.is_none(), "exact vector loan has no range");
         writeln!(
             out,
@@ -423,7 +541,7 @@ pub(super) fn borrow(
     }
     assert_eq!(
         declaration.referent(),
-        BorrowedTy::ScalarSlice(element),
+        element.slice(),
         "typed vector slice"
     );
     let (start, end) = range.map_or_else(
@@ -445,4 +563,212 @@ pub(super) fn borrow(
         span,
         false,
     );
+}
+
+/// The checked record tag selects both dense stride and padded owner map.
+/// Whole-vector descriptors and already-proven slice ranges remain distinct.
+pub(super) fn record_index(
+    storage: &NativeFunctionStorage<'_, '_>,
+    name: &str,
+    statement: &OwnedStatement,
+    diagnostics: &Diagnostics,
+    out: &mut Emission,
+) {
+    let plan = storage.execution();
+    let f = storage.raw();
+    let (base, path, operand, owner, reading) = match &statement.kind {
+        OwnedInstruction::CopyIndexInitialize {
+            destination,
+            base,
+            path,
+            index,
+        } => (*base, path, *index, *destination, true),
+        OwnedInstruction::CopyIndexWrite {
+            base,
+            path,
+            index,
+            source,
+        } => (*base, path, *index, *source, false),
+        _ => unreachable!("checked record vector index"),
+    };
+    let AggregateTy::Record(record) = f.owners[owner.0].aggregate() else {
+        unreachable!("checked record element owner");
+    };
+    let tag = 0x8000_0000u32 | record.0 as u32;
+    let span = plan::instruction_span(statement);
+    let pointer = base_pointer(out, f, &format!("{name}_vector"), base);
+    let pointer = if path.is_empty() {
+        pointer
+    } else {
+        let (actual, offset) = projection(plan, f, base, path);
+        assert_eq!(actual, ValueTy::Owned(AggregateTy::RecordVector(record)));
+        field_pointer(out, &format!("{name}_projection"), &pointer, offset)
+    };
+    let ordinal = load_operand(out, f, &format!("{name}_ordinal"), operand);
+    if path.is_empty() && indexed_base(f, base) == BorrowedTy::RecordSlice(record) {
+        let length = index_length(out, f, &format!("{name}_extent"), base);
+        writeln!(out, "  %{name}_index_status = call i32 @__oxid_record_vector_index_slice(ptr {pointer}, i32 {tag}, i32 {length}, i32 {ordinal}, ptr %vector_index_pointer)").unwrap();
+    } else {
+        writeln!(out, "  %{name}_index_status = call i32 @__oxid_vector_index(ptr {pointer}, i32 {tag}, i32 {ordinal}, ptr %vector_index_pointer)").unwrap();
+    }
+    experimental::status(
+        out,
+        diagnostics,
+        &format!("{name}_index"),
+        &format!("%{name}_index_status"),
+        "bounds_ok",
+        span,
+        false,
+    );
+    writeln!(
+        out,
+        "  %{name}_element = load ptr, ptr %vector_index_pointer, align 8"
+    )
+    .unwrap();
+    if reading {
+        writeln!(out, "  %{name}_status = call i32 @__oxid_record_vector_unpack(i32 {tag}, ptr %{name}_element, ptr %o{})", owner.0).unwrap();
+    } else {
+        writeln!(out, "  %{name}_pack_status = call i32 @__oxid_record_vector_pack(i32 {tag}, ptr %o{}, ptr %record_vector_scratch)", owner.0).unwrap();
+        experimental::status(
+            out,
+            diagnostics,
+            &format!("{name}_pack"),
+            &format!("%{name}_pack_status"),
+            "packed_ok",
+            span,
+            false,
+        );
+        writeln!(out, "  %{name}_status = call i32 @__oxid_record_vector_write(i32 {tag}, ptr %record_vector_scratch, ptr %{name}_element)").unwrap();
+    }
+    experimental::status(
+        out,
+        diagnostics,
+        name,
+        &format!("%{name}_status"),
+        "aggregate_ok",
+        span,
+        false,
+    );
+}
+
+// Named physical controls for the record-only C helpers. Catalog payload is
+// read-only module data; these structures describe synchronous local roles.
+#[allow(dead_code)]
+#[repr(C)]
+struct RecordSchemaFrame {
+    element: u32,
+    ordinal: u32,
+    schema: *const (),
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct RecordLayoutFrame {
+    schema: *const (),
+    dense: usize,
+    owner: usize,
+    index: u32,
+    leaf: *const (),
+    width: usize,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct RecordCanonicalFrame {
+    element: u32,
+    bytes: *const u8,
+    length: usize,
+    width: usize,
+    schema: *const (),
+    offset: usize,
+    index: u32,
+    leaf: *const (),
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct RecordSourceFrame {
+    heap: *mut (),
+    element: u32,
+    source: *const u8,
+    length: usize,
+    width: usize,
+    node: *mut (),
+    charge: u64,
+    header: *const (),
+    checked_charge: usize,
+    first: usize,
+    selected: usize,
+    initialized: usize,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct RecordCellFrame {
+    pointer: *const u8,
+    element: u32,
+    width: usize,
+    node: *mut (),
+    header: *const (),
+    descriptor: [u8; 16],
+    first: usize,
+    selected: usize,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct RecordTransferFrame {
+    element: u32,
+    source: *const u8,
+    destination: *mut u8,
+    pack: i32,
+    schema: *const (),
+    input_bytes: usize,
+    output_bytes: usize,
+    indices: [u32; 2],
+    leaves: [*const (); 2],
+    offsets: [usize; 3],
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct RecordWriteFrame {
+    element: u32,
+    packed: *const u8,
+    destination: *mut u8,
+    schema: *const (),
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct RecordIndexSliceFrame {
+    source: *const u8,
+    element: u32,
+    length: i32,
+    ordinal: i32,
+    pointer: *mut (),
+    schema: *const (),
+    selected: *mut u8,
+}
+#[allow(dead_code)]
+struct RecordRuntimeCarriers {
+    schemas: [RecordSchemaFrame; 3],
+    layout: RecordLayoutFrame,
+    canonical: RecordCanonicalFrame,
+    source: RecordSourceFrame,
+    cell: RecordCellFrame,
+    transfer: RecordTransferFrame,
+    write: RecordWriteFrame,
+    slice: RecordIndexSliceFrame,
+}
+pub(super) const RECORD_RUNTIME_BYTES: usize = size_of::<RecordRuntimeCarriers>();
+#[allow(dead_code)]
+struct RecordEmitterCarriers {
+    schema_rows: [std::slice::Iter<'static, RecordDecl>; 3],
+    scalar_leaves: [ScalarLeaves<'static>; 2],
+    schema_types: [VectorTy; 3],
+    schema_ids: [RecordId; 3],
+    cursor: usize,
+    record_index_tuple: (AccessBase, &'static [FieldId], Operand, OwnerPlaceId, bool),
+    index_strings: [String; 9],
+    index_format: [FormatCallsiteBacking<8>; 3],
+    schema_format: [FormatCallsiteBacking<8>; 3],
+    lookup_results: [plan::native_vector_layout::IndexedAccessResult; 2],
+    writes: [std::fmt::Result; 8],
+}
+pub(super) const fn record_control_bytes() -> usize {
+    size_of::<RecordEmitterCarriers>() + 9 * NAME_BYTES
 }

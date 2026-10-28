@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_checked_copy_compatibility.py \
+          python3 -B scripts/verify_copy_record_vector_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -95,6 +95,8 @@ jobs:
             --output "$RUNNER_TEMP/current-typed-vector-interpreter" --reference-only
           python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-copy-record-interpreter" --reference-only
+          python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-vector-interpreter" --reference-only
           python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-matrix-interpreter" --reference-only
       - name: Retain current source qualification
@@ -156,6 +158,7 @@ jobs:
             ${{ runner.temp }}/current-utf8-characters-interpreter
             ${{ runner.temp }}/current-typed-vector-interpreter
             ${{ runner.temp }}/current-copy-record-interpreter
+            ${{ runner.temp }}/current-copy-record-vector-interpreter
           if-no-files-found: warn
           retention-days: 14
       - name: Verify current source installation
@@ -285,6 +288,31 @@ jobs:
         with:
           name: arm64-host-source-policy-predecessor
           path: ${{ runner.temp }}/arm64-host-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  record-vector-source-policy-predecessor:
+    name: Vector and Copy source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_record_vector_predecessor_tests.py "$RUNNER_TEMP/record-vector-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 6c3161640dbcc36a484ebdd23eb2594ccde4e16a
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/record-vector-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/record-vector-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: record-vector-source-policy-predecessor
+          path: ${{ runner.temp }}/record-vector-source-policy-replay
           if-no-files-found: error
           retention-days: 14
 
@@ -532,6 +560,8 @@ jobs:
             --output "$RUNNER_TEMP/current-macos-native/typed-vectors" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-macos-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-macos-native/copy-record-vectors" --llvm-bin "$OXID_LLVM_BIN"
       - name: Retain native programs and raw transcripts
         if: always()
         uses: actions/upload-artifact@v4
@@ -651,7 +681,7 @@ jobs:
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_native --test typed_process --test reproducible_native --test native_profiles \
               --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion
-            cargo test --locked "${profile_flags[@]}" --test typed_copy_records
+            cargo test --locked "${profile_flags[@]}" --test typed_copy_records --test typed_copy_record_vectors
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
@@ -705,6 +735,8 @@ jobs:
             --output "$RUNNER_TEMP/current-typed-vector-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-copy-record-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-vector-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-matrix-native" --llvm-bin "$OXID_LLVM_BIN"
       - name: Verify native CPU training, gradients and checkpoint recovery
@@ -776,6 +808,7 @@ jobs:
             ${{ runner.temp }}/current-byte-reverse-application
             ${{ runner.temp }}/current-typed-vector-native
             ${{ runner.temp }}/current-copy-record-native
+            ${{ runner.temp }}/current-copy-record-vector-native
             ${{ runner.temp }}/current-utf8-characters-native
             ${{ runner.temp }}/current-utf8-text-application
             ${{ runner.temp }}/current-native-files
@@ -918,6 +951,8 @@ jobs:
             --output "$RUNNER_TEMP/linux-arm64-native/typed-vectors" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/linux-arm64-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/linux-arm64-native/copy-record-vectors" --llvm-bin "$OXID_LLVM_BIN"
       - name: Verify local reference lifetimes on ARM64
         shell: bash
         run: |

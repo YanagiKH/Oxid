@@ -59,7 +59,10 @@ impl<'a, V: StoredValue> Cells<'a, V> {
                         .map(Some);
                 }
                 ValueTy::Owned(
-                    AggregateTy::ByteBuf | AggregateTy::File | AggregateTy::Vector(_),
+                    AggregateTy::ByteBuf
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)
+                    | AggregateTy::RecordVector(_),
                 ) => self.length -= 1,
                 ValueTy::Owned(AggregateTy::FixedArray(array)) => {
                     if next < array.length().max(1) {

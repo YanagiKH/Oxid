@@ -73,6 +73,8 @@ pub(super) enum DeniedOperation {
     ConsumeVariant,
     MatchDispatch,
     CopyInitialize,
+    CopyIndexInitialize,
+    CopyIndexWrite,
     MoveInitialize,
     Replace,
     Discard,
@@ -249,6 +251,10 @@ impl DenialContext {
             (OwnedInstruction::WriteField { base: actual, .. } | OwnedInstruction::WriteProjection { base: actual, .. }, FieldBase) if base == *actual => {
                 DeniedOperation::WriteField
             }
+            (OwnedInstruction::CopyIndexInitialize { base: actual, .. }, ArrayBase) if base == *actual => DeniedOperation::CopyIndexInitialize,
+            (OwnedInstruction::CopyIndexInitialize { destination, .. }, InitializationDestination) if base == AccessBase::Owner(*destination) => DeniedOperation::CopyIndexInitialize,
+            (OwnedInstruction::CopyIndexWrite { base: actual, .. }, ArrayBase) if base == *actual => DeniedOperation::CopyIndexWrite,
+            (OwnedInstruction::CopyIndexWrite { source, .. }, SourceCopy) if base == AccessBase::Owner(*source) => DeniedOperation::CopyIndexWrite,
             (OwnedInstruction::ReadIndex { base: actual, .. }, ArrayBase) if base == *actual => {
                 DeniedOperation::ReadIndex
             }
@@ -439,6 +445,7 @@ fn step(
         | OwnedInstruction::WriteStdout { destination, .. }
         | OwnedInstruction::ConstructComposite { destination, .. }
         | OwnedInstruction::CopyInitialize { destination, .. }
+        | OwnedInstruction::CopyIndexInitialize { destination, .. }
         | OwnedInstruction::MoveInitialize { destination, .. }
             if *destination == owner =>
         {
@@ -489,7 +496,10 @@ fn step(
             failure = Violation::Initialization;
             role = DeniedRole::ReplacementDestination;
         }
-        OwnedInstruction::CopyInitialize { source, .. } if *source == owner => {
+        OwnedInstruction::CopyInitialize { source, .. }
+        | OwnedInstruction::CopyIndexWrite { source, .. }
+            if *source == owner =>
+        {
             event = true;
             legal = &[Available];
             next = Available;
@@ -534,7 +544,15 @@ fn step(
             next = Available;
             role = DeniedRole::FieldBase;
         }
-        OwnedInstruction::ReadIndex {
+        OwnedInstruction::CopyIndexInitialize {
+            base: AccessBase::Owner(o),
+            ..
+        }
+        | OwnedInstruction::CopyIndexWrite {
+            base: AccessBase::Owner(o),
+            ..
+        }
+        | OwnedInstruction::ReadIndex {
             base: AccessBase::Owner(o),
             ..
         }
@@ -944,6 +962,17 @@ fn accesses(
                     DeniedRole::ArrayBase,
                 )?;
             }
+            if matches!(i, OwnedInstruction::Vector { .. }) {
+                for parameter in &f.parameters {
+                    if let ParameterBinding::Owned(owner) = parameter {
+                        visit(
+                            AccessBase::Owner(*owner),
+                            Access::Read,
+                            DeniedRole::SourceCopy,
+                        )?;
+                    }
+                }
+            }
             if let CallResult::Owned(destination) = destination {
                 visit(
                     AccessBase::Owner(*destination),
@@ -996,6 +1025,24 @@ fn accesses(
         }
         OwnedInstruction::WriteIndex { base, .. } => {
             visit(*base, Access::Write, DeniedRole::ArrayBase)?
+        }
+        OwnedInstruction::CopyIndexInitialize {
+            base, destination, ..
+        } => {
+            visit(*base, Access::Read, DeniedRole::ArrayBase)?;
+            visit(
+                AccessBase::Owner(*destination),
+                Access::Write,
+                DeniedRole::InitializationDestination,
+            )?;
+        }
+        OwnedInstruction::CopyIndexWrite { base, source, .. } => {
+            visit(*base, Access::Write, DeniedRole::ArrayBase)?;
+            visit(
+                AccessBase::Owner(*source),
+                Access::Read,
+                DeniedRole::SourceCopy,
+            )?;
         }
         OwnedInstruction::CopyInitialize {
             source,
@@ -1165,6 +1212,11 @@ fn access_region<'a>(
             DeniedRole::FieldBase,
         ) => path,
         (
+            OwnedInstruction::CopyIndexInitialize { path, .. }
+            | OwnedInstruction::CopyIndexWrite { path, .. },
+            DeniedRole::ArrayBase,
+        ) => path,
+        (
             OwnedInstruction::PrepareBorrow { loan, .. }
             | OwnedInstruction::PrepareBorrowRange { loan, .. }
             | OwnedInstruction::AcquireLocalBorrow(loan),
@@ -1216,7 +1268,10 @@ fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
                 {
                     Some((base, DeniedRole::FieldBase, None))
                 }
-                OwnedInstruction::WriteIndex { base, .. } if !shape::base(f, base, i.span)?.1 => {
+                OwnedInstruction::WriteIndex { base, .. }
+                | OwnedInstruction::CopyIndexWrite { base, .. }
+                    if !shape::base(f, base, i.span)?.1 =>
+                {
                     Some((base, DeniedRole::ArrayBase, None))
                 }
                 OwnedInstruction::PrepareBorrow { loan, .. }

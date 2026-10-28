@@ -23,6 +23,22 @@ enum oxid_vector_element {
 };
 typedef struct { uint64_t identity; int32_t length, capacity; } oxid_vector;
 
+/* A closed read-only compiler catalog. Record identities retain their nominal
+ * declaration ordinal; no caller supplies a stride, leaf table or callback. */
+#define OXID_VECTOR_RECORD_BIT UINT32_C(0x80000000)
+#define OXID_VECTOR_RECORD_LIMIT UINT32_C(4096)
+#define OXID_VECTOR_RECORD_VALIDATION_WORK UINT64_C(131)
+typedef struct { uint32_t dense_offset, owner_offset, element; } oxid_vector_record_leaf;
+typedef struct {
+    uint32_t element, stride, owner_bytes, leaf_count;
+    const oxid_vector_record_leaf *leaves;
+} oxid_vector_record_schema;
+#ifdef OXID_RECORD_VECTOR_SCHEMAS
+extern const uint32_t __oxid_record_vector_schema_count;
+extern const oxid_vector_record_schema __oxid_record_vector_schemas[];
+#endif
+
+
 int32_t oxid_vector_new(uint32_t element, oxid_vector *result);
 int32_t oxid_vector_validate(oxid_byte_heap *, const oxid_vector *, uint32_t element);
 int32_t oxid_vector_len(oxid_byte_heap *, const oxid_vector *, uint32_t element, int32_t *);
