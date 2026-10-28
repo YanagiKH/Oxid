@@ -61,21 +61,22 @@ fn record_vector_staging_is_paid_outside_all_owners_with_literal_frame_oracles()
         })
         .unwrap();
     let usage = plan.function(f.id).usage();
-    // P:16 bytes + GrowStatus:4 bytes + one dense10-byte value. The scratch
-    // is real frame payload, distinct from both language owner extents.
-    assert_eq!(usage.payload_bytes, 30);
+    // P uses16 bytes. The inherited scalar/nullary enum ABI keeps an8-byte
+    // tag/reserved-payload carrier and2 logical cells even without a payload.
+    // Add one dense10-byte record value outside both language owner extents.
+    assert_eq!(usage.payload_bytes, 34);
     assert_eq!(plan.function(f.id).owner_offset(OwnerPlaceId(0)), 0);
     assert_eq!(plan.function(f.id).owner_offset(OwnerPlaceId(1)), 16);
-    assert_eq!(plan.record_vector_scratch_range(f.id), Some(20..30));
-    assert_eq!((usage.owner_cells, usage.expanded_cells), (5, 23));
-    assert_eq!(usage.reference_bytes, 30 + 2 * 32 + 80);
-    assert_eq!(usage.native_bytes, 8 + 32); // reference pointer + align4(payload30)
+    assert_eq!(plan.record_vector_scratch_range(f.id), Some(24..34));
+    assert_eq!((usage.owner_cells, usage.expanded_cells), (6, 24));
+    assert_eq!(usage.reference_bytes, 34 + 2 * 32 + 80);
+    assert_eq!(usage.native_bytes, 8 + 36); // reference pointer + align4(payload34)
     assert_eq!(
         plan.statement_cost(f.id, &f.blocks[0].statements[1].kind),
         528
     ); // 4+131*4
     let storage = NativeStoragePlan::checked(&plan, true).unwrap();
-    assert_eq!(storage.function(f.id).native_bytes().unwrap(), 40);
+    assert_eq!(storage.function(f.id).native_bytes().unwrap(), 44);
     #[cfg(target_pointer_width = "64")]
     {
         assert_eq!(std::mem::size_of::<ExecutionPlan<'_>>(), 40);
