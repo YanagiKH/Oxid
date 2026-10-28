@@ -19,8 +19,8 @@ import types
 PREDECESSOR = '6c3161640dbcc36a484ebdd23eb2594ccde4e16a'
 PREDECESSOR_POLICY = "scripts/verify_checked_copy_compatibility.py"
 PREDECESSOR_POLICY_PIN = (140556, 'd64883191139491e31e594516d4e8a62d90e7df18bd31a8a7cfa80a8dc1e77ef')
-# This checkpoint admits the inspected R2 snapshot for preparation, never a pass.
-PINS_PROVISIONAL = True
+# Exact integrated inputs; new language/platform behavior is verified separately.
+PINS_PROVISIONAL = False
 WINDOWS_ACTIVATION_ENABLED = True
 PROTECTED_CURRENT_PIN = (6047, '9bb6d4345f637068cabe987698fad6f454b9bc4048b462a444cd05dda8280b14')
 RECORD_VECTOR_CHANGED = frozenset(['native/experimental_vector.c',
@@ -42,6 +42,7 @@ RECORD_VECTOR_CHANGED = frozenset(['native/experimental_vector.c',
  'src/frontend/oir/owned/execute.rs',
  'src/frontend/oir/owned/execute_composition.rs',
  'src/frontend/oir/owned/execute_experimental.rs',
+ 'src/frontend/oir/owned/execute_resource_tests.rs',
  'src/frontend/oir/owned/execute_resources.rs',
  'src/frontend/oir/owned/execute_tests.rs',
  'src/frontend/oir/owned/execute_vector.rs',
@@ -134,8 +135,10 @@ REVIEWED_INPUTS = {'native/experimental_vector.c': (18989, '20b359ceca6e988712f2
                                                    'd68e1cc803cdbcd01eb56965e021973bb1605bb8239a082ea59b1433f57e1ea5'),
  'src/frontend/oir/owned/execute_experimental.rs': (27622,
                                                     '12690f17d79ff350f75f58d0c0dcc95bea115c48f197fd58b27aa8d0f03445e0'),
- 'src/frontend/oir/owned/execute_resources.rs': (8163,
-                                                 '2c9a7e35b15be1d65ae893a7c98cdd9d610fd95d5ee011745ca670ccbee59de3'),
+ 'src/frontend/oir/owned/execute_resource_tests.rs': (12827,
+                                                      'd3cb5855a8645fdb9af283163ec6d4af40c64d4ba4454eb5a88960aa7137d30b'),
+ 'src/frontend/oir/owned/execute_resources.rs': (9106,
+                                                 'a19db02d737537a0849382ccf26ca9ff51a22b182a7691e250ae55943612532b'),
  'src/frontend/oir/owned/execute_tests.rs': (65070,
                                              '27eb1fde4aae60f1aa9a037ce41172eda94caace03ba22ce14bdf963c4160fd0'),
  'src/frontend/oir/owned/execute_vector.rs': (68153,
@@ -623,6 +626,16 @@ REVIEWED_DIRECTIVES = {'native/experimental_vector.c': {'attributes': (),
                                                                [b'#[path = "execute_io_delivery.rs"]',
                                                                 b'#[path = "execute_file_delivery.rs"]']),
                                                     'macros': ()},
+ 'src/frontend/oir/owned/execute_resource_tests.rs': {'attributes': ((b'#[test]', 1),
+                                                                     (b'#[allow(dead_code)]', 1),
+                                                                     (b'#[repr(C)]', 1),
+                                                                     (b'#[cfg(target_pointer_width = "64")]',
+                                                                      1),
+                                                                     (b'#[test]', 4)),
+                                                      'build_script': None,
+                                                      'c_preprocessor': (),
+                                                      'legacy': ([], []),
+                                                      'macros': ()},
  'src/frontend/oir/owned/execute_resources.rs': {'attributes': ((b'#[allow(dead_code)]', 1),
                                                                 (b'#[cfg(test)]', 1),
                                                                 (b'#[path = "execute_resource_tests.rs"]', 1),
