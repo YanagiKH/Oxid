@@ -63,8 +63,12 @@ impl<'a, 's> Namespace<'a, 's> {
         allocator
             .vector_exact(&mut rows, count, "editor namespace rows")
             .map_err(|_| resource("editor namespace allocation failed", at))?;
-        let mut order = allocate(count, 0u32, allocator, "editor namespace order", at, work)?;
-        let mut scratch = allocate(count, 0u32, allocator, "editor namespace merge", at, work)?;
+        if rows.capacity() != count {
+            return Err(resource("editor namespace allocation failed", at));
+        }
+        let mut order = allocate_exact(count, 0u32, allocator, "editor namespace order", at, work)?;
+        let mut scratch =
+            allocate_exact(count, 0u32, allocator, "editor namespace merge", at, work)?;
         for (module, file) in project.editor_files().iter().enumerate() {
             for &declaration in file.declarations() {
                 work.debit(1, declaration.name, "editor namespace declaration")?;
@@ -210,12 +214,14 @@ impl<'a, 's> Namespace<'a, 's> {
                 if !self.visible(row, requester)? {
                     return Ok(());
                 }
-                child = self
-                    .sources
-                    .project()
-                    .editor_modules()
-                    .iter()
-                    .position(|header| header.declaration == Some(row.declaration.name));
+                for (ordinal, header) in self.sources.project().editor_modules().iter().enumerate()
+                {
+                    self.work.debit(1, segment, "editor child identity probe")?;
+                    if header.declaration == Some(row.declaration.name) {
+                        child = Some(ordinal);
+                        break;
+                    }
+                }
                 break;
             }
             let Some(child) = child else {
@@ -237,5 +243,145 @@ impl<'a, 's> Namespace<'a, 's> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::{
+        parser::editor_query::EditorFile,
+        project::{
+            editor_sources::SourceOverlay,
+            packages::{PackageSources, PackageSpec},
+        },
+    };
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering as AtomicOrdering},
+    };
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    struct Fixture(PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if std::thread::panicking() {
+                eprintln!("retained editor namespace fixture: {}", self.0.display());
+            } else {
+                fs::remove_dir_all(&self.0).unwrap();
+            }
+        }
+    }
+    fn with_sources(text: &str, child: Option<&str>, run: impl FnOnce(&QuerySources<'_>)) {
+        let path = std::env::temp_dir().join(format!(
+            "oxid-editor-namespace-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, AtomicOrdering::Relaxed)
+        ));
+        fs::create_dir(&path).unwrap();
+        let fixture = Fixture(path.canonicalize().unwrap());
+        fs::write(fixture.0.join("main.ox"), text).unwrap();
+        if let Some(text) = child {
+            fs::write(fixture.0.join("child.ox"), text).unwrap();
+        }
+        let specs = [PackageSpec {
+            root: fixture.0.clone(),
+            entry: fixture.0.join("main.ox"),
+            dependencies: vec![],
+        }];
+        let overlay = SourceOverlay::new(&[]).unwrap();
+        let session = QuerySources::load(&specs, None, &overlay).unwrap();
+        run(&session);
+    }
+    #[test]
+    fn editor_namespace_layout_and_exact_scratch_boundary_are_independently_derived() {
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(size_of::<Row>(), 40); // module word + 32B declaration
+            assert_eq!(size_of::<Declaration>(), 32); // Span24 + kind1 + bool1 + pad6
+            assert_eq!(size_of::<Namespace<'_, '_>>(), 2112); // two Vec24 + two refs8 +256 words
+            assert_eq!(size_of::<PathQuery>(), 872); //34 Span24 + Span24 +four8B facts
+            assert_eq!(
+                size_of::<Result<Namespace<'_, '_>, Box<Diagnostic>>>(),
+                2112
+            );
+            assert_eq!(
+                size_of::<ProjectSources>(),
+                size_of::<ProjectSources<EditorFile>>()
+            );
+            assert_eq!(
+                size_of::<PackageSources<'_>>(),
+                size_of::<PackageSources<'_, EditorFile>>()
+            );
+            with_sources(
+                "fn answer()->i32{return 42;}fn main()->i32{return crate::;}",
+                None,
+                |sources| {
+                    // Four complete namespace envelopes, one merge Vec header,
+                    // two cursor-path transports, and two rows/order/merge cells.
+                    let exact = 4 * 2112 + 24 + 2 * 872 + 2 * (40 + 4 + 4);
+                    assert_eq!(exact, 10312);
+                    for (limit, pass) in [(exact - 1, false), (exact, true)] {
+                        let work = WorkMeter::default();
+                        let mut allocator = Allocator::default();
+                        let result =
+                            Namespace::build_limited(sources, &work, &mut allocator, limit as u64);
+                        assert_eq!(result.is_ok(), pass);
+                        assert_eq!(allocator.attempts, if pass { 3 } else { 0 });
+                        if !pass {
+                            assert_eq!(
+                                result.err().unwrap().message,
+                                "editor namespace scratch limit exceeded"
+                            );
+                        }
+                    }
+                    let work = WorkMeter::default();
+                    let mut allocator = Allocator {
+                        fail_at: Some(1),
+                        ..Default::default()
+                    };
+                    assert!(
+                        Namespace::build_limited(sources, &work, &mut allocator, exact as u64)
+                            .is_err()
+                    );
+                    assert_eq!(allocator.attempts, 1);
+                },
+            );
+        }
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn editor_namespace_each_child_identity_probe_spends_work_before_publication() {
+        let text = "mod child;fn main()->i32{return crate::child::;}";
+        with_sources(text, Some("pub fn answer()->i32{return 42;}"), |sources| {
+            let file = sources.project().sources().get(SourceFileId(0));
+            let cursor = text.find("crate::child::").unwrap() + 14;
+            let query = sources.project().editor_files()[0]
+                .query(file, cursor)
+                .unwrap()
+                .unwrap();
+            for budget in [13u64, 14] {
+                let work = WorkMeter::default();
+                let namespace =
+                    Namespace::build(sources, &work, &mut Allocator::default()).unwrap();
+                let before = work.used();
+                work.restrict(before + budget);
+                let mut names = Vec::new();
+                let result = namespace.visit(ModuleId(0), &query, |name, _| {
+                    names.push(name.to_owned());
+                    Ok(())
+                });
+                // prefix1 + declaration1 + comparison(1+5) + two real child
+                // header probes + three candidate rows + one permission =14.
+                assert_eq!(work.used(), before + budget);
+                if budget == 14 {
+                    result.unwrap();
+                    assert_eq!(names, ["answer"]);
+                } else {
+                    assert_eq!(result.unwrap_err().code, "E0400");
+                    assert!(names.is_empty());
+                }
+            }
+        });
     }
 }

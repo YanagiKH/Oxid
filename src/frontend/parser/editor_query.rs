@@ -24,7 +24,12 @@ pub(in crate::frontend) struct EditorFile {
     modules: Vec<ModuleDecl>,
     declarations: Vec<Declaration>,
     imports: Vec<Span>,
-    regions: Vec<Span>,
+    regions: Vec<QueryRegion>,
+}
+#[derive(Debug)]
+struct QueryRegion {
+    span: Span,
+    import: bool,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::frontend) struct PathQuery {
@@ -163,7 +168,10 @@ impl EditorFile {
                                 ));
                             }
                             count += 1;
-                            if matches!(parser.peek().kind, Kind::Semi | Kind::Eof) {
+                            if matches!(parser.peek().kind, Kind::Semi | Kind::Eof)
+                                || (parser.peek().kind == Kind::Ident
+                                    && source.text_at(parser.peek().span) == "as")
+                            {
                                 endpoint = None;
                                 break;
                             }
@@ -205,7 +213,10 @@ impl EditorFile {
                             "editor query regions",
                             start,
                         )?;
-                        regions.push(source.span(start.end, end.start));
+                        regions.push(QueryRegion {
+                            span: source.span(start.end, end.start),
+                            import: true,
+                        });
                     }
                     continue;
                 }
@@ -263,7 +274,10 @@ impl EditorFile {
                         "editor query regions",
                         name,
                     )?;
-                    regions.push(source.span(opening.end, end.start));
+                    regions.push(QueryRegion {
+                        span: source.span(opening.end, end.start),
+                        import: false,
+                    });
                     (name, DeclarationKind::Function)
                 };
                 parser.candidate_reserve(
@@ -328,11 +342,27 @@ impl EditorFile {
                 }
             }
         }
+        let in_import = self.regions.iter().any(|region| {
+            region.import && region.span.start <= cursor && cursor <= region.span.end
+        });
+        if in_import
+            && self.tokens.iter().any(|token| {
+                token.kind == Kind::Ident
+                    && source.text_at(token.span) == "as"
+                    && token.span.start < cursor
+                    && cursor <= token.span.end
+            })
+        {
+            return Ok(None);
+        }
         let replacement = self
             .tokens
             .iter()
             .find(|token| {
-                token.kind == Kind::Ident && token.span.start <= cursor && cursor <= token.span.end
+                token.kind == Kind::Ident
+                    && token.span.start <= cursor
+                    && cursor <= token.span.end
+                    && !(in_import && source.text_at(token.span) == "as")
             })
             .map_or(source.span(cursor, cursor), |token| token.span);
         let mut before = self.tokens.iter().rev().filter(|token| {
@@ -379,11 +409,9 @@ impl EditorFile {
         {
             return Ok(None);
         }
-        if !self
-            .regions
-            .iter()
-            .any(|span| span.start <= segments[0].start && replacement.end <= span.end)
-        {
+        if !self.regions.iter().any(|region| {
+            region.span.start <= segments[0].start && replacement.end <= region.span.end
+        }) {
             return Ok(None);
         }
         Ok(Some(PathQuery {
@@ -394,5 +422,132 @@ impl EditorFile {
             replacement,
             cursor,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::{lexer, source::SourceMap};
+
+    fn parsed(text: &str) -> (SourceMap, EditorFile) {
+        let mut map = SourceMap::new();
+        let id = map.add("editor-query.ox".into(), text.into());
+        let source = map.get(id);
+        let mut allocator = Allocator::default();
+        let tokens =
+            lexer::lex_current_with_allocator(source, lexer::MAX_TOKENS, &mut allocator).unwrap();
+        let (parsed, _) = EditorFile::parse(source, tokens, MAX_NODES, &mut allocator).unwrap();
+        (map, parsed)
+    }
+    #[test]
+    fn editor_query_holes_bind_the_actual_source_generation_without_ordinary_ast_authority() {
+        let text = "fn answer()->i32{return 42;}fn main()->i32{return crate::";
+        let (map, parsed) = parsed(text);
+        let source = map.get(SourceFileId(0));
+        let query = parsed.query(source, text.len()).unwrap().unwrap();
+        assert_eq!(
+            query
+                .segments()
+                .iter()
+                .map(|&span| map.text(span))
+                .collect::<Vec<_>>(),
+            ["crate"]
+        );
+        assert_eq!(query.replacement(), source.span(text.len(), text.len()));
+        assert!(query.belongs_to(source));
+        let mut foreign = SourceMap::new();
+        let id = foreign.add("editor-query.ox".into(), text.into());
+        assert!(!parsed.belongs_to(foreign.get(id)));
+        assert!(!query.belongs_to(foreign.get(id)));
+        assert_eq!(
+            parsed.query(foreign.get(id), text.len()).unwrap_err().code,
+            "E0500"
+        );
+        let mut allocator = Allocator::default();
+        let tokens =
+            lexer::lex_current_with_allocator(source, lexer::MAX_TOKENS, &mut allocator).unwrap();
+        assert!(parse_typed_counted(
+            source,
+            tokens,
+            SourceMode::ProjectCandidate,
+            MAX_NODES,
+            &mut allocator,
+            &mut Default::default()
+        )
+        .is_err());
+    }
+    #[test]
+    fn editor_query_headers_share_ordinary_grammar_and_do_not_promote_body_tokens() {
+        let text = "#[derive(Copy)]struct Point{x:i32}enum Choice<T>{Some(T),None}fn generic<T>(x:T)->T{return x;}pub fn answer()->i32{return 42;}fn main()->i32{return crate::answer();}";
+        let (map, query) = parsed(text);
+        let source = map.get(SourceFileId(0));
+        let mut allocator = Allocator::default();
+        let tokens =
+            lexer::lex_current_with_allocator(source, lexer::MAX_TOKENS, &mut allocator).unwrap();
+        let (ordinary, _) = parse_typed_counted(
+            source,
+            tokens,
+            SourceMode::ProjectCandidate,
+            MAX_NODES,
+            &mut allocator,
+            &mut Default::default(),
+        )
+        .unwrap();
+        let expected: Vec<_> = ordinary
+            .items
+            .iter()
+            .map(|item| match item {
+                ItemId::Function(i) => (
+                    ordinary.functions[*i].name,
+                    ordinary.functions[*i].public.is_some(),
+                    DeclarationKind::Function,
+                ),
+                ItemId::Struct(i) => (
+                    ordinary.records[*i].name,
+                    ordinary.records[*i].public.is_some(),
+                    DeclarationKind::Record,
+                ),
+                ItemId::Enum(i) => (
+                    ordinary.enums[*i].name,
+                    ordinary.enums[*i].public.is_some(),
+                    DeclarationKind::Enumeration,
+                ),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            query
+                .declarations()
+                .iter()
+                .map(|item| (item.name, item.public, item.kind))
+                .collect::<Vec<_>>(),
+            expected
+        );
+        let text = "fn outer()->i32{fn phantom()->i32{return 0;}mod nonexistent;/*fn comment()*/return crate::;}fn later()->i32{return 1;}";
+        let (map, query) = parsed(text);
+        assert_eq!(
+            query
+                .declarations()
+                .iter()
+                .map(|item| map.text(item.name))
+                .collect::<Vec<_>>(),
+            ["outer", "later"]
+        );
+        assert!(query.modules().is_empty());
+    }
+    #[test]
+    fn editor_query_counts_the_absent_endpoint_in_the_existing_path_limit() {
+        for modules in [31, 32, 33] {
+            let text = format!("fn main()->i32{{return crate::{};}}", "m::".repeat(modules));
+            let offset = text.find(';').unwrap();
+            let (map, parsed) = parsed(&text);
+            let result = parsed.query(map.get(SourceFileId(0)), offset);
+            if modules == 33 {
+                assert_eq!(result.unwrap_err().code, "E0400");
+            } else {
+                assert_eq!(result.unwrap().unwrap().segments().len(), modules + 1);
+            }
+        }
     }
 }
