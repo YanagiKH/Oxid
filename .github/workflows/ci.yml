@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_qualified_completion_compatibility.py \
+          python3 -B scripts/verify_copy_record_debug_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -713,6 +713,10 @@ jobs:
               --test typed_unary_negation --test typed_slices --test typed_projected_slices \
               --test typed_record_composition --test typed_hir_import --test reproducible_native --test native_profiles \
               --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion --test typed_generics --test typed_nominal_generics --test typed_record_patterns --test typed_record_enum_fields --test typed_constructor_inference --test typed_range_for --test native_debug_info -- --include-ignored
+            mkdir "$RUNNER_TEMP/current-copy-record-debug-$profile"
+            TMPDIR="$RUNNER_TEMP/current-copy-record-debug-$profile" OXID_TEST_KEEP_ARTIFACTS=1 \
+              cargo test --locked "${profile_flags[@]}" --test native_copy_record_debug \
+              -- --include-ignored --test-threads=1 --nocapture
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               record_enum_native_helpers_validate_active_cells -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
@@ -847,6 +851,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+
+      - name: Retain Copy record debugger binaries and transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-copy-record-debug
+          path: ${{ runner.temp }}/current-copy-record-debug-*
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
 
   native-numeric-and-packages:
     name: Current native numeric and package conformance
@@ -988,6 +1002,10 @@ jobs:
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/linux-arm64-native/local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               native::copy_record_tests:: -- --ignored --test-threads=1
+            mkdir "$RUNNER_TEMP/linux-arm64-native/copy-record-debug-$profile"
+            TMPDIR="$RUNNER_TEMP/linux-arm64-native/copy-record-debug-$profile" OXID_TEST_KEEP_ARTIFACTS=1 \
+              cargo test --locked "${profile_flags[@]}" --test native_copy_record_debug \
+              -- --include-ignored --test-threads=1 --nocapture
           done
       - name: Retain ARM64 native results
         if: always()

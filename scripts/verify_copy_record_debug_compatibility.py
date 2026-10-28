@@ -18,7 +18,7 @@ import types
 PREDECESSOR = '20ea8ba102975d2e8ac0c667b96ce835a1bc6ef9'
 PREDECESSOR_POLICY = 'scripts/verify_qualified_completion_compatibility.py'
 PREDECESSOR_POLICY_PIN = (44446, '239385c8506d3ff10f7102c74391ec280f4b3bd7990830f2d2f12a934e8ec194')
-PINS_PROVISIONAL = True
+PINS_PROVISIONAL = False
 COPY_RECORD_DEBUG_CHANGED = frozenset(['src/frontend/driver.rs',
  'src/frontend/native_debug.rs',
  'src/frontend/oir/mod.rs',

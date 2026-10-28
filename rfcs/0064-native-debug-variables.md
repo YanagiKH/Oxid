@@ -88,7 +88,7 @@ breakpoints, call stacks, cache reuse, relocation, workspace overrides and
 source-free execution.
 
 `tests/native_copy_record_debug.rs` adds actual GDB field reads, by-value
-parameters, independent mutation, shadowed scopes, all fourteen numeric field
+parameters, independent mutation, nested scopes, all fourteen numeric field
 types, padding and nonzero owner offsets. Unsupported whole values remain
 absent. Both execution policies and native profiles run DWARF verification and
 the result oracle; value inspection uses `dev`. Separate cases retain raw binary
