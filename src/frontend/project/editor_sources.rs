@@ -63,6 +63,8 @@ pub(in crate::frontend) enum QuerySources<'a> {
     Packages(packages::PackageSources<'a, parser::editor_query::EditorFile>),
 }
 impl<'a> QuerySources<'a> {
+    // Keep the loader's source and allocator failure evidence inline in tests.
+    #[cfg_attr(test, allow(clippy::result_large_err))]
     pub(in crate::frontend) fn load(
         specs: &'a [packages::PackageSpec],
         entry: Option<&Path>,

@@ -578,6 +578,8 @@ impl ProjectSources {
 }
 
 impl<S: ModuleSyntax> ProjectSources<S> {
+    // Test failures retain the existing sources and metered allocator ledger.
+    #[cfg_attr(test, allow(clippy::result_large_err))]
     #[allow(clippy::too_many_arguments)]
     fn load_with_syntax_inputs(
         entry: &str,
