@@ -268,7 +268,8 @@ def failure_controls(binary, label, output, environment, fake_environment, comma
             changed_env = changed(changed_env, OXID_LLVM_BIN=str(project / "absent-tools"))
         stdout, stderr = command(label + "-" + mode, [binary, "build", "--message-format=json"],
                                  project, changed_env, expected=1)
-        require(not stderr and b'"code":"E0700"' in stdout, mode + " must fail as a native diagnostic")
+        require(not stderr and b'"code":"E0701"' in stdout and b'"stage":"native-toolchain"' in stdout,
+                mode + " must fail as a native toolchain diagnostic")
         require(built.read_bytes() == old, mode + " replaced an existing executable")
         require(list(built.parent.iterdir()) == [built], mode + " leaked a staged output")
     stdout, stderr = command(label + "-no-overwrite", [binary, "compile", "src/main.ox", "--edition=typed-preview",
@@ -282,8 +283,9 @@ def failure_controls(binary, label, output, environment, fake_environment, comma
     try:
         stdout, stderr = command(label + "-locked-output", [binary, "build", "--message-format=json"],
                                  project, environment, expected=1)
-        require(not stderr and b'"code":"E0002"' in stdout and built.read_bytes() == old,
-                "locked output must retain the prior bytes and report the publication error")
+        require(not stderr and b'"code":"E0701"' in stdout and b"native artifact I/O failed" in stdout
+                and built.read_bytes() == old,
+                "locked output must retain the prior bytes and report the native publication error")
     finally:
         api.CloseHandle(held)
     require(list(built.parent.iterdir()) == [built], "locked output failure leaked a stage")
