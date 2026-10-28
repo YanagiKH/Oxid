@@ -7,6 +7,13 @@ use std::{
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+const WINDOWS_NATIVE_HOST: bool = cfg!(all(
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+));
 const PROCESS_HOST: bool = cfg!(all(
     any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
@@ -103,6 +110,17 @@ fn typed_new_records_edition_and_runs_without_repeated_flags() {
     let manifest = fs::read_to_string(project.0.join("app/oxid.toml")).unwrap();
     assert!(manifest.contains("edition = \"typed-preview\""));
     assert!(manifest.contains("[tests]"));
+    assert!(manifest.contains(if WINDOWS_NATIVE_HOST {
+        "entry-mode = \"result\""
+    } else {
+        "entry-mode = \"process\""
+    }));
+    if WINDOWS_NATIVE_HOST {
+        let readme = fs::read_to_string(project.0.join("app/README.md")).unwrap();
+        assert!(readme.contains(r".oxid\bin\app.exe"));
+        assert!(readme.contains("Windows SDK") && readme.contains("19.1.7"));
+        assert!(readme.contains("zero passes") && readme.contains("oxid test"));
+    }
     let mut check = project.command(&["check"]);
     success(
         check
@@ -110,7 +128,7 @@ fn typed_new_records_edition_and_runs_without_repeated_flags() {
             .output()
             .unwrap(),
     );
-    if PROCESS_HOST {
+    if PROCESS_HOST || WINDOWS_NATIVE_HOST {
         for args in [&["run"][..], &["test"][..]] {
             let output = project
                 .command(args)

@@ -24,6 +24,10 @@ impl Fixture {
             .current_dir(&self.0)
             .env("TMPDIR", self.0.join("scratch"))
             .env("OXID_LLVM_BIN", self.0.join("missing-tools"));
+        #[cfg(windows)]
+        command
+            .env("TMP", self.0.join("scratch"))
+            .env("TEMP", self.0.join("scratch"));
         command
     }
     fn run(&self, args: &[&str]) -> Output {
@@ -71,13 +75,19 @@ const LINKER: &str = if cfg!(target_os = "macos") {
     "ld.lld"
 };
 const SUPPORTED: bool = cfg!(all(
-    any(
-        any(target_os = "linux", target_os = "macos"),
-        target_os = "macos"
-    ),
     target_pointer_width = "64",
     target_endian = "little",
-    any(target_arch = "x86_64", target_arch = "aarch64")
+    any(
+        all(
+            any(target_os = "linux", target_os = "macos"),
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ),
+        all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64"
+        )
+    )
 ));
 
 #[test]
@@ -91,7 +101,13 @@ fn native_doctor_reports_real_tool_selection_and_unsupported_hosts_honestly() {
         "{output}"
     );
     assert_eq!(output.lines().count(), 1);
-    let triple = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    let triple = if cfg!(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64"
+    )) {
+        "x86_64-pc-windows-msvc"
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         "aarch64-apple-darwin"
     } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
         "x86_64-apple-darwin"

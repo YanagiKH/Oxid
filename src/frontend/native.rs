@@ -78,10 +78,25 @@ impl Drop for Workspace {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+fn tool_name(name: &str) -> String {
+    if NativeBuildSettings::windows_msvc_host() && !name.ends_with(".exe") {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    }
+}
 fn tool(name: &str) -> PathBuf {
     match std::env::var_os("OXID_LLVM_BIN") {
-        Some(dir) => PathBuf::from(dir).join(name),
+        Some(dir) => PathBuf::from(dir).join(tool_name(name)),
+        None if NativeBuildSettings::windows_msvc_host() => PathBuf::from(tool_name(name)),
         None => PathBuf::from(format!("{name}-19")),
+    }
+}
+fn environment_name(left: &OsStr, right: &str) -> bool {
+    if cfg!(windows) {
+        left.to_string_lossy().eq_ignore_ascii_case(right)
+    } else {
+        left == right
     }
 }
 // Preserve argv[0] symlink names: ld.lld is a multi-call driver. Relative
@@ -166,11 +181,16 @@ fn record_vector_schemas_declared(module: &str) -> bool {
 }
 
 fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
+    let target = format!("--target={}", settings.target_triple());
     let mut arguments: Vec<OsString> = [
         "--no-default-config",
-        &format!("--target={}", settings.target_triple()),
+        &target,
         settings.optimization_flag(),
-        "-fPIE",
+        if NativeBuildSettings::windows_msvc_host() {
+            "-fms-runtime-lib=static"
+        } else {
+            "-fPIE"
+        },
         "-std=c11",
         "-Wall",
         "-Wextra",
@@ -178,7 +198,7 @@ fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
         "-c",
         "runtime.c",
         "-o",
-        "runtime.o",
+        NativeBuildSettings::runtime_object(),
     ]
     .into_iter()
     .map(OsString::from)
@@ -196,7 +216,6 @@ fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
     }
     arguments
 }
-
 /// Publish a project-owned native output without destroying the previous build
 /// on a compile/link failure. Rename replaces a regular file atomically on
 /// the supported host filesystems.
@@ -246,14 +265,13 @@ fn managed(
     let name = output
         .file_name()
         .and_then(OsStr::to_str)
-        .filter(|name| {
-            !name.is_empty()
-                && name
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
-        })
+        .filter(|name| NativeBuildSettings::executable_stem(name).is_some())
         .ok_or_else(|| {
-            failure("managed executable name must contain only letters, digits, _ or -")
+            failure(if NativeBuildSettings::windows_msvc_host() {
+                "managed executable name must contain only letters, digits, _ or -, with .exe on Windows"
+            } else {
+                "managed executable name must contain only letters, digits, _ or -"
+            })
         })?;
     // Do not follow symlinks in the two directories owned by the build tool.
     // The project filesystem is trusted and stable, as for source loading; this
@@ -291,7 +309,9 @@ fn managed(
         Err(error) => return Err(io(error)),
     }
     let stage = Workspace::create(parent)?;
-    let staged_output = stage.0.join("program");
+    let staged_output = stage
+        .0
+        .join(NativeBuildSettings::executable_name("program"));
     let outcome = compile_inner(
         module,
         staged_output
@@ -319,7 +339,14 @@ pub(super) fn compile_with_settings(
 fn admit_settings(settings: Option<&NativeBuildSettings>) -> Result<(), Box<Diagnostic>> {
     if !NativeBuildSettings::host_supported() {
         return Err(failure(
-            "native builds require Linux or macOS on x86_64 or ARM64",
+            "native builds require Linux or macOS on x86_64 or ARM64, or Windows MSVC x86_64",
+        ));
+    }
+    if NativeBuildSettings::windows_msvc_host()
+        && settings.is_some_and(|settings| settings.execution().hosted() || settings.debug_info())
+    {
+        return Err(failure(
+            "Windows native builds require bounded execution without debug information",
         ));
     }
     if settings.is_some_and(|settings| settings.debug_info())
@@ -339,7 +366,12 @@ fn compile_inner(
     admit_settings(settings)?;
     // Path::file_name normalizes trailing separators and `.` components.
     // Preserve the caller's file-vs-directory intent before that normalization.
-    if matches!(output.rsplit('/').next(), Some("" | "." | "..")) {
+    let tail = if cfg!(windows) {
+        output.rsplit(['/', '\\']).next()
+    } else {
+        output.rsplit('/').next()
+    };
+    if matches!(tail, Some("" | "." | "..")) {
         return Err(failure(
             "native output must name a new file, not a directory path",
         ));
@@ -348,6 +380,19 @@ fn compile_inner(
     let name = requested
         .file_name()
         .ok_or_else(|| failure("native output must name a new file"))?;
+    if NativeBuildSettings::windows_msvc_host()
+        && (requested
+            .extension()
+            .is_none_or(|extension| !extension.eq_ignore_ascii_case("exe"))
+            || requested
+                .file_stem()
+                .and_then(OsStr::to_str)
+                .is_none_or(NativeBuildSettings::windows_device_name))
+    {
+        return Err(failure(
+            "Windows native output must name a new .exe file with an ordinary filename",
+        ));
+    }
     let parent = requested
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -371,7 +416,7 @@ fn compile_inner(
             |values| {
                 values
                     .iter()
-                    .find(|(key, _)| key == name)
+                    .find(|(key, _)| environment_name(key, name))
                     .map(|(_, value)| value.clone())
             },
         )
@@ -402,8 +447,14 @@ fn compile_inner(
             return tool(name);
         }
         env_value("OXID_LLVM_BIN").map_or_else(
-            || PathBuf::from(format!("{name}-19")),
-            |dir| PathBuf::from(dir).join(name),
+            || {
+                if NativeBuildSettings::windows_msvc_host() {
+                    PathBuf::from(tool_name(name))
+                } else {
+                    PathBuf::from(format!("{name}-19"))
+                }
+            },
+            |dir| PathBuf::from(dir).join(tool_name(name)),
         )
     };
     let clang = resolve(selected("clang"))?;
@@ -492,13 +543,17 @@ fn compile_inner(
         "--no-default-config",
         &target,
         settings.optimization_flag(),
-        "-fPIE",
+        if NativeBuildSettings::windows_msvc_host() {
+            "-fms-runtime-lib=static"
+        } else {
+            "-fPIE"
+        },
         "-c",
         "-x",
         "ir",
         "program.ll",
         "-o",
-        "program.o",
+        NativeBuildSettings::program_object(),
     ]);
     if cfg!(target_os = "macos") {
         program_args.push(OsString::from("-mmacosx-version-min=11.0"));
@@ -521,7 +576,7 @@ fn compile_inner(
         (Some(root), Some(key)) => Some(native_cache::Cache::new(root, key).map_err(io)?),
         _ => None,
     };
-    let object = workspace.0.join("program.o");
+    let object = workspace.0.join(NativeBuildSettings::program_object());
     let mut hit = cache.as_ref().is_some_and(|cache| cache.restore(&object));
     if hit && key() != initial_key {
         fs::remove_file(&object).map_err(io)?;
@@ -552,7 +607,24 @@ fn compile_inner(
         }
     }
     invoke(&clang, runtime_compile_args(&settings))?;
-    let mut link = if cfg!(target_os = "macos") {
+    let mut link = if NativeBuildSettings::windows_msvc_host() {
+        args(&[
+            "--no-default-config",
+            &target,
+            "-fms-runtime-lib=static",
+            "-Wl,/Brepro",
+            "-Wl,/DYNAMICBASE",
+            "-Wl,/HIGHENTROPYVA",
+            "-Wl,/NXCOMPAT",
+            "-Wl,/SUBSYSTEM:CONSOLE",
+            "-Wl,/STACK:8388608",
+            "-Wl,/OPT:REF",
+            NativeBuildSettings::program_object(),
+            NativeBuildSettings::runtime_object(),
+            "-o",
+            NativeBuildSettings::staged_executable(),
+        ])
+    } else if cfg!(target_os = "macos") {
         args(&[
             "--no-default-config",
             &target,
@@ -598,7 +670,11 @@ fn compile_inner(
     invoke(&clang, link)?;
     // Atomic no-replace publication on the same filesystem. Unlike rename,
     // hard_link cannot clobber an output created concurrently after preflight.
-    fs::hard_link(workspace.0.join("executable"), output).map_err(io)?;
+    fs::hard_link(
+        workspace.0.join(NativeBuildSettings::staged_executable()),
+        output,
+    )
+    .map_err(io)?;
     Ok(outcome)
 }
 

@@ -422,8 +422,17 @@ impl CheckedSourceProgram<'_> {
             ),
         }
     }
-    /// A single source-owned signature rule serves both public process consumers.
+    /// A single source-owned signature rule serves process and pure test consumers.
     fn checked_process_entry(&self) -> Result<(hir::DefId, Span), Box<Diagnostic>> {
+        self.checked_i32_entry(
+            "process entry requires original-root fn main() -> i32 with no parameters",
+        )
+    }
+
+    fn checked_i32_entry(
+        &self,
+        message: &'static str,
+    ) -> Result<(hir::DefId, Span), Box<Diagnostic>> {
         let signature = match self.entry {
             Some(id) => {
                 let facts = match &self.body {
@@ -451,9 +460,21 @@ impl CheckedSourceProgram<'_> {
             other => Err(Diagnostic::new(
                 "E0600",
                 "oir-run",
-                "process entry requires original-root fn main() -> i32 with no parameters",
+                message,
                 other.map(|(_, (_, _, span))| span),
             )),
+        }
+    }
+
+    /// A pure declared test uses the same checked original entry identity, but
+    /// returns its bounded typed value without installing process capabilities.
+    pub(in crate::frontend) fn run_test_i32(&self) -> Result<i32, Box<Diagnostic>> {
+        self.checked_i32_entry(
+            "test entry requires fn main() -> i32 with no parameters in the declared test file",
+        )?;
+        match self.run_result(crate::frontend::build_config::ExecutionPolicy::Bounded)? {
+            RuntimeValue::Scalar(RuntimeScalar::Narrow(Scalar::I32(status))) => Ok(status),
+            _ => Err(association::bad()),
         }
     }
 

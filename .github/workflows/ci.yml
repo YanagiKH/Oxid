@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_copy_record_debug_compatibility.py \
+          python3 -B scripts/verify_windows_native_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -341,6 +341,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  copy-record-debug-source-policy-predecessor:
+    name: Copy debug source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_copy_record_debug_predecessor_tests.py "$RUNNER_TEMP/copy-record-debug-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 9a5ecaaeb5fa50aff2296bf990d63167143cf312
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/copy-record-debug-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/copy-record-debug-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: copy-record-debug-source-policy-predecessor
+          path: ${{ runner.temp }}/copy-record-debug-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   macos-native:
     name: Current macOS native (${{ matrix.os }})
     strategy:
@@ -595,6 +620,95 @@ jobs:
           path: ${{ runner.temp }}/current-macos-native
           include-hidden-files: true
           if-no-files-found: warn
+          retention-days: 14
+
+  current-windows-native:
+    name: Current Windows MSVC x64 scalar native programs
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Initialize the installed x64 Visual Studio and Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$installation) { throw 'Installed MSVC x64 tools are required' }
+          $devcmd = Join-Path $installation 'Common7/Tools/VsDevCmd.bat'
+          $settings = & $env:ComSpec /d /s /c "`"`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set`""
+          if ($LASTEXITCODE -ne 0) { throw 'Visual Studio environment initialization failed' }
+          $names = @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir',
+            'VCToolsVersion', 'WindowsSdkDir', 'WindowsSDKVersion', 'WindowsSDKLibVersion',
+            'UniversalCRTSdkDir', 'UCRTVersion', 'VSCMD_ARG_TGT_ARCH', 'VSCMD_ARG_HOST_ARCH')
+          foreach ($line in $settings) {
+            if ($line -match '^([^=][^=]*)=(.*)$' -and $names -contains $Matches[1]) {
+              Add-Content -LiteralPath $env:GITHUB_ENV -Value "$($Matches[1])=$($Matches[2])" -Encoding utf8
+            }
+          }
+      - name: Verify and extract the complete LLVM 19.1.7 toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'clang+llvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
+          $url = 'https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/clang%2Bllvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          if ((Get-Item -LiteralPath $archive).Length -ne 845236708) { throw 'LLVM archive length differs' }
+          # Digest from the fixed bazel-contrib/toolchains_llvm catalog:
+          # 7c6f33bf0ec0345e5c75fefeceb37d1b2177a2c6/toolchain/distributions/github.jsonc
+          $digest = 'b4557b4f012161f56a2f5d9e877ab9635cafd7a08f7affe14829bd60c9d357f0'
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -ne $digest) {
+            throw 'LLVM archive SHA256 differs'
+          }
+          $extract = Join-Path $env:RUNNER_TEMP 'oxid-llvm-msvc'
+          New-Item -ItemType Directory -Path $extract | Out-Null
+          tar -xJf $archive -C $extract
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM extraction failed' }
+          $bin = Join-Path $extract 'clang+llvm-19.1.7-x86_64-pc-windows-msvc/bin'
+          foreach ($tool in @('clang.exe', 'opt.exe', 'lld-link.exe')) {
+            $version = & (Join-Path $bin $tool) --version
+            if ($LASTEXITCODE -ne 0 -or ($version -join "`n") -notmatch '(?m)(clang version|LLVM version|LLD) 19\.1\.7(?:[ (]|$)') {
+              throw "Wrong LLVM tool: $tool"
+            }
+            $version
+          }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "OXID_LLVM_BIN=$bin" -Encoding utf8
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $bin -Encoding utf8
+      - name: Build both compiler profiles
+        run: |
+          cargo build --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows diagnosis, capture limits and source admission
+        run: |
+          cargo test --locked --bin oxid frontend::native::doctor::windows::tests:: -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --test native_doctor --test typed_windows_native -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify PE execution, publication and standalone deployment
+        run: |
+          python -B scripts/verify_windows_native.py target/debug/oxid.exe target/release/oxid.exe `
+            --llvm-bin "$env:OXID_LLVM_BIN" --output "$env:RUNNER_TEMP/current-windows-native"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain PE programs and raw transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-windows-native-msvc-x64
+          path: |
+            ${{ runner.temp }}/current-windows-native
+            !${{ runner.temp }}/current-windows-native/tools/opt.exe
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 14
 
   cross-platform:

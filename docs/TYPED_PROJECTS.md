@@ -2,6 +2,7 @@
 
 Use Oxid's typed mode to check code, test local packages and build native
 executables. Native project builds target Linux and macOS on x86_64 and ARM64.
+A bounded scalar preview also targets Windows MSVC x64.
 Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
 Oxid selects that host's native target automatically.
 
@@ -21,20 +22,35 @@ The executable runs without the Oxid compiler or project sources. The generated
 `oxid.toml` selects typed mode for later commands, so you only specify the edition
 when creating the project.
 
-## Windows module checks
+## Windows projects
 
-Windows x86_64 development builds can check multi-file programs and run pure
-computations from a source entry on a local NTFS drive:
+Windows MSVC x64 supports a single project without dependencies on a local NTFS
+drive. Open the Visual Studio x64 Native Tools Command Prompt with the Windows
+SDK and complete LLVM 19.1.7 toolchain available:
 
-```powershell
-oxid check main.ox --edition typed-preview
-oxid run main.ox --edition typed-preview --entry-mode=result
+```bat
+oxid new hello --edition typed-preview
+cd hello
+oxid check
+oxid run
+oxid test
+oxid build --profile release
+.oxid\bin\hello.exe
 ```
 
+New Windows projects select result entry. For an existing project, set
+`entry-mode = "result"` under `[build]`. Native programs currently support
+bounded `bool`, `i32` and `()` functions, conditions and `while` loops. Declared
+tests use bounded pure functions and require a no-argument `fn main() -> i32`:
+zero passes and any other value fails. Checking and reference execution retain
+their existing language scope.
+
 Use the exact letter case declared by each module. Child modules cannot pass
-through symbolic links or junctions. Network paths and other filesystems are
-unsupported. Windows native builds, package/workspace commands, process I/O and
-source bundles remain unavailable. See the [module contract](../spec/typed-preview.md#bounded-typed-projects)
+through symbolic links or junctions. Network paths, other filesystems,
+multi-package dependencies, workspace projects and source bundles are unsupported.
+Process entry and process I/O, hosted native execution, native debug information
+and native object caching remain unavailable. See [Windows native programs](windows-native.md)
+for tool setup and the [module contract](../spec/typed-preview.md#bounded-typed-projects)
 for source limits and path rules.
 
 ## Everyday commands

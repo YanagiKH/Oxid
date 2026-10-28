@@ -71,6 +71,50 @@ impl ExecutionPolicy {
 // Only explicit hosted entry points install this marker, after ordinary
 // Limits::bounded admission. It is a mode, never a large finite program budget.
 pub(in crate::frontend) const HOSTED_FUEL: usize = usize::MAX;
+/// Single selection for the emitted ABI, object format and linker family.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NativeTarget {
+    LinuxX64,
+    LinuxArm64,
+    DarwinX64,
+    DarwinArm64,
+    WindowsMsvcX64,
+}
+impl NativeTarget {
+    const fn host() -> Self {
+        if NativeBuildSettings::windows_msvc_host() {
+            Self::WindowsMsvcX64
+        } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            Self::DarwinArm64
+        } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+            Self::DarwinX64
+        } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            Self::LinuxArm64
+        } else {
+            // Unsupported hosts retain their original presentation. Admission
+            // rejects them before tools, directories or native artifacts.
+            Self::LinuxX64
+        }
+    }
+    const fn triple(self) -> &'static str {
+        match self {
+            Self::LinuxX64 => "x86_64-unknown-linux-gnu",
+            Self::LinuxArm64 => "aarch64-unknown-linux-gnu",
+            Self::DarwinX64 => "x86_64-apple-darwin",
+            Self::DarwinArm64 => "aarch64-apple-darwin",
+            Self::WindowsMsvcX64 => "x86_64-pc-windows-msvc",
+        }
+    }
+}
+
+macro_rules! native_header {
+    ($kind:literal, $source:literal, $triple:literal) => {
+        concat!("; Oxid ", $kind, " native ABI 1\nsource_filename = \"", $source,
+            "\"\ntarget triple = \"", $triple,
+            "\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n")
+    };
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SourcePaths {
     Original,
@@ -114,34 +158,131 @@ impl NativeBuildSettings {
 
     pub(crate) const fn target_triple(self) -> &'static str {
         match self.target {
-            Target::Host => {
-                if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-                    "aarch64-apple-darwin"
-                } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-                    "x86_64-apple-darwin"
-                } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-                    "aarch64-unknown-linux-gnu"
-                } else {
-                    "x86_64-unknown-linux-gnu"
-                }
-            }
+            Target::Host => NativeTarget::host().triple(),
         }
     }
 
-    pub(crate) const fn host_supported() -> bool {
+    pub(crate) const fn windows_msvc_host() -> bool {
         cfg!(all(
-            any(target_os = "linux", target_os = "macos"),
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
             target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
+            target_endian = "little"
         ))
     }
 
+    pub(crate) const fn host_supported() -> bool {
+        Self::windows_msvc_host()
+            || cfg!(all(
+                any(target_os = "linux", target_os = "macos"),
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ))
+    }
+
     pub(crate) const fn linker() -> &'static str {
-        if cfg!(target_os = "macos") {
-            "ld64.lld"
+        match NativeTarget::host() {
+            NativeTarget::WindowsMsvcX64 => "lld-link.exe",
+            NativeTarget::DarwinX64 | NativeTarget::DarwinArm64 => "ld64.lld",
+            NativeTarget::LinuxX64 | NativeTarget::LinuxArm64 => "ld.lld",
+        }
+    }
+
+    pub(crate) const fn program_object() -> &'static str {
+        if Self::windows_msvc_host() {
+            "program.obj"
         } else {
-            "ld.lld"
+            "program.o"
+        }
+    }
+    pub(crate) const fn runtime_object() -> &'static str {
+        if Self::windows_msvc_host() {
+            "runtime.obj"
+        } else {
+            "runtime.o"
+        }
+    }
+    pub(crate) const fn staged_executable() -> &'static str {
+        if Self::windows_msvc_host() {
+            "executable.exe"
+        } else {
+            "executable"
+        }
+    }
+    pub(crate) fn executable_name(name: &str) -> String {
+        if Self::windows_msvc_host() {
+            format!("{name}.exe")
+        } else {
+            name.to_owned()
+        }
+    }
+    pub(crate) fn executable_stem(name: &str) -> Option<&str> {
+        let stem = if Self::windows_msvc_host() {
+            name.strip_suffix(".exe")?
+        } else {
+            name
+        };
+        (!stem.is_empty()
+            && stem
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+            && !(cfg!(windows) && Self::windows_device_name(stem)))
+        .then_some(stem)
+    }
+    pub(crate) fn windows_device_name(name: &str) -> bool {
+        let upper = name.to_ascii_uppercase();
+        matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || (upper.len() == 4
+                && (upper.starts_with("COM") || upper.starts_with("LPT"))
+                && matches!(upper.as_bytes()[3], b'1'..=b'9'))
+    }
+
+    pub(in crate::frontend) const fn ir_header(owned: bool) -> &'static str {
+        match (NativeTarget::host(), owned) {
+            (NativeTarget::LinuxX64, false) => native_header!(
+                "experimental scalar",
+                "oxid-native",
+                "x86_64-unknown-linux-gnu"
+            ),
+            (NativeTarget::LinuxX64, true) => native_header!(
+                "private owned",
+                "oxid-owned-native",
+                "x86_64-unknown-linux-gnu"
+            ),
+            (NativeTarget::LinuxArm64, false) => native_header!(
+                "experimental scalar",
+                "oxid-native",
+                "aarch64-unknown-linux-gnu"
+            ),
+            (NativeTarget::LinuxArm64, true) => native_header!(
+                "private owned",
+                "oxid-owned-native",
+                "aarch64-unknown-linux-gnu"
+            ),
+            (NativeTarget::DarwinX64, false) => {
+                native_header!("experimental scalar", "oxid-native", "x86_64-apple-darwin")
+            }
+            (NativeTarget::DarwinX64, true) => {
+                native_header!("private owned", "oxid-owned-native", "x86_64-apple-darwin")
+            }
+            (NativeTarget::DarwinArm64, false) => {
+                native_header!("experimental scalar", "oxid-native", "aarch64-apple-darwin")
+            }
+            (NativeTarget::DarwinArm64, true) => {
+                native_header!("private owned", "oxid-owned-native", "aarch64-apple-darwin")
+            }
+            (NativeTarget::WindowsMsvcX64, false) => native_header!(
+                "experimental scalar",
+                "oxid-native",
+                "x86_64-pc-windows-msvc"
+            ),
+            (NativeTarget::WindowsMsvcX64, true) => native_header!(
+                "private owned",
+                "oxid-owned-native",
+                "x86_64-pc-windows-msvc"
+            ),
         }
     }
 
@@ -492,6 +633,7 @@ mod tests {
                 ("x86_64-unknown-linux-gnu", 62, "ld-linux-x86-64.so.2")
             };
             let expected_target = match (std::env::consts::OS, std::env::consts::ARCH) {
+                ("windows", "x86_64") if cfg!(target_env = "msvc") => "x86_64-pc-windows-msvc",
                 ("macos", "aarch64") => "aarch64-apple-darwin",
                 ("macos", "x86_64") => "x86_64-apple-darwin",
                 _ => expected.0,
