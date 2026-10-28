@@ -12,7 +12,7 @@ python3 -c 'import oxid_pricing; print(oxid_pricing.line_total(1250, 3, 2))'
 ```
 
 This prints `1875`. Build with a normal GIL-enabled CPython 3.11 or newer on
-little-endian Linux x86_64 or ARM64, its C headers, Oxid and LLVM 19.1.7.
+little-endian glibc Linux x86_64 or ARM64, its C headers, Oxid and LLVM 19.1.7.
 `OXID` selects the Oxid executable; `OXID_LLVM_BIN` selects the LLVM directory.
 `OXID_PYTHON_CC` selects a single Clang 19.1.7 executable. Shell command strings
 and environment compiler flags are not accepted as build options.

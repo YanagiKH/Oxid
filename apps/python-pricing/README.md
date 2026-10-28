@@ -8,7 +8,7 @@ python3 -m pip install --no-deps --no-index /tmp/oxid-wheels/oxid_pricing-*.whl
 python3 -c 'import oxid_pricing; print(oxid_pricing.line_total(1250, 3, 2))'
 ```
 
-The result is `1875`. Build with CPython 3.11 or newer on Linux x86_64 or ARM64,
+The result is `1875`. Build with CPython 3.11 or newer on glibc Linux x86_64 or ARM64,
 Oxid on `PATH` (or `OXID=/path/to/oxid`), LLVM 19.1.7, and the current Python's
 C headers. `OXID_LLVM_BIN` selects the LLVM tools directory;
 `OXID_PYTHON_CC` can select its Clang executable directly.

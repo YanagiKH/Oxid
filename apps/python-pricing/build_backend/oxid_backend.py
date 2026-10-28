@@ -57,7 +57,7 @@ def relative(value):
     if not isinstance(value, str) or not value or len(value.encode("utf-8")) > 1024:
         fail("expected a bounded relative POSIX path")
     parts = value.split("/")
-    if any(p in ("", ".", "..") for p in parts) or "\\" in value or "\0" in value or ":" in value:
+    if any(p in ("", ".", "..") for p in parts) or "\\" in value or ":" in value or any(ord(c) < 32 or ord(c) == 127 for c in value):
         fail("unsafe relative path")
     if PurePosixPath(value).is_absolute():
         fail("absolute paths are not source identities")
@@ -200,6 +200,8 @@ def load_project(root=None):
         if total > SOURCE_TOTAL_BYTES:
             fail("source manifest exceeds the independent 8 MiB aggregate bound")
         payloads[name] = data
+    if payloads["pyproject.toml"] != raw:
+        fail("project configuration changed while collecting its source snapshot")
     return {**config, **project, "root": root, "payloads": payloads, "source_parent": parent, "call_name": config["export"][7:]}
 
 
@@ -324,7 +326,7 @@ def tool_identity(requested, label):
 
 def run_tool(arguments, cwd, seconds, commands):
     environment = os.environ.copy()
-    for key in ("CC", "CFLAGS", "CPPFLAGS", "LDFLAGS", "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "LIBRARY_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH"):
+    for key in ("CC", "CFLAGS", "CPPFLAGS", "LDFLAGS", "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH", "LIBRARY_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "CCC_OVERRIDE_OPTIONS", "CLANG_CONFIG_FILE", "CLANG_CONFIG_FILE_SYSTEM_DIR", "CLANG_CONFIG_FILE_USER_DIR", "SDKROOT", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "LD_RUN_PATH", "LD_DEBUG"):
         environment.pop(key, None)
     started = time.monotonic()
     process = subprocess.Popen(arguments, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
