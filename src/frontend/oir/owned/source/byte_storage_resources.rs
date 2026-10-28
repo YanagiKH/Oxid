@@ -54,6 +54,7 @@ mod tests {
             + super::super::byte_string_successor_bytes(0)
             + super::super::file_index_successor_bytes()
             + super::super::file_projection_successor_bytes()
+            + super::super::record_vector_projection_successor_bytes()
             + super::super::super::reviewer_source::vector_hir_fixed_successor_bytes()
             + super::super::super::reviewer_source::copy_hir_fixed_successor_bytes();
         let inherited = plan.total.checked_sub(successor).unwrap();

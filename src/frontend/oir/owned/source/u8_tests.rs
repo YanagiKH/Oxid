@@ -532,6 +532,7 @@ fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
                 + super::hir_budget::byte_string_successor_bytes(1)
                 + super::hir_budget::file_index_successor_bytes()
                 + super::hir_budget::file_projection_successor_bytes()
+                + super::hir_budget::record_vector_projection_successor_bytes()
                 + super::reviewer_source::vector_hir_fixed_successor_bytes()
                 + super::reviewer_source::copy_hir_fixed_successor_bytes()
                 + super::reviewer_source::copy_ordinary_record_backing_growth(
@@ -546,6 +547,7 @@ fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
                 + super::hir_budget::byte_string_successor_bytes(1)
                 + super::hir_budget::file_index_successor_bytes()
                 + super::hir_budget::file_projection_successor_bytes()
+                + super::hir_budget::record_vector_projection_successor_bytes()
                 + super::reviewer_source::vector_hir_fixed_successor_bytes()
                 + super::reviewer_source::copy_hir_fixed_successor_bytes()
                 + super::reviewer_source::copy_ordinary_record_backing_growth(
