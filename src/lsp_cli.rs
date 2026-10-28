@@ -220,7 +220,7 @@ impl Server {
                         Ok(()) => response(
                             writer,
                             id,
-                            json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":{"openClose":true,"change":2,"save":{"includeText":true}},"documentFormattingProvider":true,"completionProvider":{"resolveProvider":false,"triggerCharacters":[":"]},"definitionProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},"serverInfo":{"name":"Oxid","version":env!("CARGO_PKG_VERSION")}}),
+                            json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":{"openClose":true,"change":2,"save":{"includeText":true}},"documentFormattingProvider":true,"completionProvider":{"resolveProvider":false,"triggerCharacters":[":","."]},"definitionProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},"serverInfo":{"name":"Oxid","version":env!("CARGO_PKG_VERSION")}}),
                         )?,
                         Err(message) => error(writer, id, -32602, &message)?,
                     }
@@ -429,6 +429,48 @@ impl Server {
         let overlay = frontend::editor::SourceOverlay::new(&entries)?;
         let graphs = project_cli::editor_project_graphs(&document.path, self.explicit_typed)?;
         let (mut files, mut bytes) = (0, 0);
+        if frontend::editor::members::hint(&document.text, offset) {
+            let mut merge = frontend::editor::members::Merge::default();
+            for graph in graphs {
+                if !graph
+                    .packages
+                    .iter()
+                    .any(|package| document.path.starts_with(&package.root))
+                {
+                    continue;
+                }
+                let result = frontend::editor::members::complete(
+                    &graph.packages,
+                    graph.entry.as_deref(),
+                    &overlay,
+                    &document.path,
+                    offset,
+                )
+                .map_err(|errors| {
+                    errors.first().map_or_else(
+                        || "cannot read record fields".to_owned(),
+                        |error| bounded(&error.message, 8192).to_owned(),
+                    )
+                })?;
+                files += result.completions.files;
+                bytes += result.completions.bytes;
+                if files > 1024 || bytes > 8 * 1024 * 1024 {
+                    return Err("completion exceeds the source limit".into());
+                }
+                merge.push(result);
+            }
+            let mut items = Vec::new();
+            let mut incomplete = false;
+            if let Some(result) = merge.finish() {
+                incomplete = result.incomplete;
+                if let Some(replacement) = result.replacement {
+                    for item in result.entries {
+                        items.push(json!({"label":item.label,"kind":item.kind,"detail":item.detail,"textEdit":{"range":range(replacement.start,replacement.end),"newText":item.label}}));
+                    }
+                }
+            }
+            return Ok(json!({"isIncomplete":incomplete,"items":items}));
+        }
         let mut labels = BTreeSet::new();
         let mut items = Vec::new();
         let mut incomplete = false;

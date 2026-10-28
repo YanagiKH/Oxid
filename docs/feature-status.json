@@ -2008,19 +2008,20 @@
     },
     {
       "id": "typed-language-server",
-      "summary": "Live typed diagnostics, formatting, visible-name and qualified module completion, definitions and source symbols",
+      "summary": "Live typed diagnostics, formatting, visible-name, module-path and record-field completion, definitions and source symbols",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "checked-source / LSP stdio",
-      "target_scope": "Portable single-file compiler checks; project modules and dependency loading currently Linux only. Hosted qualification requires executed exact-source tests.",
+      "target_scope": "Portable single-file compiler checks. Project queries follow the platform's source-loading policy; each platform requires its own executed qualification.",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [
         "rfcs/0065-typed-language-server.md",
         "docs/TYPED_PROJECTS.md",
         "rfcs/0066-editor-symbol-navigation.md",
-        "rfcs/0069-editor-name-completion.md"
+        "rfcs/0069-editor-name-completion.md",
+        "rfcs/0072-record-field-completion.md"
       ],
       "implementation": [
         "src/lsp_cli.rs",
@@ -2033,20 +2034,25 @@
         "src/frontend/project/editor_sources.rs",
         "src/frontend/editor/navigation.rs",
         "src/frontend/editor/completion.rs",
+        "src/frontend/editor/members.rs",
+        "src/frontend/editor/members/resources.rs",
         "src/frontend/declaration_index/editor_completion.rs",
+        "src/frontend/declaration_index/editor_completion/members.rs",
         "src/frontend/parser/editor_query.rs",
+        "src/frontend/parser/editor_query/members.rs",
         "src/frontend/project/module_syntax.rs"
       ],
       "tests": [
         "tests/typed_language_server.rs",
         "src/frontend/editor.rs",
+        "src/frontend/editor/members/tests.rs",
         "src/lsp_cli/documents.rs",
         "src/lsp_cli/json.rs",
         "src/lsp_cli/transport.rs",
         "src/lsp_cli/uri.rs"
       ],
       "evidence": [],
-      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion covers keywords, visible names and crate/module paths with a 512-item response limit, including unsaved module and direct-dependency buffers. Qualified completion requires valid declaration headers and respects privacy. Member, enum-variant and built-in catalog completion, type/member navigation, rename and profiling are unavailable. Namespace and syntax admission are required for navigation. Per-document, session, graph, symbol and protocol limits apply."
+      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion covers keywords, visible names, crate/module paths and visible monomorphic record fields with a 512-item response limit, including unsaved module and direct-dependency buffers. Field receivers require an explicit parameter type or a direct record constructor in a supported straight-line prefix; ambiguous, moved, shadowed and generic receivers provide no fields. Import-alias inference, methods, enum variants, built-in catalog completion, type/member navigation, rename and profiling remain unavailable. Namespace and syntax admission are required for navigation. Per-document, session, graph, symbol and protocol limits apply."
     },
     {
       "id": "disjoint-record-field-borrows",

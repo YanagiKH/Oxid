@@ -109,12 +109,24 @@ Type `crate::` or `crate::helper::` for visible module names, functions and type
 This also works with unsaved declarations, partial names and unfinished `use`
 declarations, including an existing `as alias`.
 
+Type `point.` to complete fields of a record parameter (`Point`, `&Point`, or
+`&mut Point`), or a local initialized directly with `Point { ... }`. Field names
+follow unsaved declarations and module visibility. Partial names replace the
+whole identifier, including when the cursor is in its middle.
+
+This first field-completion scope uses monomorphic records named locally or by
+an explicit `crate::...` path. It does not infer import aliases, generic records,
+call results or chained receivers. A preceding use of the receiver, duplicate
+binding or control flow suppresses suggestions instead of guessing whether the
+value remains available. See [record field completion](../rfcs/0072-record-field-completion.md)
+for the supported source forms.
+
 Workspace checks include every member and declared test entry. Dependencies are
 resolved offline; prepare Git dependencies with ordinary project commands first.
 Manifests and lockfiles are read from disk. Diagnostics reflect editor source
 buffers and do not replace `oxid check --frozen` for saved-input verification.
-Cross-file loading follows the ordinary project's host and path rules. Receiver
-member completion, rename and navigation to types or members are not yet provided. See the
+Cross-file loading follows the ordinary project's host and path rules. Method
+completion, rename and navigation to types or members are not yet provided. See the
 [language server contract](../rfcs/0065-typed-language-server.md) and
 [navigation scope](../rfcs/0066-editor-symbol-navigation.md).
 

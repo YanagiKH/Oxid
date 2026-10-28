@@ -21,9 +21,9 @@ def adapt_wrapper(name, original):
 
 SOURCE_FILES = (
     "lexer.rs", "diagnostic.rs", "source.rs", "project/budget.rs",
-    "ast.rs", "ast/generic_syntax.rs", "byte_strings.rs", "parser.rs", "parser/arrays.rs", "parser/enums.rs", "parser/conversions.rs", "parser/characters.rs", "parser/editor_query.rs",
+    "ast.rs", "ast/generic_syntax.rs", "byte_strings.rs", "parser.rs", "parser/arrays.rs", "parser/enums.rs", "parser/conversions.rs", "parser/characters.rs", "parser/editor_query.rs", "parser/editor_query/members.rs",
     "owned_diagnostic.rs", "builtin_catalog.rs", "experimental_builtins.rs", "vector_builtins.rs", "hir.rs",
-    "declaration_index.rs", "declaration_index/editor_completion.rs", "declaration_index/generics.rs",
+    "declaration_index.rs", "declaration_index/editor_completion.rs", "declaration_index/editor_completion/members.rs", "declaration_index/generics.rs",
     "declaration_index/generics/flow.rs", "declaration_index/generics/nominal.rs",
     "declaration_index/generics/inference.rs",
     "declaration_index/enum_views.rs",
