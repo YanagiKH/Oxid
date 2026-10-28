@@ -150,7 +150,7 @@ impl EditorFile {
                         parser.bump();
                         let mut count = 1usize;
                         parser.expect(Kind::Ident, "expected crate path")?;
-                        let mut endpoint = None;
+                        let mut endpoint: Option<Span>;
                         loop {
                             parser.expect(Kind::Colon, "absolute item path requires `::`")?;
                             parser.expect(Kind::Colon, "absolute item path requires `::`")?;
