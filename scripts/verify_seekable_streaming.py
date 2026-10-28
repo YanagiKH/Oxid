@@ -165,9 +165,11 @@ def verify(args):
     check.save()
     try:
         for name in ['clang', 'opt', 'ld.lld']:
-            tool = (check.llvm/name).resolve(strict=True)
+            tool = check.llvm/name
+            resolved = tool.resolve(strict=True)
             version = check.command('tool-'+name, [tool, '--version'], check.output)
-            check.report['tools'].append({'path': str(tool), 'sha256': sha(tool),
+            check.report['tools'].append({'path': str(tool), 'resolved_path': str(resolved),
+                                           'sha256': sha(tool),
                                            'version_stdout_sha256': hashlib.sha256(version.stdout).hexdigest()})
         check.save()
         for number, compiler in enumerate(check.compilers):
@@ -250,6 +252,8 @@ def verify(args):
                     native_results = current
                 check.deployed(binary, prefix+'-'+kind, profile)
         for tool in check.report['tools']:
+            require(str(Path(tool['path']).resolve(strict=True)) == tool['resolved_path'],
+                    'native tool target changed during verification')
             require(sha(tool['path']) == tool['sha256'], 'native tool changed during verification')
         for pin in check.report['locks']:
             require(sha(pin['retained_path']) == pin['sha256'], 'retained lock changed')
