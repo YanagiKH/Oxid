@@ -407,7 +407,7 @@ impl Layout {
     pub(super) fn align(self) -> usize {
         self.align
     }
-    fn scalar(ty: hir::Ty) -> Self {
+    pub(super) fn scalar(ty: hir::Ty) -> Self {
         match ty {
             hir::Ty::Bool | hir::Ty::U8 | hir::Ty::I8 | hir::Ty::Unit => Self { size: 1, align: 1 },
             hir::Ty::I16 | hir::Ty::U16 => Self { size: 2, align: 2 },
@@ -494,6 +494,9 @@ impl RecordDecl {
     }
     pub(super) fn layout(&self) -> Layout {
         self.layout
+    }
+    pub(super) fn field_start(&self) -> usize {
+        self.field_start
     }
 }
 

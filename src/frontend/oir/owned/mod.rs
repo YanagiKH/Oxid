@@ -12,6 +12,7 @@ mod builtins;
 // Built-in buffer operations require the checked canonical resource catalog.
 mod byte_buffer;
 mod cfg;
+pub(super) mod debug;
 mod execute;
 mod experimental_descriptors;
 mod flow;

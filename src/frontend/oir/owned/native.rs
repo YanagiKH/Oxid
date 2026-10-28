@@ -98,6 +98,25 @@ struct CopyTransferCarriers {
 }
 const COPY_TRANSFER_CONTROL_BYTES: usize =
     size_of::<CopyTransferCarriers>() + 6 * (5 * usize::BITS as usize + 128);
+// Debug records describe the existing owner arena. Charge the marker's actual
+// borrowed transports and formatting roles separately from the inherited
+// emitter envelope; no owner table, name String or runtime storage is added.
+#[allow(dead_code)]
+struct RecordDebugCarriers {
+    output: &'static mut Emission,
+    plan: &'static ExecutionPlan<'static>,
+    owner: &'static OwnerDecl,
+    aggregate: AggregateTy,
+    record: RecordId,
+    declaration: &'static RecordDecl,
+    marker_parameters: (Span, usize, usize, usize),
+    offset_and_argument: [usize; 2],
+    local_owner: Option<(OwnerPlaceId, &'static OwnerDecl)>,
+    parameter: Option<(usize, &'static ParameterBinding)>,
+    formatting: FormatCallsiteBacking<6>,
+    write: std::fmt::Result,
+}
+const RECORD_DEBUG_CONTROL_BYTES: usize = size_of::<RecordDebugCarriers>();
 // The borrowed native plan and its fixed checking/mapping carriers occupy this
 // part of the inherited envelope; no retained table or new reserve is added.
 const _: () = assert!(plan::native_storage::FIXED_CARRIER_ALLOWANCE <= EMITTER_TRANSIENT_BYTES);
@@ -759,26 +778,29 @@ fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
         )?,
     )?;
     let emitter_transient = add(
+        if debug { RECORD_DEBUG_CONTROL_BYTES } else { 0 },
         add(
-            add(inherited_emitter_transient, R::CONTROL_BYTES)?,
-            if plan.uses_checked_copies() {
-                COPY_TRANSFER_CONTROL_BYTES
+            add(
+                add(inherited_emitter_transient, R::CONTROL_BYTES)?,
+                if plan.uses_checked_copies() {
+                    COPY_TRANSFER_CONTROL_BYTES
+                } else {
+                    0
+                },
+            )?,
+            if plan.uses_vectors() {
+                vector::control_bytes()
+                    + if plan.uses_record_vectors() {
+                        vector::record_control_bytes()
+                    } else {
+                        0
+                    }
+            } else if plan.uses_typed_ranges() {
+                vector::range_control_bytes()
             } else {
                 0
             },
         )?,
-        if plan.uses_vectors() {
-            vector::control_bytes()
-                + if plan.uses_record_vectors() {
-                    vector::record_control_bytes()
-                } else {
-                    0
-                }
-        } else if plan.uses_typed_ranges() {
-            vector::range_control_bytes()
-        } else {
-            0
-        },
     )?;
     let emission_metadata = add(
         add(
@@ -4256,6 +4278,15 @@ fn emit_function(
         )
         .unwrap();
         resources::initialize(out, plan, f.owners[i].aggregate(), &format!("%o{i}"));
+        if out.debug && matches!(f.owners[i].kind, OwnerKind::Local { .. }) {
+            record_debug_variable(
+                out,
+                plan,
+                &f.owners[i],
+                storage.owner_offset(OwnerPlaceId(i)),
+                0,
+            );
+        }
     }
     for i in 0..storage.reference_slots() {
         if out.exceeded {
@@ -4315,6 +4346,14 @@ fn emit_function(
                         "%scalars",
                         storage.scalar_offset(local.0),
                     ),
+                );
+            } else if let ParameterBinding::Owned(owner) = parameter {
+                record_debug_variable(
+                    out,
+                    plan,
+                    &f.owners[owner.0],
+                    storage.owner_offset(*owner),
+                    i + 1,
                 );
             }
         }
@@ -4408,6 +4447,26 @@ fn emit_function(
         );
     }
     out.write_str("}\n").unwrap();
+}
+
+fn record_debug_variable(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_>,
+    owner: &OwnerDecl,
+    offset: usize,
+    argument: usize,
+) {
+    let AggregateTy::Record(record) = owner.aggregate() else {
+        return;
+    };
+    let declaration = plan
+        .witness()
+        .declarations()
+        .record(record)
+        .expect("verified record");
+    if declaration.is_copy() {
+        crate::frontend::native_debug::record_variable(out, owner.span, record.0, argument, offset);
+    }
 }
 
 /// The sealed builtin owns both the result extent and its admitted scratch
@@ -6963,6 +7022,10 @@ fn owned_enum_native_shared_branch_counts_and_exact_ir_admission() {
 #[cfg(test)]
 #[path = "copy_record_native_tests.rs"]
 mod copy_record_tests;
+
+#[cfg(test)]
+#[path = "copy_record_debug_tests.rs"]
+mod copy_record_debug_tests;
 
 #[cfg(test)]
 #[path = "record_vector_native_tests.rs"]
