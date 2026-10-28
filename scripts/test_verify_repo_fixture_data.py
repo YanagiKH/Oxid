@@ -1409,7 +1409,10 @@ class TypedOverlayAdmissionTests(unittest.TestCase):
         self.assertNotIn(extra, entries)
         self.assertIn((self.root / BYTE_PILOT, True), checks)
         self.assertIn(self.root / BYTE_PILOT, entries)
-        self.assertEqual(count - 1, 79)  # Explicit RFC0031 pilot subtraction.
+        library = self.root / PYTHON_LIBRARY_ENTRY
+        self.assertEqual([row for row in checks if row[0] == library], [(library, True)])
+        self.assertNotIn(library, entries)
+        self.assertEqual(count - 1 - 1, 79)  # Explicit pilot and library additions.
         self.assertFalse(any(path == self.root / name for path, _ in checks for name in V2_OVERLAY_FILES))
 
     def test_overlay_cannot_also_be_a_standalone_typed_source_or_legacy_run(self):
