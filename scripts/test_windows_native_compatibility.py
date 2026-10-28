@@ -75,6 +75,7 @@ class WindowsNativeAdmission(unittest.TestCase):
             "native/typed_preview.c", "src/frontend/build_config.rs", "src/frontend/driver.rs",
             "src/frontend/mod.rs", "src/frontend/native.rs", "src/frontend/native/doctor.rs",
             "src/frontend/oir/native.rs", "src/frontend/oir/owned/native.rs",
+            "src/frontend/oir/source/sealed.rs",
             "src/frontend/project/filesystem/windows.rs",
             "src/project_cli.rs", "src/project_cli/workspace.rs",
         })
@@ -187,6 +188,24 @@ class WindowsNativeAdmission(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "reviewed Windows-native input membership"):
                 self.capture()
 
+    def test_pure_test_adapter_and_sealed_entry_changes_require_hash_and_directives(self):
+        self.assertEqual(self.capture(), self.current)
+        for name in ("src/frontend/driver.rs", "src/frontend/windows_native.rs",
+                     "src/frontend/oir/source/sealed.rs", "src/project_cli.rs"):
+            original = self.current[name]
+            changed = original + b"#[cfg(any())]\nfn altered_adapter(){}\n"
+            self.put(name, changed)
+            with self.subTest(name=name, boundary="hash"), self.assertRaisesRegex(
+                    ValueError, "does not match reviewed input"):
+                self.capture()
+            # A replacement hash alone cannot hide a changed executable guard.
+            with patch.dict(gate.REVIEWED_INPUTS, {name: (len(changed), gate.sha(changed))}):
+                with self.subTest(name=name, boundary="directives"), self.assertRaisesRegex(
+                        ValueError, "directive changed"):
+                    self.capture()
+            self.put(name, original)
+        self.assertEqual(self.capture(), self.current)
+
     def test_already_accepted_windows_dispatch_bytes_cannot_change(self):
         name, = gate.UNCHANGED_INPUTS
         self.put(name, self.parent[name] + b"// changed\n")
@@ -243,9 +262,9 @@ class WindowsNativeAdmission(unittest.TestCase):
 
 
 class FrozenCopyDebugReplay(unittest.TestCase):
-    def test_all_thirteen_reviewed_inputs_match_the_frozen_source_bytes_and_directives(self):
-        frozen = "ea6e25b1fd9b8ca1df5d302b5fa80b0d0e7ba846"
-        self.assertEqual(len(gate.WINDOWS_NATIVE_CHANGED), 11)
+    def test_all_fourteen_reviewed_inputs_match_the_frozen_source_bytes_and_directives(self):
+        frozen = "fc42c1838928cbd138068bcd74c448b77502dfad"
+        self.assertEqual(len(gate.WINDOWS_NATIVE_CHANGED), 12)
         self.assertEqual(len(gate.WINDOWS_NATIVE_ADDED), 2)
         self.assertEqual(set(gate.REVIEWED_INPUTS), gate.WINDOWS_NATIVE_CHANGED | gate.WINDOWS_NATIVE_ADDED)
         self.assertEqual(set(gate.REVIEWED_DIRECTIVES), set(gate.REVIEWED_INPUTS))
@@ -254,6 +273,76 @@ class FrozenCopyDebugReplay(unittest.TestCase):
             self.assertEqual(gate.regular(ROOT, name), body, name)
             self.assertEqual((len(body), gate.sha(body)), pin, name)
             self.assertEqual(gate.source_directives(name, body), gate.REVIEWED_DIRECTIVES[name], name)
+
+    def test_pure_test_selection_keeps_the_qualified_internal_invocation_restrictions(self):
+        current = gate.regular(ROOT, "src/project_cli.rs").decode()
+        previous = git_body(gate.PREDECESSOR, "src/project_cli.rs").decode()
+
+        def section(body, start, end):
+            begin = body.index(start)
+            return body[begin:body.index(end, begin)]
+
+        # These original rules reject unknown/duplicate flags, explicit source
+        # operands, missing edition/process, JSON and workspace/package routing.
+        for start, end in (
+            ("    fn scan(args:", "    fn json(&self)"),
+            ("    if options.project_test_seen", "    if options.invalid ||"),
+            ("fn project_check_run(", "fn lock_snapshot("),
+        ):
+            self.assertEqual(section(current, start, end), section(previous, start, end))
+        selection = (
+            "    let pure_test = frontend::NativeBuildSettings::windows_msvc_host()\n"
+            "        && matches!(command, frontend::PackageCommand::Run)\n"
+            "        && options.project_test.is_some();"
+        )
+        self.assertEqual(current.count(selection), 1)
+        self.assertEqual(current.count("prepared.execute_test("), 1)
+        self.assertIn("    if pure_test {\n"
+                      "        return Ok(prepared.execute_test(execution_policy(&snapshot.manifest)?));\n"
+                      "    }", current)
+        driver = gate.regular(ROOT, "src/frontend/driver.rs").decode()
+        adapter = section(driver, "    pub(crate) fn execute_test(",
+                          "    /// Consume the retained input logically")
+        self.assertLess(adapter.index("let checked = self.checked()?"),
+                        adapter.index("super::windows_native::test_preflight(project, execution)"))
+        self.assertLess(adapter.index("test_preflight(project, execution)"),
+                        adapter.index("checked.run_test_i32()"))
+        self.assertIn("report(project.sources(), errors, false, Summary::Run(None))", adapter)
+        for forbidden in ("process::", "native::compile", "parse(", "check_source("):
+            self.assertNotIn(forbidden, adapter)
+
+    def test_pure_tests_preserve_the_original_typed_entry_rule_and_scalar_denials(self):
+        current = gate.regular(ROOT, "src/frontend/oir/source/sealed.rs").decode()
+        previous = git_body("ea6e25b1fd9b8ca1df5d302b5fa80b0d0e7ba846",
+                            "src/frontend/oir/source/sealed.rs").decode()
+
+        def rule(body, start, end):
+            begin = body.index("        let signature =", body.index(start))
+            return body[begin:body.index(end, begin)].rstrip()
+
+        message = '"process entry requires original-root fn main() -> i32 with no parameters"'
+        self.assertEqual(rule(previous, "    fn checked_process_entry(", "\n    fn require_process_host("),
+                         rule(current, "    fn checked_i32_entry(", "\n    /// A pure declared test")
+                         .replace("                message,", "                " + message + ","))
+        wrapper = current[current.index("    fn checked_process_entry("):
+                          current.index("    fn checked_i32_entry(")]
+        self.assertIn("self.checked_i32_entry(\n            " + message, wrapper)
+        pure = current[current.index("    pub(in crate::frontend) fn run_test_i32("):
+                       current.index("    fn require_process_host(")]
+        self.assertLess(pure.index("self.checked_i32_entry("), pure.index("self.run_result("))
+        self.assertIn("self.run_result(crate::frontend::build_config::ExecutionPolicy::Bounded)?", pure)
+        self.assertIn("RuntimeValue::Scalar(RuntimeScalar::Narrow(Scalar::I32(status))) => Ok(status)", pure)
+        self.assertNotIn("process::", pure)
+        scope = gate.regular(ROOT, "src/frontend/windows_native.rs").decode()
+        previous = git_body("ea6e25b1fd9b8ca1df5d302b5fa80b0d0e7ba846",
+                            "src/frontend/windows_native.rs").decode()
+        self.assertEqual(scope[scope.index("fn outside_scalar_scope("):scope.index("fn reject()")],
+                         previous[previous.index("fn outside_scalar_scope("):previous.index("fn reject()")])
+        preflight = scope[scope.index("pub(super) fn test_preflight("):
+                          scope.index("fn outside_project_scope(")]
+        self.assertLess(preflight.index("if execution.hosted()"),
+                        preflight.index("if outside_project_scope(project)"))
+        self.assertNotIn("windows_msvc_host()", preflight)
 
     def test_all_55_predecessor_policies_and_adapters_are_exact(self):
         self.assertEqual(len(gate.PREDECESSOR_POLICIES), 55)
