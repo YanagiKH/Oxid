@@ -223,9 +223,11 @@ def wheel_tag():
     if not isinstance(libc, str) or not libc.startswith("glibc "):
         fail("the initial GNU target requires the host's glibc runtime and SDK")
     suffix = sysconfig.get_config_var("EXT_SUFFIX")
-    if not isinstance(suffix, str) or not re.fullmatch(r"\.cpython-[0-9]+-[A-Za-z0-9_-]+\.so", suffix):
-        fail("unsupported actual CPython extension suffix")
-    version = f"cp{sys.version_info.major}{sys.version_info.minor}"
+    digits = f"{sys.version_info.major}{sys.version_info.minor}"
+    soabi = f"cpython-{digits}-{machine}-linux-gnu"
+    if getattr(sys, "abiflags", "") or sysconfig.get_config_var("SOABI") != soabi or suffix != "." + soabi + ".so":
+        fail("actual CPython ABI and extension suffix must match the normal GNU host")
+    version = "cp" + digits
     return f"{version}-{version}-linux_{machine}"
 
 
@@ -434,6 +436,7 @@ def render_shim(template, config, arity, library_name):
     values = {
         "@MODULE@": config["module"], "@EXPORT@": config["call_name"],
         "@ARITY@": str(arity), "@LIBRARY@": library_name,
+        "@PY_MAJOR@": str(sys.version_info.major), "@PY_MINOR@": str(sys.version_info.minor),
         "@PARAMETERS@": ", ".join(["int32_t"] * arity + ["int32_t *"]),
         "@ARGUMENTS@": ", ".join([f"values[{i}]" for i in range(arity)] + ["&output"]),
     }

@@ -20,6 +20,11 @@ typedef struct {
 } oxid_state;
 
 _Static_assert(sizeof(void *) == 8, "qualified Linux64 host required");
+_Static_assert(PY_MAJOR_VERSION == @PY_MAJOR@ && PY_MINOR_VERSION == @PY_MINOR@,
+               "headers must match the actual build interpreter");
+#if defined(Py_GIL_DISABLED) && Py_GIL_DISABLED
+#error "free-threaded Python is outside this extension contract"
+#endif
 _Static_assert(sizeof(oxid_call) == sizeof(void *), "POSIX function pointer representation required");
 _Static_assert(sizeof(oxid_version) == sizeof(void *), "POSIX function pointer representation required");
 
