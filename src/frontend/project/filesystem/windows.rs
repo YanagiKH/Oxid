@@ -352,7 +352,15 @@ fn open(
             },
             std::ptr::null(),
             OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS,
+            // Directory handles need backup intent. Source files must retain
+            // ordinary read-sharing checks, including an exclusive open's denial.
+            FILE_FLAG_OPEN_REPARSE_POINT
+                | FILE_FLAG_POSIX_SEMANTICS
+                | if directory {
+                    FILE_FLAG_BACKUP_SEMANTICS
+                } else {
+                    0
+                },
             std::ptr::null_mut(),
         )
     };
