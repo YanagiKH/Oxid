@@ -74,6 +74,13 @@ fn unverified_unused_declarations_are_rejected_before_tools_and_artifacts() {
         "fn unused(value:f32)->f32{return value;} fn main()->i32{return 42;}",
         "fn unused(value:f64)->f64{return value;} fn main()->i32{return 42;}",
         "fn unused(value:char)->char{return value;} fn main()->i32{return 42;}",
+        "fn unused()->i32{let n=1;let f=n.to_f64();return 0;}fn main()->i32{return 42;}",
+        "fn unused()->i32{let n=1;let f=n.to_f32();return 0;}fn main()->i32{return 42;}",
+        "fn unused()->i32{let n=65;let c=n.to_char_checked();return 0;}fn main()->i32{return 42;}",
+        "fn unused()->i32{let n=65;let c=n.to_char_checked();let scalar=c.to_u32();return 0;}fn main()->i32{return 42;}",
+        "fn unused()->i32{let n=1;let f=n.to_f64();let root=f.sqrt();return 0;}fn main()->i32{return 42;}",
+        "fn unused()->i32{let n=1;let f=n.to_f64();let bits=f.to_bits();return 0;}fn main()->i32{return 42;}",
+        "fn unused()->i32{let n=1;let f=n.to_f64();let bits=f.to_bits();let back=f64::from_bits(bits);return 0;}fn main()->i32{return 42;}",
     ] {
         let fixture = Fixture::new(source);
         let checked = fixture.invoke(&["check", "main.ox", "--edition=typed-preview", "--message-format=json"]);
