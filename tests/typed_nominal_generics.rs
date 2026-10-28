@@ -86,7 +86,27 @@ fn generic_enum_payloads_transfer_owned_resources() {
 
 #[test]
 fn newly_discovered_enum_instances_preserve_builtin_enum_identity() {
-    returns("use std::io::read_stdin;use std::io::ReadStatus;enum Choice<T>{Empty,Value(T)}fn choose<T>(value:T)->Choice<T>{return Choice::<T>::Value(value);}fn identity<T>(value:T)->T{return value;}fn main()->i32{let first=choose(42);let mut codes=[0];let status=identity(read_stdin(&mut codes));let second=choose(true);match status{ReadStatus::Eof(count)=>{match first{Choice::Empty=>{return 1;},Choice::Value(value)=>{return value;},}},ReadStatus::Full=>{return 2;},ReadStatus::IoError=>{return 3;},}}",b"42\n");
+    let project = Project::new("use std::io::read_stdin;use std::io::ReadStatus;enum Choice<T>{Empty,Value(T)}fn choose<T>(value:T)->Choice<T>{return Choice::<T>::Value(value);}fn identity<T>(value:T)->T{return value;}fn main()->i32{let first=choose(42);let mut codes=[0];let status=identity(read_stdin(&mut codes));let second=choose(true);match status{ReadStatus::Eof(count)=>{match first{Choice::Empty=>{return 1;},Choice::Value(value)=>{return value;},}},ReadStatus::Full=>{return 2;},ReadStatus::IoError=>{return 3;},}}");
+    let checked = project.invoke(&["check"]);
+    assert!(checked.status.success(), "{checked:?}");
+    let output = project.invoke(&["run"]);
+    if cfg!(all(
+        any(target_os = "linux", target_os = "macos"),
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(output.stdout, b"42\n");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    } else {
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert_eq!(String::from_utf8(output.stderr).unwrap().lines().next(),
+            Some("error[E0608] (oir-owned-run): bounded stdin execution requires Linux or macOS on x86_64 or ARM64"));
+    }
+    assert!(!project.0.join(".oxid").exists());
+    assert!(!project.0.join("oxid.lock").exists());
 }
 
 #[test]
