@@ -477,6 +477,11 @@ class FrozenFileSeekReplay(unittest.TestCase):
         frozen = "9f69c5c86521ed96d47a8af3c7cda8afbd9c5508"
         name = ".github/workflows/ci.yml"
         current = gate.regular(ROOT, name)
+        job = re.search(rb"^  file-seek-source-policy-predecessor:.*?(?=^  [A-Za-z0-9_-]+:|\Z)",
+                        current, flags=re.M | re.S)
+        self.assertIsNotNone(job)
+        self.assertEqual((len(job.group()), gate.sha(job.group())),
+                         (1036, "295be31f0fb6a6e3c2beca9819f0e50a17a7e479b80aa321b788de9ed0b81129"))
         restored, count = re.subn(
             rb"^  file-seek-source-policy-predecessor:.*?(?=^  [A-Za-z0-9_-]+:|\Z)", b"", current,
             flags=re.M | re.S,
@@ -501,15 +506,16 @@ class FrozenFileSeekReplay(unittest.TestCase):
         current = gate.regular(ROOT, name)
         anchor = b"  macos-native:\n"
         self.assertEqual(current.count(anchor), 1)
-        extra = (b"  unrelated-job:\n    runs-on: ubuntu-latest\n"
-                 b"    steps:\n      - run: true\n\n")
-        changed = current.replace(anchor, extra + anchor, 1)
         regular = gate.regular
-        def selected(root, path):
-            return changed if path == name else regular(root, path)
-        with patch.object(gate, "regular", side_effect=selected):
-            with self.assertRaises(AssertionError):
-                self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch()
+        for heading in (b"unrelated-job", b"'unrelated-job'", b'"unrelated-job"'):
+            extra = (b"  " + heading + b":\n    runs-on: ubuntu-latest\n"
+                     b"    steps:\n      - run: true\n\n")
+            changed = current.replace(anchor, extra + anchor, 1)
+            def selected(root, path):
+                return changed if path == name else regular(root, path)
+            with self.subTest(heading=heading), patch.object(gate, "regular", side_effect=selected):
+                with self.assertRaises(AssertionError):
+                    self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch()
 
     def test_every_Windows_control_function_and_resource_preparation_are_unmodified(self):
         for name in (
