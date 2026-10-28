@@ -1,5 +1,5 @@
 //! Malformed raw callers cannot turn shape coincidence into record Copy authority.
-use super::*;
+use super::super::*;
 
 const SOURCE:&str="use alloc::vec::new;use alloc::vec::try_push;#[derive(Copy)]struct Holder<T:Copy>{value:T}#[derive(Copy)]struct P{valid:bool,x:i32}#[derive(Copy)]struct Q{valid:bool,x:i32}fn main()->i32{let p=P{valid:true,x:21};let mut v=new::<P>();try_push(&mut v,p);let q=v[0];v[0]=p;return q.x+p.x;}";
 

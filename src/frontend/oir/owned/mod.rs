@@ -662,7 +662,3 @@ mod u8_tests;
 
 #[cfg(test)]
 mod byte_storage_reference_tests;
-
-#[cfg(test)]
-#[path = "record_vector_shape_tests.rs"]
-mod record_vector_shape_tests;
