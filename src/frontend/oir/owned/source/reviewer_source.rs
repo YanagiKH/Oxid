@@ -18,6 +18,126 @@ pub(super) fn vector_hir_fixed_successor_bytes() -> usize {
     vector_fixture_ledger::components().into_iter().sum()
 }
 
+// Independent complete predecessor/current role models explain Copy metadata.
+// They are inert test fixtures and never grant source or ownership authority.
+pub(super) const fn copy_resolved_record_growth() -> usize {
+    copy_fixture_ledger::RESOLVED_GROWTH
+}
+pub(super) const fn copy_raw_record_growth() -> usize {
+    copy_fixture_ledger::RAW_GROWTH
+}
+pub(super) const fn copy_hir_fixed_successor_bytes() -> usize {
+    copy_fixture_ledger::FUNCTION_GROWTH
+}
+pub(super) fn copy_ordinary_record_backing_growth(rows: usize) -> usize {
+    use std::mem::MaybeUninit;
+    // The ordinary resolver grows a Vec from empty, one record at a time.
+    // Model those retained and spare capacity slots without fabricating a row.
+    let mut prior = Vec::<MaybeUninit<copy_fixture_ledger::PriorResolvedRecord>>::new();
+    let mut current = Vec::<MaybeUninit<copy_fixture_ledger::CopyResolvedRecord>>::new();
+    for _ in 0..rows {
+        prior.push(MaybeUninit::uninit());
+        current.push(MaybeUninit::uninit());
+    }
+    assert_eq!(prior.capacity(), current.capacity());
+    prior.capacity() * copy_resolved_record_growth()
+}
+
+#[allow(dead_code)]
+mod copy_fixture_ledger {
+    use super::*;
+    use std::mem::{align_of, size_of};
+    #[repr(C)]
+    pub(super) struct PriorResolvedRecord {
+        id: RecordId,
+        name: Span,
+        span: Span,
+        fields: Vec<super::super::hir::Field>,
+        end: Span,
+    }
+    #[repr(C)]
+    pub(super) struct CopyResolvedRecord {
+        id: RecordId,
+        name: Span,
+        span: Span,
+        fields: Vec<super::super::hir::Field>,
+        end: Span,
+        is_copy: bool,
+    }
+    #[repr(C)]
+    struct PriorRawRecord {
+        id: RecordId,
+        span: Span,
+        fields: Vec<RawFieldDecl>,
+    }
+    #[repr(C)]
+    struct CopyRawRecord {
+        id: RecordId,
+        span: Span,
+        fields: Vec<RawFieldDecl>,
+        is_copy: bool,
+    }
+    #[repr(C)]
+    struct PriorFunction {
+        admission: resolve::SourceAdmission,
+        function: &'static super::super::hir::Function,
+        signatures: &'static [super::super::hir::Signature],
+        body: &'static typeck::TypedBody,
+    }
+    #[repr(C)]
+    struct CopyFunction {
+        admission: resolve::SourceAdmission,
+        function: &'static super::super::hir::Function,
+        signatures: &'static [super::super::hir::Signature],
+        body: &'static typeck::TypedBody,
+        records: &'static [super::super::hir::Record],
+    }
+    pub(super) const RESOLVED_GROWTH: usize =
+        size_of::<CopyResolvedRecord>() - size_of::<PriorResolvedRecord>();
+    pub(super) const RAW_GROWTH: usize = size_of::<CopyRawRecord>() - size_of::<PriorRawRecord>();
+    pub(super) const FUNCTION_GROWTH: usize =
+        size_of::<CopyFunction>() - size_of::<PriorFunction>();
+
+    #[test]
+    fn checked_copy_source_models_price_complete_record_and_function_roles() {
+        assert_eq!(
+            size_of::<super::super::hir::Record>(),
+            size_of::<CopyResolvedRecord>()
+        );
+        assert_eq!(
+            align_of::<super::super::hir::Record>(),
+            align_of::<CopyResolvedRecord>()
+        );
+        assert_eq!(size_of::<RawRecordDecl>(), size_of::<CopyRawRecord>());
+        assert_eq!(align_of::<RawRecordDecl>(), align_of::<CopyRawRecord>());
+        assert_eq!(
+            size_of::<typeck::TypedOwnedFunction<'static>>(),
+            size_of::<CopyFunction>()
+        );
+        assert_eq!(
+            align_of::<typeck::TypedOwnedFunction<'static>>(),
+            align_of::<CopyFunction>()
+        );
+        assert_eq!(FUNCTION_GROWTH, size_of::<&[super::super::hir::Record]>());
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(
+                (
+                    size_of::<PriorResolvedRecord>(),
+                    size_of::<CopyResolvedRecord>()
+                ),
+                (104, 112)
+            );
+            assert_eq!(
+                (size_of::<PriorRawRecord>(), size_of::<CopyRawRecord>()),
+                (56, 64)
+            );
+            assert_eq!((RESOLVED_GROWTH, RAW_GROWTH, FUNCTION_GROWTH), (8, 8, 16));
+            assert_eq!(copy_ordinary_record_backing_growth(1), 4 * RESOLVED_GROWTH);
+        }
+    }
+}
+
 mod vector_fixture_ledger {
     use super::*;
     use crate::frontend::{
@@ -715,6 +835,7 @@ fn reviewer_source_physical_payload_includes_fields_operands_and_headers_once() 
             usage.raw_bytes,
             3368 + size_of::<Vec<MatchDecl>>()
                 + super::super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH
+                + copy_raw_record_growth()
         );
         let denied = budget::fail_allocation_after(0, || {
             lower::lower_with_limits(

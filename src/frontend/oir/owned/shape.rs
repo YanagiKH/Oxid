@@ -975,7 +975,10 @@ pub(super) fn check_with_conversion_authority(
                         equal(operand(f, *value, sources)?, declared.element(), value.span)?;
                     }
                 }
-                OwnedInstruction::CopyInitialize { destination, source }
+                OwnedInstruction::CopyInitialize {
+                    destination,
+                    source,
+                }
                 | OwnedInstruction::MoveInitialize {
                     destination,
                     source,

@@ -74,7 +74,9 @@ impl Nominals {
     pub(super) fn copy(&self, value: Value) -> bool {
         match value {
             Value::Concrete(ValueTy::Scalar(_)) | Value::Parameter { copy: true, .. } => true,
-            Value::Record(id) => self.records.get(id)
+            Value::Record(id) => self
+                .records
+                .get(id)
                 .is_some_and(|record| record.complete && record.is_copy),
             _ => false,
         }
@@ -369,7 +371,10 @@ impl Nominals {
                 )?
                 .value(field.ty.span)?;
             if declaration.derive_copy.is_some() && !self.copy(value) {
-                return Err(error("Copy record fields require scalars or checked Copy records", field.ty.span));
+                return Err(error(
+                    "Copy record fields require scalars or checked Copy records",
+                    field.ty.span,
+                ));
             }
             storage.push(&mut fields, value, allocator, work, field.span)?;
         }
@@ -684,8 +689,13 @@ impl Nominals {
         ty.parameter(at)
     }
 
-    pub(super) fn record_is_copy(&self, record: RecordId, at: Span) -> Result<bool, Box<Diagnostic>> {
-        self.emitted_records.get(record.0)
+    pub(super) fn record_is_copy(
+        &self,
+        record: RecordId,
+        at: Span,
+    ) -> Result<bool, Box<Diagnostic>> {
+        self.emitted_records
+            .get(record.0)
             .and_then(|id| self.records.get(*id))
             .map(|record| record.complete && record.is_copy)
             .ok_or_else(|| bad(at))

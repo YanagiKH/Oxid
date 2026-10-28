@@ -533,6 +533,10 @@ fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
                 + super::hir_budget::file_index_successor_bytes()
                 + super::hir_budget::file_projection_successor_bytes()
                 + super::reviewer_source::vector_hir_fixed_successor_bytes()
+                + super::reviewer_source::copy_hir_fixed_successor_bytes()
+                + super::reviewer_source::copy_ordinary_record_backing_growth(
+                    typed.records().len()
+                )
         );
         assert_eq!(extra, 2_028);
         assert_eq!(
@@ -543,6 +547,10 @@ fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
                 + super::hir_budget::file_index_successor_bytes()
                 + super::hir_budget::file_projection_successor_bytes()
                 + super::reviewer_source::vector_hir_fixed_successor_bytes()
+                + super::reviewer_source::copy_hir_fixed_successor_bytes()
+                + super::reviewer_source::copy_ordinary_record_backing_growth(
+                    typed.records().len()
+                )
         );
     }
     for (limit, succeeds) in [

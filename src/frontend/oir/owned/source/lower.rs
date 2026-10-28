@@ -1583,9 +1583,15 @@ impl<'a, 'b> Walk<'a, 'b> {
                     )?;
                     self.statement(
                         if self.view.is_copy(record) {
-                            OwnedInstruction::CopyInitialize { destination, source }
+                            OwnedInstruction::CopyInitialize {
+                                destination,
+                                source,
+                            }
                         } else {
-                            OwnedInstruction::MoveInitialize { destination, source }
+                            OwnedInstruction::MoveInitialize {
+                                destination,
+                                source,
+                            }
                         },
                         span,
                         span,

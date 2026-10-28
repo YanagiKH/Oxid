@@ -3204,7 +3204,10 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 }
                 self.change_owner(frame, *destination, AVAILABLE, span)?;
             }
-            OwnedInstruction::CopyInitialize { destination, source }
+            OwnedInstruction::CopyInitialize {
+                destination,
+                source,
+            }
             | OwnedInstruction::MoveInitialize {
                 destination,
                 source,
@@ -3214,14 +3217,28 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 source,
             } => {
                 let copying = matches!(instruction, OwnedInstruction::CopyInitialize { .. });
-                let from = self.base(frame, AccessBase::Owner(*source),
-                    if copying { Access::Read } else { Access::Consume }, span)?;
+                let from = self.base(
+                    frame,
+                    AccessBase::Owner(*source),
+                    if copying {
+                        Access::Read
+                    } else {
+                        Access::Consume
+                    },
+                    span,
+                )?;
                 // A copy is a read: shared child loans and the source epoch
                 // remain valid. base() already proves the source is available.
                 if !copying {
                     self.expect_owner(frame, *source, &[AVAILABLE], span)?;
                 }
-                if copying && !self.plan.witness().declarations().is_copy(self.aggregate(from, span)?) {
+                if copying
+                    && !self
+                        .plan
+                        .witness()
+                        .declarations()
+                        .is_copy(self.aggregate(from, span)?)
+                {
                     return Err(bad("copy requires a checked Copy record", span));
                 }
                 let replacing = matches!(instruction, OwnedInstruction::Replace { .. });

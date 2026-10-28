@@ -82,16 +82,22 @@ struct CopyTransferCarriers {
     next_leaf: Option<(usize, crate::frontend::oir::owned_types::ScalarLeaf)>,
     selected_leaf: (usize, crate::frontend::oir::owned_types::ScalarLeaf),
     emission: &'static mut Emission,
-    parameters: (&'static ExecutionPlan<'static>, &'static str, AggregateTy,
-        &'static str, TransferIntent<'static>, (&'static Diagnostics, Span)),
+    parameters: (
+        &'static ExecutionPlan<'static>,
+        &'static str,
+        AggregateTy,
+        &'static str,
+        TransferIntent<'static>,
+        (&'static Diagnostics, Span),
+    ),
     formatting: [FormatCallsiteBacking<8>; 4],
     writes: [std::fmt::Result; 4],
     scalar_storage: &'static str,
     predicate: &'static str,
     bound: usize,
 }
-const COPY_TRANSFER_CONTROL_BYTES: usize = size_of::<CopyTransferCarriers>()
-    + 6 * (5 * usize::BITS as usize + 128);
+const COPY_TRANSFER_CONTROL_BYTES: usize =
+    size_of::<CopyTransferCarriers>() + 6 * (5 * usize::BITS as usize + 128);
 // The borrowed native plan and its fixed checking/mapping carriers occupy this
 // part of the inherited envelope; no retained table or new reserve is added.
 const _: () = assert!(plan::native_storage::FIXED_CARRIER_ALLOWANCE <= EMITTER_TRANSIENT_BYTES);
@@ -753,8 +759,14 @@ fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
         )?,
     )?;
     let emitter_transient = add(
-        add(add(inherited_emitter_transient, R::CONTROL_BYTES)?,
-            if plan.uses_checked_copies() { COPY_TRANSFER_CONTROL_BYTES } else { 0 })?,
+        add(
+            add(inherited_emitter_transient, R::CONTROL_BYTES)?,
+            if plan.uses_checked_copies() {
+                COPY_TRANSFER_CONTROL_BYTES
+            } else {
+                0
+            },
+        )?,
         if plan.uses_vectors() {
             vector::control_bytes()
         } else if plan.uses_typed_ranges() {
@@ -3358,9 +3370,7 @@ fn active_transfer_with_intent(
                 writeln!(out, "  %{cell}_canonical = icmp {predicate} i8 %{cell}, {bound}\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
                 emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
                 writeln!(out, "{cell}_ok:").unwrap();
-            } else if leaf.ty == hir::Ty::Char
-                && plan.witness().declarations().is_copy(aggregate)
-            {
+            } else if leaf.ty == hir::Ty::Char && plan.witness().declarations().is_copy(aggregate) {
                 writeln!(out, "  %{cell}_below = icmp ule i32 %{cell}, 1114111\n  %{cell}_before_surrogate = icmp ult i32 %{cell}, 55296\n  %{cell}_after_surrogate = icmp ugt i32 %{cell}, 57343\n  %{cell}_not_surrogate = or i1 %{cell}_before_surrogate, %{cell}_after_surrogate\n  %{cell}_canonical = and i1 %{cell}_below, %{cell}_not_surrogate\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
                 emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
                 writeln!(out, "{cell}_ok:").unwrap();
@@ -5165,11 +5175,18 @@ fn emit_statement(
                 .unwrap();
             }
         }
-        OwnedInstruction::CopyInitialize { destination, source } => {
+        OwnedInstruction::CopyInitialize {
+            destination,
+            source,
+        } => {
             let aggregate = f.owners[source.0].aggregate();
             assert!(plan.witness().declarations().is_copy(aggregate));
             active_transfer_with_intent(
-                out, plan, name, aggregate, &format!("%o{}", source.0),
+                out,
+                plan,
+                name,
+                aggregate,
+                &format!("%o{}", source.0),
                 TransferIntent::Move(&format!("%o{}", destination.0)),
                 (diagnostics, plan::instruction_span(statement)),
             );

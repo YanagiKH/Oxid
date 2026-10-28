@@ -1413,7 +1413,13 @@ fn checked_copy_runtime_preflights_all_leaves_and_owner_state_before_destination
             }
         }
         let (mut machine, statement) = selected.expect("copy reached");
-        let OwnedInstruction::CopyInitialize { destination, source } = statement.kind else { unreachable!() };
+        let OwnedInstruction::CopyInitialize {
+            destination,
+            source,
+        } = statement.kind
+        else {
+            unreachable!()
+        };
         let span = plan::instruction_span(statement);
         let from = machine.raw_key(0, source);
         let to = machine.raw_key(0, destination);
@@ -1435,16 +1441,85 @@ fn checked_copy_runtime_preflights_all_leaves_and_owner_state_before_destination
         if mutation == 5 {
             result.unwrap();
             assert_eq!(machine.frames[0].owners[source.0], owners[source.0]);
-            assert_eq!(machine.frames[0].payload[source_extent.clone()], payload[source_extent]);
+            assert_eq!(
+                machine.frames[0].payload[source_extent.clone()],
+                payload[source_extent]
+            );
             // Only initialized fields change. Private record padding stays at
             // the independently seeded byte value and is never copied/read.
-            assert_eq!(&machine.frames[0].payload[destination_extent],
-                &[7, 165, 165, 165, 42, 0, 0, 0, 1, 165, 165, 165]);
+            assert_eq!(
+                &machine.frames[0].payload[destination_extent],
+                &[7, 165, 165, 165, 42, 0, 0, 0, 1, 165, 165, 165]
+            );
             assert_eq!(machine.frames[0].owners[destination.0].state, AVAILABLE);
         } else {
             assert!(result.is_err(), "mutation={mutation}");
             assert_eq!(machine.frames[0].payload, payload, "mutation={mutation}");
             assert_eq!(machine.frames[0].owners, owners, "mutation={mutation}");
+        }
+    }
+}
+
+#[test]
+fn checked_copy_fuel_is_paid_before_any_destination_or_source_change() {
+    let text = "#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:42,last:true};let second=p;return second.earlier+p.earlier;}";
+    let (_, witness, entry) = super::super::source::copy_record_tests::checked(text);
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    let initial = 1 + plan.function(entry).usage().activation_fuel_cells();
+    let mut selected = None;
+    for fuel in initial..initial + 1000 {
+        let machine = stopped_machine(&plan, fuel);
+        let frame = &machine.frames[0];
+        let function = &witness.functions()[frame.function.0];
+        if let Some(statement) = function.blocks[frame.block.0].statements.get(frame.next) {
+            if matches!(statement.kind, OwnedInstruction::CopyInitialize { .. }) {
+                selected = Some((fuel, statement));
+                break;
+            }
+        }
+    }
+    let (prefix, statement) = selected.expect("copy reached");
+    let OwnedInstruction::CopyInitialize {
+        source,
+        destination,
+    } = statement.kind
+    else {
+        unreachable!()
+    };
+    // Three scalar leaves require one dispatch and two three-cell passes;
+    // alignment padding does not add initialized cells.
+    assert_eq!(plan.statement_cost(entry, &statement.kind), 7);
+    for (fuel, copied) in [(6, false), (7, true)] {
+        let mut machine = stopped_machine(&plan, prefix);
+        let from = machine.raw_key(0, source);
+        let to = machine.raw_key(0, destination);
+        let source_extent = machine.owner_extent(from, statement.span).unwrap();
+        let destination_extent = machine.owner_extent(to, statement.span).unwrap();
+        machine.frames[0].payload[destination_extent.clone()].fill(0xa5);
+        let payload = machine.frames[0].payload.clone();
+        let owners = machine.frames[0].owners.clone();
+        let next = machine.frames[0].next;
+        machine.fuel = fuel;
+        assert!(matches!(
+            machine.execute(),
+            Err(OwnedRunFailure::Scalar(RunFailure::Fuel(_)))
+        ));
+        assert_eq!(machine.frames[0].owners[source.0], owners[source.0]);
+        assert_eq!(
+            machine.frames[0].payload[source_extent.clone()],
+            payload[source_extent]
+        );
+        if copied {
+            assert_eq!(machine.frames[0].next, next + 1);
+            assert_eq!(machine.frames[0].owners[destination.0].state, AVAILABLE);
+            assert_eq!(
+                &machine.frames[0].payload[destination_extent],
+                &[7, 165, 165, 165, 42, 0, 0, 0, 1, 165, 165, 165]
+            );
+        } else {
+            assert_eq!(machine.frames[0].next, next);
+            assert_eq!(machine.frames[0].owners, owners);
+            assert_eq!(machine.frames[0].payload, payload);
         }
     }
 }

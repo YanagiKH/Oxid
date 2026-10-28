@@ -997,10 +997,20 @@ fn accesses(
         OwnedInstruction::WriteIndex { base, .. } => {
             visit(*base, Access::Write, DeniedRole::ArrayBase)?
         }
-        OwnedInstruction::CopyInitialize { source, destination } => {
-            visit(AccessBase::Owner(*source), Access::Read, DeniedRole::SourceCopy)?;
-            visit(AccessBase::Owner(*destination), Access::Write,
-                DeniedRole::InitializationDestination)?;
+        OwnedInstruction::CopyInitialize {
+            source,
+            destination,
+        } => {
+            visit(
+                AccessBase::Owner(*source),
+                Access::Read,
+                DeniedRole::SourceCopy,
+            )?;
+            visit(
+                AccessBase::Owner(*destination),
+                Access::Write,
+                DeniedRole::InitializationDestination,
+            )?;
         }
         OwnedInstruction::MoveInitialize {
             source,

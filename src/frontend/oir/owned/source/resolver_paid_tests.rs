@@ -2012,7 +2012,14 @@ fn assert_typed_rich_success(
                 backing
             );
             #[cfg(target_pointer_width = "64")]
-            assert_eq!(backing, case.backing_64bit);
+            {
+                let mut predecessor_successor = case.backing_64bit;
+                // Only the complete resolved Record row grows. Its independently
+                // frozen capacity includes every retained and spare Vec slot.
+                predecessor_successor[0] += case.resolver_capacities[0]
+                    * super::super::reviewer_source::copy_resolved_record_growth();
+                assert_eq!(backing, predecessor_successor);
+            }
             assert_eq!(resolver_backing, facts.resolver.plan.resolved);
             let expression_slack = case.counts.expressions - case.resolver_lengths[6];
             assert_eq!(

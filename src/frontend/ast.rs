@@ -902,7 +902,7 @@ impl Program {
         path_segments: Vec<Span>,
         imports: Vec<ImportDecl>,
         parsed_has_named_slice: bool,
-    parsed_has_copy_records: bool,
+        parsed_has_copy_records: bool,
     ) -> Self {
         let mut project_syntax =
             !modules.is_empty() || !imports.is_empty() || source.has_generics();
@@ -1504,9 +1504,10 @@ impl Program {
                 return false;
             }
             project_syntax |= record.public.is_some();
-            if record.derive_copy.is_some_and(|mark| {
-                !self.parsed_has_copy_records || !valid(mark)
-            }) || !valid(record.name)
+            if record
+                .derive_copy
+                .is_some_and(|mark| !self.parsed_has_copy_records || !valid(mark))
+                || !valid(record.name)
                 || !valid(record.span)
                 || !valid(record.end)
                 || record.public.is_some_and(|span| !valid(span))

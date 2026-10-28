@@ -6,9 +6,15 @@ use crate::frontend::{
 
 fn parse_copy(map: &SourceMap) -> Result<Program, Vec<Diagnostic>> {
     let source = map.get(SourceFileId(0));
-    parse_typed_counted(source, crate::frontend::lexer::lex(source).unwrap(),
-        SourceMode::ProjectCandidate, MAX_NODES, &mut Allocator::default(),
-        &mut Default::default()).map(|(program, _)| program)
+    parse_typed_counted(
+        source,
+        crate::frontend::lexer::lex(source).unwrap(),
+        SourceMode::ProjectCandidate,
+        MAX_NODES,
+        &mut Allocator::default(),
+        &mut Default::default(),
+    )
+    .map(|(program, _)| program)
 }
 
 #[test]
@@ -65,12 +71,17 @@ fn checked_copy_marks_cannot_be_added_removed_moved_or_rewritten_in_public_ast()
             4 => program.records[1].derive_copy = program.records[0].derive_copy,
             5 => {
                 program.records.clear();
-                program.items.retain(|item| !matches!(item, ItemId::Struct(_)));
+                program
+                    .items
+                    .retain(|item| !matches!(item, ItemId::Struct(_)));
                 assert!(program.uses_owned_syntax(source));
             }
             _ => unreachable!(),
         }
-        assert!(program.belongs_to(source), "cheap provenance does not walk mutable declarations");
+        assert!(
+            program.belongs_to(source),
+            "cheap provenance does not walk mutable declarations"
+        );
         let owner = SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap();
         let work = WorkMeter::default();
         let mut allocator = Allocator::default();
@@ -85,18 +96,44 @@ fn checked_copy_marks_cannot_be_added_removed_moved_or_rewritten_in_public_ast()
 #[test]
 fn checked_copy_attribute_does_not_open_closed_or_historical_candidate_grammars() {
     let mut map = SourceMap::new();
-    let id = map.add("closed-copy.ox".into(),
-        "#[derive(Copy)]struct P{x:i32}fn main()->i32{return 0;}".into());
+    let id = map.add(
+        "closed-copy.ox".into(),
+        "#[derive(Copy)]struct P{x:i32}fn main()->i32{return 0;}".into(),
+    );
     let source = map.get(id);
-    assert!(parse_counted(source, crate::frontend::lexer::lex(source).unwrap(),
-        SourceMode::OwnedCandidate, MAX_NODES, &mut Allocator::default()).is_err());
-    assert!(parse_counted_with_arrays(source, crate::frontend::lexer::lex(source).unwrap(),
-        SourceMode::OwnedCandidate, MAX_NODES, &mut Allocator::default(),
-        ArraySyntaxPolicy::Candidate).is_err());
-    assert!(parse_builtin_candidate_counted(source, crate::frontend::lexer::lex(source).unwrap(),
-        SourceMode::ProjectCandidate, MAX_NODES, &mut Allocator::default(),
-        &mut Default::default()).is_err());
-    assert!(parse_output_candidate_counted(source, crate::frontend::lexer::lex(source).unwrap(),
-        SourceMode::ProjectCandidate, MAX_NODES, &mut Allocator::default(),
-        &mut Default::default()).is_err());
+    assert!(parse_counted(
+        source,
+        crate::frontend::lexer::lex(source).unwrap(),
+        SourceMode::OwnedCandidate,
+        MAX_NODES,
+        &mut Allocator::default()
+    )
+    .is_err());
+    assert!(parse_counted_with_arrays(
+        source,
+        crate::frontend::lexer::lex(source).unwrap(),
+        SourceMode::OwnedCandidate,
+        MAX_NODES,
+        &mut Allocator::default(),
+        ArraySyntaxPolicy::Candidate
+    )
+    .is_err());
+    assert!(parse_builtin_candidate_counted(
+        source,
+        crate::frontend::lexer::lex(source).unwrap(),
+        SourceMode::ProjectCandidate,
+        MAX_NODES,
+        &mut Allocator::default(),
+        &mut Default::default()
+    )
+    .is_err());
+    assert!(parse_output_candidate_counted(
+        source,
+        crate::frontend::lexer::lex(source).unwrap(),
+        SourceMode::ProjectCandidate,
+        MAX_NODES,
+        &mut Allocator::default(),
+        &mut Default::default()
+    )
+    .is_err());
 }

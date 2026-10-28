@@ -649,7 +649,10 @@ impl Declarations {
                     match ty {
                         ValueTy::Scalar(_) => (),
                         ValueTy::Owned(AggregateTy::Record(id))
-                            if raw.get(id.0).is_some_and(|nested| nested.is_copy) => (),
+                            if raw.get(id.0).is_some_and(|nested| nested.is_copy) =>
+                        {
+                            ()
+                        }
                         _ => return Err(DeclarationError::NonScalarField(field.id)),
                     }
                 }
@@ -1766,7 +1769,10 @@ mod tests {
         }
         assert_eq!(size_of::<RecordDecl>(), size_of::<CopyRecordDecl>());
         assert!(size_of::<RecordDecl>() >= size_of::<OriginalRecordDecl>());
-        assert_eq!(std::mem::align_of::<RecordDecl>(), std::mem::align_of::<CopyRecordDecl>());
+        assert_eq!(
+            std::mem::align_of::<RecordDecl>(),
+            std::mem::align_of::<CopyRecordDecl>()
+        );
         let (sources, span) = source();
         let array = FixedArrayTy::check(hir::Ty::U8, 1024).unwrap();
         for owned in [0, 1, 1024] {

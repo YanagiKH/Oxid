@@ -464,8 +464,12 @@ fn parse_counted_with_policies(
                     None
                 };
                 if derive_copy.is_some() && parser.peek().kind != Kind::Struct {
-                    return Err(parser.diagnostic("E0202", "parse",
-                        "Copy derivation requires a record declaration", derive_copy));
+                    return Err(parser.diagnostic(
+                        "E0202",
+                        "parse",
+                        "Copy derivation requires a record declaration",
+                        derive_copy,
+                    ));
                 }
                 if parser.enum_keyword("enum") {
                     parser.enumeration(public).and_then(|enumeration| {
@@ -493,7 +497,12 @@ fn parse_counted_with_policies(
                             "syntax records",
                             record.name,
                         )?;
-                        parser.candidate_reserve(&mut items, MAX_NODES, "syntax items", record.name)?;
+                        parser.candidate_reserve(
+                            &mut items,
+                            MAX_NODES,
+                            "syntax items",
+                            record.name,
+                        )?;
                         items.push(ItemId::Struct(records.len()));
                         records.push(record);
                         Ok(())
@@ -1369,8 +1378,12 @@ impl Parser<'_> {
         let mut end = start.end;
         for spelling in ["[", "derive", "(", "Copy", ")", "]"] {
             if self.source.text_at(self.peek().span) != spelling {
-                return Err(self.diagnostic("E0202", "parse",
-                    "only #[derive(Copy)] on records is supported", Some(self.peek().span)));
+                return Err(self.diagnostic(
+                    "E0202",
+                    "parse",
+                    "only #[derive(Copy)] on records is supported",
+                    Some(self.peek().span),
+                ));
             }
             end = self.bump().span.end;
         }
@@ -1425,7 +1438,9 @@ impl Parser<'_> {
             public,
             name,
             fields,
-            span: self.source.span(derive_copy.or(public).unwrap_or(start).start, end.end),
+            span: self
+                .source
+                .span(derive_copy.or(public).unwrap_or(start).start, end.end),
             end,
         })
     }
