@@ -543,6 +543,12 @@ fn command_line(program: &Path, arguments: &[OsString]) -> Result<Vec<u16>, Stri
     Ok(line)
 }
 fn environment(deadline: Instant) -> Result<Vec<u16>, String> {
+    environment_block(std::env::vars_os(), deadline)
+}
+fn environment_block(
+    variables: impl IntoIterator<Item = (OsString, OsString)>,
+    deadline: Instant,
+) -> Result<Vec<u16>, String> {
     // Environment ordering is Windows ordinal, case-insensitive Unicode by
     // variable name. A fallible in-place heap sort can stop immediately on an
     // API error or deadline; it never substitutes a different collation.
@@ -590,7 +596,7 @@ fn environment(deadline: Instant) -> Result<Vec<u16>, String> {
     }
     let mut entries = Vec::new();
     let mut units = 1usize;
-    for (key, value) in std::env::vars_os() {
+    for (key, value) in variables {
         if Instant::now() >= deadline {
             return Err("probe environment setup timed out".into());
         }
@@ -969,6 +975,29 @@ mod tests {
         let error = powershell("Start-Sleep -Seconds 30", Duration::from_millis(100)).unwrap_err();
         assert!(error.contains("timed out"), "{error}");
         assert!(started.elapsed() < RUN_TIMEOUT, "{error}");
+    }
+
+    #[test]
+    fn environment_uses_unicode_ordinal_names_and_keeps_raw_values() {
+        let values: Vec<(OsString, OsString)> = [
+            ("Ö_b", "second"),
+            ("ä_a", "first=雪"),
+            ("ccc_override_options", "must not enter the tool"),
+            ("INCLUDE", r"C:\Program Files\SDK;C:\VC\include"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.into(), value.into()))
+        .collect();
+        let block = environment_block(values, Instant::now() + TOOL_TIMEOUT).unwrap();
+        let expected: Vec<u16> =
+            "INCLUDE=C:\\Program Files\\SDK;C:\\VC\\include\0ä_a=first=雪\0Ö_b=second\0\0"
+                .encode_utf16()
+                .collect();
+        assert_eq!(block, expected);
+        assert!(
+            environment_block([(OsString::from("X"), OsString::from("Y"))], Instant::now())
+                .is_err()
+        );
     }
 
     #[test]

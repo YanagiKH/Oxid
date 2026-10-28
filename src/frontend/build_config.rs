@@ -633,6 +633,7 @@ mod tests {
                 ("x86_64-unknown-linux-gnu", 62, "ld-linux-x86-64.so.2")
             };
             let expected_target = match (std::env::consts::OS, std::env::consts::ARCH) {
+                ("windows", "x86_64") if cfg!(target_env = "msvc") => "x86_64-pc-windows-msvc",
                 ("macos", "aarch64") => "aarch64-apple-darwin",
                 ("macos", "x86_64") => "x86_64-apple-darwin",
                 _ => expected.0,
