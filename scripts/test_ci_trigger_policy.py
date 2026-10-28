@@ -81,7 +81,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_windows_native_compatibility.py', current)
+        self.assertIn('scripts/verify_record_field_completion_compatibility.py', current)
         self.assertIn('scripts/verify_floats.py', current)
         self.assertIn('scripts/verify_float_roots.py', current)
         self.assertIn('scripts/verify_characters.py', current)
@@ -125,6 +125,22 @@ class CiTriggerPolicyTests(unittest.TestCase):
                       '--repo . --output "$RUNNER_TEMP/copy-record-debug-source-policy-replay"', replay)
         self.assertIn('if: always()', replay)
         self.assertIn('path: ${{ runner.temp }}/copy-record-debug-source-policy-replay', replay)
+        self.assertIn('if-no-files-found: error', replay)
+        self.assertIn('retention-days: 14', replay)
+        self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+
+    def test_windows_native_source_policy_replay_is_mandatory_and_keeps_evidence(self):
+        replay = block(self.ci, 'windows-native-source-policy-predecessor', 2)
+        self.assertIn('runs-on: ubuntu-latest', replay)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', replay)
+        self.assertIn('cp scripts/run_windows_native_predecessor_tests.py '
+                      '"$RUNNER_TEMP/windows-native-source-policy-replay.py"', replay)
+        self.assertIn('ref: 8180b1bbcbcf9ccd4d648ff5ba0ec9ea3d5b971f', replay)
+        self.assertIn('fetch-depth: 0', replay)
+        self.assertIn('python3 -B "$RUNNER_TEMP/windows-native-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/windows-native-source-policy-replay"', replay)
+        self.assertIn('if: always()', replay)
+        self.assertIn('path: ${{ runner.temp }}/windows-native-source-policy-replay', replay)
         self.assertIn('if-no-files-found: error', replay)
         self.assertIn('retention-days: 14', replay)
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')

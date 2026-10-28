@@ -130,7 +130,7 @@ def load_tests(loader, tests, pattern):
             "test_buffer_transfer_compatibility", "test_byte_string_compatibility",
             "test_arm64_host_compatibility", "test_checked_copy_compatibility",
             "test_typed_vector_compatibility", "test_qualified_completion_compatibility",
-            "test_copy_record_debug_compatibility"})
+            "test_copy_record_debug_compatibility", "test_windows_native_compatibility"})
         for module, (_, revision, _) in runner.PREDECESSOR_ONLY.items():
             name = module + ".py"
             for source in (FROZEN_SOURCES[name] + PASSING.encode(), None):
