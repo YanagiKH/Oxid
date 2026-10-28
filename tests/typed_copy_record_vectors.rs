@@ -80,6 +80,10 @@ impl Project {
 }
 impl Drop for Project {
     fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("Copy record vector failure artifacts: {}", self.0.display());
+            return;
+        }
         let _ = fs::remove_dir_all(&self.0);
     }
 }
