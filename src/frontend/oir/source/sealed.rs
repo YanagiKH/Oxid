@@ -233,6 +233,13 @@ impl From<Box<Diagnostic>> for ProcessFailure {
 }
 
 impl CheckedSourceProgram<'_> {
+    pub(in crate::frontend) fn debug_records(&self) -> Option<super::super::DebugRecords<'_>> {
+        match &self.body {
+            CheckedBody::Scalar(_) => None,
+            CheckedBody::Owned(program) => Some(program.debug_records()),
+        }
+    }
+
     pub(in crate::frontend) fn function_count(&self) -> usize {
         match &self.body {
             CheckedBody::Scalar(program) => program.function_count(),

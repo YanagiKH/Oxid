@@ -1883,7 +1883,7 @@
     },
     {
       "id": "native-source-debug-information",
-      "summary": "Optional native source locations, call stacks and scalar parameter/local inspection in GDB",
+      "summary": "Optional native source locations, call stacks, scalar variables and flat numeric Copy records in GDB",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -1902,10 +1902,15 @@
         "src/frontend/build_config.rs",
         "src/project_cli.rs",
         "src/frontend/oir/native.rs",
-        "src/frontend/oir/owned/native.rs"
+        "src/frontend/oir/owned/native.rs",
+        "src/frontend/native_debug/records.rs",
+        "src/frontend/oir/owned/debug.rs"
       ],
       "tests": [
         "tests/native_debug_info.rs",
+        "tests/native_copy_record_debug.rs",
+        "src/frontend/native_debug/record_tests.rs",
+        "src/frontend/oir/owned/copy_record_debug_tests.rs",
         "scripts/test_native_debug_compatibility.py",
         "scripts/test_linux_arm64_native.py",
         "scripts/test_debug_variables_compatibility.py"
@@ -1913,7 +1918,7 @@
       "evidence": [
         "rfcs/0061-native-debug-information.md"
       ],
-      "limitations": "References, unit values and owned aggregates have no variable descriptions. Values without a recoverable location may appear optimized out, including SSA values in dev; optimization can remove source code. LLVM 19.1.7 and existing native execution/resource limits apply."
+      "limitations": "Record inspection covers nonempty, nongeneric Copy records with numeric fields. Boolean, unit, character, nested, reference, vector, resource and non-Copy records are omitted as whole values. References and unit values have no variable descriptions. Values without a recoverable location may appear optimized out, including SSA values in dev; optimization can remove source code. LLVM 19.1.7 and existing native execution/resource limits apply."
     },
     {
       "id": "native-cpu-tensor-training",

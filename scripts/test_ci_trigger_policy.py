@@ -66,10 +66,22 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertEqual(re.findall(r'^    needs: (.+)$', package, re.MULTILINE), ['verify'])
         self.assertNotRegex(package, r'(?m)^    if:')
 
+    def test_copy_record_debugging_executes_on_both_linux_architectures_and_retains_binaries(self):
+        for job in ('native-projects', 'linux-arm64-native'):
+            native = block(self.ci, job, 2)
+            self.assertIn('for profile in debug release; do', native)
+            self.assertIn('--test native_copy_record_debug', native)
+            self.assertIn('-- --include-ignored --test-threads=1 --nocapture', native)
+            self.assertIn('OXID_TEST_KEEP_ARTIFACTS=1', native)
+            self.assertIn('TMPDIR=', native)
+            self.assertIn('include-hidden-files: true', native)
+            self.assertIn('if-no-files-found: error', native)
+            self.assertNotRegex(native, r'(?m)^    if:|continue-on-error:')
+
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_qualified_completion_compatibility.py', current)
+        self.assertIn('scripts/verify_copy_record_debug_compatibility.py', current)
         self.assertIn('scripts/verify_floats.py', current)
         self.assertIn('scripts/verify_float_roots.py', current)
         self.assertIn('scripts/verify_characters.py', current)
@@ -83,6 +95,13 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('scripts/verify_integer128.py', current)
         self.assertIn('scripts/verify_integer_bits.py', current)
         self.assertNotRegex(current, r'(?m)^    if:|continue-on-error:')
+
+        qualified = block(self.ci, 'qualified-completion-source-policy-predecessor', 2)
+        self.assertIn('ref: 20ea8ba102975d2e8ac0c667b96ce835a1bc6ef9', qualified)
+        self.assertIn('scripts/run_qualified_completion_predecessor_tests.py', qualified)
+        self.assertIn('"$RUNNER_TEMP/qualified-completion-source-policy-replay.py" --repo . --output', qualified)
+        self.assertIn('if-no-files-found: error', qualified)
+        self.assertNotRegex(qualified, r'(?m)^    if:|continue-on-error:')
 
         replay = block(self.ci, 'historical-qualification', 2)
         self.assertIn('uses: ./.github/workflows/historical-qualification.yml', replay)

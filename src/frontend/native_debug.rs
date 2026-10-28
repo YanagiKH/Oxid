@@ -1,4 +1,4 @@
-//! Optional source locations and scalar variables for verified LLVM emitters.
+//! Optional source locations and variables for verified LLVM emitters.
 //!
 //! Only their private source markers are interpreted. This pass adds metadata;
 //! it cannot select instructions, declarations, an entry point, or an ABI.
@@ -7,15 +7,21 @@ use super::{
     build_config::NativeSourceNames,
     diagnostic::Diagnostic,
     hir::Ty,
+    oir::DebugRecords,
     project::ProjectSources,
     source::{SourceFileId, Span},
 };
 use std::fmt::{self, Write};
 
+#[cfg(test)]
+mod record_tests;
+mod records;
+
 const MAX_DEBUG_IR_BYTES: usize = 128 * 1024 * 1024;
 const FUNCTION: &str = "; oxid.debug.function ";
 const LOCATION: &str = "; oxid.debug.location ";
 const VARIABLE: &str = "; oxid.debug.variable ";
+const RECORD_VARIABLE: &str = "; oxid.debug.record ";
 
 // Keep source names, LLVM operand types and DWARF encodings independent of
 // enum discriminants and of the wider physical slots in the owned emitter.
@@ -60,6 +66,24 @@ pub(super) fn variable(
     writeln!(
         out,
         "{VARIABLE}{} {} {} {ty} {argument} {offset} {kind} {operand}",
+        span.file.0, span.start, span.end
+    )
+    .unwrap();
+}
+
+/// Owned emitters use the already-verified owner arena and its exact byte
+/// offset. The metadata renderer decides whether the complete record has a
+/// supported source type; no field-by-field partial record is published.
+pub(super) fn record_variable(
+    out: &mut impl Write,
+    span: Span,
+    record: usize,
+    argument: usize,
+    offset: usize,
+) {
+    writeln!(
+        out,
+        "; oxid.debug.record {} {} {} {record} {argument} {offset} address %owners",
         span.file.0, span.start, span.end
     )
     .unwrap();
@@ -167,8 +191,20 @@ struct Scopes<'a> {
     bindings: Vec<BindingScope>,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    // Observe only the actual scope inventory reservation callsites. This is
+    // test instrumentation; production has no counter or additional carrier.
+    static SCOPE_RESERVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl<'a> Scopes<'a> {
-    fn new(function: &'a ast::Function, id: usize, next: &mut usize) -> Result<Self, fmt::Error> {
+    fn new(
+        function: &'a ast::Function,
+        id: usize,
+        next: &mut usize,
+        extra_control: usize,
+    ) -> Result<Self, fmt::Error> {
         // Two fallible inventories share one checked scratch budget. The parser
         // limits nesting; lookup climbs ancestors, not preceding siblings.
         let count = function.blocks.len();
@@ -194,11 +230,14 @@ impl<'a> Scopes<'a> {
                     .checked_mul(std::mem::size_of::<BindingScope>())
                     .and_then(|extra| size.checked_add(extra))
             })
+            .and_then(|size| size.checked_add(extra_control))
             .ok_or(fmt::Error)?;
         if scratch > MAX_DEBUG_IR_BYTES {
             return Err(fmt::Error);
         }
         let mut blocks = Vec::new();
+        #[cfg(test)]
+        SCOPE_RESERVATIONS.with(|count| count.set(count.get() + 1));
         blocks.try_reserve_exact(count).map_err(|_| fmt::Error)?;
         for block in &function.blocks {
             blocks.push(LexicalScope {
@@ -229,6 +268,8 @@ impl<'a> Scopes<'a> {
             blocks,
             bindings: Vec::new(),
         };
+        #[cfg(test)]
+        SCOPE_RESERVATIONS.with(|count| count.set(count.get() + 1));
         result
             .bindings
             .try_reserve_exact(bindings)
@@ -347,13 +388,22 @@ fn render(
     project: &ProjectSources,
     names: Option<&NativeSourceNames<'_>>,
     optimized: bool,
+    records: Option<DebugRecords<'_>>,
     out: &mut Output,
 ) -> fmt::Result {
     let sources = project.sources();
     let first_type = 5usize
         .checked_add(sources.files().len())
         .ok_or(fmt::Error)?;
-    let first_id = first_type.checked_add(TYPES.len()).ok_or(fmt::Error)?;
+    let first_record = first_type.checked_add(TYPES.len()).ok_or(fmt::Error)?;
+    let record_nodes = records
+        .map_or(Some(0), DebugRecords::metadata_nodes)
+        .ok_or(fmt::Error)?;
+    let first_id = first_record.checked_add(record_nodes).ok_or(fmt::Error)?;
+    let extra_control = records::control_bytes();
+    if extra_control > MAX_DEBUG_IR_BYTES {
+        return Err(fmt::Error);
+    }
     for metadata in [false, true] {
         let mut next = first_id;
         let mut scope = None;
@@ -375,7 +425,7 @@ fn render(
                     let id = next;
                     next = next.checked_add(1).ok_or(fmt::Error)?;
                     scope = Some(id);
-                    let lexical = Scopes::new(function, id, &mut next)?;
+                    let lexical = Scopes::new(function, id, &mut next, extra_control)?;
                     pending = true;
                     if metadata {
                         let row = sources.get(span.file).line_number(span.start);
@@ -405,7 +455,14 @@ fn render(
                 }
                 continue;
             }
-            if let Some(text) = line.strip_prefix(VARIABLE) {
+            if let Some((record, text)) = line
+                .strip_prefix(VARIABLE)
+                .map(|text| (false, text))
+                .or_else(|| line.strip_prefix(RECORD_VARIABLE).map(|text| (true, text)))
+            {
+                if record && !records::valid_marker(text) {
+                    return Err(fmt::Error);
+                }
                 let Some(lexical) = &scopes else { continue };
                 let mut words = text.split_whitespace();
                 let mut number = || {
@@ -436,7 +493,23 @@ fn render(
                 {
                     return Err(fmt::Error);
                 }
-                let ty_info = TYPES.get(ty).ok_or(fmt::Error)?;
+                let (type_id, value_type): records::VariableType = if record {
+                    if kind != "address" || operand != "%owners" {
+                        return Err(fmt::Error);
+                    }
+                    let Some(declaration) = records::supported(records, ty, project)? else {
+                        continue;
+                    };
+                    (
+                        first_record
+                            .checked_add(declaration.metadata_offset().ok_or(fmt::Error)?)
+                            .ok_or(fmt::Error)?,
+                        None,
+                    )
+                } else {
+                    let ty_info = TYPES.get(ty).ok_or(fmt::Error)?;
+                    (first_type + ty, Some(ty_info.2))
+                };
                 let Some(scope) = lexical.binding(variable_span, argument)? else {
                     continue;
                 };
@@ -456,7 +529,7 @@ fn render(
                         sources
                             .get(variable_span.file)
                             .line_number(variable_span.start),
-                        first_type + ty
+                        type_id
                     )?;
                     writeln!(
                         out,
@@ -468,7 +541,7 @@ fn render(
                 } else {
                     let (intrinsic, operand_ty) = match kind {
                         "address" => ("declare", "ptr"),
-                        "value" if offset == 0 => ("value", ty_info.2),
+                        "value" if offset == 0 => ("value", value_type.ok_or(fmt::Error)?),
                         _ => return Err(fmt::Error),
                     };
                     write!(out, "  call void @llvm.dbg.{intrinsic}(metadata {operand_ty} {operand}, metadata !{variable}, metadata !DIExpression(")?;
@@ -545,6 +618,7 @@ fn render(
                     first_type + index
                 )?;
             }
+            records::render(records, project, first_record, first_type, out)?;
         }
     }
     Ok(())
@@ -555,6 +629,7 @@ pub(super) fn add(
     project: &ProjectSources,
     names: Option<&NativeSourceNames<'_>>,
     optimized: bool,
+    records: Option<DebugRecords<'_>>,
 ) -> Result<String, Box<Diagnostic>> {
     if project.sources().files().is_empty() {
         return Err(failure("debug information requires source files"));
@@ -568,7 +643,7 @@ pub(super) fn add(
         text: None,
         exceeded: false,
     };
-    render(module, project, names, optimized, &mut count)
+    render(module, project, names, optimized, records, &mut count)
         .map_err(|_| failure("native debug information is invalid or exceeds its byte limit"))?;
     let mut text = String::new();
     text.try_reserve_exact(count.length)
@@ -579,7 +654,7 @@ pub(super) fn add(
         text: Some(text),
         exceeded: false,
     };
-    render(module, project, names, optimized, &mut output)
+    render(module, project, names, optimized, records, &mut output)
         .map_err(|_| failure("native debug information changed during emission"))?;
     if output.exceeded || output.length != count.length {
         return Err(failure("native debug byte count mismatch"));

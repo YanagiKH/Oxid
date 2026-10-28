@@ -176,6 +176,10 @@ fn lower_array_consumer<'s>(
 }
 
 impl SourceProgram {
+    pub(in crate::frontend::oir) fn debug_records(&self) -> super::super::debug::DebugRecords<'_> {
+        super::super::debug::DebugRecords::new(&self.witness)
+    }
+
     /// Tests may vary presentation paths while retaining the ordinary owned
     /// source producer and verifier. No new production witness access exists.
     #[cfg(test)]

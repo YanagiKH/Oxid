@@ -187,7 +187,11 @@ workspace builds apply the command-line choice to every selected member.
 Both `dev` and `release` support it. Optimized builds can fold or remove source
 lines, functions and values. A value without a recoverable machine location
 appears as `<optimized out>`; this can also happen to an SSA value in `dev`.
-References and owned aggregates are not yet described for variable inspection.
+Nonempty, non-generic Copy records with only numeric scalar fields also support
+`print point`, `print point.x` and `ptype point`, including by-value parameters
+and independently modified copies. Records containing booleans, characters,
+unit, nested values or resources are omitted as a whole. Other owned values and
+references are not yet described for variable inspection.
 
 `--reproducible` keeps debug paths relative to the project or workspace root.
 Run the debugger from that root after moving the project, or configure its source

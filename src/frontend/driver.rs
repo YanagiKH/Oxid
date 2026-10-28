@@ -558,6 +558,7 @@ impl PreparedPackageProject<'_> {
                 self.project(),
                 names.as_ref(),
                 settings.optimized(),
+                checked.debug_records(),
             );
         }
         if settings.optimized() {
