@@ -752,3 +752,7 @@ impl Heap {
 #[cfg(test)]
 #[path = "vector_resources_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "record_vector_resources_tests.rs"]
+mod record_tests;
