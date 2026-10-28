@@ -249,7 +249,7 @@ class ScalarLibraryAdmission(unittest.TestCase):
 
 class FrozenFileSeekReplay(unittest.TestCase):
     def test_thirteen_input_pins_use_only_the_integrated_reachable_revision(self):
-        frozen = "47c13f6d2865f4a588332b6bfda137cdf4b0c6bd"
+        frozen = "9f69c5c86521ed96d47a8af3c7cda8afbd9c5508"
         subprocess.check_call(["git", "--no-replace-objects", "merge-base", "--is-ancestor",
                                frozen, "HEAD"], cwd=ROOT)
         self.assertEqual(len(gate.SCALAR_LIBRARY_CHANGED), 10)
@@ -444,7 +444,9 @@ class FrozenFileSeekReplay(unittest.TestCase):
             run = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "run")
             return [node for node in ast.walk(run) if isinstance(node, ast.If)
                     and ast.unparse(node.test) == "not args.prepare_only"]
-        current = replay((ROOT / "scripts/verify_file_seek_compatibility.py").read_bytes())
+        current_path = Path(gate.__file__).resolve()
+        self.assertEqual(current_path, ROOT / "scripts/verify_scalar_library_compatibility.py")
+        current = replay(current_path.read_bytes())
         predecessor = replay(git_body(gate.PREDECESSOR, gate.PREDECESSOR_POLICY))
         self.assertEqual(len(current), 2)
         self.assertEqual(len(predecessor), 2)
@@ -452,6 +454,47 @@ class FrozenFileSeekReplay(unittest.TestCase):
                          [ast.dump(node, include_attributes=False) for node in predecessor])
         self.assertGreater(len(current[0].body), 10)
         self.assertIn("run_record_vector_observer_controls", ast.unparse(current[1]))
+
+    def test_replay_comparison_rejects_each_mutated_successor_block(self):
+        current_path = Path(gate.__file__).resolve()
+        original = current_path.read_bytes()
+        read_bytes = Path.read_bytes
+        for index in (0, 1):
+            parsed = ast.parse(original)
+            run = next(node for node in parsed.body if isinstance(node, ast.FunctionDef) and node.name == "run")
+            blocks = [node for node in ast.walk(run) if isinstance(node, ast.If)
+                      and ast.unparse(node.test) == "not args.prepare_only"]
+            self.assertEqual(len(blocks), 2)
+            blocks[index].body.pop()
+            changed = ast.unparse(parsed).encode()
+            def selected(path):
+                return changed if path.resolve() == current_path else read_bytes(path)
+            with self.subTest(block=index), patch.object(Path, "read_bytes", new=selected):
+                with self.assertRaises(AssertionError):
+                    self.test_both_complete_Windows_replay_blocks_and_every_selector_are_unchanged()
+
+    def test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch(self):
+        frozen = "9f69c5c86521ed96d47a8af3c7cda8afbd9c5508"
+        name = ".github/workflows/ci.yml"
+        current = gate.regular(ROOT, name)
+        restored, count = re.subn(
+            rb"^  file-seek-source-policy-predecessor:.*?(?=^  macos-native:)", b"", current,
+            flags=re.M | re.S,
+        )
+        self.assertEqual(count, 1)
+        gate_name = b"scripts/verify_scalar_library_compatibility.py"
+        self.assertEqual(restored.count(gate_name), 1)
+        canonical = git_body(frozen, name)
+        self.assertEqual(restored.replace(gate_name, b"scripts/verify_file_seek_compatibility.py", 1), canonical)
+        check = (b"          python -B scripts/test_windows_native_ci.py\n"
+                 b"          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n")
+        legacy = b"          $PSNativeCommandArgumentPassing = 'Legacy'\n"
+        before = (r'          $settings = & $env:ComSpec /d /s /c "`"`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set`""' + "\n").encode()
+        after = (r'          $settings = & $env:ComSpec /d /s /c "`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"' + "\n").encode()
+        for added in (check, legacy, after):
+            self.assertEqual(canonical.count(added), 1)
+        self.assertEqual(canonical.replace(check, b"", 1).replace(legacy, b"", 1).replace(after, before, 1),
+                         git_body(gate.PREDECESSOR, name))
 
     def test_every_Windows_control_function_and_resource_preparation_are_unmodified(self):
         for name in (
