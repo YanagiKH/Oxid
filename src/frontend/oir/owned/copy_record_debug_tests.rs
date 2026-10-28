@@ -26,10 +26,7 @@ fn owned_record_marker_roles_have_an_independent_physical_oracle() {
         (48, 8)
     );
     assert_eq!(
-        (
-            size_of::<Option<(OwnerPlaceId, &OwnerDecl)>>(),
-            align_of::<Option<(OwnerPlaceId, &OwnerDecl)>>()
-        ),
+        (size_of::<Option<usize>>(), align_of::<Option<usize>>()),
         (16, 8)
     );
     assert_eq!(

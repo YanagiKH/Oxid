@@ -114,7 +114,7 @@ struct RecordDebugCarriers {
     declaration: &'static RecordDecl,
     marker_parameters: (Span, usize, usize, usize),
     offset_and_argument: [usize; 2],
-    local_owner: Option<(OwnerPlaceId, &'static OwnerDecl)>,
+    local_owner: Option<usize>,
     parameter: Option<(usize, &'static ParameterBinding)>,
     formatting: FormatCallsiteBacking<6>,
     write: std::fmt::Result,
