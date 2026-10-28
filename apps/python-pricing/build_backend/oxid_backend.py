@@ -83,7 +83,7 @@ def read_regular(path, maximum):
         before = Path(path).lstat()
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > maximum:
             fail(f"not a bounded, singly owned regular file: {path}")
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
         with os.fdopen(descriptor, "rb") as stream:
             opened = os.fstat(stream.fileno())
             if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_nlink) != (before.st_dev, before.st_ino, before.st_size, 1):
@@ -195,7 +195,7 @@ def load_project(root=None):
     payloads = {}
     total = 0
     for name in (*BACKEND_FILES, *sources):
-        data = read_regular(checked_path(root, name), SOURCE_FILE_BYTES)
+        data = read_regular(checked_path(root, name), min(SOURCE_FILE_BYTES, SOURCE_TOTAL_BYTES - total))
         total += len(data)
         if total > SOURCE_TOTAL_BYTES:
             fail("source manifest exceeds the independent 8 MiB aggregate bound")
@@ -214,6 +214,12 @@ def wheel_tag():
     machine = platform.machine()
     if machine not in ("x86_64", "aarch64") or sysconfig.get_platform() != f"linux-{machine}":
         fail("unsupported or cross-configured Linux architecture")
+    try:
+        libc = os.confstr("CS_GNU_LIBC_VERSION")
+    except (OSError, ValueError):
+        libc = None
+    if not isinstance(libc, str) or not libc.startswith("glibc "):
+        fail("the initial GNU target requires the host's glibc runtime and SDK")
     suffix = sysconfig.get_config_var("EXT_SUFFIX")
     if not isinstance(suffix, str) or not re.fullmatch(r"\.cpython-[0-9]+-[A-Za-z0-9_-]+\.so", suffix):
         fail("unsupported actual CPython extension suffix")
@@ -245,6 +251,18 @@ def output_directory(value):
 def publish_file(staged, destination):
     # link() is atomic and fails if any previous output already exists.
     os.link(staged, destination, follow_symlinks=False)
+
+
+def exact_members(directory, expected):
+    """Do not allocate an unbounded list from a producer-controlled directory."""
+    observed = set()
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if len(observed) >= len(expected) or entry.name not in expected:
+                fail("unexpected artifact member")
+            observed.add(entry.name)
+    if observed != set(expected):
+        fail("missing artifact member")
 
 
 def get_requires_for_build_wheel(config_settings=None):
@@ -291,8 +309,12 @@ def tool_identity(requested, label):
     if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 256 * 1024 * 1024:
         fail(f"{label} executable exceeds its independent file bound")
     hasher = hashlib.sha256()
+    remaining = 256 * 1024 * 1024
     with resolved.open("rb") as stream:
-        while block := stream.read(1024 * 1024):
+        while block := stream.read(min(1024 * 1024, remaining + 1)):
+            remaining -= len(block)
+            if remaining < 0:
+                fail(f"{label} executable grew beyond its independent bound")
             hasher.update(block)
     after = resolved.stat()
     if (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
@@ -356,8 +378,9 @@ def native_header(arity):
 
 def validate_bundle(bundle, config, compiler_info, source_records):
     bundle = Path(bundle)
-    if bundle.is_symlink() or not bundle.is_dir() or set(os.listdir(bundle)) != {"liboxid_library.so", "oxid_library.h", "metadata.json"}:
+    if bundle.is_symlink() or not bundle.is_dir():
         fail("native output must be exactly the closed three-file bundle")
+    exact_members(bundle, {"liboxid_library.so", "oxid_library.h", "metadata.json"})
     library = read_regular(bundle / "liboxid_library.so", NATIVE_BYTES)
     header = read_regular(bundle / "oxid_library.h", 64 * 1024)
     metadata = read_regular(bundle / "metadata.json", METADATA_BYTES)
@@ -440,8 +463,9 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
     metadata = metadata_files(config)
     if metadata_directory is not None:
         prepared = Path(metadata_directory)
-        if prepared.is_symlink() or prepared.name != distribution(config) + ".dist-info" or set(os.listdir(prepared)) != set(metadata):
+        if prepared.is_symlink() or not prepared.is_dir() or prepared.name != distribution(config) + ".dist-info":
             fail("prepared metadata has an unexpected identity or member")
+        exact_members(prepared, metadata)
         for name, expected in metadata.items():
             if read_regular(prepared / name, METADATA_BYTES) != expected:
                 fail("prepared metadata differs from the static project metadata")
