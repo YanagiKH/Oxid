@@ -258,6 +258,7 @@ pub(super) fn preflight(
     )?;
     raw_budget::account_vector_descriptors(
         typed.index().vector_functions(),
+        typed.records().len(),
         raw_budget::Limits::DEFAULT,
         &mut counts,
     )?;

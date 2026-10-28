@@ -589,7 +589,7 @@ fn prepare(
     for _ in 0..builtins::descriptor_visits(raw.builtins) {
         meter.visit()?;
     }
-    for _ in 0..builtins::vector_descriptor_visits(&raw.vector_functions)? {
+    for _ in 0..builtins::vector_descriptor_visits(&raw.vector_functions, raw.records.len())? {
         meter.visit()?;
     }
     Ok((usage, declarations, meter))

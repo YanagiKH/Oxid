@@ -195,17 +195,27 @@ fn checked_copy_fields_preserve_the_generic_aggregate_extraction_fence() {
 }
 
 #[test]
-fn checked_copy_bound_does_not_widen_vector_or_slice_elements() {
+fn checked_copy_records_are_vector_and_slice_elements_with_closed_exclusions() {
     for body in [
         "use alloc::vec::new;fn main()->i32{let v=new::<P>();return 0;}",
         "use alloc::vec::Vec;use alloc::vec::new;fn make<T:Copy>()->Vec<T>{return new::<T>();}fn main()->i32{let v=make::<P>();return 0;}",
         "fn count(values:&[P])->i32{return values.len();}fn main()->i32{return 0;}",
     ] {
         let source = format!("#[derive(Copy)]struct P{{x:i32}}{body}");
-        let errors = source_error(&source);
-        assert_eq!(errors[0].code, "E0300", "{errors:?}");
-        assert!(errors[0].message.contains("element"), "{errors:?}");
+        with_typed(&source,|typed,map| {
+            let raw = lower::lower(typed).unwrap();
+            let witness = verified::verify_associated(association::associate(raw,typed).unwrap()).unwrap();
+            assert_eq!(execute::run(&witness,typed.entry()).unwrap(),Scalar::I32(0));
+            assert!(super::program::check_typed(typed).unwrap().run(typed.entry(),map).is_ok());
+        });
     }
+    for source in [
+        "use alloc::vec::new;struct P{x:i32}fn main()->i32{let v=new::<P>();return 0;}",
+        "use alloc::vec::new;use alloc::bytes::ByteBuf;struct P{x:ByteBuf}fn main()->i32{let v=new::<P>();return 0;}",
+        "use alloc::vec::new;enum P{None}fn main()->i32{let v=new::<P>();return 0;}",
+        "use alloc::vec::new;use alloc::vec::Vec;fn main()->i32{let v=new::<Vec<i32>>();return 0;}",
+        "struct P{x:i32}fn count(values:&[P])->i32{return values.len();}fn main()->i32{return 0;}",
+    ] { let errors=source_error(source); assert!(!errors.is_empty(),"{source}"); assert!(errors.iter().all(|error|error.code!="E0500"),"{source}: {errors:?}"); }
 }
 
 fn first_copy(raw: &mut RawOwnedProgram) -> &mut OwnedInstruction {

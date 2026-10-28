@@ -423,7 +423,7 @@ fn vector_raw_capacity_work_and_metadata_refuse_before_allocating() {
     // Nine independently specified bodies cost 106 visits; their duplicate
     // comparisons cost 9*8/2. This is not computed from the checker signature.
     assert_eq!(
-        builtins::vector_descriptor_visits(&raw.vector_functions).unwrap(),
+        builtins::vector_descriptor_visits(&raw.vector_functions, raw.records.len()).unwrap(),
         142
     );
     let usage = budget::preflight(&raw, budget::Limits::DEFAULT).unwrap();
@@ -751,4 +751,32 @@ fn vector_raw_allocator_refusal_never_produces_a_witness() {
         failure.kind,
         OwnedFailureKind::Resource("injected allocation failure")
     );
+}
+
+#[test]
+fn record_vector_key_domains_cannot_borrow_unused_scalar_or_nominal_capacity() {
+    let scalar = vector::Function::new(vector::Operation::New, hir::Ty::I64).unwrap();
+    let (sources, mut raw) = program(&[scalar]);
+    let span = raw.functions[0].span;
+    let mut record = consumer_fixtures::record(&[hir::Ty::I32], span);
+    record.is_copy = true;
+    raw.records.push(record);
+    // A real record cannot license the154th scalar claim.
+    raw.vector_functions.resize(154, scalar);
+    budget::fail_allocation_after(0, || {
+        assert!(budget::preflight(&raw, budget::Limits::DEFAULT).is_err())
+    });
+    raw.vector_functions =
+        vec![vector::Function::record(vector::Operation::New, RecordId(1)).unwrap()];
+    budget::fail_allocation_after(0, || {
+        assert!(budget::preflight(&raw, budget::Limits::DEFAULT).is_err())
+    });
+    // One nominal declaration licenses9 record operation identities; unused
+    // scalar-domain room cannot pay for a tenth duplicate record claim.
+    raw.vector_functions =
+        vec![vector::Function::record(vector::Operation::New, RecordId(0)).unwrap(); 10];
+    budget::fail_allocation_after(0, || {
+        assert!(budget::preflight(&raw, budget::Limits::DEFAULT).is_err())
+    });
+    let _ = sources;
 }
