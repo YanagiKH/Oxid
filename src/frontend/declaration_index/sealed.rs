@@ -2224,6 +2224,11 @@ impl<'s> DeclarationIndex<'s> {
         key: vector::Function,
     ) -> Result<vector::Signature, Box<Diagnostic>> {
         self.vector_function_id(key)?;
+        if let Some(record) = key.record_id() {
+            if !self.record_is_copy(record)? {
+                return Err(bad(self.sources().eof()));
+            }
+        }
         let status = if key.operation().requires_grow_status() {
             self.experimental_enum_id(experimental::Enumeration::Grow)?
         } else {

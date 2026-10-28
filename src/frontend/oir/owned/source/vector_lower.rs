@@ -19,13 +19,14 @@ pub(super) fn counts(kind: Function) -> super::super::budget::FunctionCounts {
     for parameter in signature.parameters() {
         match parameter {
             ParameterTy::Value(ValueTy::Scalar(_)) => result.locals += 1,
+            ParameterTy::Value(ValueTy::Owned(_)) => result.owners += 1,
             ParameterTy::Reference { .. } => result.references += 1,
             _ => unreachable!("closed parameter"),
         }
     }
     match signature.result {
         ValueTy::Owned(_) => {
-            result.owners = 1;
+            result.owners += 1;
             result.statements += 1;
         }
         ValueTy::Scalar(_) => result.locals += 1,
@@ -77,6 +78,20 @@ pub(super) fn function(
                 )?;
                 ParameterBinding::Scalar(local)
             }
+            ParameterTy::Value(ValueTy::Owned(aggregate)) => {
+                let owner = OwnerPlaceId(raw.owners.len());
+                budget::append(
+                    &mut raw.owners,
+                    OwnerDecl {
+                        aggregate: AggregateSlot::try_from_aggregate(aggregate)?,
+                        kind: OwnerKind::Parameter { position },
+                        span,
+                    },
+                    c.owners,
+                    span,
+                )?;
+                ParameterBinding::Owned(owner)
+            }
             ParameterTy::Reference { referent, kind } => {
                 let reference = ReferenceParamId(raw.references.len());
                 budget::append(
@@ -104,6 +119,7 @@ pub(super) fn function(
     };
     let (destination, end) = match signature.result {
         ValueTy::Owned(aggregate) => {
+            let owner = OwnerPlaceId(raw.owners.len());
             budget::append(
                 &mut raw.owners,
                 OwnerDecl {
@@ -117,7 +133,7 @@ pub(super) fn function(
             budget::append(
                 &mut block.statements,
                 OwnedStatement {
-                    kind: OwnedInstruction::StorageLive(OwnerPlaceId(0)),
+                    kind: OwnedInstruction::StorageLive(owner),
                     span,
                     diagnostic_origins: None,
                 },
@@ -125,8 +141,8 @@ pub(super) fn function(
                 span,
             )?;
             (
-                CallResult::Owned(OwnerPlaceId(0)),
-                OwnedTerminatorKind::ReturnOwned(OwnerPlaceId(0)),
+                CallResult::Owned(owner),
+                OwnedTerminatorKind::ReturnOwned(owner),
             )
         }
         ValueTy::Scalar(ty) => {

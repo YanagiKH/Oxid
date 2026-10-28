@@ -132,6 +132,8 @@ enum Value {
 enum Element {
     Concrete(Ty),
     CopyParameter(usize),
+    RecordApplication(usize),
+    ConcreteRecord(RecordId),
 }
 impl Element {
     fn check(value: Value, at: Span) -> Result<Self, Box<Diagnostic>> {
@@ -156,6 +158,35 @@ impl Element {
                 position,
                 copy: true,
             },
+            Self::RecordApplication(id) => Value::Record(id),
+            Self::ConcreteRecord(id) => Value::Concrete(ValueTy::Owned(AggregateTy::Record(id))),
+        }
+    }
+    fn checked(value: Value, nominals: &Nominals, at: Span) -> Result<Self, Box<Diagnostic>> {
+        if let Value::Concrete(ValueTy::Owned(AggregateTy::Record(id))) = value {
+            if nominals.copy(value) {
+                return Ok(Self::ConcreteRecord(id));
+            }
+            return Err(error(
+                "vector and slice record elements require checked Copy",
+                at,
+            ));
+        }
+        if let Value::Record(id) = value {
+            if nominals.copy(value) {
+                return Ok(Self::RecordApplication(id));
+            }
+            return Err(error(
+                "vector and slice record elements require checked Copy",
+                at,
+            ));
+        }
+        Self::check(value, at)
+    }
+    fn borrowed(self, at: Span) -> Result<BorrowedTy, Box<Diagnostic>> {
+        match self {
+            Self::ConcreteRecord(id) => Ok(BorrowedTy::RecordSlice(id)),
+            _ => Ok(BorrowedTy::ScalarSlice(self.scalar(at)?)),
         }
     }
     fn scalar(self, at: Span) -> Result<Ty, Box<Diagnostic>> {
@@ -170,6 +201,9 @@ impl Value {
         match ty {
             ValueTy::Owned(AggregateTy::Vector(element)) => {
                 Self::Vector(Element::Concrete(element))
+            }
+            ValueTy::Owned(AggregateTy::RecordVector(id)) => {
+                Self::Vector(Element::ConcreteRecord(id))
             }
             _ => Self::Concrete(ty),
         }
@@ -202,6 +236,13 @@ impl Type {
                 kind,
             },
             ParameterTy::Reference {
+                referent: BorrowedTy::RecordSlice(id),
+                kind,
+            } => Self::Slice {
+                element: Element::ConcreteRecord(id),
+                kind,
+            },
+            ParameterTy::Reference {
                 referent: BorrowedTy::ScalarSlice(element),
                 kind,
             } => Self::Slice {
@@ -230,7 +271,7 @@ impl Type {
                 kind,
             },
             Self::Slice { element, kind } => ParameterTy::Reference {
-                referent: BorrowedTy::ScalarSlice(element.scalar(at)?),
+                referent: element.borrowed(at)?,
                 kind,
             },
             _ => {
@@ -697,7 +738,7 @@ impl Plan {
         storage.enter_vector(at)?;
         let result = (|| {
             work.debit(1, at, "vector specialization admission")?;
-            if !vector::scalar_admitted(key.element()) {
+            if key.record_id().is_none() && !vector::scalar_admitted(key.element()) {
                 return Err(error("vector specialization requires a scalar element", at));
             }
             if let Some(rank) = vector_rank(&self.vector_functions, key, work, at)? {
@@ -3232,10 +3273,8 @@ impl<'a, 's> Walker<'a, 's> {
             ));
         }
         let mut element = if let Some(types) = explicit {
-            Some(Element::check(
-                self.ty(types[0])?.value(types[0].span)?,
-                types[0].span,
-            )?)
+            let value = self.ty(types[0])?.value(types[0].span)?;
+            Some(Element::checked(value, self.nominals, types[0].span)?)
         } else {
             None
         };
@@ -3277,8 +3316,12 @@ impl<'a, 's> Walker<'a, 's> {
             self.expect(actual, parameters[position], at)?;
         }
         if let Some(plan) = self.plan.as_deref_mut() {
-            let key =
-                vector::Function::new(operation, element.scalar(at)?).ok_or_else(|| bad(at))?;
+            let key = match self.nominals.value(element.value(), at)? {
+                ValueTy::Scalar(ty) => vector::Function::new(operation, ty),
+                ValueTy::Owned(AggregateTy::Record(id)) => vector::Function::record(operation, id),
+                _ => None,
+            }
+            .ok_or_else(|| bad(at))?;
             plan.register_vector(key, self.storage, self.allocator, self.work, at)?;
             self.storage.push(
                 &mut self.calls,

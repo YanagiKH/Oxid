@@ -38,7 +38,7 @@ impl Nominals {
     pub(super) fn concrete(&self, value: Value) -> bool {
         match value {
             Value::Concrete(_) => true,
-            Value::Vector(element) => matches!(element, Element::Concrete(_)),
+            Value::Vector(element) => self.concrete(element.value()),
             Value::Parameter { .. } => false,
             Value::Enumeration(id) => self.enumerations[id].concrete,
             Value::Record(id) => self.records[id].concrete,
@@ -74,6 +74,11 @@ impl Nominals {
     pub(super) fn copy(&self, value: Value) -> bool {
         match value {
             Value::Concrete(ValueTy::Scalar(_)) | Value::Parameter { copy: true, .. } => true,
+            Value::Concrete(ValueTy::Owned(AggregateTy::Record(id))) => self
+                .emitted_records
+                .get(id.0)
+                .and_then(|slot| self.records.get(*slot))
+                .is_some_and(|record| record.complete && record.is_copy),
             Value::Record(id) => self
                 .records
                 .get(id)
@@ -150,7 +155,7 @@ impl Nominals {
                             depth + 1,
                         )?
                         .value(argument.span)?;
-                    let value = Value::Vector(Element::check(value, argument.span)?);
+                    let value = Value::Vector(Element::checked(value, self, argument.span)?);
                     Ok(match syntax.kind {
                         TypeSyntaxKind::AppliedReference { mutable, .. } => Type::Reference {
                             value,
@@ -223,6 +228,41 @@ impl Nominals {
                 },
                 _ => Type::Value(value),
             });
+        }
+        if let TypeSyntaxKind::GenericSliceReference { mutable, element } = syntax.kind {
+            storage.enter_vector(syntax.span)?;
+            let result = (|| {
+                let span = index.sources().path_span(ItemPathRef {
+                    file: syntax.span.file,
+                    path: element,
+                })?;
+                let value = self
+                    .syntax(
+                        index,
+                        work,
+                        storage,
+                        allocator,
+                        module,
+                        declaration,
+                        arguments,
+                        ast::TypeSyntax {
+                            kind: TypeSyntaxKind::Name(element),
+                            span,
+                        },
+                        depth + 1,
+                    )?
+                    .value(span)?;
+                Ok(Type::Slice {
+                    element: Element::checked(value, self, span)?,
+                    kind: if mutable {
+                        BorrowKind::Exclusive
+                    } else {
+                        BorrowKind::Shared
+                    },
+                })
+            })();
+            storage.leave_vector(syntax.span)?;
+            return result;
         }
         let vector_frame = matches!(syntax.kind, TypeSyntaxKind::GenericSliceReference { .. });
         if vector_frame {
@@ -673,7 +713,13 @@ impl Nominals {
                 .map(|id| ValueTy::Owned(AggregateTy::Record(id)))
                 .ok_or_else(|| bad(at)),
             Value::Parameter { .. } => Err(bad(at)),
-            Value::Vector(element) => Ok(ValueTy::Owned(AggregateTy::Vector(element.scalar(at)?))),
+            Value::Vector(element) => match self.value(element.value(), at)? {
+                ValueTy::Scalar(ty) => Ok(ValueTy::Owned(AggregateTy::Vector(ty))),
+                ValueTy::Owned(AggregateTy::Record(id)) if self.record_is_copy(id, at)? => {
+                    Ok(ValueTy::Owned(AggregateTy::RecordVector(id)))
+                }
+                _ => Err(bad(at)),
+            },
         }
     }
 
@@ -684,7 +730,16 @@ impl Nominals {
                 value: Value::Concrete(self.value(value, at)?),
                 kind,
             },
-            _ => ty,
+            Type::Slice { element, kind } => Type::Slice {
+                element: match self.value(element.value(), at)? {
+                    ValueTy::Scalar(ty) => Element::Concrete(ty),
+                    ValueTy::Owned(AggregateTy::Record(id)) if self.record_is_copy(id, at)? => {
+                        Element::ConcreteRecord(id)
+                    }
+                    _ => return Err(bad(at)),
+                },
+                kind,
+            },
         };
         ty.parameter(at)
     }

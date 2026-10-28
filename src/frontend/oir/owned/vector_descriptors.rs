@@ -6,7 +6,11 @@ use crate::frontend::builtin_catalog::{experimental::Enumeration, vector::Functi
 pub(super) fn check(raw: &RawOwnedProgram, ids: &builtins::BuiltinIds) -> Result<(), OwnedFailure> {
     for (rank, operation) in raw.vector_functions.iter().enumerate() {
         if !raw.builtins.contains_vector(operation.item())
-            || !crate::frontend::builtin_catalog::vector::scalar_admitted(operation.element())
+            || (operation.record_id().is_none()
+                && !crate::frontend::builtin_catalog::vector::scalar_admitted(operation.element()))
+            || operation
+                .record_id()
+                .is_some_and(|id| !raw.records.get(id.0).is_some_and(|row| row.is_copy))
             || raw.vector_functions[..rank].contains(operation)
         {
             return Err(bad());
@@ -55,7 +59,7 @@ fn function(
     {
         return Err(fail());
     }
-    let (mut scalars, mut references) = (0, 0);
+    let (mut scalars, mut references, mut input_owners) = (0, 0, 0);
     for (position, (actual, expected)) in
         f.parameters.iter().zip(signature.parameters()).enumerate()
     {
@@ -72,6 +76,17 @@ fn function(
                     return Err(fail());
                 }
                 scalars += 1;
+            }
+            (ParameterBinding::Owned(owner), ParameterTy::Value(ValueTy::Owned(aggregate))) => {
+                let row = f.owners.get(input_owners).ok_or_else(fail)?;
+                if *owner != OwnerPlaceId(input_owners)
+                    || row.aggregate() != *aggregate
+                    || row.kind != (OwnerKind::Parameter { position })
+                    || row.span != f.span
+                {
+                    return Err(fail());
+                }
+                input_owners += 1;
             }
             (ParameterBinding::Reference(reference), ParameterTy::Reference { referent, kind }) => {
                 let row = f.references.get(references).ok_or_else(fail)?;
@@ -93,21 +108,21 @@ fn function(
     }
     let (destination, owned) = match signature.result {
         ValueTy::Owned(aggregate) => {
-            if f.locals.len() != scalars || f.owners.len() != 1 {
+            if f.locals.len() != scalars || f.owners.len() != input_owners + 1 {
                 return Err(fail());
             }
-            let row = &f.owners[0];
+            let row = &f.owners[input_owners];
             if row.aggregate() != aggregate
                 || row.kind != OwnerKind::Temporary
                 || row.span != f.span
             {
                 return Err(fail());
             }
-            (CallResult::Owned(OwnerPlaceId(0)), true)
+            (CallResult::Owned(OwnerPlaceId(input_owners)), true)
         }
         ValueTy::Scalar(ty) => {
             if f.locals.len() != scalars + 1
-                || !f.owners.is_empty()
+                || f.owners.len() != input_owners
                 || f.locals[scalars]
                     != (LocalDecl {
                         ty,
@@ -130,7 +145,7 @@ fn function(
     if owned
         && !matches!(
             block.statements[0].kind,
-            OwnedInstruction::StorageLive(OwnerPlaceId(0))
+            OwnedInstruction::StorageLive(owner) if owner == OwnerPlaceId(input_owners)
         )
     {
         return Err(fail());

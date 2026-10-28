@@ -12,7 +12,8 @@ pub(super) const OUTPUT_SCRATCH_BYTES: usize = 1024;
 pub(super) fn vector_descriptor_visits(
     keys: &[crate::frontend::builtin_catalog::vector::Function],
 ) -> Result<usize, OwnedFailure> {
-    if keys.len() > 9 * 17 {
+    // The closed key domain expands; existing resource/work ceilings do not.
+    if keys.len() > 9 * (17 + 4096) {
         return Err(missing());
     }
     let mut visits = keys.len() * keys.len().saturating_sub(1) / 2;
