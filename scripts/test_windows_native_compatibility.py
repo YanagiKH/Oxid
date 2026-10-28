@@ -75,6 +75,7 @@ class WindowsNativeAdmission(unittest.TestCase):
             "native/typed_preview.c", "src/frontend/build_config.rs", "src/frontend/driver.rs",
             "src/frontend/mod.rs", "src/frontend/native.rs", "src/frontend/native/doctor.rs",
             "src/frontend/oir/native.rs", "src/frontend/oir/owned/native.rs",
+            "src/frontend/project/filesystem/windows.rs",
             "src/project_cli.rs", "src/project_cli/workspace.rs",
         })
         self.assertEqual(set(inputs), set(self.parent) | gate.WINDOWS_NATIVE_ADDED)
@@ -175,6 +176,17 @@ class WindowsNativeAdmission(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "outside Windows-native boundary"):
             self.capture()
 
+    def test_windows_file_sharing_member_requires_its_exact_reviewed_pin(self):
+        name = "src/frontend/project/filesystem/windows.rs"
+        self.assertIn(name, gate.WINDOWS_NATIVE_CHANGED)
+        self.put(name, self.current[name] + b"// unreviewed sharing behavior\n")
+        with self.assertRaisesRegex(ValueError, "does not match reviewed input"):
+            self.capture()
+        self.put(name, self.current[name])
+        with patch.object(gate, "WINDOWS_NATIVE_CHANGED", gate.WINDOWS_NATIVE_CHANGED - {name}):
+            with self.assertRaisesRegex(ValueError, "reviewed Windows-native input membership"):
+                self.capture()
+
     def test_already_accepted_windows_dispatch_bytes_cannot_change(self):
         name, = gate.UNCHANGED_INPUTS
         self.put(name, self.parent[name] + b"// changed\n")
@@ -231,6 +243,18 @@ class WindowsNativeAdmission(unittest.TestCase):
 
 
 class FrozenCopyDebugReplay(unittest.TestCase):
+    def test_all_thirteen_reviewed_inputs_match_the_frozen_source_bytes_and_directives(self):
+        frozen = "ea6e25b1fd9b8ca1df5d302b5fa80b0d0e7ba846"
+        self.assertEqual(len(gate.WINDOWS_NATIVE_CHANGED), 11)
+        self.assertEqual(len(gate.WINDOWS_NATIVE_ADDED), 2)
+        self.assertEqual(set(gate.REVIEWED_INPUTS), gate.WINDOWS_NATIVE_CHANGED | gate.WINDOWS_NATIVE_ADDED)
+        self.assertEqual(set(gate.REVIEWED_DIRECTIVES), set(gate.REVIEWED_INPUTS))
+        for name, pin in gate.REVIEWED_INPUTS.items():
+            body = git_body(frozen, name)
+            self.assertEqual(gate.regular(ROOT, name), body, name)
+            self.assertEqual((len(body), gate.sha(body)), pin, name)
+            self.assertEqual(gate.source_directives(name, body), gate.REVIEWED_DIRECTIVES[name], name)
+
     def test_all_55_predecessor_policies_and_adapters_are_exact(self):
         self.assertEqual(len(gate.PREDECESSOR_POLICIES), 55)
         self.assertEqual(gate.PREDECESSOR_POLICIES, {

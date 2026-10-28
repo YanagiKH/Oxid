@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_copy_record_debug_compatibility.py \
+          python3 -B scripts/verify_windows_native_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -338,6 +338,31 @@ jobs:
         with:
           name: qualified-completion-source-policy-predecessor
           path: ${{ runner.temp }}/qualified-completion-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  copy-record-debug-source-policy-predecessor:
+    name: Copy debug source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_copy_record_debug_predecessor_tests.py "$RUNNER_TEMP/copy-record-debug-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 9a5ecaaeb5fa50aff2296bf990d63167143cf312
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/copy-record-debug-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/copy-record-debug-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: copy-record-debug-source-policy-predecessor
+          path: ${{ runner.temp }}/copy-record-debug-source-policy-replay
           if-no-files-found: error
           retention-days: 14
 
