@@ -248,7 +248,8 @@ fn nesting_and_parameter_boundaries_are_explicit() {
         ),
         format!("fn f({params}) -> bool {{ return p0; }}"),
     ] {
-        assert!(Project::new(source.as_bytes()).check().status.success());
+        let output = Project::new(source.as_bytes()).check();
+        assert!(output.status.success(), "{source}: {output:?}");
     }
     for source in [
         format!(
@@ -260,8 +261,9 @@ fn nesting_and_parameter_boundaries_are_explicit() {
         "true ".repeat(50_001),
     ] {
         let output = Project::new(source.as_bytes()).check();
-        assert_eq!(output.status.code(), Some(1));
-        assert!(String::from_utf8(output.stdout).unwrap().contains("E0400"));
+        assert_eq!(output.status.code(), Some(1), "{source}: {output:?}");
+        let json = String::from_utf8(output.stdout).unwrap();
+        assert!(json.contains("E0400"), "{json}");
     }
 }
 

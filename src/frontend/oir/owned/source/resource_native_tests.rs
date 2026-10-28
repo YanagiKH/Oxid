@@ -226,9 +226,18 @@ fn main()->i32{let a=[byte(255),byte(128)];return size(&a[2..1]);}", None),
             ProjectSources::load_typed(source_path.to_str().unwrap(), ProjectLimits::default())
                 .unwrap();
         fs::remove_file(source_path).unwrap();
-        let typed =
-            super::typeck::check(resolve::resolve_sources(SourceOwner::project(&project)).unwrap())
-                .unwrap();
+        let work = WorkMeter::default();
+        let mut allocator = Allocator::default();
+        let index = declaration_index::collect_originals(
+            SourceOwner::project(&project),
+            IndexLimits::default(),
+            &work,
+            &mut allocator,
+        )
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+        let typed = resolve::type_enum_source(&index, &work, &mut allocator).unwrap();
         let entry = typed.entry().unwrap();
         let witness =
             verified::verify_associated(association::lower_and_associate(&typed).unwrap()).unwrap();

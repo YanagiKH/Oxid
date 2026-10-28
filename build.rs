@@ -1,6 +1,14 @@
 fn main() {
     println!("cargo:rerun-if-changed=native");
     let target = std::env::var("TARGET").expect("Cargo target");
+    // Match the supported parser nesting envelope on Windows' primary thread.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
+            Ok("msvc") => println!("cargo:rustc-link-arg-bin=oxid=/STACK:8388608"),
+            Ok("gnu") => println!("cargo:rustc-link-arg-bin=oxid=-Wl,--stack,8388608"),
+            _ => (),
+        }
+    }
     if matches!(
         std::env::var("CARGO_CFG_TARGET_OS").as_deref(),
         Ok("linux" | "macos")
