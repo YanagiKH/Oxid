@@ -730,7 +730,7 @@ jobs:
           $sdkStart.RedirectStandardError = $true
           $sdkStart.StandardOutputEncoding = [System.Text.Encoding]::Unicode
           $sdkStart.StandardErrorEncoding = [System.Text.Encoding]::Unicode
-          $sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+          $sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set"'
           $sdk = [System.Diagnostics.Process]::new()
           $sdk.StartInfo = $sdkStart
           $sdkStarted = $false
