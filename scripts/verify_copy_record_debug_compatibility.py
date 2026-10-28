@@ -33,8 +33,7 @@ COPY_RECORD_DEBUG_ADDED = frozenset(['src/frontend/native_debug/record_tests.rs'
  'src/frontend/oir/owned/debug.rs'])
 REVIEWED_INPUTS = {'src/frontend/driver.rs': (96922, 'b99c3efb1ef3a1577f40a68d4794bb8efd4747d593bd691ebbaceb92c977c7f5'),
  'src/frontend/native_debug.rs': (26134, '7d288a9cc69dd211504e46a8e414f8a1b95b9c344a227a96dc2c282b984c3a15'),
- 'src/frontend/native_debug/record_tests.rs': (12056,
-                                               '6e491596601078d78a315319af106e777419aaed61f5a4ec6f87fecbbcfc84ab'),
+ 'src/frontend/native_debug/record_tests.rs': (12872, 'f391cdb8af109d9a7612f25c19651d4662cc97ecb0f7642b3ba6d04e7eee14c1'),
  'src/frontend/native_debug/records.rs': (12538,
                                           '3504d4294ea2770be3d36ac81584c4d00626d875f0fb55fae05c31fdb0938aec'),
  'src/frontend/oir/mod.rs': (24483, '8d2b0a09f36b8a2547e7463cdff1879e9192aa840d27dfc59c0a435dcff13560'),
