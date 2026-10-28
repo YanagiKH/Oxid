@@ -355,7 +355,7 @@ fn empty_copy_record_elements_keep_independent_initialized_values() {
     accepts(EMPTY, b"53\n");
 }
 
-fn rejects(body: &str, markers: &[&str], allow_parse_error: bool) {
+fn rejects(body: &str, code: &str, markers: &[&str]) {
     for policy in ["bounded", "hosted"] {
         let project = Project::new(body, policy);
         let checked = project.invoke(&["check"]);
@@ -367,13 +367,15 @@ fn rejects(body: &str, markers: &[&str], allow_parse_error: bool) {
         assert!(checked.stdout.is_empty(), "{checked:?}");
         let error = String::from_utf8(checked.stderr).unwrap();
         assert!(
-            error.contains("error[E03") || allow_parse_error && error.contains("error[E01"),
+            error.starts_with(&format!("error[{code}] ")),
             "{body}: {error}"
         );
         assert!(!error.contains("E0500"), "{error}");
         let lowered = error.to_ascii_lowercase();
         assert!(
-            markers.iter().any(|marker| lowered.contains(marker)),
+            markers
+                .iter()
+                .any(|marker| lowered.contains(&marker.to_ascii_lowercase())),
             "{body}: {error}"
         );
         project.no_artifacts();
@@ -382,19 +384,19 @@ fn rejects(body: &str, markers: &[&str], allow_parse_error: bool) {
 
 #[test]
 fn vector_elements_still_exclude_affine_resources_enums_nested_vectors_and_arrays() {
-    for body in [
-        "struct Affine { x:i32 } fn main()->i32 { let v=new::<Affine>(); return 0; }",
-        "enum E { Value(i32) } fn main()->i32 { let v=new::<E>(); return 0; }",
-        "fn main()->i32 { let v=new::<Vec<P>>(); return 0; }",
-        "fn main()->i32 { let v=new::<[P;2]>(); return 0; }",
-        "use alloc::bytes::ByteBuf; fn main()->i32 { let v=new::<ByteBuf>(); return 0; }",
-        "use std::fs::File; fn main()->i32 { let v=new::<File>(); return 0; }",
-        "use alloc::bytes::ByteBuf; #[derive(Copy)]struct Bad { resource:ByteBuf } fn main()->i32 { let v=new::<Bad>(); return 0; }",
-        "use std::fs::File; #[derive(Copy)]struct Bad { resource:File } fn main()->i32 { let v=new::<Bad>(); return 0; }",
-        "#[derive(Copy)]struct Bad { resource:Vec<i32> } fn main()->i32 { let v=new::<Bad>(); return 0; }",
-        "#[derive(Copy)]struct Bad { resource:[i32;1] } fn main()->i32 { let v=new::<Bad>(); return 0; }",
+    for (body, code, markers) in [
+        ("struct Affine { x:i32 } fn main()->i32 { let v=new::<Affine>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("enum E { Value(i32) } fn main()->i32 { let v=new::<E>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("fn main()->i32 { let v=new::<Vec<P>>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("fn main()->i32 { let v=new::<[P;2]>(); return 0; }", "E0101", &["unsupported typed-preview construct `P`"][..]),
+        ("use alloc::bytes::ByteBuf; fn main()->i32 { let v=new::<ByteBuf>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("use std::fs::File; fn main()->i32 { let v=new::<File>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("use alloc::bytes::ByteBuf; #[derive(Copy)]struct Bad { resource:ByteBuf } fn main()->i32 { let v=new::<Bad>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("use std::fs::File; #[derive(Copy)]struct Bad { resource:File } fn main()->i32 { let v=new::<Bad>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("#[derive(Copy)]struct Bad { resource:Vec<i32> } fn main()->i32 { let v=new::<Bad>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("#[derive(Copy)]struct Bad { resource:[i32;1] } fn main()->i32 { let v=new::<Bad>(); return 0; }", "E0300", &["copy", "element"][..]),
     ] {
-        rejects(body, &["copy", "element", "array"], false);
+        rejects(body, code, markers);
     }
 }
 
@@ -405,35 +407,35 @@ fn equal_layouts_do_not_erase_record_element_nominal_identity() {
         "#[derive(Copy)]struct Q { x:i32,y:i32 } fn main()->i32 { let mut v=new::<P>(); let q=Q{x:1,y:2}; v[0]=q; return 0; }",
         "#[derive(Copy)]struct Q { x:i32,y:i32 } fn first(v:&[Q])->Q { return v[0]; } fn main()->i32 { let v=new::<P>(); let q=first(&v); return q.x; }",
     ] {
-        rejects(body, &["mismatch", "incompatible", "conflicting"], false);
+        rejects(body, "E0300", &["mismatch", "incompatible", "conflicting"]);
     }
 }
 
 #[test]
 fn vector_ownership_mutability_and_live_slice_loans_remain_exclusive() {
-    for (body, markers) in [
-        ("fn main()->i32 { let v=new::<P>(); let moved=v; return len(&v); }", &["moved", "available"][..]),
-        ("fn main()->i32 { let v=new::<P>(); v[0]=P{x:1,y:2}; return 0; }", &["mutable", "mutability"][..]),
-        ("fn hold(a:&mut[P],b:&[P])->i32 { return 0; } fn main()->i32 { let mut v=new::<P>(); return hold(&mut v[0..1],&v[0..1]); }", &["borrow", "overlap", "exclusive", "available"][..]),
-        ("fn hold(a:&[P],b:&mut[P])->i32 { return 0; } fn main()->i32 { let mut v=new::<P>(); return hold(&v[0..1],&mut v[0..1]); }", &["borrow", "overlap", "exclusive", "available"][..]),
-        ("fn grow(a:&[P],v:&mut Vec<P>,p:P)->i32 { try_push(&mut *v,p); return a.len(); } fn main()->i32 { let mut v=new::<P>(); let p=P{x:1,y:2}; return grow(&v,&mut v,p); }", &["borrow", "overlap", "exclusive", "available"][..]),
-        ("fn use_item(v:&mut[P],p:P)->i32 { v[0]=p; return p.x; } fn main()->i32 { let mut v=new::<P>(); return use_item(&mut v,v[0]); }", &["borrow", "overlap", "exclusive", "available"][..]),
+    for (body, code, markers) in [
+        ("fn main()->i32 { let v=new::<P>(); let moved=v; return len(&v); }", "E0310", &["moved", "available"][..]),
+        ("fn main()->i32 { let v=new::<P>(); v[0]=P{x:1,y:2}; return 0; }", "E0300", &["mutable", "mutability"][..]),
+        ("fn hold(a:&mut[P],b:&[P])->i32 { return 0; } fn main()->i32 { let mut v=new::<P>(); return hold(&mut v[0..1],&v[0..1]); }", "E0311", &["borrow", "overlap", "exclusive", "available"][..]),
+        ("fn hold(a:&[P],b:&mut[P])->i32 { return 0; } fn main()->i32 { let mut v=new::<P>(); return hold(&v[0..1],&mut v[0..1]); }", "E0311", &["borrow", "overlap", "exclusive", "available"][..]),
+        ("fn grow(a:&[P],v:&mut Vec<P>,p:P)->i32 { try_push(&mut *v,p); return a.len(); } fn main()->i32 { let mut v=new::<P>(); let p=P{x:1,y:2}; return grow(&v,&mut v,p); }", "E0311", &["borrow", "overlap", "exclusive", "available"][..]),
+        ("fn use_item(v:&mut[P],p:P)->i32 { v[0]=p; return p.x; } fn main()->i32 { let mut v=new::<P>(); return use_item(&mut v,v[0]); }", "E0311", &["borrow", "overlap", "exclusive", "available"][..]),
     ] {
-        rejects(body, markers, false);
+        rejects(body, code, markers);
     }
 }
 
 #[test]
 fn element_and_field_references_cannot_be_stored_or_returned() {
-    for (body, markers) in [
-        ("fn main()->i32 { let v=new::<&P>(); return 0; }", &["reference", "type"][..]),
-        ("fn main()->i32 { let v=new::<P>(); let element=&v[0]; return 0; }", &["reference", "whole binding"][..]),
-        ("fn read(value:&P)->i32 { return value.x; } fn main()->i32 { let v=new::<P>(); return read(&v[0]); }", &["reference", "borrow", "unsupported typed-preview construct"][..]),
-        ("#[derive(Copy)]struct Node { x:i32 } #[derive(Copy)]struct Outer { node:Node } fn read(value:&Node)->i32 { return value.x; } fn main()->i32 { let v=new::<Outer>(); return read(&v[0].node); }", &["reference", "borrow", "unsupported typed-preview construct"][..]),
-        ("struct Stored { value:&P } fn main()->i32 { let v=new::<P>(); return 0; }", &["reference", "type"][..]),
-        ("fn at(values:&[P])->&P { return &values[0]; } fn main()->i32 { let v=new::<P>(); return 0; }", &["reference", "type"][..]),
+    for (body, marker) in [
+        ("fn main()->i32 { let v=new::<&P>(); return 0; }", "unsupported typed-preview construct `&`"),
+        ("fn main()->i32 { let v=new::<P>(); let element=&v[0]; return 0; }", "unsupported typed-preview construct `[`"),
+        ("fn read(value:&P)->i32 { return value.x; } fn main()->i32 { let v=new::<P>(); return read(&v[0]); }", "unsupported typed-preview construct `[`"),
+        ("#[derive(Copy)]struct Node { x:i32 } #[derive(Copy)]struct Outer { node:Node } fn read(value:&Node)->i32 { return value.x; } fn main()->i32 { let v=new::<Outer>(); return read(&v[0].node); }", "unsupported typed-preview construct `[`"),
+        ("struct Stored { value:&P } fn main()->i32 { let v=new::<P>(); return 0; }", "unsupported typed-preview construct `&`"),
+        ("fn at(values:&[P])->&P { return &values[0]; } fn main()->i32 { let v=new::<P>(); return 0; }", "unsupported typed-preview construct `&`"),
     ] {
-        rejects(body, markers, true);
+        rejects(body, "E0101", &[marker]);
     }
 }
 
