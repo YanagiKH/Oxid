@@ -564,6 +564,10 @@ fn compile_inner(
             "executable",
         ])
     };
+    if cfg!(target_os = "macos") && settings.reproducible() {
+        // Keep archive-member debug maps independent of the private workspace.
+        link.push(OsString::from("-Wl,-oso_prefix,."));
+    }
     if float_operations {
         link.push(OsString::from("float_format.a"));
         link.push(OsString::from(if cfg!(target_os = "macos") {
