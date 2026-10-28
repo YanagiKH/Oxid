@@ -4,6 +4,9 @@ use super::*;
 use crate::frontend::build_config::NativeSourceNames;
 use std::fmt::Write;
 
+#[path = "native_library.rs"]
+pub(in crate::frontend::oir) mod library;
+
 // Private text admission remains separate from default source consumers.
 #[allow(dead_code)]
 #[path = "native_private_emit.rs"]

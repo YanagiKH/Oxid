@@ -41,6 +41,7 @@ const VECTOR_HEADER: &str = include_str!("../../native/experimental_vector.h");
 const VECTOR_ADAPTER: &str = include_str!("../../native/typed_vector.c");
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 pub(crate) mod doctor;
+pub(super) mod library;
 fn failure(message: impl Into<String>) -> Box<Diagnostic> {
     Diagnostic::new("E0701", "native-toolchain", message, None)
 }

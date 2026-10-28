@@ -11,8 +11,8 @@ mod verify;
 pub(in crate::frontend) use owned::debug::{DebugField, DebugRecord, DebugRecords};
 pub(in crate::frontend) use owned::process;
 pub(super) use source::{
-    check_source, import_checked, import_produced, CheckedSourceProgram, Imported, ProcessFailure,
-    IMPORT_BYTES,
+    check_scalar_library, check_source, import_checked, import_produced, CheckedScalarLibrary,
+    CheckedSourceProgram, Imported, ProcessFailure, IMPORT_BYTES,
 };
 
 use super::{
@@ -25,6 +25,14 @@ use super::{
 const MAX_LOCALS: usize = super::parser::MAX_NODES;
 const MAX_BLOCKS: usize = 3 * super::parser::MAX_NODES;
 const MAX_ASSIGNMENTS: usize = super::parser::MAX_NODES;
+
+pub(super) const fn native_library_max_fuel() -> usize {
+    execute::MAX_FUEL
+}
+
+pub(super) const fn native_library_max_params() -> usize {
+    native::library::MAX_LIBRARY_PARAMS
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct LocalId(usize);

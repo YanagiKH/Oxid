@@ -18,6 +18,7 @@ mod lexical_provider;
 mod native;
 mod native_cache;
 mod native_debug;
+mod native_library;
 mod oir;
 mod options;
 mod owned_diagnostic;

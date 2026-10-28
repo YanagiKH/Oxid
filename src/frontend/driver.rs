@@ -1070,6 +1070,7 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
+        Route::TypedLibrary { request } => Some(process_library(&request[0])),
         Route::TypedLexical { request }
             if request[0].operation == Operation::Run
                 && request[0].entry_policy == EntryPolicy::Process
@@ -1143,6 +1144,52 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
             Some(&output),
             entry_policy,
         )),
+    }
+}
+
+fn process_library(options: &super::native_library::Options) -> i32 {
+    if let Err(error) = super::native_library::require_host() {
+        return report(
+            &SourceMap::new(),
+            vec![*error],
+            options.json,
+            Summary::Compile(None),
+        );
+    }
+    let project = match ProjectSources::load_typed(&options.path, ProjectLimits::default()) {
+        Ok(project) => project,
+        Err(failure) => {
+            return report(
+                &failure.sources,
+                failure.diagnostics,
+                options.json,
+                Summary::Compile(None),
+            )
+        }
+    };
+    let result = (|| {
+        let limits = super::native_library::limits(options).map_err(|e| vec![*e])?;
+        let work = WorkMeter::new(limits.work);
+        let mut allocator = Allocator::default();
+        let library =
+            oir::check_scalar_library(&project, &options.export, limits, &work, &mut allocator)?;
+        let module = library
+            .native_module(options.fuel, &work, &mut allocator)
+            .map_err(|e| vec![*e])?;
+        let header = super::native_library::header(library.parameters(), &mut allocator)
+            .map_err(|e| vec![*e])?;
+        super::native::library::compile(&module, &header, &project, library.parameters(), options)
+            .map_err(|e| vec![*e])?;
+        Ok(Summary::Compile(Some(options.output.clone())))
+    })();
+    match result {
+        Ok(summary) => report(project.sources(), Vec::new(), options.json, summary),
+        Err(errors) => report(
+            project.sources(),
+            errors,
+            options.json,
+            Summary::Compile(None),
+        ),
     }
 }
 /// Actual bridge-only I/O/result carriers, debited by the import facade. The
