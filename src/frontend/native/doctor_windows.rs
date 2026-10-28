@@ -457,8 +457,8 @@ impl<'a> Attributes<'a> {
         }
         Ok(Self(storage))
     }
-    fn raw(&self) -> *mut c_void {
-        self.0 .0.as_ptr().cast_mut().cast()
+    fn raw(&mut self) -> *mut c_void {
+        self.0 .0.as_mut_ptr().cast()
     }
     fn set(&mut self, attribute: usize, values: &mut [RawHandle]) -> Result<(), String> {
         // SAFETY: Handle arrays remain alive through CreateProcessW and deletion
