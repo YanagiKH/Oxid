@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -116,6 +117,26 @@ class PythonNativePackageContracts(unittest.TestCase):
         self.assertEqual(config['sources'], ['src/pricing.ox'])
         self.assertEqual(set(config['payloads']), {*backend.BACKEND_FILES, 'src/pricing.ox'})
         self.assertEqual(config['payloads']['src/pricing.ox'], (self.root / 'src/pricing.ox').read_bytes())
+
+    def test_declared_module_sources_are_preserved_in_the_sdist_without_tools(self):
+        entry = b'mod math;pub fn line_total(a:i32,b:i32,c:i32)->i32{return math::subtotal(a,b)/c;}\n'
+        helper = b'pub fn subtotal(unit:i32,quantity:i32)->i32{return unit*quantity;}\n'
+        (self.root / 'src/pricing.ox').write_bytes(entry)
+        (self.root / 'src/math.ox').write_bytes(helper)
+        self.write_config(tool={**self.tool, 'sources': ['src/pricing.ox', 'src/math.ox']})
+        output = self.root / 'sdist'
+        output.mkdir()
+        with cwd(self.root), \
+                patch.object(backend, 'tool_identity', side_effect=AssertionError('sdist selected a tool')), \
+                patch.object(backend, 'run_tool', side_effect=AssertionError('sdist launched a tool')), \
+                patch.object(backend.subprocess, 'Popen', side_effect=AssertionError('sdist launched a process')):
+            filename = backend.build_sdist(output)
+        prefix = 'control_pricing-1.2.3/'
+        with tarfile.open(output / filename, 'r:gz') as archive:
+            self.assertEqual(set(archive.getnames()),
+                             {prefix + name for name in (*backend.BACKEND_FILES, 'src/pricing.ox', 'src/math.ox', 'PKG-INFO')})
+            self.assertEqual(archive.extractfile(prefix + 'src/pricing.ox').read(), entry)
+            self.assertEqual(archive.extractfile(prefix + 'src/math.ox').read(), helper)
 
     def test_unknown_and_malicious_project_metadata_is_refused_before_tools(self):
         for key, value in (

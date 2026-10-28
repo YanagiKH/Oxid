@@ -179,7 +179,7 @@ def snapshot(app, destination):
     return config, inventory
 
 
-def variant(source, destination, suffix, body, fuel=None):
+def variant(source, destination, suffix, body, fuel=None, helpers=None):
     shutil.copytree(source, destination)
     config = project_config(destination)
     config['name'] += '-' + suffix
@@ -188,6 +188,14 @@ def variant(source, destination, suffix, body, fuel=None):
         config['fuel'] = fuel
     require(len(config['sources']) == 1, 'qualification variants require the published single-source example')
     (destination / config['source']).write_text(body, encoding='utf-8')
+    for name, contents in ({} if helpers is None else helpers).items():
+        member_name(name)
+        require(name not in config['sources'] and not (destination / name).exists(),
+                'qualification helper would replace an existing source')
+        path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents, encoding='utf-8')
+        config['sources'].append(name)
     parts = ['[build-system]', 'requires = []', 'build-backend = "oxid_backend"',
              'backend-path = ["build_backend"]', '', '[project]']
     for name in ('name', 'version', 'description', 'requires-python'):
@@ -321,6 +329,7 @@ def inspect_wheel(path, config, expected_tag, prepared=None):
             'export': config['export'][7:], 'library': provenance['library_filename'],
             'members': {name: {'bytes': len(body), 'sha256': sha(body)} for name, body in files.items()},
             'source_manifest': provenance['source_manifest'], 'build_commands': provenance['commands'],
+            'native_sources': native['sources'],
             'c_compiler': provenance['c_compiler']}
 
 
@@ -370,7 +379,7 @@ def rejects(kind, function, *arguments):
     else: raise AssertionError('expected ' + kind.__name__)
 check(sys.implementation.name == 'cpython', 'real CPython required')
 prefix = pathlib.Path(sys.prefix).resolve()
-site = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+site = pathlib.Path(sysconfig.get_path('platlib')).resolve()
 # Preload an independently compiled original library globally. ctypes never
 # calls either export; all qualification calls go through CPython C functions.
 preload = spec['preload']
@@ -385,9 +394,10 @@ for row in spec['packages']:
     function = getattr(package, row['export'])
     check(function is getattr(native, row['export']) and isinstance(function, types.BuiltinFunctionType), 'Python fallback instead of native function')
     functions[row['module']] = function
-main, peer, exhausted, zero, zerolow, wide = [functions[row['module']] for row in spec['packages']]
+main, peer, exhausted, zero, zerolow, wide, modules = [functions[row['module']] for row in spec['packages']]
 check(invoke(main, 1250, 3, 2) == 1875, 'pricing result')
 check(invoke(peer, 1250, 3, 2) == 1255, 'independent symbol binding')
+check(invoke(modules, 1250, 3, 2) == 1875, 'declared helper module source closure')
 for arguments in ((), (1, 2), (1, 2, 3, 4)):
     rejects(TypeError, main, *arguments)
 for bad in (True, False, None, '1', 1.0, object()):
@@ -832,8 +842,13 @@ def main():
         zerolow = variant(source, output / 'source-zerolow', 'zerolow', zero_source, fuel=3)
         parameters = ','.join(f'a{i}:i32' for i in range(64))
         wide = variant(source, output / 'source-wide', 'wide', f'pub fn {export}({parameters})->i32{{return a0+a7*2+a8*3+a31*5+a63*7;}}\n')
+        modules_source = f'mod math;\npub fn {export}(a:i32,b:i32,c:i32)->i32{{return math::subtotal(a,b)/c;}}\n'
+        modules_helper = 'pub fn subtotal(unit:i32,quantity:i32)->i32{return unit*quantity;}\n'
+        modules = variant(source, output / 'source-modules', 'modules', modules_source,
+                          helpers={'src/math.ox': modules_helper})
         packages.extend((output / ('source-' + suffix), row) for suffix, row in
-                        (('peer', peer), ('fuel', exhausted), ('zero', zero), ('zerolow', zerolow), ('wide', wide)))
+                        (('peer', peer), ('fuel', exhausted), ('zero', zero), ('zerolow', zerolow),
+                         ('wide', wide), ('modules', modules)))
         wheel_rows, wheels = [], []
         for index, (project, row) in enumerate(packages):
             wheelhouse = output / 'wheels' / str(index)
@@ -842,6 +857,17 @@ def main():
             produced = list(wheelhouse.glob('*.whl'))
             require(len(produced) == 1, 'pip must produce exactly one wheel')
             wheel = inspect_wheel(produced[0], row, tag, prepared if index == 0 else None)
+            if row['module'] == modules['module']:
+                # Names are specified by this public fixture, not inferred
+                # from the producer's observed inventory or path heuristic.
+                expected_sources = {'pricing.ox': sha(modules_source.encode()),
+                                    'math.ox': sha(modules_helper.encode())}
+                require(wheel['source_manifest'] == expected_sources
+                        and isinstance(wheel['native_sources'], list) and len(wheel['native_sources']) == 2
+                        and all(isinstance(item, dict) and set(item) == {'path', 'sha256'}
+                                for item in wheel['native_sources'])
+                        and {item['path']: item['sha256'] for item in wheel['native_sources']} == expected_sources,
+                        'multi-file compiler closure does not match both declared source identities and hashes')
             wheel['expected'] = 1255 if index == 1 else 1875
             wheel_rows.append(wheel)
             wheels.append(produced[0])
