@@ -1425,6 +1425,18 @@ fn qualified_completion_handles_import_holes_and_never_guesses_literal_or_member
             "{body}"
         );
     }
+    for (version, declaration) in [(9, "use crate::as;"), (10, "use crate::as as chosen;")] {
+        let text = format!("{declaration}fn as()->i32{{return 42;}}fn main()->i32{{return 0;}}");
+        c.change(&path, version, json!([{"text":text}]));
+        let candidates = completion_at(&mut c, &path, &text, "crate::as", 8);
+        assert_eq!(completion_labels(&candidates), ["as"]);
+        let range = &candidates["items"][0]["textEdit"]["range"];
+        assert_eq!(
+            range["end"]["character"].as_u64().unwrap()
+                - range["start"]["character"].as_u64().unwrap(),
+            2
+        );
+    }
     c.finish();
     assert_eq!(fs::read_to_string(p.0.join("main.ox")).unwrap(), disk);
     p.unchanged();
@@ -1467,13 +1479,24 @@ fn qualified_completion_reads_unsaved_modules_nested_privacy_and_close_restores_
         completion_labels(&completion_at(&mut c, &main, text, "crate::helper::", 15)),
         ["Choice", "Point", "answer", "nested"]
     );
+    let aliased = "mod helper;use crate::helper:: as chosen;fn main()->i32{return 0;}";
+    c.change(&main, 2, json!([{"text":aliased}]));
+    let candidates = completion_at(&mut c, &main, aliased, "crate::helper::", 15);
+    assert_eq!(
+        completion_labels(&candidates),
+        ["Choice", "Point", "answer", "nested"]
+    );
+    assert_eq!(
+        candidates["items"][0]["textEdit"]["range"]["start"],
+        candidates["items"][0]["textEdit"]["range"]["end"]
+    );
     let middle = "mod helper;fn main()->i32{return crate::help_suffix::answer();}";
-    c.change(&main, 2, json!([{"text":middle}]));
+    c.change(&main, 3, json!([{"text":middle}]));
     let result = completion_at(&mut c, &main, middle, "help_suffix", 4);
     assert_eq!(completion_labels(&result), ["helper"]);
     assert_eq!(result["items"][0]["kind"], 9);
     let nested = "mod helper;fn main()->i32{return crate::helper::nested::;}";
-    c.change(&main, 3, json!([{"text":nested}]));
+    c.change(&main, 4, json!([{"text":nested}]));
     assert_eq!(
         completion_labels(&completion_at(
             &mut c,
@@ -1485,7 +1508,7 @@ fn qualified_completion_reads_unsaved_modules_nested_privacy_and_close_restores_
         ["nested_answer"]
     );
     let hidden = "mod helper;fn main()->i32{return crate::helper::locked::;}";
-    c.change(&main, 4, json!([{"text":hidden}]));
+    c.change(&main, 5, json!([{"text":hidden}]));
     assert_eq!(
         completion_at(&mut c, &main, hidden, "crate::helper::locked::", 23)["items"],
         json!([])
@@ -1500,11 +1523,27 @@ fn qualified_completion_reads_unsaved_modules_nested_privacy_and_close_restores_
         json!({"textDocument":{"uri":helper}}),
     );
     c.barrier();
-    c.change(&main, 5, json!([{"text":text}]));
+    c.change(&main, 6, json!([{"text":text}]));
     assert_eq!(
         completion_labels(&completion_at(&mut c, &main, text, "crate::helper::", 15)),
         ["Choice", "Point", "nested", "saved_answer"]
     );
+    c.open(&helper, "pub fn as()->i32{return 42;}");
+    for (version, declaration) in [
+        (7, "mod helper;use crate::helper::as;"),
+        (8, "mod helper;use crate::helper::as as chosen;"),
+    ] {
+        let text = format!("{declaration}fn main()->i32{{return 0;}}");
+        c.change(&main, version, json!([{"text":text}]));
+        let candidates = completion_at(&mut c, &main, &text, "crate::helper::as", 16);
+        assert_eq!(completion_labels(&candidates), ["as"]);
+        let range = &candidates["items"][0]["textEdit"]["range"];
+        assert_eq!(
+            range["end"]["character"].as_u64().unwrap()
+                - range["start"]["character"].as_u64().unwrap(),
+            2
+        );
+    }
     c.finish();
     assert_eq!(
         fs::read_to_string(p.0.join("src/helper.ox")).unwrap(),

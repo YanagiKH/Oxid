@@ -1,6 +1,7 @@
 //! Declaration-only editor syntax. This type cannot become an executable AST.
 use super::*;
 use crate::frontend::source::{SourceFileId, Span};
+use std::num::NonZeroUsize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) enum DeclarationKind {
@@ -29,7 +30,7 @@ pub(in crate::frontend) struct EditorFile {
 #[derive(Debug)]
 struct QueryRegion {
     span: Span,
-    import: bool,
+    alias_keyword: Option<NonZeroUsize>,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::frontend) struct PathQuery {
@@ -39,6 +40,17 @@ pub(in crate::frontend) struct PathQuery {
     prefix_len: usize,
     replacement: Span,
     cursor: usize,
+}
+
+fn alias_hole(parser: &Parser<'_>) -> bool {
+    if parser.peek().kind != Kind::Ident || parser.source.text_at(parser.peek().span) != "as" {
+        return false;
+    }
+    let mut after = parser.tokens[parser.cursor + 1..]
+        .iter()
+        .filter(|token| token.kind != Kind::Trivia);
+    matches!(after.next(), Some(token) if token.kind == Kind::Ident)
+        && matches!(after.next(), Some(token) if matches!(token.kind, Kind::Semi | Kind::Eof))
 }
 
 impl PathQuery {
@@ -169,8 +181,7 @@ impl EditorFile {
                             }
                             count += 1;
                             if matches!(parser.peek().kind, Kind::Semi | Kind::Eof)
-                                || (parser.peek().kind == Kind::Ident
-                                    && source.text_at(parser.peek().span) == "as")
+                                || alias_hole(&parser)
                             {
                                 endpoint = None;
                                 break;
@@ -184,13 +195,24 @@ impl EditorFile {
                                 break;
                             }
                         }
-                        if parser.peek().kind == Kind::Ident
+                        let alias_keyword = if parser.peek().kind == Kind::Ident
                             && source.text_at(parser.peek().span) == "as"
                         {
+                            let keyword = NonZeroUsize::new(parser.cursor).ok_or_else(|| {
+                                parser.diagnostic(
+                                    "E0500",
+                                    "editor",
+                                    "invalid editor alias token identity",
+                                    Some(parser.peek().span),
+                                )
+                            })?;
                             parser.bump();
                             endpoint =
                                 Some(parser.expect(Kind::Ident, "expected import alias")?.span);
-                        }
+                            Some(keyword)
+                        } else {
+                            None
+                        };
                         let end = if parser.peek().kind == Kind::Eof {
                             parser.peek().span
                         } else {
@@ -215,7 +237,7 @@ impl EditorFile {
                         )?;
                         regions.push(QueryRegion {
                             span: source.span(start.end, end.start),
-                            import: true,
+                            alias_keyword,
                         });
                     }
                     continue;
@@ -276,7 +298,7 @@ impl EditorFile {
                     )?;
                     regions.push(QueryRegion {
                         span: source.span(opening.end, end.start),
-                        import: false,
+                        alias_keyword: None,
                     });
                     (name, DeclarationKind::Function)
                 };
@@ -342,17 +364,14 @@ impl EditorFile {
                 }
             }
         }
-        let in_import = self.regions.iter().any(|region| {
-            region.import && region.span.start <= cursor && cursor <= region.span.end
-        });
-        if in_import
-            && self.tokens.iter().any(|token| {
-                token.kind == Kind::Ident
-                    && source.text_at(token.span) == "as"
-                    && token.span.start < cursor
-                    && cursor <= token.span.end
-            })
-        {
+        let alias_keyword = self
+            .regions
+            .iter()
+            .find(|region| region.span.start <= cursor && cursor <= region.span.end)
+            .and_then(|region| region.alias_keyword)
+            .and_then(|index| self.tokens.get(index.get()))
+            .map(|token| token.span);
+        if alias_keyword.is_some_and(|span| span.start < cursor && cursor <= span.end) {
             return Ok(None);
         }
         let replacement = self
@@ -362,7 +381,7 @@ impl EditorFile {
                 token.kind == Kind::Ident
                     && token.span.start <= cursor
                     && cursor <= token.span.end
-                    && !(in_import && source.text_at(token.span) == "as")
+                    && alias_keyword != Some(token.span)
             })
             .map_or(source.span(cursor, cursor), |token| token.span);
         let mut before = self.tokens.iter().rev().filter(|token| {
@@ -535,6 +554,50 @@ mod tests {
             ["outer", "later"]
         );
         assert!(query.modules().is_empty());
+    }
+    #[test]
+    fn editor_query_alias_holes_keep_contextual_as_identifiers_and_actual_token_identity() {
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(std::mem::size_of::<QueryRegion>(), 32); // Span24 + optional token8
+            assert_eq!(std::mem::align_of::<QueryRegion>(), 8);
+            assert_eq!(std::mem::size_of::<Option<NonZeroUsize>>(), 8);
+            assert_eq!(std::mem::size_of::<EditorFile>(), 144); // five Vec24 + three words8
+        }
+        for (import, needle, offset, expected, prefixes) in [
+            ("use crate::as;", "crate::as", 8, "as", vec!["crate"]),
+            (
+                "use crate::as as chosen;",
+                "crate::as",
+                8,
+                "as",
+                vec!["crate"],
+            ),
+            ("use crate:: as chosen;", "crate::", 7, "", vec!["crate"]),
+            (
+                "use crate::as:: as chosen;",
+                "crate::as::",
+                11,
+                "",
+                vec!["crate", "as"],
+            ),
+        ] {
+            let text = format!("{import}fn as()->i32{{return 42;}}fn main()->i32{{return 0;}}");
+            let (map, parsed) = parsed(&text);
+            let source = map.get(SourceFileId(0));
+            let cursor = text.find(needle).unwrap() + offset;
+            let query = parsed.query(source, cursor).unwrap().unwrap();
+            assert_eq!(source.text_at(query.replacement()), expected);
+            assert_eq!(
+                query
+                    .segments()
+                    .iter()
+                    .map(|&span| source.text_at(span))
+                    .collect::<Vec<_>>(),
+                prefixes
+            );
+            assert_eq!(query.cursor(), cursor);
+        }
     }
     #[test]
     fn editor_query_counts_the_absent_endpoint_in_the_existing_path_limit() {
