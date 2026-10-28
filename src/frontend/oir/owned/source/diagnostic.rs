@@ -45,8 +45,8 @@ fn writable(subject: DeniedSubject) -> bool {
 fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> {
     use DeniedOperation as Op;
     use DeniedRole as Role;
-    let named_move = facts.operation == Op::MoveInitialize
-        && facts.role == Role::SourceConsume
+    let named_move = matches!((facts.operation, facts.role),
+            (Op::MoveInitialize, Role::SourceConsume) | (Op::CopyInitialize, Role::SourceCopy))
         && matches!((facts.subject, facts.counterpart),
             (DeniedSubject::Owner(source), Some(destination))
                 if named(source) && destination.class == OwnerKind::Temporary

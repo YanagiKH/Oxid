@@ -1579,6 +1579,7 @@ fn native_owned_extended_storage_every_budget_uses_real_llvm() {
                         .records
                         .iter()
                         .map(|r| RawRecordDecl {
+                            is_copy: false,
                             id: r.id,
                             span: r.span,
                             fields: r.fields.clone(),

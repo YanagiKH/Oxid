@@ -1391,3 +1391,60 @@ fn projected_slice_success_store_preserves_empty_sentinel_and_padding_bytes() {
     ));
     assert_eq!(m.frames[0].payload, expected);
 }
+
+#[test]
+fn checked_copy_runtime_preflights_all_leaves_and_owner_state_before_destination_write() {
+    let source = "#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:42,last:true};let second=p;return second.earlier+p.earlier;}";
+    let (_, witness, entry) = super::super::source::copy_record_tests::checked(source);
+    assert_eq!(entry, hir::DefId(0));
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    for mutation in 0..6 {
+        let initial = 1 + plan.function(entry).usage().activation_fuel_cells();
+        let mut selected = None;
+        for fuel in initial..initial + 1000 {
+            let machine = stopped_machine(&plan, fuel);
+            let frame = &machine.frames[0];
+            let function = &witness.functions()[frame.function.0];
+            if let Some(statement) = function.blocks[frame.block.0].statements.get(frame.next) {
+                if matches!(statement.kind, OwnedInstruction::CopyInitialize { .. }) {
+                    selected = Some((machine, statement));
+                    break;
+                }
+            }
+        }
+        let (mut machine, statement) = selected.expect("copy reached");
+        let OwnedInstruction::CopyInitialize { destination, source } = statement.kind else { unreachable!() };
+        let span = plan::instruction_span(statement);
+        let from = machine.raw_key(0, source);
+        let to = machine.raw_key(0, destination);
+        let source_extent = machine.owner_extent(from, span).unwrap();
+        let destination_extent = machine.owner_extent(to, span).unwrap();
+        machine.frames[0].payload[destination_extent.clone()].fill(0xa5);
+        match mutation {
+            0 => machine.frames[0].owners[destination.0].generation = u64::MAX,
+            1 => machine.frames[0].owners[destination.0].state = AVAILABLE,
+            2 => machine.frames[0].owners[source.0].exclusive_children = 1,
+            3 => machine.frames[0].payload[source_extent.start + 8] = 2,
+            4 => machine.frames[0].owners[source.0].state = MOVED,
+            5 => (),
+            _ => unreachable!(),
+        }
+        let payload = machine.frames[0].payload.clone();
+        let owners = machine.frames[0].owners.clone();
+        let result = machine.statement(0, &statement.kind, span);
+        if mutation == 5 {
+            result.unwrap();
+            assert_eq!(machine.frames[0].owners[source.0], owners[source.0]);
+            assert_eq!(machine.frames[0].payload[source_extent.clone()], payload[source_extent]);
+            // Only initialized fields change. Private record padding stays at
+            // the independently seeded byte value and is never copied/read.
+            assert_eq!(&machine.frames[0].payload[destination_extent],
+                &[7, 165, 165, 165, 42, 0, 0, 0, 1, 165, 165, 165]);
+            assert_eq!(machine.frames[0].owners[destination.0].state, AVAILABLE);
+        } else {
+            assert!(result.is_err(), "mutation={mutation}");
+            assert_eq!(machine.frames[0].payload, payload, "mutation={mutation}");
+            assert_eq!(machine.frames[0].owners, owners, "mutation={mutation}");
+        }
+    }
+}

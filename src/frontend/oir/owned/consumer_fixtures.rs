@@ -86,6 +86,7 @@ pub(super) fn function(id: usize, result: ValueTy, span: Span) -> RawOwnedFuncti
 }
 pub(super) fn record(types: &[hir::Ty], span: Span) -> RawRecordDecl {
     RawRecordDecl {
+        is_copy: false,
         id: RecordId(0),
         span,
         fields: types

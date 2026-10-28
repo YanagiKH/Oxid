@@ -119,8 +119,8 @@ fn scalar_elements_exclude_affine_values_and_unbounded_parameters() {
     ] {
         assert_eq!(Element::check(value, at).unwrap_err().code, "E0300");
     }
-    assert!(!Nominals::copy(Value::Vector(Element::CopyParameter(3))));
-    assert!(!Nominals::copy(Value::Vector(Element::Concrete(Ty::Unit))));
+    assert!(!Nominals::default().copy(Value::Vector(Element::CopyParameter(3))));
+    assert!(!Nominals::default().copy(Value::Vector(Element::Concrete(Ty::Unit))));
 }
 
 #[test]

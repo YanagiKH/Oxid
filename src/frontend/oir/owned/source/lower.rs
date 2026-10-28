@@ -1582,9 +1582,10 @@ impl<'a, 'b> Walk<'a, 'b> {
                         cause,
                     )?;
                     self.statement(
-                        OwnedInstruction::MoveInitialize {
-                            destination,
-                            source,
+                        if self.view.is_copy(record) {
+                            OwnedInstruction::CopyInitialize { destination, source }
+                        } else {
+                            OwnedInstruction::MoveInitialize { destination, source }
                         },
                         span,
                         span,
@@ -2908,6 +2909,7 @@ pub(super) fn lower_with_limits(
         budget::append(
             &mut records,
             RawRecordDecl {
+                is_copy: record.is_copy,
                 id: record.id,
                 span: record.name_span,
                 fields,

@@ -975,7 +975,8 @@ pub(super) fn check_with_conversion_authority(
                         equal(operand(f, *value, sources)?, declared.element(), value.span)?;
                     }
                 }
-                OwnedInstruction::MoveInitialize {
+                OwnedInstruction::CopyInitialize { destination, source }
+                | OwnedInstruction::MoveInitialize {
                     destination,
                     source,
                 }
@@ -986,6 +987,11 @@ pub(super) fn check_with_conversion_authority(
                     let dst = ordinary(f, *destination, s)?;
                     let src = ordinary(f, *source, s)?;
                     same_aggregate(d, dst.aggregate(), src.aggregate(), Malformed::Type, s)?;
+                    if matches!(instruction.kind, OwnedInstruction::CopyInitialize { .. })
+                        && !d.is_copy(src.aggregate())
+                    {
+                        return Err(bad(Malformed::Type, s));
+                    }
                     if destination == source {
                         return Err(bad(Malformed::OwnerClass, s));
                     }

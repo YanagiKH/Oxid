@@ -10,6 +10,7 @@ fn field(record: usize, index: usize) -> FieldId {
 }
 fn declaration(id: usize, fields: &[ValueTy], span: Span) -> RawRecordDecl {
     RawRecordDecl {
+        is_copy: false,
         id: RecordId(id),
         span,
         fields: fields

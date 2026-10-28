@@ -107,6 +107,7 @@ fn body(id: usize, s: Span) -> RawOwnedFunction {
 }
 fn base(s: Span, owners: usize) -> RawOwnedProgram {
     let records = vec![RawRecordDecl {
+        is_copy: false,
         id: RecordId(0),
         span: s,
         fields: [hir::Ty::I32, hir::Ty::Bool, hir::Ty::Unit]

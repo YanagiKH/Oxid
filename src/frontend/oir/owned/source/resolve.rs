@@ -1453,6 +1453,7 @@ fn resolve_index_impl(
                 });
             }
             Ok(Record {
+                is_copy: index.record_is_copy(RecordId(id))?,
                 id: RecordId(id),
                 name_span: record.name,
                 span: record.span,

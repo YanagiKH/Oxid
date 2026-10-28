@@ -177,6 +177,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(id, fields)| RawRecordDecl {
+                is_copy: false,
                 id: RecordId(id),
                 span,
                 fields: fields

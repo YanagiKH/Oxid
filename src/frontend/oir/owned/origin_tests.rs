@@ -80,6 +80,7 @@ pub(super) fn raw(s: Span) -> RawOwnedProgram {
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![RawRecordDecl {
+            is_copy: false,
             id: RecordId(0),
             span: s,
             fields: vec![],

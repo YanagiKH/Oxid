@@ -20,6 +20,7 @@ pub(super) struct LoopId(pub(super) usize);
 
 #[derive(Debug)]
 pub(super) struct Record {
+    pub(super) is_copy: bool,
     pub(super) id: RecordId,
     pub(super) name_span: Span,
     pub(super) span: Span,

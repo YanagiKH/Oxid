@@ -750,6 +750,7 @@ fn c3_t0_empty_program_keeps_one_empty_bodies_request_and_no_function_rights() {
 fn c3_t0_hir_counts_full_presence_borrow_arguments_and_canonical_depth() {
     let at = origin();
     let records = [Record {
+        is_copy: false,
         id: RecordId(0),
         name_span: at,
         span: at,
@@ -1266,6 +1267,7 @@ fn c3_t0_schedule_covers_sibling_continuations_and_absent_else_without_new_frame
 fn rich_parts() -> (Vec<Record>, Vec<Signature>, Vec<Function>, HirPlan) {
     let at = origin();
     let records = vec![Record {
+        is_copy: false,
         id: RecordId(0),
         name_span: at,
         span: at,

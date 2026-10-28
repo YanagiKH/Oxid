@@ -1103,6 +1103,11 @@ impl DeclarationIndex<'_> {
             plan.nominals.template(record, self.sources().eof())
         })
     }
+    pub fn record_is_copy(&self, record: RecordId) -> Result<bool, Box<Diagnostic>> {
+        self.generic_plan().map_or(Ok(false), |plan| {
+            plan.nominals.record_is_copy(record, self.sources().eof())
+        })
+    }
     pub fn ordinary_record_instance(
         &self,
         template: RecordId,
@@ -1656,14 +1661,7 @@ impl<'a, 's> Walker<'a, 's> {
         }
     }
     fn copy(&self, value: Value) -> bool {
-        match value {
-            Value::Concrete(ValueTy::Scalar(_)) => true,
-            Value::Concrete(ValueTy::Owned(_))
-            | Value::Record(_)
-            | Value::Enumeration(_)
-            | Value::Vector(_) => false,
-            Value::Parameter { copy, .. } => copy,
-        }
+        self.nominals.copy(value)
     }
     fn bind(&mut self, name: Span, ty: Type, mutable: bool) -> Result<(), Box<Diagnostic>> {
         let spelling = self.index.sources().text(name)?;
@@ -2719,7 +2717,12 @@ impl<'a, 's> Walker<'a, 's> {
             ));
         }
         let ty = self.fields(self.bindings[position].ty, fields)?;
-        if self.abstract_body && matches!(ty, Type::Value(value) if !self.copy(value)) {
+        // Copy records do not add an aggregate field-extraction producer.
+        // Keep opaque Copy parameters admissible until concrete substitution.
+        if self.abstract_body
+            && matches!(ty, Type::Value(value) if !matches!(value,
+                Value::Concrete(ValueTy::Scalar(_)) | Value::Parameter { copy: true, .. }))
+        {
             return Err(error(
                 "cannot move an owned record field in a generic function",
                 fields,

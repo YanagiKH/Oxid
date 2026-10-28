@@ -95,6 +95,7 @@ impl FlowSummary {
 }
 
 pub(super) struct TypedOwnedFunction<'a> {
+    records: &'a [Record],
     admission: SourceAdmission,
     function: &'a Function,
     signatures: &'a [Signature],
@@ -219,6 +220,7 @@ impl TypedOwnedProgram<'_> {
                 assert!(body.block_flows[function.body.0].returns_only());
                 assert_eq!(&body.bindings[..signature.params.len()], &signature.params);
                 TypedOwnedFunction {
+                    records: self.records(),
                     admission: self.admission(),
                     function,
                     signatures: self.signatures(),
@@ -234,6 +236,12 @@ impl TypedOwnedProgram<'_> {
     }
 }
 impl<'a> TypedOwnedFunction<'a> {
+    pub(super) fn is_copy(&self, aggregate: AggregateTy) -> bool {
+        match aggregate {
+            AggregateTy::Record(id) => self.records.get(id.0).is_some_and(|record| record.is_copy),
+            _ => false,
+        }
+    }
     pub(super) fn admission(&self) -> SourceAdmission {
         self.admission
     }
@@ -4929,6 +4937,7 @@ mod typed_inventory {
         }
         fn records() -> [Record; 1] {
             [Record {
+                is_copy: false,
                 id: RecordId(0),
                 name_span: at(),
                 span: at(),

@@ -13,6 +13,7 @@ fn table() -> Declarations {
     ]
     .into_iter()
     .map(|(id, elements)| RawRecordDecl {
+        is_copy: false,
         id: RecordId(id),
         span,
         fields: elements

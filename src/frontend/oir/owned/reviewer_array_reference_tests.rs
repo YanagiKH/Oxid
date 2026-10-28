@@ -584,6 +584,7 @@ fn chain_fixture(ty: hir::Ty, n: usize) -> (SourceMap, RawOwnedProgram, Vec<(Spa
     ));
     schedule.extend([(s(base, 80), 1), (s(base, 81), 8 + 6 * w)]);
     let record = RawRecordDecl {
+        is_copy: false,
         id: RecordId(0),
         span: base,
         fields: vec![RawFieldDecl {
@@ -1373,6 +1374,7 @@ fn reference_fixture(
         AggregateTy::Record(record) => {
             let field = FieldId { record, index: 0 };
             raw.records = vec![RawRecordDecl {
+                is_copy: false,
                 id: record,
                 span: base,
                 fields: vec![RawFieldDecl {

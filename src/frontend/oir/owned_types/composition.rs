@@ -309,6 +309,7 @@ mod tests {
     }
     fn record_with(id: usize, values: &[ValueTy], span: Span) -> RawRecordDecl {
         RawRecordDecl {
+            is_copy: false,
             id: RecordId(id),
             span,
             fields: values
@@ -551,6 +552,7 @@ mod tests {
             for owned in [0usize, 1024] {
                 for tagged in [false, true] {
                     let record = RecordDecl {
+                        is_copy: false,
                         id: RecordId(0),
                         span,
                         field_start: 0,

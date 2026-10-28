@@ -315,6 +315,7 @@ fn function(
                 | OwnedInstruction::PrepareScalar { value, .. } => visitor.span(value.span)?,
                 OwnedInstruction::StorageLive(_)
                 | OwnedInstruction::StorageEnd(_)
+                | OwnedInstruction::CopyInitialize { .. }
                 | OwnedInstruction::MoveInitialize { .. }
                 | OwnedInstruction::Replace { .. }
                 | OwnedInstruction::Discard(_)
@@ -724,7 +725,9 @@ fn check_impl(
         let (key, module) = index.record(id).map_err(|_| bad())?;
         let ast = index.sources().ast(module).map_err(|_| bad())?;
         let original = ast.records.get(key.index).ok_or_else(bad)?;
-        if declaration.id != id || declaration.span != original.name {
+        if declaration.id != id || declaration.span != original.name
+            || declaration.is_copy != index.record_is_copy(id).map_err(|_| bad())?
+        {
             return Err(bad());
         }
         visitor.dimension(declaration.fields.len(), original.fields.len())?;

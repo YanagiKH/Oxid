@@ -80,6 +80,7 @@ mod projection_permission_tests {
         let span = raw.functions[0].span;
         let inner = AggregateTy::Record(RecordId(0));
         raw.records.push(RawRecordDecl {
+            is_copy: false,
             id: RecordId(1),
             span,
             fields: (0..2)
