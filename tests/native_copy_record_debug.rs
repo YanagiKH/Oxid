@@ -148,7 +148,9 @@ fn section<'a>(text: &'a str, name: &str) -> &'a str {
         .0
 }
 
-const POINT: &str = "#[derive(Copy)]\nstruct Point{x:i32,y:i32}\nfn by_value(prefix:i32,incoming:Point,suffix:i32)->Point{\n    let returned=incoming;\n    return returned;\n}\nfn inspect(prefix:i32,incoming:Point,suffix:i32)->i32{\n    let point=incoming;\n    let mut changed=point;\n    changed.x=changed.x+3;\n    let snapshot=changed;\n    changed.y=changed.y+3;\n    if prefix==0{\n        let point=Point{x:99,y:100};\n        let inside=point.x;\n    }\n    return point.x+changed.x+snapshot.y+changed.y+prefix+suffix;\n}\nfn main()->i32{\n    let original=Point{x:17,y:1};\n    let forwarded=by_value(0,original,0);\n    let result=inspect(0,forwarded,0);\n    return result+original.y-1;\n}\n";
+const REJECTED_SHADOWING: &str = "#[derive(Copy)]\nstruct Point{x:i32,y:i32}\nfn by_value(prefix:i32,incoming:Point,suffix:i32)->Point{\n    let returned=incoming;\n    return returned;\n}\nfn inspect(prefix:i32,incoming:Point,suffix:i32)->i32{\n    let point=incoming;\n    let mut changed=point;\n    changed.x=changed.x+3;\n    let snapshot=changed;\n    changed.y=changed.y+3;\n    if prefix==0{\n        let point=Point{x:99,y:100};\n        let inside=point.x;\n    }\n    return point.x+changed.x+snapshot.y+changed.y+prefix+suffix;\n}\nfn main()->i32{\n    let original=Point{x:17,y:1};\n    let forwarded=by_value(0,original,0);\n    let result=inspect(0,forwarded,0);\n    return result+original.y-1;\n}\n";
+
+const POINT: &str = "#[derive(Copy)]\nstruct Point{x:i32,y:i32}\nfn by_value(prefix:i32,incoming:Point,suffix:i32)->Point{\n    let returned=incoming;\n    return returned;\n}\nfn inspect(prefix:i32,incoming:Point,suffix:i32)->i32{\n    let point=incoming;\n    let mut changed=point;\n    changed.x=changed.x+3;\n    let snapshot=changed;\n    changed.y=changed.y+3;\n    if prefix==0{\n        let inner_point=Point{x:99,y:100};\n        let inside=inner_point.x;\n    }\n    return point.x+changed.x+snapshot.y+changed.y+prefix+suffix;\n}\nfn main()->i32{\n    let original=Point{x:17,y:1};\n    let forwarded=by_value(0,original,0);\n    let result=inspect(0,forwarded,0);\n    return result+original.y-1;\n}\n";
 
 const PROCESS_ABI: &str = "#[derive(Copy)]\nstruct Point{x:i32,y:i32}\nfn pass(prefix:&[i32],lead:i32,incoming:Point,suffix:i32)->Point{\n    let original=incoming;\n    let mut changed=original;\n    changed.x=changed.x+prefix[0]+lead;\n    changed.y=changed.y+prefix[1]+suffix;\n    let snapshot=changed;\n    return snapshot;\n}\nfn main()->i32{\n    let prefix=[2,3];\n    let point=Point{x:17,y:1};\n    let returned=pass(&prefix,5,point,7);\n    if point.x==17 && point.y==1 && returned.x==24 && returned.y==11{return 0;}\n    return 1;\n}\n";
 
@@ -217,7 +219,27 @@ fn process_record_arguments_keep_source_positions_after_fuel_result_and_slice_le
 
 #[test]
 #[ignore = "requires Linux x86_64 or ARM64, LLVM 19.1.7 and GDB with ptrace"]
-fn copy_record_parameters_independent_mutation_and_shadowed_scopes_are_real_gdb_values() {
+fn copy_record_parameters_independent_mutation_and_nested_scopes_are_real_gdb_values() {
+    // The original fixture remains a rejection control: typed-preview does
+    // not permit a second binding named point, even inside a nested block.
+    let rejected = Project::new(REJECTED_SHADOWING, "bounded", "dev");
+    let refusal = Command::new(env!("CARGO_BIN_EXE_oxid"))
+        .arg("check")
+        .current_dir(&rejected.0)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(refusal.status.code(), Some(1), "{refusal:?}");
+    assert!(refusal.stdout.is_empty(), "{refusal:?}");
+    assert!(
+        String::from_utf8_lossy(&refusal.stderr).contains("error[E0201]")
+            && String::from_utf8_lossy(&refusal.stderr)
+                .contains("duplicate binding; shadowing is unavailable in typed-preview"),
+        "{refusal:?}"
+    );
+    for path in [".oxid", "oxid.lock"] {
+        assert!(!rejected.0.join(path).exists(), "unexpected output: {path}");
+    }
     for policy in ["bounded", "hosted"] {
         for profile in ["dev", "release"] {
             let project = Project::new(POINT, policy, profile);
@@ -234,7 +256,8 @@ fn copy_record_parameters_independent_mutation_and_shadowed_scopes_are_real_gdb_
                 "echo PARAMETER_END\\n".into(),
                 breakpoint(POINT, "let inside="), "continue".into(), "echo INNER_START\\n".into(),
                 "info args".into(), "info locals".into(), "ptype changed".into(), "print changed".into(),
-                "printf \"INNER_VALUES %d %d %d %d %d %d %d %d\\n\", incoming.x, incoming.y, point.x, point.y, changed.x, changed.y, snapshot.x, snapshot.y".into(),
+                "printf \"INNER_VALUES %d %d %d %d %d %d %d %d\\n\", incoming.x, incoming.y, inner_point.x, inner_point.y, changed.x, changed.y, snapshot.x, snapshot.y".into(),
+                "printf \"INNER_OUTER_POINT %d %d\\n\", point.x, point.y".into(),
                 "echo INNER_END\\n".into(), breakpoint(POINT, "return point.x"), "continue".into(),
                 "echo OUTER_START\\n".into(), "info locals".into(), "print point.x".into(), "print changed.y".into(),
                 "printf \"OUTER_VALUES %d %d %d %d %d %d\\n\", point.x, point.y, changed.x, changed.y, snapshot.x, snapshot.y".into(),
@@ -254,6 +277,7 @@ fn copy_record_parameters_independent_mutation_and_shadowed_scopes_are_real_gdb_
                 "incoming =",
                 "suffix = 0",
                 "point =",
+                "inner_point =",
                 "changed =",
                 "snapshot =",
                 "Point",
@@ -265,9 +289,12 @@ fn copy_record_parameters_independent_mutation_and_shadowed_scopes_are_real_gdb_
                 inner.contains("INNER_VALUES 17 1 99 100 20 4 20 1"),
                 "{text}"
             );
+            assert!(inner.contains("INNER_OUTER_POINT 17 1"), "{text}");
             let outer = section(&text, "OUTER");
             assert!(
-                outer.contains("OUTER_VALUES 17 1 20 4 20 1") && !outer.contains("inside ="),
+                outer.contains("OUTER_VALUES 17 1 20 4 20 1")
+                    && !outer.contains("inside =")
+                    && !outer.contains("inner_point ="),
                 "{text}"
             );
             project.output();
