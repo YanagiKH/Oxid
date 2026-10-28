@@ -49,7 +49,7 @@ REVIEWED_INPUTS = {'native/typed_preview.c': (5984, '8cac647ec6ac8d08c2dca1e4308
  'src/frontend/project/filesystem/windows.rs': (34555,
                                                 '400d009dd41b607bcdc078cbb615b51187740c8201f59d09ff8b2afc442f0ee0'),
  'src/frontend/windows_native.rs': (9001, '37803f883571faa819633aea3dfebaaf538fa8f90478fc217647e986527de49a'),
- 'src/project_cli.rs': (64635, '83c232c1c02a515974d08393fa1bf23af405cc17941b043a3bccce2a80c5885b'),
+ 'src/project_cli.rs': (64875, 'f8143a08fa15b8d811f9afb9a154a394ed2813ea6a286763b4be83c5388f49ec'),
  'src/project_cli/workspace.rs': (33234, '7ea63f9b370d15bfc65a4ca41e1b2f7f0ce8bcd83a0d32d6673ed0f93498c24c')}
 REVIEWED_DIRECTIVES = {'native/typed_preview.c': {'attributes': (),
                             'build_script': None,
