@@ -5,7 +5,8 @@ struct Scalars {
     m: f32, n: f64, o: bool, p: char, q: (),
 }
 fn main() -> i32 {
-    let nan = f64::from_bits(9221120237041090602u64);
+    let nan_bits = 9221120237041090602u64;
+    let nan = f64::from_bits(nan_bits);
     let first = Scalars {
         a: -128i8, b: -32768i16, c: -2147483648,
         d: -9223372036854775808i64,

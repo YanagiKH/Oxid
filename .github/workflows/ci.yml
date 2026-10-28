@@ -322,6 +322,37 @@ jobs:
           git -C "$pinned_core" fetch --filter=blob:none --depth=1 origin "$revision"
           test "$(git -C "$pinned_core" rev-parse FETCH_HEAD)" = "$revision"
           git -C "$pinned_core" checkout --detach FETCH_HEAD
+          # Current Homebrew rejects this obsolete update-bot metadata. Keep
+          # every source, bottle, dependency and build byte unchanged.
+          python3 - "$pinned_core" <<'PY'
+          import hashlib
+          from pathlib import Path
+          import sys
+
+          formulas = {
+              "llvm@19.rb": ("14c7ae5879dff4c4d3fab077671d924a56605c24e2fef252ca343d49029efa59",
+                             "9672f3b5b565b7b5e310bd0aa4698540712ff5b74955d1716b8127825517eb95"),
+              "lld@19.rb": ("bda99a28eec9b9e4986220751dd0c622566619d5071b9df9dcb3f315a92358a1",
+                            "5fa2731e9bf2027ecb569817b3934cfb07e2684f7d41bd0e3310eda0de3d84fe"),
+          }
+          obsolete = b"  no_autobump! because: :requires_manual_review\n"
+          prepared = []
+          for name, (before_sha, after_sha) in formulas.items():
+              path = Path(sys.argv[1]) / "Formula/l" / name
+              if path.is_symlink() or not path.is_file():
+                  raise SystemExit("nonregular pinned formula: " + name)
+              before = path.read_bytes()
+              if hashlib.sha256(before).hexdigest() != before_sha or before.count(obsolete) != 1:
+                  raise SystemExit("changed pinned formula: " + name)
+              position = before.index(obsolete)
+              after = before.replace(obsolete, b"", 1)
+              if (hashlib.sha256(after).hexdigest() != after_sha
+                      or after[:position] + obsolete + after[position:] != before):
+                  raise SystemExit("invalid formula metadata adaptation: " + name)
+              prepared.append((path, after))
+          for path, body in prepared:
+              path.write_bytes(body)
+          PY
           # Install through a clean core checkout, then restore the runner's tap intact.
           restore_core() {
             install_status=$?

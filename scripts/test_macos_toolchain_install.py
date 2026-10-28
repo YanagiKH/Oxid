@@ -1,5 +1,7 @@
 """Exercise the actual macOS installer shell against isolated local Git inputs."""
 from pathlib import Path
+import ast
+import hashlib
 import json
 import os
 import re
@@ -13,6 +15,25 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 REVISION = '6a00b97b93bfc245d7083e4a90c7459ff5325222'
 REMOTE = 'https://github.com/Homebrew/homebrew-core.git'
+OBSOLETE = b'  no_autobump! because: :requires_manual_review\n'
+FORMULA_PINS = {
+    'llvm@19.rb': ('14c7ae5879dff4c4d3fab077671d924a56605c24e2fef252ca343d49029efa59',
+                   '9672f3b5b565b7b5e310bd0aa4698540712ff5b74955d1716b8127825517eb95'),
+    'lld@19.rb': ('bda99a28eec9b9e4986220751dd0c622566619d5071b9df9dcb3f315a92358a1',
+                  '5fa2731e9bf2027ecb569817b3934cfb07e2684f7d41bd0e3310eda0de3d84fe'),
+}
+
+
+def digest(body):
+    return hashlib.sha256(body).hexdigest()
+
+
+def formula_adapter(script):
+    match = re.search(r'^python3 - "\$pinned_core" <<\'PY\'\n(.*?)^PY$',
+                      script, re.MULTILINE | re.DOTALL)
+    if match is None:
+        raise AssertionError('missing closed formula metadata adaptation')
+    return match[1]
 
 
 def install_script(workflow=None):
@@ -42,9 +63,13 @@ class InstallerFixture:
         git(self.origin, 'init', '--quiet')
         formula = self.origin / 'Formula/l'
         formula.mkdir(parents=True)
-        self.llvm = b'class LlvmAT19 < Formula\n  bottle do\n    sha256 cellar: :any, sonoma: "llvm-bottle"\n  end\nend\n'
-        self.lld = (b'class LldAT19 < Formula\n  bottle do\n    sha256 cellar: :any, sonoma: "lld-bottle"\n  end\n'
-                    + b'  depends_on "llvm@19"\nend\n')
+        self.llvm = (b'class LlvmAT19 < Formula\n'
+                     + b'  url "https://example.invalid/llvmorg-19.1.7.tar.xz"\n'
+                     + OBSOLETE + b'  bottle do\n    sha256 cellar: :any, sonoma: "llvm-bottle"\n  end\n'
+                     + b'  depends_on "zstd"\n  def install\n    system "cmake", "-DLLVM_ENABLE_LTO=ON"\n  end\nend\n')
+        self.lld = (b'class LldAT19 < Formula\n' + OBSOLETE
+                    + b'  bottle do\n    sha256 cellar: :any, sonoma: "lld-bottle"\n  end\n'
+                    + b'  depends_on "llvm@19"\n  def install\n    system "cmake", "-DLLD_BUILT_STANDALONE=ON"\n  end\nend\n')
         (formula / 'llvm@19.rb').write_bytes(self.llvm)
         (formula / 'lld@19.rb').write_bytes(self.lld)
         git(self.origin, 'add', '.')
@@ -84,6 +109,9 @@ with (root / 'brew.jsonl').open('a') as log:
 if args == ['--repository']:
     print(root / 'brew')
 elif args == ['install', '--force-bottle', 'llvm@19', 'lld@19']:
+    for name in ['llvm@19.rb', 'lld@19.rb']:
+        if b'no_autobump!' in (root / 'brew/Library/Taps/homebrew/homebrew-core/Formula/l' / name).read_bytes():
+            raise SystemExit('unsupported update-bot metadata reached Homebrew')
     if os.environ.get('PAUSE_FIXTURE_INSTALL'):
         (root / 'install-active').touch()
         while True:
@@ -116,9 +144,16 @@ else:
                           for path in self.existing_core.rglob('*')
                           if path.is_file() and '.git' not in path.relative_to(self.existing_core).parts}}
 
-    def run(self, script=None, revision=None):
+    def script(self, script=None, revision=None):
         script = install_script() if script is None else script
         script = script.replace(REMOTE, self.origin.as_uri()).replace(REVISION, revision or self.revision)
+        for name, body in [('llvm@19.rb', self.llvm), ('lld@19.rb', self.lld)]:
+            before, after = FORMULA_PINS[name]
+            script = script.replace(before, digest(body)).replace(after, digest(body.replace(OBSOLETE, b'', 1)))
+        return script
+
+    def run(self, script=None, revision=None):
+        script = self.script(script, revision)
         return subprocess.run(['bash', '--noprofile', '--norc', '-c', script], env=self.env,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
 
@@ -145,13 +180,66 @@ class MacosToolchainInstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(fixture.core_snapshot(), fixture.before)
         used = fixture.staged_core()
-        self.assertEqual((used / 'Formula/l/llvm@19.rb').read_bytes(), fixture.llvm)
-        self.assertEqual((used / 'Formula/l/lld@19.rb').read_bytes(), fixture.lld)
+        for name, original in [('llvm@19.rb', fixture.llvm), ('lld@19.rb', fixture.lld)]:
+            adapted = (used / 'Formula/l' / name).read_bytes()
+            self.assertEqual(adapted, original.replace(OBSOLETE, b'', 1))
+            offset = original.index(OBSOLETE)
+            self.assertEqual(adapted[:offset] + OBSOLETE + adapted[offset:], original)
         self.assertEqual(git(used, 'rev-parse', 'HEAD').decode().strip(), fixture.revision)
         self.assertIn(['install', '--force-bottle', 'llvm@19', 'lld@19'], fixture.calls())
         self.assertEqual(fixture.environment.read_text().splitlines(),
                          ['OXID_LLVM_BIN=' + str(fixture.temp / 'oxid-llvm-19'),
                           'SDKROOT=/fixture/macos-sdk'])
+
+    def test_formula_adaptation_is_limited_to_exact_pinned_metadata(self):
+        tree = ast.parse(formula_adapter(install_script()))
+        assignments = {node.targets[0].id: ast.literal_eval(node.value)
+                       for node in tree.body if isinstance(node, ast.Assign)
+                       and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                       and node.targets[0].id in {'formulas', 'obsolete'}}
+        self.assertEqual(assignments, {'formulas': FORMULA_PINS, 'obsolete': OBSOLETE})
+        self.assertEqual(len(OBSOLETE), 48)
+
+    def test_changed_formula_fails_before_swapping_or_installing(self):
+        for name, original in [('llvm@19.rb', 'llvm'), ('lld@19.rb', 'lld')]:
+            with self.subTest(formula=name):
+                fixture = self.fixture()
+                path = fixture.origin / 'Formula/l' / name
+                path.write_bytes(getattr(fixture, original) + b'# changed bottle or build input\n')
+                git(fixture.origin, 'add', '.')
+                git(fixture.origin, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                    'commit', '--quiet', '-m', 'Changed formula')
+                revision = git(fixture.origin, 'rev-parse', 'HEAD').decode().strip()
+                result = fixture.run(revision=revision)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(('changed pinned formula: ' + name).encode(), result.stderr)
+                self.assertEqual(fixture.calls(), [['--repository']])
+                self.assertFalse(fixture.environment.exists())
+                self.assertEqual(fixture.core_snapshot(), fixture.before)
+
+    def test_wrong_adapted_digest_leaves_both_pinned_formulas_unmodified(self):
+        fixture = self.fixture()
+        script = install_script().replace(FORMULA_PINS['lld@19.rb'][1], '0' * 64)
+        result = fixture.run(script)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b'invalid formula metadata adaptation: lld@19.rb', result.stderr)
+        self.assertEqual(fixture.calls(), [['--repository']])
+        self.assertEqual(fixture.core_snapshot(), fixture.before)
+        for name, original in [('llvm@19.rb', fixture.llvm), ('lld@19.rb', fixture.lld)]:
+            self.assertEqual((fixture.staged_core() / 'Formula/l' / name).read_bytes(), original)
+
+    def test_missing_formula_is_not_installed_and_original_tap_is_unchanged(self):
+        fixture = self.fixture()
+        git(fixture.origin, 'rm', 'Formula/l/lld@19.rb')
+        git(fixture.origin, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+            'commit', '--quiet', '-m', 'Missing formula')
+        revision = git(fixture.origin, 'rev-parse', 'HEAD').decode().strip()
+        result = fixture.run(revision=revision)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b'nonregular pinned formula: lld@19.rb', result.stderr)
+        self.assertEqual(fixture.calls(), [['--repository']])
+        self.assertEqual(fixture.core_snapshot(), fixture.before)
+        self.assertEqual((fixture.staged_core() / 'Formula/l/llvm@19.rb').read_bytes(), fixture.llvm)
 
     def test_install_failure_restores_the_original_tap_and_failure_status(self):
         fixture = self.fixture(install_status=37)
@@ -196,7 +284,7 @@ class MacosToolchainInstallTests(unittest.TestCase):
         for interruption, expected in [(signal.SIGINT, 130), (signal.SIGTERM, 143)]:
             with self.subTest(signal=interruption):
                 fixture = self.fixture()
-                script = install_script().replace(REMOTE, fixture.origin.as_uri()).replace(REVISION, fixture.revision)
+                script = fixture.script()
                 process = subprocess.Popen(['bash', '--noprofile', '--norc', '-c', script],
                                            env=dict(fixture.env, PAUSE_FIXTURE_INSTALL='1'),
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,

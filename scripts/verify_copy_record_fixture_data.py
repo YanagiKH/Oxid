@@ -8,7 +8,7 @@ import stat
 
 INPUTS = {
     "tests/fixtures/copy_records/all_scalars.ox": (
-        1563, "e5fc754a21363f266f86324feed623c53fd2c12e954a294a4f0f53f4188b017e"),
+        1592, "7358d3a9976c5b5f500687d4e02f9ca039d834628f425bdc33b41dc7c232927c"),
     "tests/fixtures/copy_records/wide_unicode.ox": (
         573, "1178c5b8ef43a75e8527936f76be6ee3b138e2512132f1776dbeea701c1a2b03"),
 }
