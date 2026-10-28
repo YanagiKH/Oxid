@@ -1,6 +1,182 @@
 use super::super::super::consumer_fixtures as fixture;
 use super::*;
 
+#[test]
+fn record_vector_resource_checker_has_distinct_raw_mapped_and_selected_roles() {
+    use crate::frontend::oir::owned::vector_type::{self, VectorTy};
+    use std::mem::{align_of, offset_of, size_of_val};
+
+    type Checked = byte_buffer::CheckedVectorElement<'static>;
+    type Raw = std::result::Result<Checked, byte_buffer::Failure>;
+    type Mapped = Result<Checked>;
+    // Independent caller composition. The selected Checked witness is already
+    // a separate field of the inherited bank and is deliberately absent here.
+    #[allow(dead_code)]
+    #[repr(C)]
+    struct CheckedCaller {
+        selected_type: VectorTy,
+        raw: Raw,
+        mapped: Mapped,
+    }
+    let _: for<'a> fn(&'a ReferenceWalkCarriers) -> &'a VectorTy = |model| &model.vector_type;
+    let _: for<'a> fn(&'a ReferenceWalkCarriers) -> &'a Raw = |model| &model.vector_element_return;
+    let _: for<'a> fn(&'a ReferenceWalkCarriers) -> &'a Mapped =
+        |model| &model.mapped_vector_element_return;
+    let _: for<'a> fn(&'a ReferenceWalkCarriers) -> &'a Checked = |model| &model.vector_element;
+    let _: for<'a> fn(
+        VectorTy,
+        &'a Declarations,
+    ) -> std::result::Result<
+        byte_buffer::CheckedVectorElement<'a>,
+        byte_buffer::Failure,
+    > = vector_type::checked;
+
+    let (_, at) = fixture::context();
+    let span = at(0);
+    let mapper = vector_type_error_mapper(&span);
+    #[cfg(target_pointer_width = "64")]
+    {
+        assert_eq!((size_of::<VectorTy>(), align_of::<VectorTy>()), (16, 8));
+        assert_eq!((size_of::<Checked>(), align_of::<Checked>()), (24, 8));
+        assert_eq!((size_of::<Raw>(), align_of::<Raw>()), (32, 8));
+        assert_eq!((size_of::<Mapped>(), align_of::<Mapped>()), (72, 8));
+        assert_eq!(
+            (
+                offset_of!(CheckedCaller, selected_type),
+                offset_of!(CheckedCaller, raw),
+                offset_of!(CheckedCaller, mapped),
+                size_of::<CheckedCaller>(),
+                align_of::<CheckedCaller>(),
+            ),
+            (0, 16, 48, 120, 8)
+        );
+        assert_eq!(size_of_val(&mapper), size_of::<&Span>());
+        assert_eq!(size_of_val(&mapper), 8);
+        assert_eq!(size_of::<CheckedCaller>() + size_of_val(&mapper), 128);
+        let roles = [
+            (offset_of!(ReferenceWalkCarriers, vector_type), 16),
+            (offset_of!(ReferenceWalkCarriers, vector_element_return), 32),
+            (
+                offset_of!(ReferenceWalkCarriers, mapped_vector_element_return),
+                72,
+            ),
+            (offset_of!(ReferenceWalkCarriers, vector_element), 24),
+        ];
+        for (index, &(offset, width)) in roles.iter().enumerate() {
+            assert_eq!(offset % 8, 0);
+            assert!(offset + width <= size_of::<ReferenceWalkCarriers>());
+            for &(other, other_width) in &roles[index + 1..] {
+                assert!(offset + width <= other || other + other_width <= offset);
+            }
+        }
+    }
+    assert_eq!(
+        mapper(byte_buffer::Failure::Descriptor),
+        bad("record vector type", span)
+    );
+}
+
+#[test]
+fn record_vector_resource_checker_is_paid_without_vector_operation_frames_before_release() {
+    use crate::frontend::builtin_catalog::experimental::Function;
+    let checked = crate::frontend::oir::owned::source::resource_fixtures::checked_enum_project(
+        "use alloc::bytes::new;use alloc::bytes::try_push;fn main()->i32{let n=7;let byte=n.to_u8_checked();let mut bytes=new();try_push(&mut bytes,byte);return 42;}",
+    );
+    let plan = ExecutionPlan::build(&checked.witness).unwrap();
+    assert!(plan.uses_dynamic_resources());
+    assert!(!plan.uses_vectors());
+    assert!(!plan.uses_record_vectors());
+    assert!(!plan.uses_typed_ranges());
+    assert!(!plan.uses_enum_record_nesting());
+    assert!(!plan.uses_wide_scalars());
+    assert!(!plan.uses_integer_extension());
+    assert!(!plan.uses_bitwise());
+    assert!(!plan.uses_characters());
+    assert!(!plan.uses_floats());
+    assert!(!plan.has_binary_delivery());
+    assert!(!plan.has_file_delivery());
+    assert!(!plan.has_program_arguments());
+    let new = checked
+        .witness
+        .experimental_function(Function::New)
+        .unwrap();
+    let push = checked
+        .witness
+        .experimental_function(Function::Push)
+        .unwrap();
+    let entry = &checked.witness.functions()[checked.entry.0];
+    let origin = entry
+        .blocks
+        .iter()
+        .find_map(|block| {
+            let end = block.terminator.as_ref()?;
+            match &end.kind {
+                OwnedTerminatorKind::Invoke { call, .. } if entry.calls[call.0].target == push => {
+                    Some(end.span)
+                }
+                _ => None,
+            }
+        })
+        .unwrap();
+    let main_bytes = plan.function(checked.entry).usage().reference_bytes;
+    let new_bytes = plan.function(new).usage().reference_bytes;
+    let push_bytes = plan.function(push).usage().reference_bytes;
+    assert!(push_bytes > new_bytes);
+    // The unchanged frame plans are inputs to this routing boundary. Only main
+    // and one primitive can coexist; the new checker bank is fixed once, not
+    // per frame/leaf, and no vector-operation control bank may subsidize it.
+    let exact = 2 * size_of::<Frame>()
+        + size_of::<byte_buffer::Heap>()
+        + control_bytes()
+        + size_of::<Scalar>()
+        + main_bytes
+        + push_bytes;
+    assert_eq!(values::control_bytes::<Scalar>(), 0);
+    assert!(exact < plan::MAX_REFERENCE_BYTES);
+    assert_eq!(plan::MAX_REFERENCE_BYTES, 16 * 1024 * 1024);
+    for fault in [None, Some((byte_buffer::Boundary::Allocate, 0))] {
+        for admitted in [false, true] {
+            let (result, observed) = byte_buffer::testing::capture(
+                byte_buffer::testing::Control {
+                    fault,
+                    ..Default::default()
+                },
+                || {
+                    run_limits(
+                        &checked.witness,
+                        Some(checked.entry),
+                        Limits {
+                            frames: 2,
+                            bytes: exact - usize::from(!admitted),
+                            ..Default::default()
+                        },
+                    )
+                },
+            );
+            if admitted {
+                assert_eq!(result, Ok(Scalar::I32(42)));
+                assert_eq!(observed.fault_applied, fault.is_some());
+                let successful_allocations = u64::from(fault.is_none());
+                assert_eq!(observed.before_cleanup.allocations, successful_allocations);
+                assert_eq!(observed.before_cleanup.releases, successful_allocations);
+            } else {
+                assert_eq!(
+                    result,
+                    Err(OwnedRunFailure::Resource(plan::AdmissionFailure::new(
+                        "live requested bytes",
+                        Some(origin),
+                    )))
+                );
+                assert!(!observed.fault_applied);
+                assert_eq!(observed.before_cleanup.allocations, 0);
+                assert_eq!(observed.before_cleanup.releases, 0);
+            }
+            assert_eq!(observed.before_cleanup.live_allocations, 0);
+            assert_eq!(observed.after_cleanup.live_bytes, 0);
+        }
+    }
+}
+
 fn declarations() -> (Declarations, Span) {
     let (sources, at) = fixture::context();
     let span = at(0);
