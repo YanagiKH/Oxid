@@ -220,7 +220,7 @@ impl Server {
                         Ok(()) => response(
                             writer,
                             id,
-                            json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":{"openClose":true,"change":2,"save":{"includeText":true}},"documentFormattingProvider":true,"completionProvider":{"resolveProvider":false},"definitionProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},"serverInfo":{"name":"Oxid","version":env!("CARGO_PKG_VERSION")}}),
+                            json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":{"openClose":true,"change":2,"save":{"includeText":true}},"documentFormattingProvider":true,"completionProvider":{"resolveProvider":false,"triggerCharacters":[":"]},"definitionProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true}}},"serverInfo":{"name":"Oxid","version":env!("CARGO_PKG_VERSION")}}),
                         )?,
                         Err(message) => error(writer, id, -32602, &message)?,
                     }

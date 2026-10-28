@@ -134,6 +134,87 @@ fn within(block: &ast::BodyBlock, offset: usize) -> bool {
 fn word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
 }
+
+/// This only selects a query route over the current buffer; it grants no name
+/// or source authority. The admitted query parser rechecks canonical tokens.
+pub(in crate::frontend) fn qualified_hint(text: &str, offset: usize) -> bool {
+    if offset > text.len() || !text.is_char_boundary(offset) {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    let mut start = offset;
+    while start > 0 && word(bytes[start - 1]) {
+        start -= 1;
+    }
+    while start > 0 && bytes[start - 1].is_ascii_whitespace() {
+        start -= 1;
+    }
+    start >= 2 && &bytes[start - 2..start] == b"::"
+}
+
+pub(in crate::frontend) fn complete_qualified(
+    session: &crate::frontend::project::editor_sources::QuerySources<'_>,
+    path: &Path,
+    offset: usize,
+) -> Result<EditorCompletions, Vec<Diagnostic>> {
+    use crate::frontend::declaration_index::{
+        editor_completion::{Namespace, NamespaceCompletionResult},
+        IndexLimits, WorkMeter,
+    };
+    use crate::frontend::parser::editor_query::DeclarationKind;
+    let project = session.project();
+    let sources = project.sources();
+    let Some((ordinal, source)) = sources
+        .files()
+        .iter()
+        .enumerate()
+        .find(|(_, source)| same_path(source.path(), path))
+    else {
+        return Ok(empty(sources));
+    };
+    let query = project.editor_files()[ordinal]
+        .query(source, offset)
+        .map_err(|error| vec![*error])?;
+    let Some(query) = query else {
+        return Ok(empty(sources));
+    };
+    let work = WorkMeter::new(IndexLimits::default().work);
+    let mut allocator = Allocator::default();
+    let namespace: NamespaceCompletionResult<'_, '_> =
+        Namespace::build(session, &work, &mut allocator).map_err(|error| vec![*error]);
+    let namespace = namespace?;
+    let mut candidates = Candidates {
+        prefix: &source.text()[query.replacement().start..query.cursor()],
+        entries: Vec::new(),
+        bytes: 0,
+    };
+    namespace
+        .visit(ModuleId(ordinal), &query, |label, kind| {
+            let (kind, detail) = match kind {
+                DeclarationKind::Function => (3, "function"),
+                DeclarationKind::Record => (22, "record"),
+                DeclarationKind::Enumeration => (13, "enumeration"),
+                DeclarationKind::Module => (9, "module"),
+            };
+            work.debit(
+                (label.len().min(candidates.prefix.len()) + 1) as u64,
+                query.replacement(),
+                "editor candidate prefix",
+            )?;
+            candidates
+                .add(label, kind, detail, (1, 0))
+                .map_err(|errors| {
+                    Box::new(
+                        errors
+                            .into_iter()
+                            .next()
+                            .expect("completion allocation error"),
+                    )
+                })
+        })
+        .map_err(|error| vec![*error])?;
+    finish(sources, query.replacement(), candidates)
+}
 fn context(source: &SourceFile, tokens: &[Token], offset: usize) -> Option<Span> {
     let text = source.text();
     if offset > text.len() || !text.is_char_boundary(offset) {

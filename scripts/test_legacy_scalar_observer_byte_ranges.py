@@ -16,7 +16,7 @@ import legacy_scalar_observer_vectors as vector_adapter
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
-ADDED_SOURCES = ("experimental_builtins.rs", "vector_builtins.rs", "oir/owned_types/resources.rs", "byte_strings.rs", "parser/characters.rs", "declaration_index/generics/nominal.rs", "project/editor_sources.rs")
+ADDED_SOURCES = ("experimental_builtins.rs", "vector_builtins.rs", "oir/owned_types/resources.rs", "byte_strings.rs", "parser/characters.rs", "declaration_index/generics/nominal.rs", "project/editor_sources.rs", "parser/editor_query.rs", "declaration_index/editor_completion.rs", "project/module_syntax.rs")
 MODES = (("parser", ()), ("static", ()), ("static", ("--resolve-only",)))
 
 # Raw stdout hashes from separately built, unchanged parent158 observers

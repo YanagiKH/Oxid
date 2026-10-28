@@ -46,8 +46,8 @@ impl<'a> PackageContext<'a> {
 }
 
 #[derive(Debug)]
-pub(in crate::frontend) struct PackageSources<'a> {
-    pub project: ProjectSources,
+pub(in crate::frontend) struct PackageSources<'a, S = ast::Program> {
+    pub project: ProjectSources<S>,
     pub context: PackageContext<'a>,
 }
 
@@ -341,6 +341,18 @@ impl<'a> PackageSources<'a> {
         limits: ProjectLimits,
         overlay: Option<&SourceOverlay<'_>>,
     ) -> Result<Self, LoadFailure> {
+        Self::load_syntax_with_editor(specs, entry_override, limits, overlay)
+    }
+}
+
+impl<'a, S: ModuleSyntax> PackageSources<'a, S> {
+    #[allow(clippy::result_large_err)]
+    pub(in crate::frontend) fn load_syntax_with_editor(
+        specs: &'a [PackageSpec],
+        entry_override: Option<&Path>,
+        limits: ProjectLimits,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<Self, LoadFailure> {
         let mut allocator = Allocator::default();
         let mut builder = SourceSetBuilder {
             entry: "",
@@ -407,7 +419,7 @@ impl<'a> PackageSources<'a> {
     }
 }
 
-impl SourceSetBuilder<'_> {
+impl<S: ModuleSyntax> SourceSetBuilder<'_, S> {
     fn load_package_root(&mut self, spec: &PackageSpec) -> Result<(), Errors> {
         self.load_package_root_with_editor(spec, None)
     }
@@ -452,14 +464,7 @@ impl SourceSetBuilder<'_> {
         // Manifest aliases are separate capabilities, never synthetic AST items.
         // Reject conflicts before following any ordinary module declaration.
         for dep in &spec.dependencies {
-            let names = program
-                .functions
-                .iter()
-                .map(|v| v.name)
-                .chain(program.records.iter().map(|v| v.name))
-                .chain(program.enums.iter().map(|v| v.name))
-                .chain(program.modules.iter().map(|v| v.name))
-                .chain(program.imports.iter().map(|v| v.alias));
+            let names = program.binding_names();
             for name in names {
                 if self.project.sources.text(name) == dep.alias {
                     return Err(one(Diagnostic::new(
@@ -505,7 +510,7 @@ impl SourceSetBuilder<'_> {
         let mut height = 1;
         while height != 0 {
             let frame = stack[height - 1];
-            if frame.next == self.project.programs[frame.module.0].modules.len() {
+            if frame.next == self.project.programs[frame.module.0].modules().len() {
                 height -= 1;
                 continue;
             }
@@ -530,3 +535,76 @@ impl SourceSetBuilder<'_> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[allow(dead_code)]
+mod editor_loader_layout_tests {
+    use super::*;
+    use std::mem::{align_of, offset_of, size_of};
+
+    struct BaselinePackageContext<'a> {
+        specs: &'a [PackageSpec],
+        roots: [usize; 256],
+        owners: [usize; 256],
+        modules: usize,
+    }
+    struct BaselinePackageSources<'a> {
+        project: ProjectSources<ast::Program>,
+        context: BaselinePackageContext<'a>,
+    }
+    #[test]
+    fn editor_query_package_loader_keeps_ordinary_field_types_and_offsets() {
+        let _package_types = |value: &PackageSources<'_>| {
+            let PackageSources { project, context } = value;
+            let _: &ProjectSources<ast::Program> = project;
+            let _: &PackageContext<'_> = context;
+        };
+        let _context_types = |value: &PackageContext<'_>| {
+            let PackageContext {
+                specs,
+                roots,
+                owners,
+                modules,
+            } = value;
+            let _: &&[PackageSpec] = specs;
+            let _: &[usize; 256] = roots;
+            let _: &[usize; 256] = owners;
+            let _: &usize = modules;
+        };
+        assert_eq!(
+            size_of::<PackageContext<'_>>(),
+            size_of::<BaselinePackageContext<'_>>()
+        );
+        assert_eq!(
+            align_of::<PackageContext<'_>>(),
+            align_of::<BaselinePackageContext<'_>>()
+        );
+        assert_eq!(
+            size_of::<PackageSources<'_>>(),
+            size_of::<BaselinePackageSources<'_>>()
+        );
+        assert_eq!(
+            align_of::<PackageSources<'_>>(),
+            align_of::<BaselinePackageSources<'_>>()
+        );
+        macro_rules! same_offsets {
+            ($current:ty, $previous:ty, $($field:ident),+ $(,)?) => {
+                $(assert_eq!(offset_of!($current, $field), offset_of!($previous, $field), stringify!($field));)+
+            };
+        }
+        same_offsets!(
+            PackageContext<'_>,
+            BaselinePackageContext<'_>,
+            specs,
+            roots,
+            owners,
+            modules
+        );
+        same_offsets!(
+            PackageSources<'_>,
+            BaselinePackageSources<'_>,
+            project,
+            context
+        );
+    }
+}

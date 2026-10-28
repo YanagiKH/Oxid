@@ -89,13 +89,16 @@ follow the compiler's ordinary namespace rules.
 Use `<C-x><C-o>` in Neovim for name completion. Suggestions include keywords,
 functions, types, import aliases and variables visible in the current block.
 They follow unsaved text and replace the name around the cursor.
+Type `crate::` or `crate::helper::` for visible module names, functions and types.
+This also works with unsaved declarations, partial names and unfinished `use`
+declarations, including an existing `as alias`.
 
 Workspace checks include every member and declared test entry. Dependencies are
 resolved offline; prepare Git dependencies with ordinary project commands first.
 Manifests and lockfiles are read from disk. Diagnostics reflect editor source
 buffers and do not replace `oxid check --frozen` for saved-input verification.
-Cross-file loading currently requires Linux. Member and qualified-path
-completion, rename and navigation to types or members are not yet provided. See the
+Cross-file loading follows the ordinary project's host and path rules. Receiver
+member completion, rename and navigation to types or members are not yet provided. See the
 [language server contract](../rfcs/0065-typed-language-server.md) and
 [navigation scope](../rfcs/0066-editor-symbol-navigation.md).
 

@@ -21,15 +21,15 @@ def adapt_wrapper(name, original):
 
 SOURCE_FILES = (
     "lexer.rs", "diagnostic.rs", "source.rs", "project/budget.rs",
-    "ast.rs", "ast/generic_syntax.rs", "byte_strings.rs", "parser.rs", "parser/arrays.rs", "parser/enums.rs", "parser/conversions.rs", "parser/characters.rs",
+    "ast.rs", "ast/generic_syntax.rs", "byte_strings.rs", "parser.rs", "parser/arrays.rs", "parser/enums.rs", "parser/conversions.rs", "parser/characters.rs", "parser/editor_query.rs",
     "owned_diagnostic.rs", "builtin_catalog.rs", "experimental_builtins.rs", "vector_builtins.rs", "hir.rs", "typeck.rs",
-    "declaration_index.rs", "declaration_index/generics.rs",
+    "declaration_index.rs", "declaration_index/editor_completion.rs", "declaration_index/generics.rs",
     "declaration_index/generics/flow.rs", "declaration_index/generics/nominal.rs",
     "declaration_index/generics/inference.rs",
     "declaration_index/enum_views.rs",
     "declaration_index/resource.rs", "declaration_index/sealed.rs",
     "declaration_index/u8_reservation.rs",
-    "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs", "project/packages.rs", "project/editor_sources.rs",
+    "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs", "project/packages.rs", "project/editor_sources.rs", "project/module_syntax.rs",
     "oir/owned_types.rs", "oir/owned_types/enums.rs", "oir/owned_types/resources.rs",
     "oir/owned_types/composition.rs",
 )

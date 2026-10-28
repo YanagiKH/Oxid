@@ -1290,3 +1290,446 @@ fn completion_suggests_nominal_type_parameters_inside_their_declarations() {
         p.unchanged();
     }
 }
+
+fn completion_labels(result: &Value) -> Vec<&str> {
+    result["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["label"].as_str().unwrap())
+        .collect()
+}
+
+#[test]
+fn qualified_completion_supports_empty_endpoints_eof_and_whole_word_utf16_edits() {
+    let p = Project::new();
+    let disk = "fn main()->i32{return 0;}";
+    p.write("main.ox", disk);
+    let path = p.uri("main.ox");
+    let declarations = "fn answer()->i32{return 42;}struct Point{x:i32}enum Choice{A,B}\r\n";
+    let mut c = Client::spawn(&p, true);
+    let initialized = c.request("initialize", json!({"rootUri":p.uri(""),"capabilities":{}}));
+    assert_eq!(
+        initialized["result"]["capabilities"]["completionProvider"]["triggerCharacters"],
+        json!([":"])
+    );
+    let mut text = format!("{declarations}fn main()->i32{{let c='🦀';return crate::;}}");
+    c.open(&path, &text);
+    let empty = completion_at(&mut c, &path, &text, "crate::;", 7);
+    assert_eq!(
+        completion_labels(&empty),
+        ["Choice", "Point", "answer", "main"]
+    );
+    let start = position_at(&text, "crate::;");
+    let caret = json!({"line":start["line"],"character":start["character"].as_u64().unwrap()+7});
+    for item in empty["items"].as_array().unwrap() {
+        assert_eq!(
+            item["textEdit"]["range"],
+            json!({"start":caret,"end":caret})
+        );
+        assert_eq!(item["textEdit"]["newText"], item["label"]);
+    }
+    text = format!("{declarations}fn main()->i32{{let c='🦀';return crate::ans_suffix;}}");
+    c.change(&path, 2, json!([{"text":text}]));
+    let partial = completion_at(&mut c, &path, &text, "ans_suffix", 3);
+    assert_eq!(completion_labels(&partial), ["answer"]);
+    let start = position_at(&text, "ans_suffix");
+    let end = json!({"line":start["line"],"character":start["character"].as_u64().unwrap()+10});
+    assert_eq!(
+        partial["items"][0]["textEdit"]["range"],
+        json!({"start":start,"end":end})
+    );
+    assert_eq!(partial["items"][0]["kind"], 3);
+    text = format!("{declarations}fn main()->i32{{return crate::");
+    c.change(&path, 3, json!([{"text":text}]));
+    let eof = completion_at(&mut c, &path, &text, "crate::", 7);
+    assert_eq!(
+        completion_labels(&eof),
+        ["Choice", "Point", "answer", "main"]
+    );
+    c.finish();
+    assert_eq!(fs::read_to_string(p.0.join("main.ox")).unwrap(), disk);
+    p.unchanged();
+    // The same explicit editor hole never becomes ordinary check authority.
+    p.write("main.ox", &text);
+    let checked = p
+        .command()
+        .args(["check", "--edition", "typed-preview", "main.ox"])
+        .output()
+        .unwrap();
+    assert!(!checked.status.success());
+    let error = String::from_utf8(checked.stderr).unwrap();
+    assert!(
+        error.contains("parse") && !error.contains("E0500"),
+        "{error}"
+    );
+    p.unchanged();
+}
+
+#[test]
+fn qualified_completion_handles_import_holes_and_never_guesses_literal_or_member_paths() {
+    let p = Project::new();
+    let disk = "fn main()->i32{return 0;}";
+    p.write("main.ox", disk);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    let text = "use crate::;fn answer()->i32{return 42;}fn main()->i32{return 1/0;}";
+    c.open(&path, text);
+    let imported = completion_at(&mut c, &path, text, "crate::;", 7);
+    assert_eq!(completion_labels(&imported), ["answer", "main"]);
+    let aliased = "use crate:: as chosen;fn answer()->i32{return 42;}fn main()->i32{return 1/0;}";
+    c.change(&path, 2, json!([{"text":aliased}]));
+    let names = completion_at(&mut c, &path, aliased, "crate::", 7);
+    assert_eq!(completion_labels(&names), ["answer", "main"]);
+    assert_eq!(
+        names["items"][0]["textEdit"]["range"]["start"],
+        names["items"][0]["textEdit"]["range"]["end"]
+    );
+    for (version, body, needle) in [
+        (
+            2,
+            "fn answer()->i32{return 42;}fn main()->i32{//crate::\nreturn 0;}",
+            "crate::",
+        ),
+        (
+            3,
+            "fn answer()->i32{return 42;}fn main()->i32{/*crate::*/return 0;}",
+            "crate::",
+        ),
+        (
+            4,
+            "fn answer()->i32{return 42;}fn main()->i32{let x=\"crate::\";return 0;}",
+            "crate::",
+        ),
+        (
+            5,
+            "fn answer()->i32{return 42;}fn main()->i32{return value::;}",
+            "value::",
+        ),
+        (
+            6,
+            "fn answer()->i32{return 42;}fn main()->i32{return value.crate::;}",
+            "crate::",
+        ),
+        (
+            7,
+            "fn answer()->i32{return 42;}fn main()->i32{return crate:::;}",
+            "crate:::",
+        ),
+    ] {
+        c.change(&path, version + 1, json!([{"text":body}]));
+        assert_eq!(
+            completion_at(&mut c, &path, body, needle, needle.len() as u64)["items"],
+            json!([]),
+            "{body}"
+        );
+    }
+    for (version, declaration) in [(9, "use crate::as;"), (10, "use crate::as as chosen;")] {
+        let text = format!("{declaration}fn as()->i32{{return 42;}}fn main()->i32{{return 0;}}");
+        c.change(&path, version, json!([{"text":text}]));
+        let candidates = completion_at(&mut c, &path, &text, "crate::as", 8);
+        assert_eq!(completion_labels(&candidates), ["as"]);
+        let range = &candidates["items"][0]["textEdit"]["range"];
+        assert_eq!(
+            range["end"]["character"].as_u64().unwrap()
+                - range["start"]["character"].as_u64().unwrap(),
+            2
+        );
+    }
+    c.finish();
+    assert_eq!(fs::read_to_string(p.0.join("main.ox")).unwrap(), disk);
+    p.unchanged();
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn qualified_completion_reads_unsaved_modules_nested_privacy_and_close_restores_disk() {
+    let p = Project::new();
+    let disk = "mod helper;fn main()->i32{return crate::helper::saved_answer();}";
+    let helper_disk = "pub fn saved_answer()->i32{return 42;}fn secret()->i32{return 0;}pub struct Point{pub x:i32}pub enum Choice{A,B}pub mod nested;mod locked;";
+    p.package("", "module_completion", "", disk);
+    p.write("src/helper.ox", helper_disk);
+    p.write(
+        "src/helper/nested.ox",
+        "pub fn nested_answer()->i32{return 42;}",
+    );
+    p.write(
+        "src/helper/locked.ox",
+        "pub fn locked_answer()->i32{return 0;}",
+    );
+    p.write(
+        "src/unlinked.ox",
+        "pub fn must_not_appear()->i32{return 0;}",
+    );
+    let main = p.uri("src/main.ox");
+    let helper = p.uri("src/helper.ox");
+    let text = "mod helper;fn main()->i32{return crate::helper::;}";
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&main, text);
+    let first = completion_at(&mut c, &main, text, "crate::helper::", 15);
+    assert_eq!(
+        completion_labels(&first),
+        ["Choice", "Point", "nested", "saved_answer"]
+    );
+    let updated = helper_disk.replace("saved_answer", "answer");
+    c.open(&helper, &updated);
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &main, text, "crate::helper::", 15)),
+        ["Choice", "Point", "answer", "nested"]
+    );
+    let aliased = "mod helper;use crate::helper:: as chosen;fn main()->i32{return 0;}";
+    c.change(&main, 2, json!([{"text":aliased}]));
+    let candidates = completion_at(&mut c, &main, aliased, "crate::helper::", 15);
+    assert_eq!(
+        completion_labels(&candidates),
+        ["Choice", "Point", "answer", "nested"]
+    );
+    assert_eq!(
+        candidates["items"][0]["textEdit"]["range"]["start"],
+        candidates["items"][0]["textEdit"]["range"]["end"]
+    );
+    let middle = "mod helper;fn main()->i32{return crate::help_suffix::answer();}";
+    c.change(&main, 3, json!([{"text":middle}]));
+    let result = completion_at(&mut c, &main, middle, "help_suffix", 4);
+    assert_eq!(completion_labels(&result), ["helper"]);
+    assert_eq!(result["items"][0]["kind"], 9);
+    let nested = "mod helper;fn main()->i32{return crate::helper::nested::;}";
+    c.change(&main, 4, json!([{"text":nested}]));
+    assert_eq!(
+        completion_labels(&completion_at(
+            &mut c,
+            &main,
+            nested,
+            "crate::helper::nested::",
+            23
+        )),
+        ["nested_answer"]
+    );
+    let hidden = "mod helper;fn main()->i32{return crate::helper::locked::;}";
+    c.change(&main, 5, json!([{"text":hidden}]));
+    assert_eq!(
+        completion_at(&mut c, &main, hidden, "crate::helper::locked::", 23)["items"],
+        json!([])
+    );
+    let own = format!("{updated}pub fn probe()->i32{{return crate::helper::;}}");
+    c.change(&helper, 2, json!([{"text":own}]));
+    let own_names = completion_at(&mut c, &helper, &own, "crate::helper::", 15);
+    assert!(completion_labels(&own_names).contains(&"secret"));
+    assert!(completion_labels(&own_names).contains(&"locked"));
+    c.notify(
+        "textDocument/didClose",
+        json!({"textDocument":{"uri":helper}}),
+    );
+    c.barrier();
+    c.change(&main, 6, json!([{"text":text}]));
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &main, text, "crate::helper::", 15)),
+        ["Choice", "Point", "nested", "saved_answer"]
+    );
+    c.open(&helper, "pub fn as()->i32{return 42;}");
+    for (version, declaration) in [
+        (7, "mod helper;use crate::helper::as;"),
+        (8, "mod helper;use crate::helper::as as chosen;"),
+    ] {
+        let text = format!("{declaration}fn main()->i32{{return 0;}}");
+        c.change(&main, version, json!([{"text":text}]));
+        let candidates = completion_at(&mut c, &main, &text, "crate::helper::as", 16);
+        assert_eq!(completion_labels(&candidates), ["as"]);
+        let range = &candidates["items"][0]["textEdit"]["range"];
+        assert_eq!(
+            range["end"]["character"].as_u64().unwrap()
+                - range["start"]["character"].as_u64().unwrap(),
+            2
+        );
+    }
+    c.finish();
+    assert_eq!(
+        fs::read_to_string(p.0.join("src/helper.ox")).unwrap(),
+        helper_disk
+    );
+    assert_eq!(fs::read_to_string(p.0.join("src/main.ox")).unwrap(), disk);
+    p.unchanged();
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn qualified_completion_uses_only_direct_dependencies_and_preserves_the_saved_lock() {
+    let p = Project::new();
+    let disk = "use crate::math::saved_answer;fn main()->i32{return saved_answer();}";
+    p.package("", "application", "[dependencies]\nmath=\"math\"\n", disk);
+    p.write("math/oxid.toml","[project]\nname=\"math\"\nedition=\"typed-preview\"\nkind=\"lib\"\n[dependencies]\ninner=\"../inner\"\n");
+    let saved = "pub fn saved_answer()->i32{return 42;}fn secret()->i32{return 0;}";
+    p.write("math/src/lib.ox", saved);
+    p.write(
+        "inner/oxid.toml",
+        "[project]\nname=\"inner\"\nedition=\"typed-preview\"\nkind=\"lib\"\n",
+    );
+    p.write(
+        "inner/src/lib.ox",
+        "pub fn transitive_answer()->i32{return 0;}",
+    );
+    let locked = p.command().arg("lock").output().unwrap();
+    assert!(locked.status.success(), "{locked:?}");
+    let lock = fs::read(p.0.join("oxid.lock")).unwrap();
+    let main = p.uri("src/main.ox");
+    let library = p.uri("math/src/lib.ox");
+    let text = "use crate::math::;fn main()->i32{return 1/0;}";
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&main, text);
+    c.open(
+        &library,
+        "pub fn answer()->i32{return 42;}fn secret()->i32{return 0;}",
+    );
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &main, text, "crate::math::", 13)),
+        ["answer"]
+    );
+    let aliased = "use crate::math:: as chosen;fn main()->i32{return 1/0;}";
+    c.change(&main, 2, json!([{"text":aliased}]));
+    let candidates = completion_at(&mut c, &main, aliased, "crate::math::", 13);
+    assert_eq!(completion_labels(&candidates), ["answer"]);
+    assert_eq!(
+        candidates["items"][0]["textEdit"]["range"]["start"],
+        candidates["items"][0]["textEdit"]["range"]["end"]
+    );
+    let root = "fn main()->i32{return crate::;}";
+    c.change(&main, 3, json!([{"text":root}]));
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &main, root, "crate::", 7)),
+        ["main", "math"]
+    );
+    let transitive = "fn main()->i32{return crate::inner::;}";
+    c.change(&main, 4, json!([{"text":transitive}]));
+    assert_eq!(
+        completion_at(&mut c, &main, transitive, "crate::inner::", 14)["items"],
+        json!([])
+    );
+    c.finish();
+    assert_eq!(fs::read(p.0.join("oxid.lock")).unwrap(), lock);
+    assert_eq!(
+        fs::read_to_string(p.0.join("math/src/lib.ox")).unwrap(),
+        saved
+    );
+    assert_eq!(fs::read_to_string(p.0.join("src/main.ox")).unwrap(), disk);
+    assert!(!p.0.join(".oxid").exists());
+    assert!(!p.0.join("download-cache").exists());
+}
+
+#[test]
+fn qualified_completion_does_not_instantiate_generic_copy_or_vector_bodies() {
+    let p = Project::new();
+    p.write("main.ox", "fn main()->i32{return 0;}");
+    let path = p.uri("main.ox");
+    let text = "use alloc::vec::new;#[derive(Copy)]struct Point{x:i32}fn generic<T>(value:T)->T{return value;}fn answer()->i32{return missing+1/0;}fn main()->i32{let values=new::<Point>();return crate::;}";
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &path, text, "crate::", 7)),
+        ["Point", "answer", "generic", "main"]
+    );
+    c.change(&path,2,json!([{"range":{"start":{"line":0,"character":1},"end":{"line":0,"character":0}},"text":""}]));
+    let result = c.request(
+        "textDocument/completion",
+        json!({"textDocument":{"uri":path},"position":position_at(text,"crate::")}),
+    );
+    assert_eq!(result["error"]["code"], -32803);
+    c.change(&path, 3, json!([{"text":text}]));
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &path, text, "crate::", 7)),
+        ["Point", "answer", "generic", "main"]
+    );
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn qualified_completion_refuses_declaration_conflicts_before_publication() {
+    let p = Project::new();
+    p.write("main.ox", "fn main()->i32{return 0;}");
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    for (index, (declarations, expected)) in [
+        ("struct bool{}", "scalar type names cannot be redeclared"),
+        ("enum i32{A}", "scalar type names cannot be redeclared"),
+        (
+            "fn duplicate()->i32{return 1;}fn duplicate()->i32{return 2;}",
+            "duplicate binding",
+        ),
+        ("struct Same{}enum Same{A}", "duplicate binding"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let text = format!("{declarations}fn main()->i32{{return crate::;}}");
+        if index == 0 {
+            c.open(&path, &text);
+        } else {
+            c.change(&path, (index + 1) as i32, json!([{"text":text}]));
+        }
+        let mut position = position_at(&text, "crate::");
+        position["character"] = json!(position["character"].as_u64().unwrap() + 7);
+        let response = c.request(
+            "textDocument/completion",
+            json!({"textDocument":{"uri":path},"position":position}),
+        );
+        assert_eq!(response["error"]["code"], -32803, "{response}");
+        assert!(response.get("result").is_none(), "{response}");
+        assert!(
+            response["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(expected),
+            "{response}"
+        );
+    }
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn qualified_completion_preserves_both_result_limits_and_recovers_with_a_longer_prefix() {
+    let p = Project::new();
+    p.write("main.ox", "fn main()->i32{return 0;}");
+    let path = p.uri("main.ox");
+    let mut declarations = String::new();
+    for i in 0..4097 {
+        declarations.push_str(&format!("fn item{i:04}()->i32{{return 0;}}"));
+    }
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    let text = format!("{declarations}fn main()->i32{{return crate::item4096();}}");
+    c.open(&path, &text);
+    let narrow = completion_at(&mut c, &path, &text, "item4096();", 8);
+    assert_eq!(completion_labels(&narrow), ["item4096"]);
+    let mut pos = position_at(&text, "item4096();");
+    pos["character"] = json!(pos["character"].as_u64().unwrap() + 4);
+    let broad = c.request(
+        "textDocument/completion",
+        json!({"textDocument":{"uri":path},"position":pos}),
+    );
+    assert_eq!(broad["error"]["code"], -32803);
+    assert!(broad.get("result").is_none());
+    assert!(broad["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("completion candidates"));
+    let text = format!(
+        "{}fn main()->i32{{return crate::item0599();}}",
+        declarations[..declarations.find("fn item0600").unwrap()].to_owned()
+    );
+    c.change(&path, 2, json!([{"text":text}]));
+    let truncated = completion_at(&mut c, &path, &text, "item0599();", 4);
+    assert_eq!(truncated["isIncomplete"], true);
+    assert_eq!(truncated["items"].as_array().unwrap().len(), 512);
+    assert_eq!(
+        completion_labels(&completion_at(&mut c, &path, &text, "item0599();", 8)),
+        ["item0599"]
+    );
+    c.finish();
+    p.unchanged();
+}

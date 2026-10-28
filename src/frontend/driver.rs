@@ -251,6 +251,15 @@ pub(super) fn editor_complete(
     path: &Path,
     offset: usize,
 ) -> Result<super::editor::EditorCompletions, Vec<super::editor::EditorDiagnostic>> {
+    if overlay
+        .text(path)
+        .is_some_and(|text| super::editor::completion::qualified_hint(text, offset))
+    {
+        let session = super::project::editor_sources::QuerySources::load(packages, entry, overlay)
+            .map_err(|error| super::editor::diagnostics(&error.sources, &error.diagnostics))?;
+        return super::editor::completion::complete_qualified(&session, path, offset)
+            .map_err(|errors| super::editor::diagnostics(session.project().sources(), &errors));
+    }
     let prepared =
         match prepare_package_with_editor(packages, entry, ProjectLimits::default(), Some(overlay))
         {
