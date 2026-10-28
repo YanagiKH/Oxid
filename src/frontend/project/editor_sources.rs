@@ -54,7 +54,10 @@ impl<'a> SourceOverlay<'a> {
 
 /// Query syntax has its own concrete owner; there is no conversion to the
 /// ordinary ProjectSources<ast::Program> required by compiler source owners.
+/// Keep both bounded session forms inline: boxing would add an allocation and
+/// failure boundary to editor queries without reducing their admitted storage.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub(in crate::frontend) enum QuerySources<'a> {
     Single(ProjectSources<parser::editor_query::EditorFile>),
     Packages(packages::PackageSources<'a, parser::editor_query::EditorFile>),
