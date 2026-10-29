@@ -1,8 +1,8 @@
 """Keep actual Windows native qualification mandatory without a YAML dependency.
 
 These checks follow the workflow's block style, like test_ci_trigger_policy.py.
-Source checks run on every host; Windows also executes the SDK command against
-a temporary batch fixture. No compiler or real SDK is executed by these tests.
+Source checks run on every host; Windows executes both temporary batch fixtures
+and the installed Visual Studio SDK setup. These tests do not run a compiler.
 """
 from pathlib import Path
 import os
@@ -61,7 +61,7 @@ $sdkStart.RedirectStandardOutput = $true
 $sdkStart.RedirectStandardError = $true
 $sdkStart.StandardOutputEncoding = [System.Text.Encoding]::Unicode
 $sdkStart.StandardErrorEncoding = [System.Text.Encoding]::Unicode
-$sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set"'
+$sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
 $sdk = [System.Diagnostics.Process]::new()
 $sdk.StartInfo = $sdkStart
 $sdkStarted = $false
@@ -100,7 +100,9 @@ try {
   }
   $sdk.WaitForExit()
   if ($sdk.ExitCode -ne 0) {
-    throw "Visual Studio environment initialization failed (cmd exit code $($sdk.ExitCode); captured stderr characters $($sdkErr.Length))"
+    $sdkErrorText = $sdkErr.ToString().Replace("`r", " ").Replace("`n", " ")
+    $sdkErrorText = $sdkErrorText.Substring(0, [Math]::Min(256, $sdkErrorText.Length))
+    throw "Visual Studio environment initialization failed (cmd exit code $($sdk.ExitCode); captured stderr characters $($sdkErr.Length); first error: $sdkErrorText)"
   }
   $settings = $sdkOut.ToString() -split '\r?\n'
 } finally {
@@ -319,8 +321,9 @@ class WindowsNativeCiTests(unittest.TestCase):
             ('missing-sdk-step', SDK_STEP, 'SDK setup disabled'),
             ('wrong-sdk-shell', 'shell: pwsh', 'shell: cmd'),
             ('missing-vc-tools', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', 'Other.Component'),
-            ('wrong-sdk-architecture', '"-arch=x64" "-host_arch=x64"', '"-arch=x86" "-host_arch=x86"'),
-            ('unquoted-equals-argument', '"-arch=x64"', '-arch=x64'),
+            ('wrong-sdk-architecture', '-arch=x64 -host_arch=x64', '-arch=x86 -host_arch=x86'),
+            ('quoted-sdk-switches', '-no_logo -arch=x64 -host_arch=x64',
+             '"-no_logo" "-arch=x64" "-host_arch=x64"'),
             ('missing-sdk-invocation-regression', '          python -B scripts/test_windows_native_ci.py\n', ''),
             ('shell-execute-bypass', '$sdkStart.UseShellExecute = $false', '$sdkStart.UseShellExecute = $true'),
             ('double-wrapped-batch', "'/d /u /s /c \"\"'", "'/d /u /s /c \"\"\"'"),
@@ -420,13 +423,16 @@ class WindowsNativeCiTests(unittest.TestCase):
 
 
 class WindowsSdkInvocationTests(unittest.TestCase):
-    def sdk_tail(self):
+    def sdk_commands(self):
         workflow = (REPO / '.github/workflows/ci.yml').read_text(encoding='utf-8')
         job = '    ' + block(workflow, JOB, 2) + '\n'
         match = re.search(r'^      - name: ' + re.escape(SDK_STEP) +
                           r'\n(.*?)(?=^      - |\Z)', job, re.MULTILINE | re.DOTALL)
         require(match is not None, 'SDK initialization step is required')
-        commands = step_commands(textwrap.dedent(match[1]))
+        return step_commands(textwrap.dedent(match[1]))
+
+    def sdk_tail(self):
+        commands = self.sdk_commands()
         start = commands.index("$devcmd = Join-Path $installation 'Common7/Tools/VsDevCmd.bat'")
         return '\n'.join(commands[start:])
 
@@ -437,17 +443,17 @@ class WindowsSdkInvocationTests(unittest.TestCase):
         invocation = next(line for line in self.sdk_tail().splitlines()
                           if line.startswith('$sdkStart.Arguments = '))
         self.assertEqual(invocation, "$sdkStart.Arguments = '/d /u /s /c \"\"' + $devcmd + "
-                         "'\" \"-no_logo\" \"-arch=x64\" \"-host_arch=x64\" >nul && set\"'")
+                         "'\" -no_logo -arch=x64 -host_arch=x64 >nul && set\"'")
         self.assertNotIn('$PSNativeCommandArgumentPassing', self.sdk_tail())
         for path in (r'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat',
                      r'C:\Program Files (x86)\Visual Studio 雪 & tools\Common7\Tools\VsDevCmd.bat'):
             with self.subTest(path=path):
-                raw_arguments = '/d /u /s /c ""' + path + '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set"'
+                raw_arguments = '/d /u /s /c ""' + path + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
                 raw_command = raw_arguments.split('/c ', 1)[1]
                 self.assertEqual(raw_command, '""' + path +
-                                 '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set"')
+                                 '" -no_logo -arch=x64 -host_arch=x64 >nul && set"')
                 self.assertEqual(raw_command[1:-1], '"' + path +
-                                 '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set')
+                                 '" -no_logo -arch=x64 -host_arch=x64 >nul && set')
 
     @unittest.skipUnless(sys.platform == 'win32', 'requires actual Windows cmd.exe and PowerShell 7')
     def test_real_cmd_batch_preserves_spaced_paths_arguments_environment_and_errors(self):
@@ -466,11 +472,16 @@ class WindowsSdkInvocationTests(unittest.TestCase):
                     batch.write_text(
                         '@echo off\n'
                         '> "%OXID_SDK_TEST_TRACE%" echo entered\n'
-                        '>> "%OXID_SDK_TEST_TRACE%" echo args:[%~1][%~2][%~3][%~4]\n'
-                        'if not "%~1"=="-no_logo" exit /b 21\n'
-                        'if not "%~2"=="-arch=x64" exit /b 22\n'
-                        'if not "%~3"=="-host_arch=x64" exit /b 23\n'
-                        'if not "%~4"=="" exit /b 24\n'
+                        '>> "%OXID_SDK_TEST_TRACE%" echo args:[%~1][%~2][%~3][%~4][%~5][%~6]\n'
+                        '>> "%OXID_SDK_TEST_TRACE%" echo raw:%*\n'
+                        # cmd separates '=' in batch argument slots while %*
+                        # retains the original unquoted SDK command line.
+                        'if not "%1"=="-no_logo" exit /b 21\n'
+                        'if not "%~2"=="-arch" exit /b 22\n'
+                        'if not "%~3"=="x64" exit /b 23\n'
+                        'if not "%~4"=="-host_arch" exit /b 24\n'
+                        'if not "%~5"=="x64" exit /b 26\n'
+                        'if not "%~6"=="" exit /b 27\n'
                         'if not "%OXID_SDK_TEST_PARENT%"=="inherited unchanged" exit /b 25\n'
                         'set "INCLUDE=fixture headers=a;b"\n'
                         'set "LIB=fixture libraries=c;d"\n'
@@ -501,7 +512,8 @@ class WindowsSdkInvocationTests(unittest.TestCase):
                     self.assertLessEqual(trace.stat().st_size, 16384)
                     marks = trace.read_bytes().decode('utf-16-le').removeprefix('\ufeff').splitlines()
                     self.assertEqual(marks, [
-                        'entered', 'args:[-no_logo][-arch=x64][-host_arch=x64][]',
+                        'entered', 'args:[-no_logo][-arch][x64][-host_arch][x64][]',
+                        'raw:-no_logo -arch=x64 -host_arch=x64',
                         f'validated-exit-{status}'], diagnostics)
                     if status:
                         self.assertNotEqual(result.returncode, 0)
@@ -517,6 +529,46 @@ class WindowsSdkInvocationTests(unittest.TestCase):
                                       'VSCMD_ARG_TGT_ARCH=x64', 'VSCMD_ARG_HOST_ARCH=x64'):
                             self.assertIn(value, values)
                         self.assertFalse(any(line.startswith('OXID_SDK_TEST_') for line in values))
+
+    @unittest.skipUnless(sys.platform == 'win32', 'requires the installed Windows MSVC and SDK')
+    def test_real_installed_visual_studio_exports_x64_tools_and_sdk(self):
+        pwsh = shutil.which('pwsh')
+        self.assertIsNotNone(pwsh, 'PowerShell 7 is mandatory on the Windows runner')
+        commands = self.sdk_commands()
+        first = next(index for index, command in enumerate(commands)
+                     if command.startswith('$vswhere = '))
+        # Use the current workflow body after its self-test invocation, so this
+        # checks the installed SDK without recursively invoking this test file.
+        with tempfile.TemporaryDirectory(prefix='oxid-installed-sdk-') as temporary:
+            root = Path(temporary)
+            exported = root / 'github-env.txt'
+            script = root / 'initialize.ps1'
+            script.write_text("$ErrorActionPreference = 'Stop'\n" +
+                              '\n'.join(commands[first:]) + '\n', encoding='utf-8')
+            result = subprocess.run([pwsh, '-NoLogo', '-NoProfile', '-NonInteractive',
+                                     '-File', str(script)],
+                                    env=dict(os.environ, GITHUB_ENV=str(exported)),
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    timeout=150, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+            self.assertEqual(result.stdout, b'')
+            self.assertTrue(exported.is_file(), 'installed SDK exported no environment')
+            self.assertLessEqual(exported.stat().st_size, 1048576)
+            values = dict(line.split('=', 1) for line in
+                          exported.read_text(encoding='utf-8-sig').splitlines())
+            values = {name.upper(): value for name, value in values.items()}
+            self.assertLessEqual(set(values), {
+                'PATH', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCTOOLSINSTALLDIR',
+                'VCTOOLSVERSION', 'WINDOWSSDKDIR', 'WINDOWSSDKVERSION', 'WINDOWSSDKLIBVERSION',
+                'UNIVERSALCRTSDKDIR', 'UCRTVERSION', 'VSCMD_ARG_TGT_ARCH', 'VSCMD_ARG_HOST_ARCH',
+            })
+            for name in ('PATH', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR',
+                         'VCTOOLSINSTALLDIR', 'WINDOWSSDKDIR', 'WINDOWSSDKVERSION'):
+                self.assertTrue(values.get(name), name + ' is missing from installed SDK')
+            self.assertEqual(values.get('VSCMD_ARG_TGT_ARCH'), 'x64')
+            self.assertEqual(values.get('VSCMD_ARG_HOST_ARCH'), 'x64')
+            self.assertTrue(Path(values['VCTOOLSINSTALLDIR']).is_dir())
+            self.assertTrue(Path(values['WINDOWSSDKDIR']).is_dir())
 
 
 if __name__ == '__main__':

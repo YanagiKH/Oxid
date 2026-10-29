@@ -15,7 +15,7 @@ from unittest.mock import patch
 import verify_registry_compatibility as gate
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_TRANSPORT_PIN = (3451, "698042accd0ae6f47fbef134e5abfe8007b27415a45da837e244868e16f1132e")
+SDK_TRANSPORT_PIN = (3657, "73ed97d799025f258631fee2f8874f4ceb83fccfde5537a4a01cb8984b200224")
 SDK_PREDECESSOR_TRANSPORT = b'          $PSNativeCommandArgumentPassing = \'Legacy\'\n          $settings = & $env:ComSpec /d /s /c "`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"\n          if ($LASTEXITCODE -ne 0) { throw \'Visual Studio environment initialization failed\' }\n'
 REGISTRY_NATIVE_STEP = b'      - name: Verify private registry publication offline builds and deployment\n        run: |\n          python3 -B scripts/verify_typed_registry.py target/debug/oxid target/release/oxid \\\n            --output "$RUNNER_TEMP/current-typed-registry" --native\n'
 REGISTRY_NATIVE_EVIDENCE = b'      - name: Retain private registry evidence\n        if: always()\n        uses: actions/upload-artifact@v4\n        with:\n          name: current-typed-registry\n          path: ${{ runner.temp }}/current-typed-registry\n          include-hidden-files: true\n          if-no-files-found: error\n          retention-days: 14\n'
@@ -315,11 +315,12 @@ class FrozenScalarLibraryReplay(unittest.TestCase):
              b"$sdkStart.StandardErrorEncoding = [System.Text.Encoding]::UTF8"),
             (b"$sdkStart.UseShellExecute = $false", b"$sdkStart.UseShellExecute = $true"),
             (b"$sdkStart.Arguments = '/d /u /s /c", b"$sdkStart.Arguments = '/d /s /c"),
-            (b'"-no_logo"', b'-no_logo'),
-            (b'"-arch=x64"', b'-arch=x64'),
-            (b'"-host_arch=x64"', b'-host_arch=x64'),
+            (b' -no_logo -arch=x64 -host_arch=x64 >nul', b' "-no_logo" -arch=x64 -host_arch=x64 >nul'),
+            (b' -no_logo -arch=x64 -host_arch=x64 >nul', b' -no_logo "-arch=x64" -host_arch=x64 >nul'),
+            (b' -no_logo -arch=x64 -host_arch=x64 >nul', b' -no_logo -arch=x64 "-host_arch=x64" >nul'),
             (b"$sdk.StandardInput.Close()", b"# removed input close"),
             (b"if ($sdk.ExitCode -ne 0)", b"if ($false)"),
+            (b"Min(256, $sdkErrorText.Length)", b"Min(65536, $sdkErrorText.Length)"),
             (b"$settings = $sdkOut.ToString() -split '\\r?\\n'", b"$settings = @()"),
             (b"$sdk.Kill($true)", b"$sdk.Kill($false)"),
             (b"$sdk.WaitForExit(5000)", b"$sdk.WaitForExit(0)"),

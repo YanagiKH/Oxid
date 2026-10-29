@@ -755,7 +755,7 @@ jobs:
           $sdkStart.RedirectStandardError = $true
           $sdkStart.StandardOutputEncoding = [System.Text.Encoding]::Unicode
           $sdkStart.StandardErrorEncoding = [System.Text.Encoding]::Unicode
-          $sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" "-no_logo" "-arch=x64" "-host_arch=x64" >nul && set"'
+          $sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
           $sdk = [System.Diagnostics.Process]::new()
           $sdk.StartInfo = $sdkStart
           $sdkStarted = $false
@@ -794,7 +794,9 @@ jobs:
             }
             $sdk.WaitForExit()
             if ($sdk.ExitCode -ne 0) {
-              throw "Visual Studio environment initialization failed (cmd exit code $($sdk.ExitCode); captured stderr characters $($sdkErr.Length))"
+              $sdkErrorText = $sdkErr.ToString().Replace("`r", " ").Replace("`n", " ")
+              $sdkErrorText = $sdkErrorText.Substring(0, [Math]::Min(256, $sdkErrorText.Length))
+              throw "Visual Studio environment initialization failed (cmd exit code $($sdk.ExitCode); captured stderr characters $($sdkErr.Length); first error: $sdkErrorText)"
             }
             $settings = $sdkOut.ToString() -split '\r?\n'
           } finally {
