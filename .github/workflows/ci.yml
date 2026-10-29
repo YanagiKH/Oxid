@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_scalar_library_compatibility.py \
+          python3 -B scripts/verify_msvc_linker_compatibility.py --source-policy scalar-library \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -438,6 +438,56 @@ jobs:
         with:
           name: file-seek-source-policy-predecessor
           path: ${{ runner.temp }}/file-seek-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  scalar-library-source-policy-predecessor:
+    name: Scalar library source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_scalar_library_source_policy.py "$RUNNER_TEMP/scalar-library-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 8f2c29eaffabbd90c591bbdc440ae6e23acf1353
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/scalar-library-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/scalar-library-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scalar-library-source-policy-predecessor
+          path: ${{ runner.temp }}/scalar-library-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-download-source-policy-predecessor:
+    name: Windows setup source-policy controls on their frozen successor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_windows_download_source_policy.py "$RUNNER_TEMP/windows-download-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: c693662501c7629c67aabaa2675dbb6b5a76d460
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/windows-download-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/windows-download-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-download-source-policy-predecessor
+          path: ${{ runner.temp }}/windows-download-source-policy-replay
           if-no-files-found: error
           retention-days: 14
 

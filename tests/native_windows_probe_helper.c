@@ -79,6 +79,7 @@ int wmain(int argc, wchar_t **argv) {
     base = base ? base + 1 : self;
     const int clang = !_wcsicmp(base, L"clang.exe");
     const int opt = !_wcsicmp(base, L"opt.exe");
+    const int linker = !_wcsicmp(base, L"lld-link.exe");
     if (argc == 2 && !wcscmp(argv[1], L"--version")) {
         if (clang && !wcscmp(mode, L"wrong-version")) return emit(STD_OUTPUT_HANDLE, "clang version 20.0.0\n", 21);
         if (clang && (!wcscmp(mode, L"stdout-flood") || !wcscmp(mode, L"stderr-flood"))) {
@@ -99,7 +100,8 @@ int wmain(int argc, wchar_t **argv) {
         const char *version = clang ? "clang version 19.1.7\n" : opt ? "LLVM version 19.1.7\n" : "LLD 19.1.7\n";
         return emit(STD_OUTPUT_HANDLE, version, (DWORD)strlen(version));
     }
-    if (!wcscmp(mode, L"link-failure") && !clang && !opt) {
+    if (!wcscmp(mode, L"link-failure") && linker) {
+        if (marker(L"linker.pid")) return 93;
         return emit(STD_ERROR_HANDLE, "controlled lld-link failure\n", 28) ? 92 : 73;
     }
     if (!environment(L"OXID_NATIVE_REAL_CLANG", real, 32768) || !clang) return 94;
