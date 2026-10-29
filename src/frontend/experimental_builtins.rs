@@ -396,6 +396,7 @@ impl VectorItemCursor {
 // catalog must not reinterpret those existing packed authorities.
 const VECTOR_ITEM_START: usize = 27;
 const SEEK_ITEM_BIT: usize = 37;
+const OWNED_VECTOR_ITEM_START: usize = 38;
 impl Item {
     const fn inventory_bit(self) -> usize {
         match self {
@@ -405,6 +406,48 @@ impl Item {
     }
 }
 impl Inventory {
+    pub(in crate::frontend) fn contains_owned_vector(
+        self,
+        item: super::owned_vector::Item,
+    ) -> bool {
+        self.bits() & (1u64 << (OWNED_VECTOR_ITEM_START + item as usize)) != 0
+    }
+    /// Candidate-only presence facts. These two explicit bits preserve the
+    /// original 0..37 domains and the same packed eight-byte representation.
+    pub(in crate::frontend) fn admit_owned_vector(self, item: super::owned_vector::Item) -> Self {
+        let vec = VECTOR_ITEM_START + super::vector::Item::Vec as usize;
+        Self(
+            (self.bits() | (1u64 << vec) | (1u64 << (OWNED_VECTOR_ITEM_START + item as usize)))
+                .to_le_bytes(),
+        )
+    }
+    pub(in crate::frontend) fn owned_vector_templates(self) -> usize {
+        ((self.bits() >> OWNED_VECTOR_ITEM_START) & 3).count_ones() as usize
+    }
+    pub(in crate::frontend) fn owned_vector_item_rank(
+        self,
+        item: super::owned_vector::Item,
+    ) -> Option<usize> {
+        self.contains_owned_vector(item).then(|| {
+            let lower = (1u64 << (OWNED_VECTOR_ITEM_START + item as usize)) - 1;
+            ((self.bits() & lower) >> OWNED_VECTOR_ITEM_START).count_ones() as usize
+        })
+    }
+    pub(in crate::frontend) fn owned_vector_item_at(
+        self,
+        rank: usize,
+    ) -> Option<super::owned_vector::Item> {
+        let first = self.contains_owned_vector(super::owned_vector::Item::PushReserved);
+        if first && rank == 0 {
+            return Some(super::owned_vector::Item::PushReserved);
+        }
+        if self.contains_owned_vector(super::owned_vector::Item::PopLast)
+            && rank == usize::from(first)
+        {
+            return Some(super::owned_vector::Item::PopLast);
+        }
+        None
+    }
     fn bits(self) -> u64 {
         u64::from_le_bytes(self.0)
     }
@@ -414,6 +457,7 @@ impl Inventory {
         const {
             assert!(Item::ALL.len() + super::vector::Item::ALL.len() <= 60);
             assert!(VECTOR_ITEM_START + super::vector::Item::ALL.len() <= SEEK_ITEM_BIT);
+            assert!(OWNED_VECTOR_ITEM_START + super::owned_vector::Item::ALL.len() <= 60);
         }
         debug_assert!(legacy < 9);
         ((self.bits() << 4) | u64::from(legacy)).to_le_bytes()
@@ -426,10 +470,16 @@ impl Inventory {
         self.bits() & (1u64 << item.inventory_bit()) != 0
     }
     pub fn contains_vector(self, item: super::vector::Item) -> bool {
+        if let Some(item) = item.owned_item() {
+            return self.contains_owned_vector(item);
+        }
         let bit = VECTOR_ITEM_START + item as usize;
         self.bits() & (1u64 << bit) != 0
     }
     pub fn admit_vector(self, item: super::vector::Item) -> Self {
+        if let Some(item) = item.owned_item() {
+            return self.admit_owned_vector(item);
+        }
         let mut inventory = self;
         if item
             .operation()
@@ -456,6 +506,11 @@ impl Inventory {
         })
     }
     pub fn vector_item_rank(self, item: super::vector::Item) -> Option<usize> {
+        if let Some(item) = item.owned_item() {
+            return self.owned_vector_item_rank(item).map(|rank| {
+                ((self.bits() >> VECTOR_ITEM_START) & 0x3ff).count_ones() as usize + rank
+            });
+        }
         let start = VECTOR_ITEM_START;
         let bit = start + item as usize;
         self.contains_vector(item).then(|| {
@@ -466,6 +521,12 @@ impl Inventory {
     /// Select an imported item with four fixed-width bit partitions. This
     /// inspects one catalog row, without scanning the other imported rows.
     pub fn vector_item_at(self, rank: usize) -> Option<super::vector::Item> {
+        let old_count = ((self.bits() >> VECTOR_ITEM_START) & 0x3ff).count_ones() as usize;
+        if rank >= old_count {
+            return self
+                .owned_vector_item_at(rank - old_count)
+                .map(super::vector::Item::from_owned);
+        }
         let mask = ((self.bits() >> VECTOR_ITEM_START) & 0x3ff) as u16;
         if rank >= mask.count_ones() as usize {
             return None;

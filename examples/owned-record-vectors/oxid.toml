@@ -1,0 +1,14 @@
+[project]
+name = "owned-record-vectors-example"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[build]
+entry-mode = "result"
+reproducible = true
+
+[tests]
+messages = "tests/messages.ox"
+
+[execution]
+policy = "hosted"

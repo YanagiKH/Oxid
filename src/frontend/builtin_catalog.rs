@@ -8,6 +8,8 @@ use super::{
 
 #[path = "experimental_builtins.rs"]
 pub(super) mod experimental;
+#[path = "owned_vector_builtins.rs"]
+pub(super) mod owned_vector;
 #[path = "vector_builtins.rs"]
 pub(super) mod vector;
 
@@ -212,7 +214,9 @@ impl BuiltinSet {
             .map(|rank| self.extra_functions() + rank)
     }
     pub fn extra_template_functions(self) -> usize {
-        self.extra_functions() + self.vector_templates()
+        self.extra_functions()
+            + self.vector_templates()
+            + self.experimental().owned_vector_templates()
     }
     pub fn experimental_enum_rank(self, item: experimental::Enumeration) -> Option<usize> {
         self.experimental()

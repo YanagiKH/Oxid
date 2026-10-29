@@ -2,7 +2,7 @@
 //!
 //! These views carry no source/execution authority, own no storage and cannot
 //! supply a caller-selected layout. Their IDs remain compilation-local.
-use super::{verified::VerifiedOwnedProgram, *};
+use super::{verified::PlanWitness, *};
 use std::mem::size_of;
 
 // Bind the actual table-query results used below to their physical models.
@@ -55,7 +55,7 @@ impl<'a> DebugRecords<'a> {
         }
     }
 
-    pub(super) fn new(witness: &'a VerifiedOwnedProgram) -> Self {
+    pub(super) fn new<W: PlanWitness>(witness: &'a W) -> Self {
         Self {
             declarations: witness.declarations(),
         }

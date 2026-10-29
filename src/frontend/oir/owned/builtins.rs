@@ -131,50 +131,67 @@ pub(super) fn check(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
 /// Complete inert descriptor validation for both closed builtin families.
 /// This cannot produce an executable witness or bypass ordinary proofs. The
 /// production entry above remains the sole builtin admission gate.
-pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
-    vector_descriptor_visits(&raw.vector_functions, raw.records.len())?;
-    let ids = BuiltinIds {
-        enumeration_base: EnumId(
-            raw.enums
-                .len()
-                .checked_sub(raw.builtins.extra_enums())
-                .ok_or_else(missing)?,
-        ),
-        function_base: hir::DefId(raw.fixed_builtin_base().ok_or_else(missing)?),
-        inventory: raw.builtins,
-        vector_count: raw.vector_functions.len(),
-    };
-    if raw.builtins == BuiltinOrigins::None {
-        if !raw.vector_functions.is_empty() {
-            return Err(missing());
+// Share the complete predicate body without adding another transport frame
+// to the existing zero-extension entry's accounting or changing its arguments.
+macro_rules! candidate_body {
+    ($raw:ident, $base:expr) => {{
+        vector_descriptor_visits(&$raw.vector_functions, $raw.records.len())?;
+        let ids = BuiltinIds {
+            enumeration_base: EnumId(
+                $raw.enums
+                    .len()
+                    .checked_sub($raw.builtins.extra_enums())
+                    .ok_or_else(missing)?,
+            ),
+            function_base: hir::DefId($base.ok_or_else(missing)?),
+            inventory: $raw.builtins,
+            vector_count: $raw.vector_functions.len(),
+        };
+        if $raw.builtins == BuiltinOrigins::None {
+            if !$raw.vector_functions.is_empty() {
+                return Err(missing());
+            }
+            return Ok(ids);
         }
-        return Ok(ids);
-    }
 
-    for kind in BuiltinEnum::ALL {
-        if let Some(id) = ids.enumeration(kind) {
-            check_enumeration(raw.enums.get(id.0).ok_or_else(missing)?, id, kind)?;
+        for kind in BuiltinEnum::ALL {
+            if let Some(id) = ids.enumeration(kind) {
+                check_enumeration($raw.enums.get(id.0).ok_or_else(missing)?, id, kind)?;
+            }
         }
-    }
-    for kind in BuiltinFunction::ALL {
-        if let Some(id) = ids.function(kind) {
-            let enumeration = ids
-                .enumeration(match kind {
-                    BuiltinFunction::ReadStdin => BuiltinEnum::ReadStatus,
-                    BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
-                })
-                .ok_or_else(missing)?;
-            check_function(
-                raw.functions.get(id.0).ok_or_else(missing)?,
-                id,
-                enumeration,
-                kind,
-            )?;
+        for kind in BuiltinFunction::ALL {
+            if let Some(id) = ids.function(kind) {
+                let enumeration = ids
+                    .enumeration(match kind {
+                        BuiltinFunction::ReadStdin => BuiltinEnum::ReadStatus,
+                        BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
+                    })
+                    .ok_or_else(missing)?;
+                check_function(
+                    $raw.functions.get(id.0).ok_or_else(missing)?,
+                    id,
+                    enumeration,
+                    kind,
+                )?;
+            }
         }
-    }
-    super::experimental_descriptors::check(raw, &ids)?;
-    super::vector_descriptors::check(raw, &ids)?;
-    Ok(ids)
+        super::experimental_descriptors::check($raw, &ids)?;
+        super::vector_descriptors::check($raw, &ids)?;
+        Ok(ids)
+    }};
+}
+
+pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
+    candidate_body!(raw, raw.fixed_builtin_base())
+}
+
+/// The extension owns the omitted suffix. This reuses every ordinary old
+/// descriptor predicate at its checked actual prefix; it grants no new seal.
+pub(super) fn check_candidate_prefix(
+    raw: &RawOwnedProgram,
+    function_end: usize,
+) -> Result<BuiltinIds, OwnedFailure> {
+    candidate_body!(raw, raw.fixed_builtin_base_at(function_end))
 }
 
 fn check_enumeration(

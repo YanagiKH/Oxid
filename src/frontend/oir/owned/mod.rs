@@ -19,6 +19,10 @@ mod flow;
 mod input;
 mod native;
 mod output;
+mod owned_record_codec;
+mod owned_vector_descriptors;
+#[cfg(test)]
+mod owned_vector_type_tests;
 mod plan;
 pub(in crate::frontend) mod process;
 #[cfg(test)]
@@ -78,6 +82,14 @@ impl RawOwnedProgram {
     fn fixed_builtin_base(&self) -> Option<usize> {
         self.functions
             .len()
+            .checked_sub(self.vector_functions.len())?
+            .checked_sub(self.builtins.extra_functions())
+    }
+    fn fixed_builtin_base_at(&self, function_end: usize) -> Option<usize> {
+        if function_end > self.functions.len() {
+            return None;
+        }
+        function_end
             .checked_sub(self.vector_functions.len())?
             .checked_sub(self.builtins.extra_functions())
     }
@@ -255,6 +267,12 @@ enum OwnedInstruction {
     /// Confined to the independently checked concrete builtin suffix.
     Vector {
         operation: crate::frontend::builtin_catalog::vector::Function,
+        destination: CallResult,
+    },
+    /// Inert until its owning extension, both consumers and ordinary proof
+    /// have been integrated. Ordinary raw/source verification rejects it.
+    OwnedVector {
+        operation: crate::frontend::builtin_catalog::owned_vector::Function,
         destination: CallResult,
     },
     // Atomic input is confined to the verified canonical builtin body.

@@ -8,6 +8,7 @@ pub(super) mod hir;
 mod hir_budget;
 pub(super) mod lower;
 mod owned_enum_resources;
+pub(super) mod owned_vector_source;
 mod program;
 #[cfg(test)]
 mod record_enum_field_tests;
@@ -22,7 +23,12 @@ mod vector_lower;
 mod vector_source;
 #[cfg(test)]
 mod vector_source_tests;
-pub(in crate::frontend::oir) use program::{check_enum_source, check_typed, SourceProgram};
+#[cfg(test)]
+pub(in crate::frontend::oir) use program::check_owned_vector_typed;
+pub(in crate::frontend::oir) use program::{
+    check_enum_source, check_owned_vector_candidate_typed, check_typed, CandidateSourceProgram,
+    OwnedVectorSourceProgram, SourceProgram,
+};
 mod diagnostic;
 #[cfg(test)]
 mod range_for_tests;

@@ -73,6 +73,7 @@ struct Aggregate(AggregateTy);
 impl fmt::Display for Aggregate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
+            AggregateTy::OwnedRecordVector(_) => Err(fmt::Error),
             AggregateTy::Record(id) => write!(f, "[\"record\",{}]", id.0),
             AggregateTy::Enum(_)
             | AggregateTy::ByteBuf
@@ -1044,6 +1045,7 @@ impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
+            I::OwnedVector { .. } => Err(fmt::Error),
             I::AcquireLocalBorrow(id) => write!(f, "[\"acquire-local-borrow\",{}]", id.0),
             I::ReleaseLocalBorrow(id) => write!(f, "[\"release-local-borrow\",{}]", id.0),
             I::CopyInitialize { .. } | I::CopyIndexInitialize { .. } | I::CopyIndexWrite { .. } => {

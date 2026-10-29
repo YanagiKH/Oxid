@@ -1329,11 +1329,12 @@ fn reference_fixture(
     mode: usize,
     other: AggregateTy,
     negative: bool,
-) -> (SourceMap, RawOwnedProgram, Span) {
+) -> Option<(SourceMap, RawOwnedProgram, Span)> {
     let (sources, mut raw, _) = effects_fixture(0);
     let base = raw.functions[0].span;
     let a = array(ty, n);
     let (other_ty, other_n) = match other {
+        AggregateTy::OwnedRecordVector(_) => return None,
         AggregateTy::FixedArray(t) => (t.element(), t.length()),
         AggregateTy::Record(_) => (hir::Ty::I32, 1),
         AggregateTy::Enum(_)
@@ -1362,6 +1363,7 @@ fn reference_fixture(
         s(base, 3),
     );
     let other_constructor = match other {
+        AggregateTy::OwnedRecordVector(_) => return None,
         AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
         | AggregateTy::File
@@ -1432,7 +1434,7 @@ fn reference_fixture(
         },
         s(base, 103),
     );
-    (sources, raw, s(base, 103))
+    Some((sources, raw, s(base, 103)))
 }
 fn fault_observed(
     raw: RawOwnedProgram,
@@ -1473,7 +1475,8 @@ fn independent_unit2c_stale_identity_permission_and_full_type_checks() {
     for ty in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
         for n in [0usize, 4] {
             for mode in 0..3 {
-                let (sources, raw, at) = reference_fixture(ty, n, mode, array(ty, n), false);
+                let (sources, raw, at) = reference_fixture(ty, n, mode, array(ty, n), false)
+                    .expect("registered scalar array fixture");
                 let expected = if n == 0 && mode != 2 {
                     Err(OwnedRunFailure::Bounds(at))
                 } else {
@@ -1485,7 +1488,8 @@ fn independent_unit2c_stale_identity_permission_and_full_type_checks() {
                 );
                 inputs += 1;
                 for (kind, message) in faults {
-                    let (sources, raw, at) = reference_fixture(ty, n, mode, array(ty, n), true);
+                    let (sources, raw, at) = reference_fixture(ty, n, mode, array(ty, n), true)
+                        .expect("registered scalar array fixture");
                     let actual = fault_observed(raw, &sources, kind, at);
                     assert_eq!(
                         actual.result,
@@ -1517,7 +1521,8 @@ fn independent_unit2c_stale_identity_permission_and_full_type_checks() {
         (hir::Ty::Unit, 4, array(hir::Ty::I32, 1)),
     ] {
         for mode in 0..3 {
-            let (sources, raw, at) = reference_fixture(ty, n, mode, other, true);
+            let (sources, raw, at) = reference_fixture(ty, n, mode, other, true)
+                .expect("registered scalar array or record fixture");
             let actual = fault_observed(raw, &sources, ArrayReferenceDifferentType, at);
             assert_eq!(
                 actual.result,
@@ -1526,7 +1531,8 @@ fn independent_unit2c_stale_identity_permission_and_full_type_checks() {
             );
             inputs += 1;
         }
-        let (sources, raw, _) = reference_fixture(ty, n, 2, other, false);
+        let (sources, raw, _) = reference_fixture(ty, n, 2, other, false)
+            .expect("registered scalar array or record fixture");
         let at = s(raw.functions[0].span, 12);
         let actual = fault_observed(raw, &sources, IncomingReferenceDifferentType, at);
         assert_eq!(
@@ -1575,7 +1581,8 @@ fn independent_unit2c_late_constructor_snapshot_is_atomic() {
 #[test]
 fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
     let (sources, mut raw, _) =
-        reference_fixture(hir::Ty::I32, 1, 2, array(hir::Ty::I32, 1), false);
+        reference_fixture(hir::Ty::I32, 1, 2, array(hir::Ty::I32, 1), false)
+            .expect("registered scalar array fixture");
     let base = raw.functions[0].span;
     raw.functions[0].calls[0]
         .arguments

@@ -9,8 +9,11 @@ use crate::frontend::{
     ast,
     build_config::NativeSourceNames,
     declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
-    project::{budget::Allocator, ProjectSources, SyntaxFlavor},
-    source::{SourceFile, SourceView},
+    project::{
+        budget::{Allocator, ReserveFailure},
+        ProjectSources, SyntaxFlavor,
+    },
+    source::{SourceFile, SourceView, Span},
 };
 
 // Keep the witness inline: its enum growth is the already-admitted raw vector
@@ -20,6 +23,7 @@ use crate::frontend::{
 enum CheckedBody {
     Scalar(VerifiedProgram),
     Owned(owned::SourceProgram),
+    OwnedVector(Box<[owned::source::OwnedVectorSourceProgram; 1]>),
 }
 
 /// Borrows only the immutable source map, never an index, AST or type-pass state.
@@ -273,6 +277,219 @@ enum Checked<'s> {
     Executable(CheckedSourceProgram<'s>),
 }
 
+/// Failure-only routing owns no retained permit. All full return/carrier roles
+/// are paid by the new lane; original diagnostic backing is counted separately
+/// from these headers and is released before paid HIR or raw construction.
+#[allow(dead_code)]
+struct OwnedVectorRouteBank {
+    project: &'static ProjectSources,
+    sources: SourceOwner<'static>,
+    work: &'static WorkMeter,
+    allocator: &'static mut Allocator,
+    limits: [IndexLimits; 3],
+    route: ProjectRoute,
+    depth: CheckDepth,
+    original: [Vec<Diagnostic>; 3],
+    diagnostics: std::slice::Iter<'static, Diagnostic>,
+    diagnostic: Option<&'static Diagnostic>,
+    eligibility: std::slice::Iter<'static, Diagnostic>,
+    eligibility_row: Option<&'static Diagnostic>,
+    secondaries: std::slice::Iter<'static, (Span, String)>,
+    secondary: Option<&'static (Span, String)>,
+    notes: std::slice::Iter<'static, String>,
+    note: Option<&'static String>,
+    candidate: index::DeclarationIndex<'static>,
+    candidate_return: Result<index::DeclarationIndex<'static>, Vec<Diagnostic>>,
+    typed: owned::source::typeck::TypedOwnedProgram<'static>,
+    typed_return: Result<owned::source::typeck::TypedOwnedProgram<'static>, Vec<Diagnostic>>,
+    completed: owned::source::CandidateSourceProgram,
+    completion_return: Result<owned::source::CandidateSourceProgram, Vec<Diagnostic>>,
+    owned: owned::source::OwnedVectorSourceProgram,
+    boxed: Box<[owned::source::OwnedVectorSourceProgram; 1]>,
+    boxed_return: Result<Box<[owned::source::OwnedVectorSourceProgram; 1]>, ReserveFailure>,
+    body: CheckedBody,
+    constructed: CheckedSourceProgram<'static>,
+    returned: Result<Checked<'static>, Vec<Diagnostic>>,
+    signature_entry: Option<hir::DefId>,
+    summary: CheckedProjectTypes,
+    inventory: crate::frontend::builtin_catalog::experimental::Inventory,
+    source_needed: bool,
+    new_imports: bool,
+    user_error: bool,
+    import_presence: [bool; 2],
+    diagnostic_capacity: usize,
+    held_bytes: usize,
+    metadata: usize,
+    sizes: [Option<usize>; 4],
+    retained_scope: Option<u64>,
+    scratch_scope: Option<u64>,
+    metadata_scope: Option<usize>,
+    admitted: Result<usize, Box<Diagnostic>>,
+    at: Span,
+}
+
+pub(in crate::frontend::oir) const fn owned_vector_route_carrier_bytes() -> usize {
+    std::mem::size_of::<OwnedVectorRouteBank>()
+}
+
+pub(super) fn owned_route_storage(
+    errors: &[Diagnostic],
+    capacity: usize,
+    work: &WorkMeter,
+    at: Span,
+) -> Result<usize, Box<Diagnostic>> {
+    let failure = || {
+        crate::frontend::owned_diagnostic::diagnostic(
+            "E0400",
+            "source",
+            format_args!("owned vector source routing storage limit exceeded"),
+            Some(at),
+        )
+    };
+    if capacity < errors.len() {
+        return Err(failure());
+    }
+    let mut bytes = capacity
+        .checked_mul(std::mem::size_of::<Diagnostic>())
+        .ok_or_else(failure)?;
+    for error in errors {
+        work.debit(1, at, "owned vector retained diagnostic")?;
+        bytes = bytes
+            .checked_add(error.message.capacity())
+            .and_then(|n| {
+                n.checked_add(
+                    error
+                        .secondary
+                        .capacity()
+                        .checked_mul(std::mem::size_of::<(Span, String)>())?,
+                )
+            })
+            .and_then(|n| {
+                n.checked_add(
+                    error
+                        .notes
+                        .capacity()
+                        .checked_mul(std::mem::size_of::<String>())?,
+                )
+            })
+            .ok_or_else(failure)?;
+        for (_, message) in &error.secondary {
+            work.debit(1, at, "owned vector retained secondary diagnostic")?;
+            bytes = bytes.checked_add(message.capacity()).ok_or_else(failure)?;
+        }
+        for note in &error.notes {
+            work.debit(1, at, "owned vector retained diagnostic note")?;
+            bytes = bytes.checked_add(note.capacity()).ok_or_else(failure)?;
+        }
+    }
+    bytes
+        .checked_add(owned_vector_route_carrier_bytes())
+        .ok_or_else(failure)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn owned_vector_fallback<'s>(
+    project: &'s ProjectSources,
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+    depth: CheckDepth,
+    route: ProjectRoute,
+    original: Vec<Diagnostic>,
+) -> Result<Checked<'s>, Vec<Diagnostic>> {
+    if route != ProjectRoute::Owned || original.is_empty() {
+        return Err(original);
+    }
+    let at = sources.eof();
+    for error in &original {
+        if !(error.code.starts_with("E02") || error.code.starts_with("E03"))
+            || work
+                .debit(1, at, "owned vector fallback error family")
+                .is_err()
+        {
+            return Err(original);
+        }
+    }
+    let Ok(held) = owned_route_storage(&original, original.capacity(), work, at) else {
+        return Err(original);
+    };
+    let defaults = IndexLimits::default();
+    let (Some(retained), Some(scratch), Some(metadata)) = (
+        limits
+            .retained
+            .min(defaults.retained)
+            .checked_sub(held as u64),
+        limits
+            .scratch
+            .min(defaults.scratch)
+            .checked_sub(held as u64),
+        (8usize * 1024 * 1024).checked_sub(held),
+    ) else {
+        return Err(original);
+    };
+    let candidate_limits = IndexLimits {
+        retained,
+        scratch,
+        work: limits.work.min(defaults.work),
+    };
+    let candidate = match index::collect_owned_vector_candidate(
+        sources,
+        candidate_limits,
+        metadata,
+        work,
+        allocator,
+    ) {
+        Ok(candidate) => candidate,
+        Err(_) => return Err(original),
+    };
+    let inventory = candidate.builtin_set().experimental();
+    let new_imports = inventory
+        .contains_owned_vector(crate::frontend::builtin_catalog::owned_vector::Item::PushReserved)
+        || inventory
+            .contains_owned_vector(crate::frontend::builtin_catalog::owned_vector::Item::PopLast);
+    if !candidate.owned_vector_source_needed() && !new_imports {
+        return Err(original);
+    }
+    // Only this exact source fact, not an error message or a guessed type name,
+    // replaces the old diagnostic. Its backing is gone before fresh paid typing.
+    drop(original);
+    let typed = owned::source::resolve::type_owned_vector_source(&candidate, work, allocator)?;
+    let entry = candidate.root_original_main();
+    if typed.entry() != entry {
+        return Err(vec![*association::bad()]);
+    }
+    if matches!(depth, CheckDepth::Types) {
+        return Ok(Checked::Types(CheckedProjectTypes::new(
+            ProjectRoute::Owned,
+            candidate.function_count(),
+            candidate.record_count(),
+            entry,
+        )));
+    }
+    let body = match owned::source::check_owned_vector_candidate_typed(&typed)? {
+        owned::source::CandidateSourceProgram::Legacy(program) => CheckedBody::Owned(program),
+        owned::source::CandidateSourceProgram::OwnedVector(program) => {
+            let boxed = allocator
+                .boxed_carrier(program, "owned vector source body")
+                .map_err(|_| {
+                    vec![*crate::frontend::owned_diagnostic::diagnostic(
+                        "E0400",
+                        "source",
+                        format_args!("owned vector source body allocation failed"),
+                        Some(at),
+                    )]
+                })?;
+            CheckedBody::OwnedVector(boxed)
+        }
+    };
+    Ok(Checked::Executable(CheckedSourceProgram {
+        sources: project.sources(),
+        body,
+        entry,
+    }))
+}
+
 pub(in crate::frontend::oir) fn check_project_candidate(
     project: &ProjectSources,
     limits: IndexLimits,
@@ -342,17 +559,37 @@ fn check_project_owner<'s>(
     work.observe(crate::frontend::declaration_index::Observation::Route {
         owned: route == ProjectRoute::Owned,
     });
-    let facts = index::collect_originals(sources, limits, work, allocator).map_err(|e| {
-        work.record_error(&e);
-        vec![*e]
-    })?;
+    let facts = match index::collect_originals(sources, limits, work, allocator) {
+        Ok(facts) => facts,
+        Err(error) => {
+            work.record_error(&error);
+            return owned_vector_fallback(
+                project,
+                sources,
+                limits,
+                work,
+                allocator,
+                depth,
+                route,
+                vec![*error],
+            );
+        }
+    };
     let original_signatures =
         if route == ProjectRoute::Scalar && sources.flavor() == SyntaxFlavor::OriginalSingleFile {
             Some(hir::original_signatures(&facts, work)?)
         } else {
             None
         };
-    let frozen = facts.finish(work, allocator)?;
+    let frozen = match facts.finish(work, allocator) {
+        Ok(frozen) => frozen,
+        Err(errors) => {
+            drop(original_signatures);
+            return owned_vector_fallback(
+                project, sources, limits, work, allocator, depth, route, errors,
+            );
+        }
+    };
     let entry = frozen.root_original_main();
     let summary =
         || CheckedProjectTypes::new(route, frozen.function_count(), frozen.record_count(), entry);
@@ -423,6 +660,7 @@ impl CheckedSourceProgram<'_> {
         match &self.body {
             CheckedBody::Scalar(_) => None,
             CheckedBody::Owned(program) => Some(program.debug_records()),
+            CheckedBody::OwnedVector(program) => Some(program[0].debug_records()),
         }
     }
 
@@ -430,6 +668,7 @@ impl CheckedSourceProgram<'_> {
         match &self.body {
             CheckedBody::Scalar(program) => program.function_count(),
             CheckedBody::Owned(program) => program.function_count(),
+            CheckedBody::OwnedVector(program) => program[0].function_count(),
         }
     }
     #[cfg(test)]
@@ -439,12 +678,20 @@ impl CheckedSourceProgram<'_> {
                 .run(self.entry)
                 .map_err(|e| e.diagnostic(self.sources)),
             CheckedBody::Owned(program) => program.run(self.entry, self.sources),
+            CheckedBody::OwnedVector(program) => program[0].run(self.entry, self.sources),
         }
     }
     pub(in crate::frontend) fn native_module(&self) -> Result<String, Box<Diagnostic>> {
         match &self.body {
             CheckedBody::Scalar(program) => program.native_module(self.entry, self.sources),
             CheckedBody::Owned(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                false,
+                crate::frontend::build_config::ExecutionPolicy::Bounded,
+                None,
+            ),
+            CheckedBody::OwnedVector(program) => program[0].native_module_with_execution(
                 self.entry,
                 self.sources,
                 false,
@@ -470,6 +717,9 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Owned(program) => {
                 program.run_with_execution(self.entry, self.sources, execution)
             }
+            CheckedBody::OwnedVector(program) => {
+                program[0].run_with_execution(self.entry, self.sources, execution)
+            }
         }
     }
 
@@ -483,6 +733,9 @@ impl CheckedSourceProgram<'_> {
                 .map(RuntimeValue::from)
                 .map_err(|error| error.diagnostic(self.sources)),
             CheckedBody::Owned(program) => program.run_result(self.entry, self.sources, execution),
+            CheckedBody::OwnedVector(program) => {
+                program[0].run_result(self.entry, self.sources, execution)
+            }
         }
     }
 
@@ -497,6 +750,9 @@ impl CheckedSourceProgram<'_> {
                 .map(RuntimeScalar::from)
                 .map_err(|error| error.diagnostic(self.sources)),
             CheckedBody::Owned(program) => program.run_value(self.entry, self.sources, execution),
+            CheckedBody::OwnedVector(program) => {
+                program[0].run_value(self.entry, self.sources, execution)
+            }
         }
     }
 
@@ -532,6 +788,13 @@ impl CheckedSourceProgram<'_> {
                 execution,
                 names,
             ),
+            CheckedBody::OwnedVector(program) => program[0].native_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+            ),
         }
     }
 
@@ -554,6 +817,14 @@ impl CheckedSourceProgram<'_> {
                 }
             }
             CheckedBody::Owned(program) => program.native_optimized_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+                debug,
+            ),
+            CheckedBody::OwnedVector(program) => program[0].native_optimized_module_with_execution(
                 self.entry,
                 self.sources,
                 process,
@@ -588,6 +859,13 @@ impl CheckedSourceProgram<'_> {
                 execution,
                 names,
             ),
+            CheckedBody::OwnedVector(program) => program[0].native_debug_module_with_execution(
+                self.entry,
+                self.sources,
+                process,
+                execution,
+                names,
+            ),
         }
     }
 
@@ -600,6 +878,13 @@ impl CheckedSourceProgram<'_> {
                 program.native_module_with_source_names(self.entry, self.sources, names)
             }
             CheckedBody::Owned(program) => program.native_module_with_execution(
+                self.entry,
+                self.sources,
+                false,
+                crate::frontend::build_config::ExecutionPolicy::Bounded,
+                Some(names),
+            ),
+            CheckedBody::OwnedVector(program) => program[0].native_module_with_execution(
                 self.entry,
                 self.sources,
                 false,
@@ -635,6 +920,7 @@ impl CheckedSourceProgram<'_> {
                             )
                         }),
                     CheckedBody::Owned(program) => program.entry_signature(id),
+                    CheckedBody::OwnedVector(program) => program[0].entry_signature(id),
                 }
                 .ok_or_else(association::bad)?;
                 Some((id, facts))
@@ -695,6 +981,7 @@ impl CheckedSourceProgram<'_> {
                 .run(Some(entry))
                 .map_err(|error| error.diagnostic(self.sources))?,
             CheckedBody::Owned(program) => program.run_process(entry, self.sources)?,
+            CheckedBody::OwnedVector(program) => program[0].run_process(entry, self.sources)?,
         };
         match value {
             Scalar::I32(status @ 0..=255) => Ok(status),
@@ -727,6 +1014,9 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Owned(program) => {
                 program.run_process_with_execution(entry, self.sources, execution)?
             }
+            CheckedBody::OwnedVector(program) => {
+                program[0].run_process_with_execution(entry, self.sources, execution)?
+            }
         };
         match value {
             Scalar::I32(status @ 0..=255) => Ok(status),
@@ -748,6 +1038,9 @@ impl CheckedSourceProgram<'_> {
                 program.native_process_module(Some(entry), self.sources)
             }
             CheckedBody::Owned(program) => program.native_process_module(entry, self.sources),
+            CheckedBody::OwnedVector(program) => {
+                program[0].native_process_module(entry, self.sources)
+            }
         }
     }
 
@@ -764,6 +1057,9 @@ impl CheckedSourceProgram<'_> {
             CheckedBody::Owned(program) => {
                 program.native_process_module_with_source_names(entry, self.sources, names)
             }
+            CheckedBody::OwnedVector(program) => {
+                program[0].native_process_module_with_source_names(entry, self.sources, names)
+            }
         }
     }
 
@@ -772,6 +1068,7 @@ impl CheckedSourceProgram<'_> {
         match self.body {
             CheckedBody::Scalar(_) => ProjectRoute::Scalar,
             CheckedBody::Owned(_) => ProjectRoute::Owned,
+            CheckedBody::OwnedVector(_) => ProjectRoute::Owned,
         }
     }
     #[cfg(test)]

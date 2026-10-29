@@ -23,7 +23,7 @@ mod tests;
 use super::{
     ast,
     builtin_catalog::{
-        experimental, vector, BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet,
+        experimental, owned_vector, vector, BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet,
         DeclarationOrigin,
     },
     diagnostic::Diagnostic,
@@ -47,6 +47,7 @@ pub(super) use resource::{
     AliasObservation, NominalAliasObservation, Observation, SeenObservation,
 };
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
+pub(super) use sealed::collect_owned_vector_candidate;
 #[cfg(test)]
 pub(super) use sealed::{
     collect_builtin_candidate, collect_closed, collect_enum_candidate, collect_output_candidate,
@@ -490,6 +491,11 @@ impl<'s> Tables<'s> {
                 "resolve",
                 if self.candidate_source_origin.is_builtin() {
                     "builtin source syntax is unavailable"
+                } else if matches!(
+                    self.candidate_source_origin,
+                    CandidateOrigin::OwnedVectorPlan(_)
+                ) {
+                    "owned record vector source admission is unavailable"
                 } else {
                     "enum source syntax is unavailable"
                 },
@@ -741,6 +747,24 @@ impl<'s> Tables<'s> {
                 .and_then(|item| self.builtins.set().experimental_function_rank(item))
                 .map(|rank| DefId(self.functions.len() + rank))
                 .ok_or_else(|| bad(self.sources.eof())),
+            DeclarationProjection::Builtin(BuiltinItem::Vector(item))
+                if item.owned_item().is_some() =>
+            {
+                let item = item.owned_item().ok_or_else(|| bad(self.sources.eof()))?;
+                self.builtins
+                    .set()
+                    .experimental()
+                    .owned_vector_item_rank(item)
+                    .map(|rank| {
+                        DefId(
+                            self.functions.len()
+                                + self.builtins.set().extra_functions()
+                                + self.builtins.set().vector_templates()
+                                + rank,
+                        )
+                    })
+                    .ok_or_else(|| bad(self.sources.eof()))
+            }
             DeclarationProjection::Builtin(BuiltinItem::Vector(item)) => item
                 .operation()
                 .and_then(|operation| self.builtins.set().vector_template_rank(operation))

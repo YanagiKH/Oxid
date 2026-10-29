@@ -144,6 +144,14 @@ pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
     limits: Limits,
 ) -> Result<Usage, OwnedFailure> {
+    if typed.admission() == super::resolve::SourceAdmission::OwnedVectorPipeline
+        && !typed.index().is_owned_vector_candidate_pipeline()
+    {
+        return Err(OwnedFailure::malformed(
+            Malformed::Binding,
+            typed.index().sources().eof(),
+        ));
+    }
     if (typed.index().builtin_set() != BuiltinOrigins::None || {
         #[cfg(test)]
         {
@@ -315,6 +323,21 @@ pub(super) fn preflight(
             "source raw payload",
         )?;
     }
+    for key in typed.index().owned_vector_functions() {
+        let count = super::vector_lower::owned_counts(*key);
+        raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+        bytes = cap(
+            add(bytes, function_bytes(count)?)?,
+            ceiling,
+            "source raw payload",
+        )?;
+    }
+    if typed.index().is_owned_vector_candidate_pipeline() {
+        scratch = scratch.max(add(
+            super::builtin_lower::carrier_bytes(),
+            super::vector_lower::owned_extra_bytes(),
+        )?);
+    }
     if !typed.index().vector_functions().is_empty() {
         scratch = scratch.max(add(
             super::builtin_lower::carrier_bytes(),
@@ -333,6 +356,11 @@ pub(super) fn preflight(
         scratch = scratch.max(super::builtin_lower::carrier_bytes());
     }
     if let Some(seed) = typed.source_storage_bytes() {
+        let seed = if typed.admission() == super::resolve::SourceAdmission::OwnedVectorPipeline {
+            add(seed, super::association::owned_vector_scope_bytes())?
+        } else {
+            seed
+        };
         admit_lower_scratch(seed, scratch)?;
     }
     Ok(Usage {
@@ -359,9 +387,12 @@ pub(super) fn admit_conversion_scratch(seed: usize, scratch: usize) -> Result<us
     )
 }
 pub(super) fn admit_lower_scratch(seed: usize, scratch: usize) -> Result<usize, OwnedFailure> {
+    let ceiling = super::hir_budget::MAX_HIR_BYTES;
+    #[cfg(test)]
+    let ceiling = LOWER_LIMIT.with(|limit| limit.get().map_or(ceiling, |limit| limit.min(ceiling)));
     cap(
         add(seed, add(scratch, lower::invocation_control_bytes())?)?,
-        super::hir_budget::MAX_HIR_BYTES,
+        ceiling,
         "source HIR scratch",
     )
 }
@@ -479,6 +510,18 @@ fn enum_lower_scratch_overlay_has_exact_unchanged_boundary_and_overflow() {
 #[cfg(test)]
 thread_local! {
     static CONVERSION_LIMIT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    static LOWER_LIMIT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+#[cfg(test)]
+pub(super) fn with_lower_limit<T>(limit: usize, action: impl FnOnce() -> T) -> T {
+    struct Reset(Option<usize>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            LOWER_LIMIT.with(|limit| limit.set(self.0));
+        }
+    }
+    let _reset = Reset(LOWER_LIMIT.with(|value| value.replace(Some(limit))));
+    action()
 }
 #[cfg(test)]
 pub(super) fn with_conversion_limit<T>(limit: usize, action: impl FnOnce() -> T) -> T {

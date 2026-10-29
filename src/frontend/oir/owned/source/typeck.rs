@@ -112,6 +112,9 @@ impl TypedOwnedProgram<'_> {
     /// charge. Ordinary owners have no enum index; this grants no admission and
     /// exposes neither the Cell nor a way to seed/reset it.
     pub(super) fn source_storage_bytes(&self) -> Option<usize> {
+        if self.admission() == SourceAdmission::OwnedVectorPipeline {
+            return Some(self.program.type_storage_cell().get());
+        }
         #[cfg(test)]
         if self.admission() == SourceAdmission::BuiltinPipeline {
             return Some(self.program.type_storage_cell().get());
@@ -126,6 +129,22 @@ impl TypedOwnedProgram<'_> {
     /// plan now with this owner's existing meter, then add its live projection
     /// payload. This neither changes nor retroactively certifies earlier phases.
     pub(super) fn conversion_association_storage_bytes(&self) -> Result<usize, Box<Diagnostic>> {
+        if self.admission() == SourceAdmission::OwnedVectorPipeline {
+            let at = self.index().sources().eof();
+            let plan =
+                super::hir_budget::preflight_owned_vector_hir(self.index(), self.program.work())?
+                    .ok_or_else(|| paid_state(at))?;
+            // Paid inventory already charged actual retained capacity and paths.
+            // Independently select the new-domain plan; it cannot be replaced by
+            // the historical signature-only preflight or a caller-supplied seed.
+            let dynamic = self
+                .program
+                .type_storage_cell()
+                .get()
+                .checked_sub(plan.total)
+                .ok_or_else(|| paid_state(at))?;
+            return plan.with_dynamic(dynamic, at);
+        }
         if let Some(seed) = self.source_storage_bytes() {
             return Ok(seed);
         }
@@ -335,6 +354,19 @@ fn type_name<'a>(
     span: Span,
 ) -> Result<TypeName<'a>, Box<Diagnostic>> {
     match ty {
+        ValueTy::Owned(AggregateTy::OwnedRecordVector(record))
+            if program.admission() == SourceAdmission::OwnedVectorPipeline
+                && program.index().is_owned_vector_candidate_pipeline() =>
+        {
+            program
+                .prepare_name(record, span)
+                .map(TypeName::RecordVector)
+        }
+        ValueTy::Owned(AggregateTy::OwnedRecordVector(_)) => Err(error(
+            "E0300",
+            "vectors of owned records are not yet supported",
+            span,
+        )),
         ValueTy::Scalar(ty) => Ok(TypeName::Scalar(ty)),
         ValueTy::Owned(AggregateTy::ByteBuf) => Ok(TypeName::ByteBuf),
         ValueTy::Owned(AggregateTy::File) => Ok(TypeName::File),
@@ -820,6 +852,23 @@ pub(super) fn finish_enum_source<'s>(
     finish_paid_source(program, source, allocator, resolver_end)
 }
 
+pub(super) fn finish_owned_vector_source<'s>(
+    program: ResolvedOwnedProgram<'s>,
+    source: &super::hir_budget::HirPlan,
+    allocator: &mut Allocator,
+    resolver_end: usize,
+) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    if program.admission() != SourceAdmission::OwnedVectorPipeline
+        || !program.index().is_owned_vector_candidate_pipeline()
+    {
+        return Err(vec![*paid_state(program.index().sources().eof())]);
+    }
+    program
+        .validate_function_signatures()
+        .map_err(|error| vec![*error])?;
+    finish_paid_source(program, source, allocator, resolver_end)
+}
+
 /// Private construction-local completion; no executable admission is minted.
 #[cfg(test)]
 pub(super) fn finish_builtin_source<'s>(
@@ -1020,6 +1069,7 @@ fn check_bodies(
     mut paid: Option<&mut ProgramPaid<'_, '_>>,
 ) -> Result<Vec<TypedBody>, Vec<Diagnostic>> {
     let enum_types = match program.admission() {
+        SourceAdmission::OwnedVectorPipeline => true,
         SourceAdmission::Executable => super::resolve::requires_paid_source(program.index()),
         #[cfg(test)]
         SourceAdmission::ObserveEnumTypes
@@ -5501,6 +5551,22 @@ struct ProductionTypeCarriers {
     provenance_return: Result<(), Box<Diagnostic>>,
     provenance_normalized: Result<(), Vec<Diagnostic>>,
     admission_guard: super::resolve::PaidSourceAdmissionCarriers,
+}
+
+#[allow(dead_code)]
+struct OwnedVectorFormatterCarriers {
+    program: &'static ResolvedOwnedProgram<'static>,
+    admission: SourceAdmission,
+    index: &'static crate::frontend::declaration_index::DeclarationIndex<'static>,
+    origin: bool,
+    record: RecordId,
+    span: Span,
+    prepared:
+        Result<crate::frontend::declaration_index::PreparedTypeName<'static>, Box<Diagnostic>>,
+    returned: Result<TypeName<'static>, Box<Diagnostic>>,
+}
+pub(super) const fn owned_vector_formatter_carrier_bytes() -> usize {
+    std::mem::size_of::<OwnedVectorFormatterCarriers>()
 }
 pub(super) const fn production_type_carrier_bytes() -> usize {
     std::mem::size_of::<ProductionTypeCarriers>()

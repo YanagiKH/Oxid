@@ -410,6 +410,15 @@ fn step(
     let (mut event, mut legal, mut next, mut failure) =
         (false, &[][..], state, Violation::Unavailable);
     match i {
+        OwnedInstruction::OwnedVector { operation, .. }
+            if operation.operation() == crate::frontend::builtin_catalog::owned_vector::Operation::PushReserved
+                && f.parameters.iter().any(|parameter| matches!(parameter, ParameterBinding::Owned(source) if *source == owner)) =>
+        {
+            event = true;
+            legal = &[Available];
+            next = Moved;
+            role = DeniedRole::SourceConsume;
+        }
         OwnedInstruction::StorageLive(o) if *o == owner => {
             event = true;
             legal = &[Dead];
@@ -434,6 +443,10 @@ fn step(
             ..
         }
         | OwnedInstruction::Vector {
+            destination: CallResult::Owned(destination),
+            ..
+        }
+        | OwnedInstruction::OwnedVector {
             destination: CallResult::Owned(destination),
             ..
         }
@@ -949,6 +962,42 @@ fn accesses(
     mut visit: impl FnMut(AccessBase, Access, DeniedRole) -> Result<(), OwnedFailure>,
 ) -> Result<(), OwnedFailure> {
     match i {
+        OwnedInstruction::OwnedVector {
+            operation,
+            destination,
+        } => {
+            for (index, reference) in f.references.iter().enumerate() {
+                visit(
+                    AccessBase::Parameter(ReferenceParamId(index)),
+                    if reference.kind == BorrowKind::Exclusive {
+                        Access::Write
+                    } else {
+                        Access::Read
+                    },
+                    DeniedRole::ArrayBase,
+                )?;
+            }
+            if operation.operation()
+                == crate::frontend::builtin_catalog::owned_vector::Operation::PushReserved
+            {
+                for parameter in &f.parameters {
+                    if let ParameterBinding::Owned(owner) = parameter {
+                        visit(
+                            AccessBase::Owner(*owner),
+                            Access::Consume,
+                            DeniedRole::SourceConsume,
+                        )?;
+                    }
+                }
+            }
+            if let CallResult::Owned(destination) = destination {
+                visit(
+                    AccessBase::Owner(*destination),
+                    Access::Write,
+                    DeniedRole::InitializationDestination,
+                )?;
+            }
+        }
         OwnedInstruction::Experimental { destination, .. }
         | OwnedInstruction::Vector { destination, .. } => {
             for (index, reference) in f.references.iter().enumerate() {
@@ -1611,4 +1660,70 @@ pub(super) fn check(
         call_regions(f, shape, id, meter)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod owned_vector_candidate_tests {
+    use super::*;
+    use crate::frontend::builtin_catalog::owned_vector::{Function, Operation};
+
+    #[test]
+    fn owned_vector_raw_push_candidate_consumes_the_parameter_and_never_copies_it() {
+        let (sources, mut raw, _) = consumer_fixtures::shared_read();
+        let span = raw.functions[0].span;
+        let function = &mut raw.functions[0];
+        function.owners[0].kind = OwnerKind::Parameter { position: 1 };
+        function.parameters = vec![
+            ParameterBinding::Reference(ReferenceParamId(0)),
+            ParameterBinding::Owned(OwnerPlaceId(0)),
+        ];
+        function.references = vec![ReferenceDecl {
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::OwnedRecordVector(
+                RecordId(0),
+            )))
+            .unwrap(),
+            kind: BorrowKind::Exclusive,
+            position: 0,
+            span,
+        }];
+        let operation = Function::record(Operation::PushReserved, RecordId(0)).unwrap();
+        let statement = consumer_fixtures::instruction(
+            OwnedInstruction::OwnedVector {
+                operation,
+                destination: CallResult::Scalar(LocalId(0)),
+            },
+            span,
+        );
+        assert_eq!(
+            step(function, 0, State::Available, &statement).unwrap(),
+            State::Moved
+        );
+        assert!(step(function, 0, State::Moved, &statement).is_err());
+        let mut accesses_seen = Vec::new();
+        accesses(function, &statement.kind, |base, access, role| {
+            accesses_seen.push((base, access, role));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(accesses_seen.len(), 2);
+        assert!(matches!(
+            accesses_seen[0],
+            (
+                AccessBase::Parameter(ReferenceParamId(0)),
+                Access::Write,
+                DeniedRole::ArrayBase
+            )
+        ));
+        assert!(matches!(
+            accesses_seen[1],
+            (
+                AccessBase::Owner(OwnerPlaceId(0)),
+                Access::Consume,
+                DeniedRole::SourceConsume
+            )
+        ));
+        // Inert flow observations cannot bypass the ordinary raw type gate.
+        function.blocks[0].statements[0] = statement;
+        assert!(verify_owned(raw, &sources).is_err());
+    }
 }

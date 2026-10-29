@@ -100,6 +100,8 @@ pub(in crate::frontend) enum Item {
     TryResize,
     Truncate,
     Take,
+    PushReserved,
+    PopLast,
 }
 
 impl Item {
@@ -118,7 +120,7 @@ impl Item {
 
     pub const fn operation(self) -> Option<Operation> {
         Some(match self {
-            Self::Vec => return None,
+            Self::Vec | Self::PushReserved | Self::PopLast => return None,
             Self::New => Operation::New,
             Self::Len => Operation::Len,
             Self::Capacity => Operation::Capacity,
@@ -132,6 +134,9 @@ impl Item {
     }
 
     pub const fn name(self) -> &'static str {
+        if let Some(item) = self.owned_item() {
+            return item.name();
+        }
         match self.operation() {
             Some(operation) => operation.name(),
             None => "Vec",
@@ -140,6 +145,19 @@ impl Item {
 
     pub const fn path(self) -> [&'static str; 3] {
         ["alloc", "vec", self.name()]
+    }
+    pub const fn owned_item(self) -> Option<super::owned_vector::Item> {
+        match self {
+            Self::PushReserved => Some(super::owned_vector::Item::PushReserved),
+            Self::PopLast => Some(super::owned_vector::Item::PopLast),
+            _ => None,
+        }
+    }
+    pub const fn from_owned(item: super::owned_vector::Item) -> Self {
+        match item {
+            super::owned_vector::Item::PushReserved => Self::PushReserved,
+            super::owned_vector::Item::PopLast => Self::PopLast,
+        }
     }
 }
 

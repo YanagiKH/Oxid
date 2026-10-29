@@ -1,7 +1,9 @@
 //! Private owned LLVM consumer. All metadata is bound to one immutable witness
 //! by ExecutionPlan; the scalar source route does not enter this module.
 use super::super::native::hosted_frames;
-use super::{plan::ExecutionPlan, verified::VerifiedOwnedProgram, *};
+#[cfg(test)]
+use super::verified::VerifiedOwnedProgram;
+use super::{plan::ExecutionPlan, verified::PlanWitness, *};
 use crate::frontend::build_config::NativeSourceNames;
 use plan::native_storage::{NativeFunctionStorage, NativeStoragePlan};
 use std::fmt::Write;
@@ -21,6 +23,10 @@ mod integer128;
 mod integers;
 #[path = "native_numeric.rs"]
 mod numeric;
+#[path = "native_owned_vector.rs"]
+mod owned_vector;
+#[path = "native_owned_vector_schemas.rs"]
+mod owned_vector_schemas;
 #[path = "native_reachability.rs"]
 mod reachability;
 #[path = "native_resources.rs"]
@@ -347,8 +353,8 @@ pub(super) struct NativeObservation {
     pub(super) metrics: NativeMetrics,
 }
 #[cfg(test)]
-pub(super) fn run_array_observed(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn run_array_observed<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     control: NativeControl,
@@ -423,8 +429,8 @@ impl NativeEntryPolicy {
     }
 }
 
-pub(super) fn native_module_with_execution(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_module_with_execution<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     process: bool,
@@ -449,8 +455,8 @@ pub(super) fn native_module_with_execution(
     )
 }
 
-pub(super) fn native_debug_module_with_execution(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_debug_module_with_execution<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     process: bool,
@@ -476,8 +482,8 @@ pub(super) fn native_debug_module_with_execution(
     )
 }
 
-pub(super) fn native_optimized_module_with_execution(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_optimized_module_with_execution<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     process: bool,
@@ -491,7 +497,7 @@ pub(super) fn native_optimized_module_with_execution(
         (false, true) => NativeEntryPolicy::HostedTypedResult,
         (true, true) => NativeEntryPolicy::HostedProcess,
     };
-    native_module_policy_accounted_with_selection::<reachability::Reachable>(
+    native_module_policy_accounted_with_selection::<_, reachability::Reachable>(
         witness,
         entry,
         sources,
@@ -504,8 +510,8 @@ pub(super) fn native_optimized_module_with_execution(
     )
 }
 
-pub(super) fn native_process_module_with_fuel(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_process_module_with_fuel<W: PlanWitness>(
+    witness: &W,
     entry: hir::DefId,
     sources: &SourceMap,
     fuel: usize,
@@ -521,16 +527,16 @@ pub(super) fn native_process_module_with_fuel(
     )
 }
 
-pub(super) fn native_module(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_module<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
 ) -> Result<String, Box<Diagnostic>> {
     native_module_limits(witness, entry, sources, plan::MAX_FUEL, Limits::DEFAULT)
 }
 
-pub(super) fn native_module_with_source_names(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_module_with_source_names<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     names: &NativeSourceNames<'_>,
@@ -547,8 +553,8 @@ pub(super) fn native_module_with_source_names(
     )
 }
 
-pub(super) fn native_process_module_with_source_names(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_process_module_with_source_names<W: PlanWitness>(
+    witness: &W,
     entry: hir::DefId,
     sources: &SourceMap,
     names: &NativeSourceNames<'_>,
@@ -566,16 +572,16 @@ pub(super) fn native_process_module_with_source_names(
 }
 
 #[cfg(test)]
-pub(super) fn native_module_with_fuel(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_module_with_fuel<W: PlanWitness>(
+    witness: &W,
     entry: hir::DefId,
     sources: &SourceMap,
     fuel: usize,
 ) -> Result<String, Box<Diagnostic>> {
     native_module_limits(witness, Some(entry), sources, fuel, Limits::DEFAULT)
 }
-fn native_module_limits(
-    witness: &VerifiedOwnedProgram,
+fn native_module_limits<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -590,8 +596,8 @@ fn native_module_limits(
         &mut Accounting::default(),
     )
 }
-fn native_module_accounted(
-    witness: &VerifiedOwnedProgram,
+fn native_module_accounted<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -608,8 +614,8 @@ fn native_module_accounted(
         accounting,
     )
 }
-fn native_module_policy_accounted(
-    witness: &VerifiedOwnedProgram,
+fn native_module_policy_accounted<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -623,8 +629,8 @@ fn native_module_policy_accounted(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn native_module_policy_accounted_with_source_names(
-    witness: &VerifiedOwnedProgram,
+fn native_module_policy_accounted_with_source_names<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -639,8 +645,8 @@ fn native_module_policy_accounted_with_source_names(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn native_module_policy_accounted_with_source_names_debug(
-    witness: &VerifiedOwnedProgram,
+fn native_module_policy_accounted_with_source_names_debug<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -650,14 +656,14 @@ fn native_module_policy_accounted_with_source_names_debug(
     names: Option<&NativeSourceNames<'_>>,
     debug: bool,
 ) -> Result<String, Box<Diagnostic>> {
-    native_module_policy_accounted_with_selection::<reachability::Full>(
+    native_module_policy_accounted_with_selection::<_, reachability::Full>(
         witness, entry, sources, fuel, limits, policy, accounting, names, debug,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
-    witness: &VerifiedOwnedProgram,
+fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunctions>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -779,6 +785,14 @@ fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
                 0
             },
         )?,
+    )?;
+    let inherited_emitter_transient = add(
+        inherited_emitter_transient,
+        if plan.uses_owned_vectors() {
+            owned_vector::control_bytes()
+        } else {
+            0
+        },
     )?;
     let emitter_transient = add(
         add(
@@ -917,18 +931,21 @@ fn native_module_policy_accounted_with_selection<R: EmittedFunctions>(
     Ok(output.text.expect("render pass"))
 }
 
-fn admit(plan: &ExecutionPlan<'_>, limits: Limits) -> Result<Vec<Bound>, Box<Diagnostic>> {
+fn admit<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    limits: Limits,
+) -> Result<Vec<Bound>, Box<Diagnostic>> {
     admit_accounted(plan, limits, &mut Accounting::default())
 }
-fn admit_accounted(
-    plan: &ExecutionPlan<'_>,
+fn admit_accounted<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     limits: Limits,
     accounting: &mut Accounting,
 ) -> Result<Vec<Bound>, Box<Diagnostic>> {
     admit_policy_accounted(plan, limits, NativeEntryPolicy::Result, accounting)
 }
-fn admit_policy_accounted(
-    plan: &ExecutionPlan<'_>,
+fn admit_policy_accounted<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     limits: Limits,
     policy: NativeEntryPolicy,
     accounting: &mut Accounting,
@@ -1161,8 +1178,8 @@ fn admit_policy_accounted(
     }
     Ok(bounds)
 }
-fn runtime_storage_bytes(
-    plan: &ExecutionPlan<'_>,
+fn runtime_storage_bytes<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     guarded: bool,
     policy: NativeEntryPolicy,
 ) -> Result<usize, Box<Diagnostic>> {
@@ -1202,6 +1219,14 @@ fn runtime_storage_bytes(
                 0
             },
         )?,
+    )?;
+    let runtime_bytes = add(
+        runtime_bytes,
+        if plan.uses_owned_vectors() {
+            owned_vector::RUNTIME_BYTES
+        } else {
+            0
+        },
     )?;
     add(
         runtime_bytes,
@@ -1620,8 +1645,8 @@ struct Diagnostics {
     messages: Vec<String>,
     ids: Vec<DiagnosticLookup>,
 }
-fn diagnostic_occurrences(
-    plan: &ExecutionPlan<'_>,
+fn diagnostic_occurrences<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     entry: hir::DefId,
     guarded: bool,
     policy: NativeEntryPolicy,
@@ -1647,6 +1672,9 @@ fn diagnostic_occurrences(
         }
     }
     for f in plan.witness().functions() {
+        if plan.uses_owned_vectors() {
+            visit(FailureKind::Fuel, f.span)?;
+        }
         if plan.uses_dynamic_resources() || plan.uses_enum_record_nesting() {
             visit(FailureKind::ResourceDescriptor, f.span)?;
             visit(FailureKind::EnumTag, f.span)?;
@@ -1765,7 +1793,7 @@ fn diagnostic_occurrences(
                         value: Rvalue::CheckedI64ToU8 { name_span, .. },
                         ..
                     })) => visit(FailureKind::I64ToU8Range, *name_span)?,
-                    OwnedInstruction::Vector { .. } => {
+                    OwnedInstruction::Vector { .. } | OwnedInstruction::OwnedVector { .. } => {
                         // The helper emits a fuel refusal label in hosted mode
                         // too; its fresh budget does not remove that IR block.
                         if !guarded {
@@ -1912,8 +1940,8 @@ fn diagnostic_occurrences(
     Ok(())
 }
 impl Diagnostics {
-    fn new(
-        plan: &ExecutionPlan<'_>,
+    fn new<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
         entry: hir::DefId,
         sources: &SourceMap,
         guarded: bool,
@@ -1929,8 +1957,8 @@ impl Diagnostics {
             &mut Accounting::default(),
         )
     }
-    fn new_accounted(
-        plan: &ExecutionPlan<'_>,
+    fn new_accounted<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
         entry: hir::DefId,
         sources: &SourceMap,
         guarded: bool,
@@ -1951,8 +1979,8 @@ impl Diagnostics {
     }
     // Entry policy is explicit alongside the existing accounted inputs.
     #[allow(clippy::too_many_arguments)]
-    fn new_policy_accounted(
-        plan: &ExecutionPlan<'_>,
+    fn new_policy_accounted<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
         entry: hir::DefId,
         sources: &SourceMap,
         guarded: bool,
@@ -1975,8 +2003,8 @@ impl Diagnostics {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new_policy_accounted_with_source_names(
-        plan: &ExecutionPlan<'_>,
+    fn new_policy_accounted_with_source_names<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
         entry: hir::DefId,
         sources: &SourceMap,
         guarded: bool,
@@ -2362,6 +2390,10 @@ fn indexed_base(f: &RawOwnedFunction, base: AccessBase) -> BorrowedTy {
 }
 fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: AccessBase) -> String {
     match indexed_base(f, base) {
+        BorrowedTy::Exact(AggregateTy::OwnedRecordVector(_)) => {
+            out.exceeded = true;
+            String::new()
+        }
         BorrowedTy::Exact(AggregateTy::FixedArray(array)) => array.length().to_string(),
         BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => {
             match base {
@@ -2413,8 +2445,8 @@ fn sentinel_ty(array: FixedArrayTy) -> &'static str {
 }
 /// Resolve from the verified nominal root every time; raw offsets are never
 /// authority, and this bounded path walk allocates no projection metadata.
-fn projection(
-    plan: &ExecutionPlan<'_>,
+fn projection<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     f: &RawOwnedFunction,
     base: AccessBase,
     path: &[FieldId],
@@ -2428,8 +2460,8 @@ fn projection(
         .expect("verified projection")
 }
 
-fn index_pointer(
-    plan: &ExecutionPlan<'_>,
+fn index_pointer<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     id: hir::DefId,
     name: &str,
     statement: &OwnedStatement,
@@ -2508,12 +2540,14 @@ fn index_pointer(
 /// Counts raw sites and active enum branch trees without expanding static
 /// record or array leaves during inventory.
 #[cfg(test)]
-fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Diagnostic>> {
+fn transfer_inventory<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+) -> Result<(usize, usize), Box<Diagnostic>> {
     transfer_inventory_selected(plan, reachability::Full)
 }
 
-fn transfer_inventory_selected<R: EmittedFunctions>(
-    plan: &ExecutionPlan<'_>,
+fn transfer_inventory_selected<W: PlanWitness, R: EmittedFunctions>(
+    plan: &ExecutionPlan<'_, W>,
     selected: R,
 ) -> Result<(usize, usize), Box<Diagnostic>> {
     let mut visits = 0;
@@ -2561,7 +2595,16 @@ fn transfer_inventory_selected<R: EmittedFunctions>(
                             )?;
                             cells = add(
                                 cells,
-                                active_transfer_inventory(plan, aggregate, true, &mut visits)?,
+                                // The new-domain commit moves only initialized
+                                // leaves after the complete preflight above.
+                                // One leaf pass has the validation-only count;
+                                // it must not count a second admission pass.
+                                active_transfer_inventory(
+                                    plan,
+                                    aggregate,
+                                    !plan.uses_owned_vectors(),
+                                    &mut visits,
+                                )?,
                             )?;
                         }
                         None
@@ -2648,6 +2691,25 @@ fn transfer_inventory_selected<R: EmittedFunctions>(
                         cells = add(cells, mul(2, plan.owner_width(f.id, source))?)?;
                         None
                     }
+                    OwnedInstruction::Replace {
+                        destination,
+                        source,
+                    } if plan.uses_owned_vectors()
+                        && resources::contains(plan, f.owners[destination.0].aggregate()) =>
+                    {
+                        // Incoming validation and old-value release are counted
+                        // below. MoveAdmitted commits one initialized-leaf pass.
+                        cells = add(
+                            cells,
+                            active_transfer_inventory(
+                                plan,
+                                f.owners[source.0].aggregate(),
+                                false,
+                                &mut visits,
+                            )?,
+                        )?;
+                        None
+                    }
                     OwnedInstruction::MoveInitialize { source, .. }
                     | OwnedInstruction::Replace { source, .. }
                     | OwnedInstruction::PrepareOwned { source, .. } => Some(source),
@@ -2669,6 +2731,7 @@ fn transfer_inventory_selected<R: EmittedFunctions>(
                 if plan.binary_delivery_cost(f.id).is_none()
                     && plan.file_delivery_cost(f.id).is_none()
                     && !vector::delivery(plan, f.id)
+                    && !owned_vector::delivery(plan, f.id)
                 {
                     cells = add(
                         cells,
@@ -2764,6 +2827,7 @@ fn transfer_inventory_selected<R: EmittedFunctions>(
                 OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_)
             ) && plan.file_delivery_cost(function.id).is_none()
                 && !vector::delivery(plan, function.id)
+                && !owned_vector::delivery(plan, function.id)
             {
                 for owner in &function.owners {
                     if resources::contains(plan, owner.aggregate()) {
@@ -2780,15 +2844,15 @@ fn transfer_inventory_selected<R: EmittedFunctions>(
 }
 /// Tag-directed enum validation/copy work grows with the number of cases, not
 /// logical owner width. The switch rows and bodies are separately expanded.
-fn transfer_expansions(
-    plan: &ExecutionPlan<'_>,
+fn transfer_expansions<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     id: hir::DefId,
     owner: OwnerPlaceId,
 ) -> Result<usize, Box<Diagnostic>> {
     transfer_expansions_counted(plan, id, owner, &mut 0)
 }
-fn transfer_expansions_counted(
-    plan: &ExecutionPlan<'_>,
+fn transfer_expansions_counted<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     id: hir::DefId,
     owner: OwnerPlaceId,
     visits: &mut usize,
@@ -2807,8 +2871,8 @@ fn transfer_expansions_counted(
 /// Count the same switch rows, case bodies, active validation cells and copy
 /// cells as the emitter. The bounded stack retains no expanded variant tree.
 /// Reject a count larger than the existing text ceiling before expanding it.
-fn active_transfer_inventory(
-    plan: &ExecutionPlan<'_>,
+fn active_transfer_inventory<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     aggregate: AggregateTy,
     copy: bool,
     visits: &mut usize,
@@ -2822,7 +2886,7 @@ fn active_transfer_inventory(
     let AggregateTy::Enum(enumeration) = aggregate else {
         *visits = add(*visits, 1)?;
         return mul(
-            declarations
+            plan.witness()
                 .aggregate_width(aggregate)
                 .expect("verified width"),
             factor,
@@ -2868,7 +2932,7 @@ fn active_transfer_inventory(
                         cells = add(
                             cells,
                             mul(
-                                declarations
+                                plan.witness()
                                     .aggregate_width(payload)
                                     .expect("verified payload width"),
                                 factor,
@@ -2892,9 +2956,9 @@ fn active_transfer_inventory(
 
 /// All callers receive types, extents and ownership transitions from the sealed
 /// witness. Runtime tags and active payload cells still require validation.
-fn transfer_checked(
+fn transfer_checked<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     pointers: (&str, &str),
@@ -2903,12 +2967,14 @@ fn transfer_checked(
     if composition::needed(plan, aggregate) {
         composition::transfer(
             out,
+            plan,
             name,
             aggregate,
             pointers.0,
             TransferIntent::Move(pointers.1),
             Expansion::Transfer,
             failure,
+            false,
         );
         return;
     }
@@ -2937,9 +3003,9 @@ fn transfer_checked(
 
 /// Read precisely the active scalar after the caller has proved the tag.
 /// In particular an i1 load cannot establish a canonical boolean byte.
-fn enum_payload_load(
+fn enum_payload_load<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     source: &str,
     variant: VariantId,
@@ -3013,28 +3079,36 @@ fn enum_payload_store(
 #[derive(Clone, Copy)]
 enum TransferIntent<'a> {
     Move(&'a str),
+    // Only a completed whole-instruction preflight may select this commit.
+    MoveAdmitted(&'a str),
     Validate,
     Release,
 }
 impl<'a> TransferIntent<'a> {
     fn destination(self) -> Option<&'a str> {
         match self {
-            Self::Move(destination) => Some(destination),
+            Self::Move(destination) | Self::MoveAdmitted(destination) => Some(destination),
             _ => None,
         }
+    }
+    fn prevalidated(self) -> bool {
+        matches!(self, Self::MoveAdmitted(_))
     }
     fn child<'b>(self, destination: Option<&'b str>) -> TransferIntent<'b> {
         match self {
             Self::Move(_) => TransferIntent::Move(destination.expect("move destination")),
+            Self::MoveAdmitted(_) => {
+                TransferIntent::MoveAdmitted(destination.expect("admitted move destination"))
+            }
             Self::Validate => TransferIntent::Validate,
             Self::Release => TransferIntent::Release,
         }
     }
 }
 
-fn enum_transfer(
+fn enum_transfer<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     enumeration: EnumId,
     source: &str,
@@ -3052,9 +3126,9 @@ fn enum_transfer(
     );
 }
 
-fn enum_transfer_with_intent(
+fn enum_transfer_with_intent<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     enumeration: EnumId,
     source: &str,
@@ -3065,12 +3139,14 @@ fn enum_transfer_with_intent(
     if composition::needed(plan, aggregate) {
         composition::transfer(
             out,
+            plan,
             name,
             aggregate,
             source,
             intent,
             Expansion::Transfer,
             failure,
+            intent.prevalidated(),
         );
         return;
     }
@@ -3180,9 +3256,9 @@ fn enum_node_pointer(name: &str, frame: EnumTransferFrame, root: &str, output: b
         format!("%{}_{}_ptr", enum_node_name(name, frame.ordinal), role)
     }
 }
-fn enum_node_switch(
+fn enum_node_switch<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     frame: EnumTransferFrame,
     source: &str,
@@ -3229,9 +3305,9 @@ fn enum_node_switch(
 /// Validate all terminal leaves before copying any. Enum chains validate each
 /// tag on descent; ancestor tag stores happen only after a complete child has
 /// been validated. Thus a bad nested tag or terminal scalar writes no payload.
-fn owned_enum_transfer(
+fn owned_enum_transfer<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     enumeration: EnumId,
     source: &str,
@@ -3348,9 +3424,9 @@ fn owned_enum_transfer(
     }
 }
 
-fn active_transfer(
+fn active_transfer<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     source: &str,
@@ -3368,9 +3444,9 @@ fn active_transfer(
     );
 }
 
-fn active_transfer_with_intent(
+fn active_transfer_with_intent<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     source: &str,
@@ -3380,12 +3456,14 @@ fn active_transfer_with_intent(
     if composition::needed(plan, aggregate) {
         composition::transfer(
             out,
+            plan,
             name,
             aggregate,
             source,
             intent,
             Expansion::Transfer,
             failure,
+            intent.prevalidated(),
         );
         return;
     }
@@ -3394,12 +3472,30 @@ fn active_transfer_with_intent(
         enum_transfer_with_intent(out, plan, name, enumeration, source, intent, failure);
         return;
     }
+    if intent.prevalidated() {
+        assert!(
+            plan.uses_owned_vectors(),
+            "owned-vector instruction admission"
+        );
+        transfer_leaves(
+            out,
+            plan,
+            name,
+            aggregate,
+            (source, destination.expect("admitted move destination")),
+            true,
+            Expansion::Transfer,
+            failure,
+        );
+        return;
+    }
     if !matches!(
         aggregate,
         AggregateTy::ByteBuf
             | AggregateTy::File
             | AggregateTy::Vector(_)
             | AggregateTy::RecordVector(_)
+            | AggregateTy::OwnedRecordVector(_)
     ) {
         for (index, leaf) in plan
             .witness()
@@ -3456,15 +3552,16 @@ fn active_transfer_with_intent(
             &format!("{name}_copy"),
             aggregate,
             (source, destination),
+            true,
             Expansion::Transfer,
             failure,
         );
     }
 }
 
-fn emit_dispatch(
+fn emit_dispatch<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     f: &RawOwnedFunction,
     name: &str,
     match_id: MatchId,
@@ -3510,9 +3607,9 @@ fn emit_dispatch(
     }
 }
 
-fn transfer(
+fn transfer<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     pointers: (&str, &str),
@@ -3529,7 +3626,8 @@ fn transfer(
         AggregateTy::ByteBuf
         | AggregateTy::File
         | AggregateTy::Vector(_)
-        | AggregateTy::RecordVector(_) => {
+        | AggregateTy::RecordVector(_)
+        | AggregateTy::OwnedRecordVector(_) => {
             resources::leaves(
                 out,
                 plan,
@@ -3585,6 +3683,7 @@ fn transfer(
         name,
         aggregate,
         (source, destination),
+        false,
         Expansion::Transfer,
         failure,
     );
@@ -3593,12 +3692,13 @@ fn transfer(
 /// The declaration iterator stores at most one frame per admitted containment
 /// level. It yields initialized scalar/sentinel cells, never record padding.
 #[allow(clippy::too_many_arguments)]
-fn transfer_leaves(
+fn transfer_leaves<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     pointers: (&str, &str),
+    prevalidated: bool,
     kind: Expansion,
     failure: (&Diagnostics, Span),
 ) {
@@ -3609,7 +3709,11 @@ fn transfer_leaves(
         &format!("{name}_owned"),
         aggregate,
         source,
-        resources::Action::Move(destination),
+        if prevalidated && plan.uses_owned_vectors() {
+            resources::Action::MovePrevalidated(destination)
+        } else {
+            resources::Action::Move(destination)
+        },
         kind,
         failure,
     );
@@ -3619,6 +3723,7 @@ fn transfer_leaves(
             | AggregateTy::File
             | AggregateTy::Vector(_)
             | AggregateTy::RecordVector(_)
+            | AggregateTy::OwnedRecordVector(_)
     ) {
         return;
     }
@@ -3643,15 +3748,15 @@ fn transfer_leaves(
 
 // Independently checked compiler-work facts; no native allocation, witness,
 // or emitter capability escapes. The caller discards them after the guards.
-pub(super) fn admit_inventory_policy(
-    execution: &ExecutionPlan<'_>,
+pub(super) fn admit_inventory_policy<W: PlanWitness>(
+    execution: &ExecutionPlan<'_, W>,
     limits: (usize, usize),
 ) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
     admit_inventory_policy_with_execution(execution, limits, NativeEntryPolicy::Result)
 }
 
-fn admit_inventory_policy_with_execution(
-    execution: &ExecutionPlan<'_>,
+fn admit_inventory_policy_with_execution<W: PlanWitness>(
+    execution: &ExecutionPlan<'_, W>,
     limits: (usize, usize),
     policy: NativeEntryPolicy,
 ) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
@@ -3678,8 +3783,8 @@ fn admit_inventory_policy_with_execution(
 }
 
 #[cfg(test)]
-fn emit(
-    storage: &NativeStoragePlan<'_, '_>,
+fn emit<W: PlanWitness>(
+    storage: &NativeStoragePlan<'_, '_, W>,
     entry: hir::DefId,
     diagnostics: &Diagnostics,
     fuel: usize,
@@ -3688,8 +3793,8 @@ fn emit(
     emit_selected(storage, entry, diagnostics, fuel, out, reachability::Full);
 }
 
-fn emit_selected<R: EmittedFunctions>(
-    storage: &NativeStoragePlan<'_, '_>,
+fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
+    storage: &NativeStoragePlan<'_, '_, W>,
     entry: hir::DefId,
     diagnostics: &Diagnostics,
     fuel: usize,
@@ -3702,6 +3807,17 @@ fn emit_selected<R: EmittedFunctions>(
     out.write_str(crate::frontend::build_config::NativeBuildSettings::ir_header(true))
         .unwrap();
     vector::schemas(plan, out);
+    if plan.uses_owned_vectors() {
+        let elements = plan
+            .witness()
+            .elements()
+            .expect("sealed owned vector bounds");
+        if owned_vector_schemas::schemas(plan.witness().declarations(), &elements, out).is_err() {
+            out.exceeded = true;
+            return;
+        }
+        owned_vector::declarations(out);
+    }
     if out.policy.recursive() {
         hosted_frames::globals(out);
     }
@@ -3941,8 +4057,8 @@ impl Continuation {
     }
 }
 /// Exhaustive classification shared by operation emission and phi predecessors.
-fn continuation(
-    plan: &ExecutionPlan<'_>,
+fn continuation<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     f: &RawOwnedFunction,
     instruction: &OwnedInstruction,
 ) -> Continuation {
@@ -3964,6 +4080,7 @@ fn continuation(
         {
             Continuation::Bounds
         }
+        OwnedInstruction::OwnedVector { .. } => Continuation::Unsplit,
         OwnedInstruction::Vector { .. } => Continuation::VectorOperation,
         OwnedInstruction::ArrayLength { base, .. }
             if matches!(
@@ -4068,8 +4185,8 @@ fn continuation(
         | OwnedInstruction::ReleaseLocalBorrow(_) => Continuation::Unsplit,
     }
 }
-fn exit_label(
-    plan: &ExecutionPlan<'_>,
+fn exit_label<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     f: &RawOwnedFunction,
     block: usize,
     guarded: bool,
@@ -4090,8 +4207,8 @@ fn exit_label(
     }
     format!("b{block}")
 }
-fn emit_function(
-    module_storage: &NativeStoragePlan<'_, '_>,
+fn emit_function<W: PlanWitness>(
+    module_storage: &NativeStoragePlan<'_, '_, W>,
     id: hir::DefId,
     diagnostics: &Diagnostics,
     out: &mut Emission,
@@ -4159,7 +4276,7 @@ fn emit_function(
             .unwrap();
         }
     }
-    if plan::native_vector_layout::frame_bytes(plan.witness().declarations(), f)
+    if plan::native_vector_layout::frame_bytes_with_witness(plan.witness(), f)
         .expect("admitted vector index scratch")
         != 0
     {
@@ -4430,7 +4547,9 @@ fn emit_function(
             if guarded
                 && !matches!(
                     statement.kind,
-                    OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. }
+                    OwnedInstruction::ReadStdin { .. }
+                        | OwnedInstruction::WriteStdout { .. }
+                        | OwnedInstruction::OwnedVector { .. }
                 )
             {
                 emit_guard(
@@ -4454,6 +4573,7 @@ fn emit_function(
             && plan.binary_delivery_cost(id).is_none()
             && plan.file_delivery_cost(id).is_none()
             && !vector::delivery(plan, id)
+            && !owned_vector::delivery(plan, id)
         {
             emit_guard(
                 out,
@@ -4474,9 +4594,9 @@ fn emit_function(
     out.write_str("}\n").unwrap();
 }
 
-fn record_debug_variable(
+fn record_debug_variable<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     owner: &OwnerDecl,
     offset: usize,
     argument: usize,
@@ -4495,8 +4615,8 @@ fn record_debug_variable(
 /// suffix. Its exclusive slice pointer follows the existing verified ABI;
 /// capacity is checked before any input, result store, or destination write.
 /// Only successful/EOF paths enter the prepaid, infallible commit loop.
-fn emit_read_stdin(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn emit_read_stdin<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     places: (ReferenceParamId, OwnerPlaceId),
     failure: (&Diagnostics, Span),
@@ -4602,8 +4722,8 @@ fn emit_read_stdin(
 /// Capacity and storage are preflighted before reads; the complete validated
 /// byte image is staged before any attempt. The only post-effect failure point
 /// in the effect itself is the deliberately metered next-attempt fuel guard.
-fn emit_write_stdout(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn emit_write_stdout<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     places: (ReferenceParamId, OwnerPlaceId),
     failure: (&Diagnostics, Span),
@@ -4705,8 +4825,8 @@ fn emit_write_stdout(
     writeln!(out, "  br label %{name}_{suffix}\n{name}_{suffix}:").unwrap();
 }
 
-fn emit_statement(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn emit_statement<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     statement: &OwnedStatement,
     diagnostics: &Diagnostics,
@@ -4720,6 +4840,18 @@ fn emit_statement(
     out.ordinary_visits += 1;
     let f = &plan.witness().functions()[id.0];
     match &statement.kind {
+        OwnedInstruction::OwnedVector {
+            operation,
+            destination,
+        } => owned_vector::operation(
+            storage,
+            name,
+            *operation,
+            *destination,
+            diagnostics,
+            plan::instruction_span(statement),
+            out,
+        ),
         OwnedInstruction::Vector {
             operation,
             destination,
@@ -4920,12 +5052,14 @@ fn emit_statement(
             if composition::needed(plan, aggregate) {
                 composition::transfer(
                     out,
+                    plan,
                     name,
                     aggregate,
                     &format!("%o{}", owner.0),
                     TransferIntent::Release,
                     Expansion::Transfer,
                     (diagnostics, plan::instruction_span(statement)),
+                    false,
                 );
             } else if resources::contains(plan, aggregate) {
                 resources::drop_owner(
@@ -5148,13 +5282,18 @@ fn emit_statement(
                 let name = format!("{name}_move{index}");
                 let pointer =
                     field_pointer(out, &name, &format!("%o{}", source.0), member.offset());
+                let output = format!("%o{}", destination.0);
                 active_transfer_with_intent(
                     out,
                     plan,
                     &name,
                     f.owners[destination.0].aggregate(),
                     &pointer,
-                    TransferIntent::Move(&format!("%o{}", destination.0)),
+                    if plan.uses_owned_vectors() {
+                        TransferIntent::MoveAdmitted(&output)
+                    } else {
+                        TransferIntent::Move(&output)
+                    },
                     (diagnostics, plan::instruction_span(statement)),
                 );
             }
@@ -5177,12 +5316,14 @@ fn emit_statement(
                         {
                             composition::transfer(
                                 out,
+                                plan,
                                 &format!("{name}_incoming{index}"),
                                 aggregate,
                                 &format!("%o{}", source.0),
                                 TransferIntent::Validate,
                                 Expansion::Transfer,
                                 (diagnostics, plan::instruction_span(statement)),
+                                false,
                             );
                             continue;
                         }
@@ -5243,12 +5384,14 @@ fn emit_statement(
                         {
                             composition::transfer(
                                 out,
+                                plan,
                                 &n,
                                 aggregate,
                                 &format!("%o{}", source.0),
                                 TransferIntent::Move(&ptr),
                                 Expansion::Construct,
                                 (diagnostics, plan::instruction_span(statement)),
+                                true,
                             );
                             continue;
                         }
@@ -5258,6 +5401,7 @@ fn emit_statement(
                             &n,
                             f.owners[source.0].aggregate(),
                             (&format!("%o{}", source.0), &ptr),
+                            true,
                             Expansion::Construct,
                             (diagnostics, plan::instruction_span(statement)),
                         );
@@ -5352,14 +5496,29 @@ fn emit_statement(
                     (diagnostics, plan::instruction_span(statement)),
                 );
             }
-            transfer_checked(
-                out,
-                plan,
-                name,
-                f.owners[source.0].aggregate(),
-                (&format!("%o{}", source.0), &format!("%o{}", destination.0)),
-                (diagnostics, plan::instruction_span(statement)),
-            );
+            if plan.uses_owned_vectors()
+                && matches!(statement.kind, OwnedInstruction::Replace { .. })
+                && resources::contains(plan, f.owners[destination.0].aggregate())
+            {
+                active_transfer_with_intent(
+                    out,
+                    plan,
+                    name,
+                    f.owners[source.0].aggregate(),
+                    &format!("%o{}", source.0),
+                    TransferIntent::MoveAdmitted(&format!("%o{}", destination.0)),
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            } else {
+                transfer_checked(
+                    out,
+                    plan,
+                    name,
+                    f.owners[source.0].aggregate(),
+                    (&format!("%o{}", source.0), &format!("%o{}", destination.0)),
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            }
         }
         OwnedInstruction::ReadField {
             destination,
@@ -5527,8 +5686,8 @@ fn emit_statement(
         OwnedInstruction::OpenCall(_) | OwnedInstruction::ReleaseLocalBorrow(_) => {}
     }
 }
-fn emit_scalar(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn emit_scalar<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     owned_statement: &OwnedStatement,
     diagnostics: &Diagnostics,
@@ -5915,7 +6074,10 @@ fn emit_scalar(
         &value,
     );
 }
-fn frame_usage(plan: &ExecutionPlan<'_>, function: hir::DefId) -> hosted_frames::Usage {
+fn frame_usage<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    function: hir::DefId,
+) -> hosted_frames::Usage {
     let usage = plan.function(function).usage();
     hosted_frames::Usage {
         slots: usage.scalar_slots,
@@ -5940,8 +6102,8 @@ fn emit_frame_enter(
     });
 }
 
-fn emit_terminator(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn emit_terminator<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     term: &OwnedTerminator,
     context: (&Diagnostics, bool),
@@ -5976,13 +6138,18 @@ fn emit_terminator(
         OwnedTerminatorKind::ReturnScalar(value) => {
             let t = ty(f.locals[value.local.0].ty);
             let value = load_operand(out, f, &format!("{name}_value"), *value);
-            resources::drop_frame(out, plan, f, name, (diagnostics, term.span));
+            if !owned_vector::delivery(plan, id) {
+                // A canonical consuming vector primitive has already moved
+                // and cleared its input. Its prepaid return owns no leaves.
+                resources::drop_frame(out, plan, f, name, (diagnostics, term.span));
+            }
             writeln!(out, "  ret {t} {value}").unwrap();
         }
         OwnedTerminatorKind::ReturnOwned(owner) => {
             if plan.binary_delivery_cost(id).is_some()
                 || plan.file_delivery_cost(id).is_some()
                 || vector::delivery(plan, id)
+                || owned_vector::delivery(plan, id)
             {
                 // The canonical operation prepaid this exact return cost and
                 // already delivered into %result. It owns no resource leaves.
@@ -7052,3 +7219,15 @@ mod copy_record_debug_tests;
 #[cfg(test)]
 #[path = "record_vector_native_tests.rs"]
 mod record_vector_tests;
+
+#[cfg(test)]
+#[path = "native_owned_vector_schema_tests.rs"]
+mod owned_vector_schema_tests;
+
+#[cfg(test)]
+#[path = "native_owned_vector_tests.rs"]
+mod owned_vector_tests;
+
+#[cfg(test)]
+#[path = "native_owned_vector_commit_tests.rs"]
+mod owned_vector_commit_tests;

@@ -40,11 +40,16 @@ fn bad() -> OwnedFailure {
     }
 }
 
-fn function(
+// One authoritative canonical predicate body is instantiated with distinct
+// typed operation domains. The old function keeps its exact argument shapes;
+// no key cast, erased signature or copied alternate proof is introduced.
+macro_rules! canonical_function {
+    ($name:ident, $key:ty, $signature:ty, $variant:ident) => {
+pub(super) fn $name(
     f: &RawOwnedFunction,
     id: hir::DefId,
-    operation: Function,
-    signature: &crate::frontend::builtin_catalog::vector::Signature,
+    operation: $key,
+    signature: &$signature,
 ) -> Result<(), OwnedFailure> {
     let fail = || OwnedFailure::malformed(Malformed::CanonicalSite, f.span);
     if f.id != id
@@ -151,7 +156,7 @@ fn function(
         return Err(fail());
     }
     if !matches!(block.statements[usize::from(owned)].kind,
-        OwnedInstruction::Vector { operation: op, destination: dest } if op == operation && same_result(dest, destination))
+        OwnedInstruction::$variant { operation: op, destination: dest } if op == operation && $crate::frontend::oir::owned::vector_descriptors::same_result(dest, destination))
     {
         return Err(fail());
     }
@@ -173,7 +178,17 @@ fn function(
     }
     Ok(())
 }
-fn same_result(a: CallResult, b: CallResult) -> bool {
+    };
+}
+pub(super) use canonical_function;
+canonical_function!(
+    function,
+    Function,
+    crate::frontend::builtin_catalog::vector::Signature,
+    Vector
+);
+
+pub(super) fn same_result(a: CallResult, b: CallResult) -> bool {
     matches!((a, b), (CallResult::Owned(a), CallResult::Owned(b)) if a == b)
         || matches!((a, b), (CallResult::Scalar(a), CallResult::Scalar(b)) if a == b)
 }

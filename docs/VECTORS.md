@@ -1,7 +1,8 @@
 # Growable vectors
 
 Use `alloc::vec::Vec<T>` when the number of values changes at runtime. Create
-an empty vector with `new::<T>()`, add values, and read them with `values[index]`.
+an empty vector with `new::<T>()`. Scalar and Copy elements support indexing;
+owned records move into and out of the vector.
 
 ```oxid
 use alloc::vec::GrowStatus;
@@ -43,8 +44,10 @@ zero and NaN payloads.
 releases its storage. A vector is not `Copy`, including when `T` is `Copy`.
 Vectors can be fields and enum payloads. A finite record declared with
 `#[derive(Copy)]` can also be an element. Its fields must be scalar values or
-other checked Copy records. Vectors of vectors, records containing owned
-resources, enum elements, and stored or returned references are unavailable.
+other checked Copy records. Finite non-Copy records can contain buffers, files,
+scalar or Copy vectors, and finite enum payloads; use the owned-record operations
+below. Direct enum elements, nested vectors of owned records, and stored or
+returned references are unavailable.
 
 ## Store records
 
@@ -78,9 +81,41 @@ scalar elements. References to an individual element or field are unavailable.
 The [complete record-vector example](../examples/copy-record-vectors) covers
 all nine operations and generic slice helpers.
 
+## Store messages with owned resources
+
+Use a non-Copy record when each element owns a buffer or file. Reserve space
+with `try_reserve`, check for `GrowStatus::Ok`, then move a record into the
+vector with `push_reserved(&mut values, message)`. This insertion does not
+allocate and returns `()`; inserting without spare capacity stops execution.
+The moved message is no longer available to the caller.
+
+Check `len(&values)` before calling `pop_last(&mut values)`. It removes and
+returns the last record, transferring ownership to the caller. Pop the record
+before accessing its fields: indexing, slices, and references to individual
+owned-record elements are unavailable.
+
+These vectors provide eight functions: `new`, `len`, `capacity`, `try_reserve`,
+`push_reserved`, `pop_last`, `truncate`, and `take`. `truncate` releases removed
+records and their active resources. `take` transfers the allocation and leaves
+the source with zero length and capacity. Leaving scope releases the remaining
+records and storage. `try_push`, `try_extend`, and `try_resize` require Copy
+elements and do not accept these records.
+
+The [message example](../examples/owned-record-vectors) checks allocation
+results, transfers a batch, and removes its message:
+
+```sh
+cd examples/owned-record-vectors
+oxid run
+oxid test
+oxid build --profile release
+```
+
+`oxid run` prints `42`. Build the compiler from this source tree to use this API.
+
 ## Add, resize and move values
 
-Import each function from `alloc::vec`:
+For scalar and Copy elements, import each function from `alloc::vec`:
 
 | Function | Effect |
 | --- | --- |

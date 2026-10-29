@@ -65,6 +65,10 @@ impl CfgView for RawOwnedFunction {
             | OwnedInstruction::Vector {
                 destination: CallResult::Scalar(local),
                 ..
+            }
+            | OwnedInstruction::OwnedVector {
+                destination: CallResult::Scalar(local),
+                ..
             } => Some((*local, i.span)),
             OwnedInstruction::Scalar(Statement::Assign(a)) => Some((a.destination, a.span)),
             OwnedInstruction::ReadField { destination, .. }
@@ -108,7 +112,9 @@ impl CfgView for RawOwnedFunction {
                 visit(ScalarUse::Operand(*start))?;
                 visit(ScalarUse::Operand(*end))?;
             }
-            OwnedInstruction::Experimental { .. } | OwnedInstruction::Vector { .. } => {
+            OwnedInstruction::Experimental { .. }
+            | OwnedInstruction::Vector { .. }
+            | OwnedInstruction::OwnedVector { .. } => {
                 for parameter in &self.parameters {
                     if let ParameterBinding::Scalar(local) = parameter {
                         visit(ScalarUse::Operand(Operand {

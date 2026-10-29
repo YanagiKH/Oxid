@@ -18,6 +18,15 @@ pub(in crate::frontend::oir::owned) fn indexed(
     f: &RawOwnedFunction,
     instruction: &OwnedInstruction,
 ) -> IndexedAccessResult {
+    indexed_in_domain(declarations, f, instruction, None)
+}
+
+fn indexed_in_domain(
+    declarations: &Declarations,
+    f: &RawOwnedFunction,
+    instruction: &OwnedInstruction,
+    owned_operation: Option<crate::frontend::builtin_catalog::owned_vector::Function>,
+) -> IndexedAccessResult {
     let base_type = |base| match base {
         AccessBase::Owner(owner) => f
             .owners
@@ -29,6 +38,17 @@ pub(in crate::frontend::oir::owned) fn indexed(
         AccessBase::Loan(loan) => f.loans.get(loan.0).map(LoanDecl::referent),
     };
     match instruction {
+        OwnedInstruction::OwnedVector { operation, .. } => {
+            if owned_operation == Some(*operation) {
+                // These whole-owner operations have no element-index scratch.
+                Ok(None)
+            } else {
+                Err(AdmissionFailure::new(
+                    "owned vector operation requires a complete consumer plan",
+                    Some(f.span),
+                ))
+            }
+        }
         OwnedInstruction::ReadIndex { base, index, .. }
         | OwnedInstruction::WriteIndex { base, index, .. } => Ok(match base_type(*base) {
             Some(BorrowedTy::Exact(AggregateTy::Vector(element))) => {
@@ -77,13 +97,42 @@ pub(in crate::frontend::oir::owned) fn frame_bytes(
     declarations: &Declarations,
     f: &RawOwnedFunction,
 ) -> Result<usize, AdmissionFailure> {
+    frame_bytes_in_domain(declarations, f, None)
+}
+
+pub(in crate::frontend::oir::owned) fn frame_bytes_with_witness<W: PlanWitness>(
+    witness: &W,
+    f: &RawOwnedFunction,
+) -> Result<usize, AdmissionFailure> {
+    if !witness
+        .functions()
+        .get(f.id.0)
+        .is_some_and(|actual| std::ptr::eq(actual, f))
+    {
+        return Err(AdmissionFailure::new(
+            "native storage foreign function",
+            Some(f.span),
+        ));
+    }
+    frame_bytes_in_domain(
+        witness.declarations(),
+        f,
+        witness.owned_vector_operation(f.id),
+    )
+}
+
+fn frame_bytes_in_domain(
+    declarations: &Declarations,
+    f: &RawOwnedFunction,
+    owned_operation: Option<crate::frontend::builtin_catalog::owned_vector::Function>,
+) -> Result<usize, AdmissionFailure> {
     for block in &f.blocks {
         for statement in &block.statements {
             if matches!(
                 statement.kind,
                 OwnedInstruction::CopyIndexInitialize { .. }
                     | OwnedInstruction::CopyIndexWrite { .. }
-            ) || indexed(declarations, f, &statement.kind)?.is_some()
+            ) || indexed_in_domain(declarations, f, &statement.kind, owned_operation)?.is_some()
             {
                 return Ok(INDEX_BYTES);
             }

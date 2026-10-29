@@ -39,6 +39,10 @@ const BYTEBUF_HEADER: &str = include_str!("../../native/experimental_bytebuf.h")
 const VECTOR_CORE: &str = include_str!("../../native/experimental_vector.c");
 const VECTOR_HEADER: &str = include_str!("../../native/experimental_vector.h");
 const VECTOR_ADAPTER: &str = include_str!("../../native/typed_vector.c");
+const OWNED_RECORD_CORE: &str = include_str!("../../native/experimental_owned_record.c");
+const OWNED_RECORD_HEADER: &str = include_str!("../../native/experimental_owned_record.h");
+const OWNED_VECTOR_CORE: &str = include_str!("../../native/experimental_owned_vector.c");
+const OWNED_VECTOR_HEADER: &str = include_str!("../../native/experimental_owned_vector.h");
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 pub(crate) mod doctor;
 pub(super) mod library;
@@ -531,9 +535,37 @@ fn compile_inner(
         } else {
             ""
         };
+        let owned_vectors = if module
+            .lines()
+            .any(|line| line == "declare ptr @__oxid_owned_vector_heap()")
+        {
+            fs::write(
+                workspace.0.join("experimental_owned_record.c"),
+                OWNED_RECORD_CORE,
+            )
+            .map_err(io)?;
+            fs::write(
+                workspace.0.join("experimental_owned_record.h"),
+                OWNED_RECORD_HEADER,
+            )
+            .map_err(io)?;
+            fs::write(
+                workspace.0.join("experimental_owned_vector.c"),
+                OWNED_VECTOR_CORE,
+            )
+            .map_err(io)?;
+            fs::write(
+                workspace.0.join("experimental_owned_vector.h"),
+                OWNED_VECTOR_HEADER,
+            )
+            .map_err(io)?;
+            "#define OXID_OWNED_VECTOR_RUNTIME 1\n#define OXID_OWNED_VECTOR_SCHEMAS 1\n"
+        } else {
+            ""
+        };
         fs::write(
             workspace.0.join("runtime.c"),
-            format!("{record_schemas}{RUNTIME}\n#include \"typed_bytebuf.c\"\n{arguments}"),
+            format!("{record_schemas}{owned_vectors}{RUNTIME}\n#include \"typed_bytebuf.c\"\n{arguments}"),
         )
         .map_err(io)?;
     }

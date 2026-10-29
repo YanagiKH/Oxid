@@ -137,7 +137,10 @@ fn value_type(ty: ValueTy) -> String {
         ValueTy::Scalar(ty) => object([("mode", json_string("scalar")), ("type", scalar_type(ty))]),
         ValueTy::Owned(aggregate) => object([
             ("mode", json_string("owned")),
-            ("record", record_id(aggregate).0.to_string()),
+            (
+                "record",
+                record_id(aggregate).map_or_else(|| "null".into(), |id| id.0.to_string()),
+            ),
         ]),
     }
 }
@@ -318,6 +321,9 @@ fn scalar_statement(value: &Statement) -> String {
 
 fn instruction(value: &OwnedInstruction) -> String {
     match value {
+        OwnedInstruction::OwnedVector { .. } => {
+            object([("unsupported", json_string("owned-vector"))])
+        }
         OwnedInstruction::PrepareBorrowRange { .. }
         | OwnedInstruction::Experimental { .. }
         | OwnedInstruction::Vector { .. }
@@ -545,7 +551,10 @@ fn raw_function(value: &RawOwnedFunction) -> String {
                                         ("mode", borrow_kind(reference.kind)),
                                         (
                                             "record",
-                                            borrowed_record_id(reference.referent()).0.to_string(),
+                                            borrowed_record_id(reference.referent()).map_or_else(
+                                                || "null".into(),
+                                                |id| id.0.to_string(),
+                                            ),
                                         ),
                                     ]),
                                 )
@@ -594,7 +603,11 @@ fn raw_function(value: &RawOwnedFunction) -> String {
             array(value.owners.iter().enumerate().map(|(id, owner)| {
                 object([
                     ("id", id.to_string()),
-                    ("record", record_id(owner.aggregate()).0.to_string()),
+                    (
+                        "record",
+                        record_id(owner.aggregate())
+                            .map_or_else(|| "null".into(), |id| id.0.to_string()),
+                    ),
                     ("span", span(owner.span)),
                     ("kind", owner_kind(owner.kind)),
                 ])
@@ -607,7 +620,8 @@ fn raw_function(value: &RawOwnedFunction) -> String {
                     ("id", id.to_string()),
                     (
                         "record",
-                        borrowed_record_id(reference.referent()).0.to_string(),
+                        borrowed_record_id(reference.referent())
+                            .map_or_else(|| "null".into(), |id| id.0.to_string()),
                     ),
                     ("mode", borrow_kind(reference.kind)),
                     ("position", reference.position.to_string()),
@@ -632,7 +646,11 @@ fn raw_function(value: &RawOwnedFunction) -> String {
                     ),
                     ("authority", access_base(loan.authority)),
                     ("mode", borrow_kind(loan.kind)),
-                    ("record", borrowed_record_id(loan.referent()).0.to_string()),
+                    (
+                        "record",
+                        borrowed_record_id(loan.referent())
+                            .map_or_else(|| "null".into(), |id| id.0.to_string()),
+                    ),
                     ("span", span(loan.span)),
                 ])
             })),
@@ -1165,9 +1183,10 @@ mod candidate_mutations;
 #[path = "candidate_native.rs"]
 mod candidate_native;
 
-fn record_id(aggregate: AggregateTy) -> RecordId {
+fn record_id(aggregate: AggregateTy) -> Option<RecordId> {
     match aggregate {
-        AggregateTy::Record(record) => record,
+        AggregateTy::OwnedRecordVector(_) => None,
+        AggregateTy::Record(record) => Some(record),
         AggregateTy::FixedArray(_)
         | AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
@@ -1179,7 +1198,7 @@ fn record_id(aggregate: AggregateTy) -> RecordId {
     }
 }
 
-fn borrowed_record_id(referent: BorrowedTy) -> RecordId {
+fn borrowed_record_id(referent: BorrowedTy) -> Option<RecordId> {
     match referent {
         BorrowedTy::Exact(aggregate) => record_id(aggregate),
         BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => panic!("source slice gate"),

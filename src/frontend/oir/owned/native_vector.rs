@@ -182,7 +182,7 @@ struct RuntimeCarriers {
 }
 pub(super) const RUNTIME_BYTES: usize = size_of::<RuntimeCarriers>();
 
-pub(super) fn schemas(plan: &ExecutionPlan<'_>, out: &mut Emission) {
+pub(super) fn schemas<W: PlanWitness>(plan: &ExecutionPlan<'_, W>, out: &mut Emission) {
     let declarations = plan.witness().declarations();
     if !plan.uses_record_vectors() {
         return;
@@ -273,7 +273,11 @@ pub(super) fn schemas(plan: &ExecutionPlan<'_>, out: &mut Emission) {
     writeln!(out, "], align 8").unwrap();
 }
 
-pub(super) fn borrow_splits(plan: &ExecutionPlan<'_>, f: &RawOwnedFunction, loan: LoanId) -> bool {
+pub(super) fn borrow_splits<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    f: &RawOwnedFunction,
+    loan: LoanId,
+) -> bool {
     let declaration = &f.loans[loan.0];
     if declaration.projection.is_empty() {
         matches!(
@@ -288,10 +292,10 @@ pub(super) fn borrow_splits(plan: &ExecutionPlan<'_>, f: &RawOwnedFunction, loan
     }
 }
 
-pub(super) fn delivery(plan: &ExecutionPlan<'_>, id: hir::DefId) -> bool {
+pub(super) fn delivery<W: PlanWitness>(plan: &ExecutionPlan<'_, W>, id: hir::DefId) -> bool {
     plan.witness().vector_operation(id).is_some()
 }
-fn return_cost(plan: &ExecutionPlan<'_>, id: hir::DefId) -> usize {
+fn return_cost<W: PlanWitness>(plan: &ExecutionPlan<'_, W>, id: hir::DefId) -> usize {
     assert!(delivery(plan, id), "authenticated vector primitive");
     let f = &plan.witness().functions()[id.0];
     let end = f.blocks[0]
@@ -302,8 +306,8 @@ fn return_cost(plan: &ExecutionPlan<'_>, id: hir::DefId) -> usize {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn operation(
-    storage: &NativeFunctionStorage<'_, '_>,
+pub(super) fn operation<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     key: Function,
     destination: CallResult,
@@ -423,8 +427,8 @@ pub(super) fn operation(
     );
 }
 
-pub(super) fn index_pointer(
-    plan: &ExecutionPlan<'_>,
+pub(super) fn index_pointer<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     f: &RawOwnedFunction,
     name: &str,
     statement: &OwnedStatement,
@@ -498,8 +502,8 @@ pub(super) fn length(
 }
 
 #[allow(clippy::too_many_arguments)] // Existing checked loan and emission context.
-pub(super) fn borrow(
-    storage: &NativeFunctionStorage<'_, '_>,
+pub(super) fn borrow<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     loan: LoanId,
     pointer: &str,
@@ -567,8 +571,8 @@ pub(super) fn borrow(
 
 /// The checked record tag selects both dense stride and padded owner map.
 /// Whole-vector descriptors and already-proven slice ranges remain distinct.
-pub(super) fn record_index(
-    storage: &NativeFunctionStorage<'_, '_>,
+pub(super) fn record_index<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     statement: &OwnedStatement,
     diagnostics: &Diagnostics,

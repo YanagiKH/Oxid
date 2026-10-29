@@ -2,7 +2,10 @@
 use super::{
     plan::{self, ExecutionPlan},
     storage::*,
-    verified::{ProjectionAccess, ProjectionPermission, ProjectionRequest, VerifiedOwnedProgram},
+    verified::{
+        PlanWitness, ProjectionAccess, ProjectionPermission, ProjectionRequest,
+        VerifiedOwnedProgram,
+    },
     *,
 };
 use crate::frontend::build_config::{ExecutionPolicy, HOSTED_FUEL};
@@ -23,6 +26,8 @@ mod integers;
 
 #[path = "execute_experimental.rs"]
 mod experimental;
+#[path = "execute_owned_vector.rs"]
+mod owned_vector;
 #[path = "execute_vector.rs"]
 mod vector;
 pub(super) fn binary_delivery_control_bytes() -> usize {
@@ -232,8 +237,8 @@ struct ValueFrame<V> {
     return_to: Option<Resume>,
 }
 impl<V: StoredValue> ValueFrame<V> {
-    fn allocate(
-        plan: &ExecutionPlan<'_>,
+    fn allocate<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
         function: hir::DefId,
         activation: u64,
         return_to: Option<Resume>,
@@ -296,8 +301,8 @@ enum Access {
     Borrow(BorrowKind),
 }
 type Machine<'p, 'w> = ValueMachine<'p, 'w, Scalar>;
-struct ValueMachine<'p, 'w, V> {
-    plan: &'p ExecutionPlan<'w>,
+struct ValueMachine<'p, 'w, V, W: PlanWitness = VerifiedOwnedProgram> {
+    plan: &'p ExecutionPlan<'w, W>,
     frames: Vec<ValueFrame<V>>,
     limits: Limits,
     fuel: usize,
@@ -312,7 +317,7 @@ struct ValueMachine<'p, 'w, V> {
     #[cfg(test)]
     observer: array_observe::Observer,
 }
-impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
+impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
     fn function(&self, id: hir::DefId) -> &'w RawOwnedFunction {
         &self.plan.witness().functions()[id.0]
     }
@@ -541,7 +546,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 _ => self
                     .plan
                     .witness()
-                    .declarations()
                     .aggregate_layout(aggregate)
                     .map_err(|_| bad("alias view layout", span))?
                     .size() as u64,
@@ -589,7 +593,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         base: AccessBase,
         access: Access,
         span: Span,
-        permission: Option<&ProjectionPermission<'_>>,
+        permission: Option<&ProjectionPermission<'_, W>>,
     ) -> Result<OwnerKey> {
         let active = &self.frames[frame];
         let granted = permission.is_some_and(|permission| {
@@ -749,8 +753,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         let aggregate = owner.aggregate();
         self.plan
             .witness()
-            .declarations()
-            .check_aggregate_type(aggregate)
+            .aggregate_layout(aggregate)
             .map_err(|_| bad("payload aggregate type", span))?;
         Ok(aggregate)
     }
@@ -762,7 +765,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             | AggregateTy::ByteBuf
             | AggregateTy::File
             | AggregateTy::Vector(_)
-            | AggregateTy::RecordVector(_) => Err(bad("array aggregate type", span)),
+            | AggregateTy::RecordVector(_)
+            | AggregateTy::OwnedRecordVector(_) => Err(bad("array aggregate type", span)),
         }
     }
     fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
@@ -792,7 +796,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         }
         if matches!(
             root_type,
-            AggregateTy::Vector(_) | AggregateTy::RecordVector(_)
+            AggregateTy::Vector(_)
+                | AggregateTy::RecordVector(_)
+                | AggregateTy::OwnedRecordVector(_)
         ) && (view.offset != 0 || root_type != aggregate)
         {
             // Dynamic scalar slices take their checked packed-range path in
@@ -805,7 +811,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             _ => self
                 .plan
                 .witness()
-                .declarations()
                 .aggregate_layout(aggregate)
                 .map_err(|_| bad("view layout", span))?
                 .size(),
@@ -862,7 +867,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                         | AggregateTy::ByteBuf
                         | AggregateTy::File
                         | AggregateTy::Vector(_)
-                        | AggregateTy::RecordVector(_)),
+                        | AggregateTy::RecordVector(_)
+                        | AggregateTy::OwnedRecordVector(_)),
                     ),
                     relative,
                 ) = self
@@ -1132,7 +1138,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         };
         self.plan
             .witness()
-            .declarations()
             .check_borrowed_view(BorrowedTy::Exact(actual), expected)
             .map_err(|_| bad("base view type", span))?;
         Ok(view)
@@ -1167,7 +1172,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         let size = self
             .plan
             .witness()
-            .declarations()
             .aggregate_layout(aggregate)
             .map_err(|_| bad("payload aggregate layout", span))?
             .size();
@@ -1244,7 +1248,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .ok_or_else(|| bad("projection view type", span))?
             .aggregate();
         let declarations = self.plan.witness().declarations();
-        declarations
+        self.plan
+            .witness()
             .check_borrowed_view(BorrowedTy::Exact(actual), expected)
             .map_err(|_| bad("projection base type", span))?;
         let (ty, relative) = declarations
@@ -1255,7 +1260,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .ok_or_else(|| bad("projection view offset", span))?;
         let size = match ty {
             ValueTy::Scalar(ty) => scalar_size(ty),
-            ValueTy::Owned(aggregate) => declarations
+            ValueTy::Owned(aggregate) => self
+                .plan
+                .witness()
                 .aggregate_layout(aggregate)
                 .map_err(|_| bad("projection layout", span))?
                 .size(),
@@ -1467,7 +1474,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .aggregate();
         self.plan
             .witness()
-            .declarations()
             .same_aggregate_type(record, target)
             .map_err(|_| bad("nominal transfer", span))?;
         let source = self.owner_extent(from, span)?;
@@ -1481,16 +1487,14 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         // Sums have no static leaves. Snapshot only the checked active value,
         // before any destination write; caller state/epoch preflights precede us.
         if self.active_aggregate(record) {
-            self.preflight_active(from, source.clone(), record, destination.clone(), span)?;
-            #[cfg(test)]
-            let observation = self.observe_begin(to, StorageObservationKind::Transfer, true, span);
-            self.copy_active(from, source, to, destination, record, span)?;
-            #[cfg(test)]
-            {
-                self.record_event(Event::Transfer(from, initialized_destination));
-                self.observe_end(observation);
-            }
-            return Ok(());
+            self.preflight_active::<false>(
+                from,
+                source.clone(),
+                record,
+                destination.clone(),
+                span,
+            )?;
+            return self.copy_prevalidated_transfer(from, source, to, destination, record, span);
         }
         if matches!(record, AggregateTy::Enum(_)) {
             let value = self.load_enum(from, None, span)?;
@@ -1546,7 +1550,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         if self
             .plan
             .witness()
-            .declarations()
             .has_enum_record_nesting(aggregate)
             .expect("verified aggregate nesting")
         {
@@ -1555,7 +1558,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         if self
             .plan
             .witness()
-            .declarations()
             .contains_resources(aggregate)
             .expect("verified resource containment")
         {
@@ -1592,7 +1594,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .start
             .checked_add(member.offset())
             .ok_or_else(|| bad("record pattern field extent", span))?;
-        let size = declarations
+        let size = self
+            .plan
+            .witness()
             .aggregate_layout(aggregate)
             .map_err(|_| bad("record pattern field layout", span))?
             .size();
@@ -1602,8 +1606,38 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             .ok_or_else(|| bad("record pattern field extent", span))?;
         Ok((aggregate, start..end))
     }
-    fn preflight_active(
-        &self,
+    /// No new admission or fuel debit after the caller has validated the full
+    /// active source and destination. Replacement can release its old value
+    /// between that preflight and this commit without a second fallible scan.
+    fn copy_prevalidated_transfer(
+        &mut self,
+        from: OwnerKey,
+        source: std::ops::Range<usize>,
+        to: OwnerKey,
+        destination: std::ops::Range<usize>,
+        aggregate: AggregateTy,
+        span: Span,
+    ) -> Result<()> {
+        #[cfg(test)]
+        let initialized_destination = OwnerKey {
+            generation: epoch(to.generation, span)?,
+            ..to
+        };
+        #[cfg(test)]
+        let observation = self.observe_begin(to, StorageObservationKind::Transfer, true, span);
+        self.copy_active(from, source, to, destination, aggregate, span)?;
+        #[cfg(test)]
+        {
+            self.record_event(Event::Transfer(from, initialized_destination));
+            self.observe_end(observation);
+        }
+        Ok(())
+    }
+
+    // Moves pay for resource admission. Release maintenance performs the same
+    // scalar, tag and descriptor checks without spending user execution fuel.
+    fn preflight_active<const MAINTENANCE: bool>(
+        &mut self,
         from: OwnerKey,
         source: std::ops::Range<usize>,
         aggregate: AggregateTy,
@@ -1611,7 +1645,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         span: Span,
     ) -> Result<()> {
         let declarations = self.plan.witness().declarations();
-        if declarations
+        if self
+            .plan
+            .witness()
             .has_enum_record_nesting(aggregate)
             .map_err(|_| bad("composed aggregate identity", span))?
         {
@@ -1637,33 +1673,61 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 scalar_offset(destination.clone(), leaf.offset, leaf.ty, span)?;
             }
         }
-        resources::preflight(
-            declarations,
-            &self.heap,
-            aggregate,
-            &self.frames[from.frame as usize].payload[source],
-            destination.len(),
-            span,
-        )?;
+        if self.plan.uses_owned_vectors() {
+            let scope = if MAINTENANCE {
+                resources::RuntimeResourceScope::maintenance(self.plan.witness())
+            } else {
+                resources::RuntimeResourceScope::paid(self.plan.witness(), &mut self.fuel)
+            };
+            resources::preflight(
+                scope,
+                &self.heap,
+                aggregate,
+                &self.frames[from.frame as usize].payload[source],
+                destination.len(),
+                span,
+            )?;
+        } else {
+            resources::preflight(
+                declarations,
+                &self.heap,
+                aggregate,
+                &self.frames[from.frame as usize].payload[source],
+                destination.len(),
+                span,
+            )?;
+        }
         Ok(())
     }
     fn release_resources(&mut self, key: OwnerKey, span: Span) -> Result<()> {
         let aggregate = self.aggregate(key, span)?;
         let declarations = self.plan.witness().declarations();
-        if !declarations
+        if !self
+            .plan
+            .witness()
             .contains_resources(aggregate)
             .map_err(|_| bad("resource type", span))?
         {
             return Ok(());
         }
         let extent = self.owner_extent(key, span)?;
-        resources::release(
-            declarations,
-            &mut self.heap,
-            aggregate,
-            &self.frames[key.frame as usize].payload[extent],
-            span,
-        )
+        if self.plan.uses_owned_vectors() {
+            resources::release(
+                resources::RuntimeResourceScope::maintenance(self.plan.witness()),
+                &mut self.heap,
+                aggregate,
+                &self.frames[key.frame as usize].payload[extent],
+                span,
+            )
+        } else {
+            resources::release(
+                declarations,
+                &mut self.heap,
+                aggregate,
+                &self.frames[key.frame as usize].payload[extent],
+                span,
+            )
+        }
     }
     /// The caller validates every active cell and both ownership transitions
     /// before entering here. Source and destination have disjoint storage, so
@@ -1677,15 +1741,15 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         aggregate: AggregateTy,
         span: Span,
     ) -> Result<()> {
-        let declarations = self.plan.witness().declarations();
+        let witness = self.plan.witness();
         let source_frame = from.frame as usize;
         let destination_frame = to.frame as usize;
         if source_frame == destination_frame {
             let bytes = &mut self.frames[source_frame].payload;
             if source.end <= destination.start {
                 let (before, after) = bytes.split_at_mut(destination.start);
-                copy_active_bytes_for::<V>(
-                    declarations,
+                copy_active_bytes_with_witness::<V, W>(
+                    witness,
                     aggregate,
                     &before[source],
                     &mut after[..destination.len()],
@@ -1693,8 +1757,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 )
             } else if destination.end <= source.start {
                 let (before, after) = bytes.split_at_mut(source.start);
-                copy_active_bytes_for::<V>(
-                    declarations,
+                copy_active_bytes_with_witness::<V, W>(
+                    witness,
                     aggregate,
                     &after[..source.len()],
                     &mut before[destination],
@@ -1705,8 +1769,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             }
         } else if source_frame < destination_frame {
             let (before, after) = self.frames.split_at_mut(destination_frame);
-            copy_active_bytes_for::<V>(
-                declarations,
+            copy_active_bytes_with_witness::<V, W>(
+                witness,
                 aggregate,
                 &before[source_frame].payload[source],
                 &mut after[0].payload[destination],
@@ -1714,8 +1778,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
             )
         } else {
             let (before, after) = self.frames.split_at_mut(source_frame);
-            copy_active_bytes_for::<V>(
-                declarations,
+            copy_active_bytes_with_witness::<V, W>(
+                witness,
                 aggregate,
                 &after[0].payload[source],
                 &mut before[destination_frame].payload[destination],
@@ -1750,7 +1814,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     .ok_or_else(|| bad("enum payload offset", span))?,
             )
             .ok_or_else(|| bad("enum payload range", span))?;
-        let size = declarations
+        let size = self
+            .plan
+            .witness()
             .aggregate_layout(aggregate)
             .map_err(|_| bad("enum payload layout", span))?
             .size();
@@ -1876,7 +1942,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
         }
         self.plan
             .witness()
-            .declarations()
             .check_borrowed_view(BorrowedTy::Exact(actual), descriptor.referent())
             .map_err(|_| bad("loan borrowed view", span))?;
         view = if matches!(
@@ -2545,6 +2610,12 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 operation,
                 destination,
             } => self.experimental(frame, *operation, *destination, span)?,
+            OwnedInstruction::OwnedVector { .. } => {
+                return Err(bad(
+                    "owned vector operation requires a complete consumer",
+                    span,
+                ));
+            }
             OwnedInstruction::Vector { .. } => {
                 return Err(bad("vector operation requires prepared delivery", span));
             }
@@ -2578,7 +2649,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 }
                 let tag_offset =
                     scalar_offset(self.owner_extent(to, span)?, 0, hir::Ty::I32, span)?;
-                self.preflight_active(
+                self.preflight_active::<false>(
                     from,
                     source.clone(),
                     aggregate,
@@ -2632,7 +2703,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 if source.start < destination_extent.end && destination_extent.start < source.end {
                     return Err(bad("overlapping whole transfer", span));
                 }
-                self.preflight_active(
+                self.preflight_active::<false>(
                     from,
                     source.clone(),
                     aggregate,
@@ -2740,7 +2811,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     let destination_extent = self.owner_extent(to, span)?;
                     self.plan
                         .witness()
-                        .declarations()
                         .same_aggregate_type(aggregate, self.aggregate(to, span)?)
                         .map_err(|_| bad("record pattern destination type", span))?;
                     if root_extent.start < destination_extent.end
@@ -2748,7 +2818,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     {
                         return Err(bad("overlapping record pattern transfer", span));
                     }
-                    self.preflight_active(
+                    self.preflight_active::<false>(
                         from,
                         source_extent,
                         aggregate,
@@ -2815,7 +2885,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                                 .get(source.0)
                                 .filter(|owner| owner.kind == OwnerKind::Temporary)
                                 .ok_or_else(|| bad("construction owned stage", span))?;
-                            declarations
+                            self.plan
+                                .witness()
                                 .same_aggregate_type(source_decl.aggregate(), expected)
                                 .map_err(|_| bad("construction owned type", span))?;
                             let from = self.base(
@@ -2840,14 +2911,15 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                                     .ok_or_else(|| bad("construction resource extent", span))?;
                                 let end = start
                                     .checked_add(
-                                        declarations
+                                        self.plan
+                                            .witness()
                                             .aggregate_layout(expected)
                                             .map_err(|_| bad("construction resource layout", span))?
                                             .size(),
                                     )
                                     .filter(|end| *end <= destination_extent.end)
                                     .ok_or_else(|| bad("construction resource extent", span))?;
-                                self.preflight_active(
+                                self.preflight_active::<false>(
                                     from,
                                     source_extent,
                                     expected,
@@ -2902,7 +2974,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                             {
                                 let start = destination_extent.start + field.offset();
                                 let end = start
-                                    + declarations
+                                    + self
+                                        .plan
+                                        .witness()
                                         .aggregate_layout(aggregate)
                                         .map_err(|_| bad("construction resource layout", span))?
                                         .size();
@@ -3193,7 +3267,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 let aggregate = self.aggregate(key, span)?;
                 if self.active_aggregate(aggregate) {
                     let extent = self.owner_extent(key, span)?;
-                    self.preflight_active(key, extent.clone(), aggregate, extent, span)?;
+                    self.preflight_active::<true>(key, extent.clone(), aggregate, extent, span)?;
                 } else if matches!(aggregate, AggregateTy::Enum(_)) {
                     self.load_enum(key, None, span)?;
                 }
@@ -3284,26 +3358,49 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     return Err(bad("overlapping whole transfer", span));
                 }
                 let to = self.raw_key(frame, *destination);
+                let mut admitted_replacement = None;
                 if replacing && self.frames[frame].owners[destination.0].state == AVAILABLE {
                     let aggregate = self.aggregate(from, span)?;
                     if self
                         .plan
                         .witness()
-                        .declarations()
                         .contains_resources(aggregate)
                         .map_err(|_| bad("resource type", span))?
                     {
-                        self.preflight_active(
+                        let source_extent = self.owner_extent(from, span)?;
+                        let destination_extent = self.owner_extent(to, span)?;
+                        if self.plan.uses_owned_vectors() {
+                            self.plan
+                                .witness()
+                                .same_aggregate_type(aggregate, self.aggregate(to, span)?)
+                                .map_err(|_| bad("nominal replacement", span))?;
+                        }
+                        self.preflight_active::<false>(
                             from,
-                            self.owner_extent(from, span)?,
+                            source_extent.clone(),
                             aggregate,
-                            self.owner_extent(to, span)?,
+                            destination_extent.clone(),
                             span,
                         )?;
+                        if self.plan.uses_owned_vectors() {
+                            admitted_replacement =
+                                Some((source_extent, aggregate, destination_extent));
+                        }
                         self.release_resources(to, span)?;
                     }
                 }
-                self.transfer_payload(from, to, span)?;
+                if let Some((source_extent, aggregate, destination_extent)) = admitted_replacement {
+                    self.copy_prevalidated_transfer(
+                        from,
+                        source_extent,
+                        to,
+                        destination_extent,
+                        aggregate,
+                        span,
+                    )?;
+                } else {
+                    self.transfer_payload(from, to, span)?;
+                }
                 if !copying {
                     self.change_owner(frame, *source, MOVED, span)?;
                 }
@@ -3505,7 +3602,6 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     if self
                         .plan
                         .witness()
-                        .declarations()
                         .check_borrowed_view(BorrowedTy::Exact(actual_view), declared.referent())
                         .is_err()
                         || self.loan_kind(handle.permission, span)? != declared.kind
@@ -3519,12 +3615,13 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                     let record = callee.owners[destination.0].aggregate();
                     self.plan
                         .witness()
-                        .declarations()
                         .same_aggregate_type(record, f.owners[source.0].aggregate())
                         .map_err(|_| bad("incoming owned type", span))?;
                     let offset = self.plan.function(callee.id).owner_offset(*destination);
                     let declarations = self.plan.witness().declarations();
-                    let size = declarations
+                    let size = self
+                        .plan
+                        .witness()
                         .aggregate_layout(record)
                         .map_err(|_| bad("incoming aggregate layout", span))?
                         .size();
@@ -3534,7 +3631,7 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                         .ok_or_else(|| bad("incoming aggregate range", span))?;
                     let owned_enum = self.active_aggregate(record);
                     let active = if owned_enum {
-                        self.preflight_active(
+                        self.preflight_active::<false>(
                             key,
                             self.owner_extent(key, span)?,
                             record,
@@ -3593,8 +3690,8 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                         };
                     if owned_enum {
                         let source_extent = self.owner_extent(key, span)?;
-                        copy_active_bytes_for::<V>(
-                            declarations,
+                        copy_active_bytes_with_witness::<V, W>(
+                            self.plan.witness(),
                             record,
                             &self.frames[frame].payload[source_extent],
                             &mut child.payload[offset..end],
@@ -3774,7 +3871,9 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 let span = plan::instruction_span(statement);
                 if !matches!(
                     statement.kind,
-                    OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. }
+                    OwnedInstruction::ReadStdin { .. }
+                        | OwnedInstruction::WriteStdout { .. }
+                        | OwnedInstruction::OwnedVector { .. }
                 ) {
                     self.charge(self.plan.statement_cost(f.id, &statement.kind), span)?;
                 }
@@ -3805,6 +3904,14 @@ impl<'p, 'w, V: StoredValue> ValueMachine<'p, 'w, V> {
                 } = statement.kind
                 {
                     self.vector_delivery(frame, operation, destination, span)?;
+                    continue;
+                }
+                if let OwnedInstruction::OwnedVector {
+                    operation,
+                    destination,
+                } = statement.kind
+                {
+                    self.owned_vector_delivery(frame, operation, destination, span)?;
                     continue;
                 }
                 self.statement(frame, &statement.kind, span)?;
@@ -3945,7 +4052,8 @@ impl<V: StoredValue> Iterator for ValueCells<'_, V> {
                 AggregateTy::ByteBuf
                 | AggregateTy::File
                 | AggregateTy::Vector(_)
-                | AggregateTy::RecordVector(_),
+                | AggregateTy::RecordVector(_)
+                | AggregateTy::OwnedRecordVector(_),
             ) => None,
             ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
                 let result = (|| {
@@ -3997,19 +4105,41 @@ fn copy_active_bytes(
     destination: &mut [u8],
     span: Span,
 ) -> Result<()> {
-    copy_active_bytes_for::<Scalar>(declarations, aggregate, source, destination, span)
+    copy_active_bytes_for::<Scalar, _>(declarations, aggregate, source, destination, span)
 }
 
-fn copy_active_bytes_for<V: StoredValue>(
-    declarations: &Declarations,
+fn copy_active_bytes_with_witness<V: StoredValue, W: PlanWitness>(
+    witness: &W,
     aggregate: AggregateTy,
     source: &[u8],
     destination: &mut [u8],
     span: Span,
 ) -> Result<()> {
-    if declarations
-        .has_enum_record_nesting(aggregate)
-        .map_err(|_| bad("composed aggregate identity", span))?
+    if witness.uses_owned_vectors() {
+        copy_active_bytes_for::<V, _>(
+            resources::RuntimeResourceScope::maintenance(witness),
+            aggregate,
+            source,
+            destination,
+            span,
+        )
+    } else {
+        copy_active_bytes_for::<V, _>(witness.declarations(), aggregate, source, destination, span)
+    }
+}
+
+fn copy_active_bytes_for<'a, V: StoredValue, Q: resources::ResourceQueries<'a>>(
+    queries: Q,
+    aggregate: AggregateTy,
+    source: &[u8],
+    destination: &mut [u8],
+    span: Span,
+) -> Result<()> {
+    let declarations = queries.declarations();
+    if !matches!(aggregate, AggregateTy::OwnedRecordVector(_))
+        && declarations
+            .has_enum_record_nesting(aggregate)
+            .map_err(|_| bad("composed aggregate identity", span))?
     {
         for cell in
             composition::Cells::<V>::new(declarations, source, 0..source.len(), aggregate, span)
@@ -4025,7 +4155,7 @@ fn copy_active_bytes_for<V: StoredValue>(
             value.encode(destination, offset, span)?;
         }
     }
-    resources::copy(declarations, aggregate, source, destination, span)?;
+    resources::copy(queries, aggregate, source, destination, span)?;
     Ok(())
 }
 
@@ -4175,12 +4305,12 @@ fn encode(bytes: &mut [u8], offset: usize, value: Scalar, span: Span) -> Result<
     }
     Ok(())
 }
-pub(super) fn run(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> Result<Scalar> {
+pub(super) fn run<W: PlanWitness>(witness: &W, entry: Option<hir::DefId>) -> Result<Scalar> {
     run_limits(witness, entry, Limits::default())
 }
 
-pub(super) fn run_result(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn run_result<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     limits: Limits,
     execution: ExecutionPolicy,
@@ -4190,15 +4320,15 @@ pub(super) fn run_result(
     execute_result_plan(&plan, entry, limits, EntryPolicy::Result, execution)
 }
 
-fn execute_result_plan(
-    plan: &ExecutionPlan<'_>,
+fn execute_result_plan<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     entry: hir::DefId,
     limits: Limits,
     policy: EntryPolicy,
     execution: ExecutionPolicy,
 ) -> Result<RuntimeValue> {
     if plan.uses_quad_scalars() {
-        execute_plan_policy::<RuntimeValue>(
+        execute_plan_policy::<RuntimeValue, W>(
             plan,
             entry,
             limits,
@@ -4216,8 +4346,8 @@ fn execute_result_plan(
     }
 }
 
-pub(super) fn run_value(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn run_value<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     limits: Limits,
     execution: ExecutionPolicy,
@@ -4230,15 +4360,15 @@ pub(super) fn run_value(
     execute_value_plan(&plan, entry, limits, EntryPolicy::Result, execution)
 }
 
-fn execute_value_plan(
-    plan: &ExecutionPlan<'_>,
+fn execute_value_plan<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     entry: hir::DefId,
     limits: Limits,
     policy: EntryPolicy,
     execution: ExecutionPolicy,
 ) -> Result<RuntimeScalar> {
     if plan.uses_wide_scalars() {
-        execute_plan_policy::<RuntimeScalar>(
+        execute_plan_policy::<RuntimeScalar, W>(
             plan,
             entry,
             limits,
@@ -4252,7 +4382,7 @@ fn execute_value_plan(
             None,
         )
     } else {
-        execute_plan_policy::<Scalar>(
+        execute_plan_policy::<Scalar, W>(
             plan,
             entry,
             limits,
@@ -4268,8 +4398,8 @@ fn execute_value_plan(
         .map(RuntimeScalar::from)
     }
 }
-pub(super) fn run_with_execution(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn run_with_execution<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     execution: ExecutionPolicy,
 ) -> Result<Scalar> {
@@ -4292,8 +4422,8 @@ pub(super) fn run_with_execution(
         None,
     )
 }
-pub(super) fn run_limits(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn run_limits<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     limits: Limits,
 ) -> Result<Scalar> {
@@ -4307,7 +4437,7 @@ pub(super) fn run_limits(
         None,
     )
 }
-fn checked_entry(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> Result<hir::DefId> {
+fn checked_entry<W: PlanWitness>(witness: &W, entry: Option<hir::DefId>) -> Result<hir::DefId> {
     let entry = checked_entry_policy(witness, entry, EntryPolicy::Result)?;
     let function = &witness.functions()[entry.0];
     if function.result == ValueTy::Scalar(hir::Ty::U8) {
@@ -4315,8 +4445,8 @@ fn checked_entry(witness: &VerifiedOwnedProgram, entry: Option<hir::DefId>) -> R
     }
     Ok(entry)
 }
-fn checked_entry_policy(
-    witness: &VerifiedOwnedProgram,
+fn checked_entry_policy<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
@@ -4387,8 +4517,8 @@ fn checked_entry_policy(
     }
     Ok(entry)
 }
-fn execute_plan(
-    plan: &ExecutionPlan<'_>,
+fn execute_plan<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     entry: hir::DefId,
     limits: Limits,
     #[cfg(test)] events: Option<&mut Vec<Event>>,
@@ -4406,8 +4536,8 @@ fn execute_plan(
         None,
     )
 }
-fn execute_plan_inner(
-    plan: &ExecutionPlan<'_>,
+fn execute_plan_inner<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     entry: hir::DefId,
     limits: Limits,
     policy: EntryPolicy,
@@ -4431,8 +4561,8 @@ fn execute_plan_inner(
 }
 
 #[allow(clippy::too_many_arguments)] // Execution policy plus unchanged private observation sinks.
-fn execute_plan_policy<V: StoredValue>(
-    plan: &ExecutionPlan<'_>,
+fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     entry: hir::DefId,
     limits: Limits,
     policy: EntryPolicy,
@@ -4459,7 +4589,7 @@ fn execute_plan_policy<V: StoredValue>(
     }
     let limits = limits.bounded();
     let f = &plan.witness().functions()[entry.0];
-    let mut machine = ValueMachine::<V> {
+    let mut machine = ValueMachine::<V, W> {
         plan,
         frames: Vec::new(),
         limits,
@@ -4472,7 +4602,14 @@ fn execute_plan_policy<V: StoredValue>(
             plan::mul(limits.frames, size_of::<ValueFrame<V>>())?,
             plan::add(
                 if plan.uses_dynamic_resources() {
-                    plan::add(size_of::<byte_buffer::Heap>(), resources::control_bytes())?
+                    plan::add(
+                        plan::add(size_of::<byte_buffer::Heap>(), resources::control_bytes())?,
+                        if plan.uses_owned_vectors() {
+                            resources::owned_control_bytes::<W>()
+                        } else {
+                            0
+                        },
+                    )?
                 } else {
                     0
                 },
@@ -4497,6 +4634,10 @@ fn execute_plan_policy<V: StoredValue>(
                         }
                 } else if plan.uses_typed_ranges() {
                     vector::range_control_bytes()
+                } else {
+                    0
+                } + if plan.uses_owned_vectors() {
+                    owned_vector::control_bytes::<V, W>()
                 } else {
                     0
                 } + if plan.has_program_arguments() {
@@ -4633,24 +4774,24 @@ fn execute_plan_policy<V: StoredValue>(
 /// machine storage and all owners are dropped inside the ordinary executor.
 /// SIGPIPE setup precedes entry diagnostics, planning and the activation guard.
 /// Every driver must turn ProcessSetup into a silent status 74.
-pub(super) fn run_process_limits(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn run_process_limits<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     limits: Limits,
 ) -> Result<Scalar> {
     run_process_policy(witness, entry, limits, ExecutionPolicy::Bounded)
 }
 
-pub(super) fn run_process_with_execution(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn run_process_with_execution<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     execution: ExecutionPolicy,
 ) -> Result<Scalar> {
     run_process_policy(witness, entry, Limits::default(), execution)
 }
 
-fn run_process_policy(
-    witness: &VerifiedOwnedProgram,
+fn run_process_policy<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     limits: Limits,
     execution: ExecutionPolicy,
@@ -4671,6 +4812,60 @@ fn run_process_policy(
             witness.functions()[entry.0].span,
         ))
 }
+#[cfg(test)]
+pub(super) fn observe_witness<W: PlanWitness>(
+    witness: &W,
+    entry: Option<hir::DefId>,
+    limits: Limits,
+    execution: ExecutionPolicy,
+) -> (Result<Scalar>, usize) {
+    let mut remaining = execution.initial_fuel(limits.bounded().fuel);
+    let result = (|| {
+        let entry = checked_entry_policy(witness, entry, EntryPolicy::Result)?;
+        let plan = ExecutionPlan::build(witness)?;
+        let span = witness.functions()[entry.0].span;
+        if plan.uses_quad_scalars() {
+            execute_plan_policy::<RuntimeValue, W>(
+                &plan,
+                entry,
+                limits,
+                EntryPolicy::Result,
+                execution,
+                None,
+                None,
+                Some(&mut remaining),
+            )?
+            .narrow()
+            .ok_or_else(|| bad("test scalar observation", span))
+        } else if plan.uses_wide_scalars() {
+            execute_plan_policy::<RuntimeScalar, W>(
+                &plan,
+                entry,
+                limits,
+                EntryPolicy::Result,
+                execution,
+                None,
+                None,
+                Some(&mut remaining),
+            )?
+            .narrow()
+            .ok_or_else(|| bad("test scalar observation", span))
+        } else {
+            execute_plan_policy::<Scalar, W>(
+                &plan,
+                entry,
+                limits,
+                EntryPolicy::Result,
+                execution,
+                None,
+                None,
+                Some(&mut remaining),
+            )
+        }
+    })();
+    (result, remaining)
+}
+
 #[cfg(test)]
 pub(super) fn run_observed(
     witness: &VerifiedOwnedProgram,
@@ -4733,6 +4928,14 @@ pub(super) fn run_array_observed(
 mod tests;
 
 #[cfg(test)]
+#[path = "execute_owned_vector_tests.rs"]
+mod owned_vector_tests;
+
+#[cfg(test)]
+#[path = "execute_owned_vector_entry_tests.rs"]
+mod owned_vector_entry_tests;
+
+#[cfg(test)]
 #[path = "builtin_output_reference_tests.rs"]
 mod output_tests;
 
@@ -4761,7 +4964,8 @@ fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
         | AggregateTy::ByteBuf
         | AggregateTy::File
         | AggregateTy::Vector(_)
-        | AggregateTy::RecordVector(_) => Err(bad("unsupported aggregate carrier", span)),
+        | AggregateTy::RecordVector(_)
+        | AggregateTy::OwnedRecordVector(_) => Err(bad("unsupported aggregate carrier", span)),
     }
 }
 

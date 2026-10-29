@@ -116,6 +116,8 @@ pub(super) enum CandidateOrigin {
     CurrentGeneric(Box<[super::generics::Plan; 1]>),
     CurrentRanges,
     CurrentGenericRanges(Box<[super::generics::Plan; 1]>),
+    OwnedVectorBuild(Box<[super::generics::owned_candidate::BuildOwner; 1]>),
+    OwnedVectorPlan(Box<[super::generics::owned_candidate::OwnedGenericPlan; 1]>),
     Enum(CompactSpan),
     Builtin(CompactSpan),
     #[cfg(test)]
@@ -127,7 +129,9 @@ impl CandidateOrigin {
             Self::Current
             | Self::CurrentGeneric(_)
             | Self::CurrentRanges
-            | Self::CurrentGenericRanges(_) => None,
+            | Self::CurrentGenericRanges(_)
+            | Self::OwnedVectorBuild(..) => None,
+            Self::OwnedVectorPlan(plan) => Some(plan[0].origin()),
             Self::Enum(at) | Self::Builtin(at) => Some(at.span()),
             #[cfg(test)]
             Self::Output(at) => Some(at.span()),
@@ -294,6 +298,111 @@ fn experimental_endpoint(
     ))
 }
 
+fn owned_candidate_endpoint(
+    sources: SourceOwner<'_>,
+    path: QualifiedPathRef,
+    work: &WorkMeter,
+) -> Result<BuiltinItem, Box<Diagnostic>> {
+    let view = sources.import_path(path)?;
+    if view.root() == ast::PathRoot::Std && view.segments().len() == 3 {
+        for item in owned_vector::Item::ALL {
+            let mut selected = true;
+            for (name, segment) in item.path().into_iter().zip(view.segments()) {
+                if compare_bytes(sources.text(*segment)?, name, work, *segment)? != Ordering::Equal
+                {
+                    selected = false;
+                    break;
+                }
+            }
+            if selected {
+                return Ok(BuiltinItem::Vector(vector::Item::from_owned(item)));
+            }
+        }
+    }
+    current_builtin_endpoint(sources, path, work)
+}
+
+fn tables_builtin_endpoint(
+    tables: &Tables<'_>,
+    path: QualifiedPathRef,
+    work: &WorkMeter,
+) -> Result<BuiltinItem, Box<Diagnostic>> {
+    if matches!(
+        tables.candidate_source_origin,
+        CandidateOrigin::OwnedVectorBuild(..)
+    ) {
+        owned_candidate_endpoint(tables.sources, path, work)
+    } else {
+        current_builtin_endpoint(tables.sources, path, work)
+    }
+}
+
+/// Inert source-index candidate only. No public collector selects this route;
+/// the returned origin is deliberately rejected by executable source admission.
+pub(in crate::frontend) fn collect_owned_vector_candidate<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    metadata: usize,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<DeclarationIndex<'s>, Vec<Diagnostic>> {
+    let starting_work = work.used();
+    let bank = super::generics::owned_candidate::factory_bytes();
+    let fail = || {
+        vec![*resource(
+            "owned vector candidate factory metadata",
+            sources.eof(),
+        )]
+    };
+    let limits = IndexLimits {
+        retained: limits
+            .retained
+            .min(IndexLimits::default().retained)
+            .checked_sub(bank as u64)
+            .ok_or_else(fail)?,
+        scratch: limits
+            .scratch
+            .min(IndexLimits::default().scratch)
+            .checked_sub(bank as u64)
+            .ok_or_else(fail)?,
+        work: limits.work.min(IndexLimits::default().work),
+    };
+    let mut state =
+        super::generics::owned_candidate::BuildState::new(sources.eof(), metadata, limits)
+            .map_err(|e| vec![*e])?;
+    let mut facts = collect(
+        sources,
+        limits,
+        work,
+        allocator,
+        CollectionSyntax::OwnedVectorCandidate,
+    )
+    .map_err(|e| vec![*e])?;
+    state.set_collection_request(facts.plan.retained, facts.plan.scratch);
+    let ranges = matches!(
+        facts.tables.candidate_source_origin,
+        CandidateOrigin::CurrentRanges
+    );
+    let pending = allocator
+        .boxed_carrier(
+            super::generics::owned_candidate::BuildOwner::new(state, ranges),
+            "owned vector candidate planning owner",
+        )
+        .map_err(|_| fail())?;
+    facts.tables.candidate_source_origin = CandidateOrigin::OwnedVectorBuild(pending);
+    let mut index = facts.finish(work, allocator)?;
+    let used = work
+        .used()
+        .checked_sub(starting_work)
+        .ok_or_else(|| vec![*bad(sources.eof())])?;
+    if let CandidateOrigin::OwnedVectorPlan(owner) = &mut index.tables.candidate_source_origin {
+        owner[0].set_rebuild_work(used);
+    } else {
+        return Err(vec![*bad(sources.eof())]);
+    }
+    Ok(index)
+}
+
 #[derive(Debug)]
 pub(in crate::frontend) struct DeclarationFacts<'s> {
     tables: Tables<'s>,
@@ -395,6 +504,7 @@ pub(in crate::frontend) fn collect_output_candidate<'s>(
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CollectionSyntax {
+    OwnedVectorCandidate,
     #[cfg(test)]
     OutputCandidate,
     #[cfg(test)]
@@ -409,7 +519,7 @@ enum CollectionSyntax {
 }
 impl CollectionSyntax {
     fn std_policy(self) -> super::super::parser::StdImportPolicy {
-        if self == Self::Enabled {
+        if self == Self::Enabled || self == Self::OwnedVectorCandidate {
             return super::super::parser::StdImportPolicy::Enabled;
         }
         #[cfg(test)]
@@ -494,11 +604,19 @@ fn collect<'s>(
                     if syntax == CollectionSyntax::BuiltinCandidate {
                         builtin_endpoint(sources, path, work)?
                     } else {
-                        current_builtin_endpoint(sources, path, work)?
+                        if syntax == CollectionSyntax::OwnedVectorCandidate {
+                            owned_candidate_endpoint(sources, path, work)?
+                        } else {
+                            current_builtin_endpoint(sources, path, work)?
+                        }
                     }
                     #[cfg(not(test))]
                     {
-                        current_builtin_endpoint(sources, path, work)?
+                        if syntax == CollectionSyntax::OwnedVectorCandidate {
+                            owned_candidate_endpoint(sources, path, work)?
+                        } else {
+                            current_builtin_endpoint(sources, path, work)?
+                        }
                     }
                 };
                 // Complete file/start/end validation still follows catalog success.
@@ -714,6 +832,7 @@ fn collect<'s>(
                         .contains(experimental::Item::File),
                 )
                 + builtins.set().vector_templates()
+                + builtins.set().experimental().owned_vector_templates()
                 + usize::from(builtins.set().contains_vector(vector::Item::Vec)),
         ),
         (c.functions, builtins.set().extra_template_functions()),
@@ -1469,6 +1588,37 @@ impl<'s> DeclarationFacts<'s> {
             let plan = super::generics::Plan::build(&index, work, allocator)
                 .map_err(|error| vec![*error])?;
             let ranges = index.has_range_for();
+            if matches!(
+                index.tables.candidate_source_origin,
+                CandidateOrigin::OwnedVectorBuild(..)
+            ) {
+                let pending = std::mem::replace(
+                    &mut index.tables.candidate_source_origin,
+                    CandidateOrigin::Current,
+                );
+                let CandidateOrigin::OwnedVectorBuild(pending) = pending else {
+                    unreachable!()
+                };
+                let [pending] = *pending;
+                let owner = super::generics::owned_candidate::OwnedGenericPlan::finish(
+                    plan,
+                    pending
+                        .into_state(index.sources().eof())
+                        .map_err(|e| vec![*e])?,
+                    ranges,
+                )
+                .map_err(|e| vec![*e])?;
+                let owner = allocator
+                    .boxed_carrier(owner, "owned vector candidate frozen owner")
+                    .map_err(|_| {
+                        vec![*resource(
+                            "owned vector candidate frozen allocation",
+                            index.sources().eof(),
+                        )]
+                    })?;
+                index.tables.candidate_source_origin = CandidateOrigin::OwnedVectorPlan(owner);
+                return Ok(index);
+            }
             let plan = allocator
                 .boxed_carrier(plan, "generic instantiation owner")
                 .map_err(|_| {
@@ -1619,11 +1769,11 @@ fn stage_import(
             if matches!(tables.candidate_source_origin, CandidateOrigin::Builtin(_)) {
                 builtin_endpoint(tables.sources, path, work)?
             } else {
-                current_builtin_endpoint(tables.sources, path, work)?
+                tables_builtin_endpoint(tables, path, work)?
             }
             #[cfg(not(test))]
             {
-                current_builtin_endpoint(tables.sources, path, work)?
+                tables_builtin_endpoint(tables, path, work)?
             }
         };
         let handle = tables.builtin_handle(item)?;
@@ -1631,7 +1781,7 @@ fn stage_import(
             BuiltinItem::Enum(_) => (Some(handle), None),
             BuiltinItem::Function(_) => (None, Some(handle)),
             BuiltinItem::Vector(item) => {
-                if item.operation().is_some() {
+                if item.operation().is_some() || item.owned_item().is_some() {
                     (None, Some(handle))
                 } else {
                     (Some(handle), None)
@@ -1802,11 +1952,25 @@ impl<'s> DeclarationIndex<'s> {
                 | CandidateOrigin::CurrentGenericRanges(_)
         )
     }
+    /// Exact private construction origin. This is a read-only fact, not an
+    /// executable admission or permission to construct a source/raw owner.
+    pub fn is_owned_vector_candidate_pipeline(&self) -> bool {
+        matches!(
+            self.tables.candidate_source_origin,
+            CandidateOrigin::OwnedVectorPlan(_)
+        )
+    }
     /// Independently collected during the counted source argument walk.
     pub fn has_element_ranges(&self) -> bool {
         self.tables.has_element_ranges
     }
     pub fn has_range_for(&self) -> bool {
+        if let CandidateOrigin::OwnedVectorBuild(owner) = &self.tables.candidate_source_origin {
+            return owner[0].ranges();
+        }
+        if let CandidateOrigin::OwnedVectorPlan(plan) = &self.tables.candidate_source_origin {
+            return plan[0].ranges();
+        }
         matches!(
             self.tables.candidate_source_origin,
             CandidateOrigin::CurrentRanges | CandidateOrigin::CurrentGenericRanges(_)
@@ -2053,6 +2217,21 @@ impl<'s> DeclarationIndex<'s> {
             // No second linear key search is required to name its origin.
             return Ok(DeclarationOrigin::Builtin(BuiltinItem::Vector(key.item())));
         }
+        if let Some(rank) = id.0.checked_sub(base + self.vector_functions().len()) {
+            if let Some(key) = self.owned_vector_functions().get(rank) {
+                let item = match key.operation() {
+                    owned_vector::Operation::New => vector::Item::New,
+                    owned_vector::Operation::Len => vector::Item::Len,
+                    owned_vector::Operation::Capacity => vector::Item::Capacity,
+                    owned_vector::Operation::TryReserve => vector::Item::TryReserve,
+                    owned_vector::Operation::PushReserved => vector::Item::PushReserved,
+                    owned_vector::Operation::PopLast => vector::Item::PopLast,
+                    owned_vector::Operation::Truncate => vector::Item::Truncate,
+                    owned_vector::Operation::Take => vector::Item::Take,
+                };
+                return Ok(DeclarationOrigin::Builtin(BuiltinItem::Vector(item)));
+            }
+        }
         Err(bad(self.sources().eof()))
     }
     // Only checked view constructors use these narrow immutable projections.
@@ -2168,6 +2347,7 @@ impl<'s> DeclarationIndex<'s> {
         self.source_function_count()
             + self.builtin_set().extra_functions()
             + self.vector_functions().len()
+            + self.owned_vector_functions().len()
     }
     pub fn vector_functions(&self) -> &[vector::Function] {
         self.generic_plan()
@@ -2245,8 +2425,128 @@ impl<'s> DeclarationIndex<'s> {
             CandidateOrigin::CurrentGeneric(plan) | CandidateOrigin::CurrentGenericRanges(plan) => {
                 Some(&plan[0])
             }
+            CandidateOrigin::OwnedVectorPlan(plan) => Some(plan[0].ordinary()),
             _ => None,
         }
+    }
+    pub(super) fn owned_vector_builder(
+        &self,
+    ) -> Option<&std::sync::Mutex<super::generics::owned_candidate::BuildState>> {
+        match &self.tables.candidate_source_origin {
+            CandidateOrigin::OwnedVectorBuild(owner) => Some(owner[0].state()),
+            _ => None,
+        }
+    }
+    pub(super) fn owned_vector_plan(
+        &self,
+    ) -> Option<&super::generics::owned_candidate::OwnedGenericPlan> {
+        match &self.tables.candidate_source_origin {
+            CandidateOrigin::OwnedVectorPlan(plan) => Some(&plan[0]),
+            _ => None,
+        }
+    }
+    #[cfg(test)]
+    pub(super) fn alter_owned_candidate_for_test(
+        &mut self,
+        change: impl FnOnce(&mut super::generics::owned_candidate::OwnedGenericPlan),
+    ) {
+        let CandidateOrigin::OwnedVectorPlan(owner) = &mut self.tables.candidate_source_origin
+        else {
+            panic!("not an owned vector candidate");
+        };
+        change(&mut owner[0]);
+    }
+    #[cfg(test)]
+    pub(super) fn substitute_owned_candidate_source_for_test(&mut self, source: SourceOwner<'s>) {
+        assert!(self.owned_vector_plan().is_some());
+        self.tables.sources = source;
+    }
+    /// Inert source facts only. The candidate origin cannot pass the current
+    /// executable source guard and this lookup issues no raw or owned proof.
+    pub(in crate::frontend) fn owned_vector_function_id(
+        &self,
+        key: owned_vector::Function,
+        work: &WorkMeter,
+    ) -> Result<DefId, Box<Diagnostic>> {
+        let at = self.sources().eof();
+        if self.owned_vector_plan().is_none() {
+            return Err(bad(at));
+        }
+        let mut selected = None;
+        for (rank, candidate) in self.owned_vector_functions().iter().enumerate() {
+            work.debit(1, at, "owned vector source key identity")?;
+            if *candidate == key && selected.replace(rank).is_some() {
+                return Err(bad(at));
+            }
+        }
+        let rank = selected.ok_or_else(|| bad(at))?;
+        self.source_function_count()
+            .checked_add(self.builtin_set().extra_functions())
+            .and_then(|n| n.checked_add(self.vector_functions().len()))
+            .and_then(|n| n.checked_add(rank))
+            .map(DefId)
+            .ok_or_else(|| overflow(at))
+    }
+    pub(in crate::frontend) fn owned_vector_signature(
+        &self,
+        key: owned_vector::Function,
+        work: &WorkMeter,
+    ) -> Result<owned_vector::Signature, Box<Diagnostic>> {
+        self.owned_vector_function_id(key, work)?;
+        if self.record_is_copy(key.record_id())? {
+            return Err(bad(self.sources().eof()));
+        }
+        let grow = if key.operation().requires_grow_status() {
+            self.experimental_enum_id(experimental::Enumeration::Grow)?
+        } else {
+            EnumId(0)
+        };
+        Ok(key.concrete_signature(grow))
+    }
+    pub(in crate::frontend) fn owned_vector_anchor(
+        &self,
+        key: owned_vector::Function,
+        work: &WorkMeter,
+    ) -> Result<Span, Box<Diagnostic>> {
+        self.owned_vector_function_id(key, work)?;
+        let item = match key.operation() {
+            owned_vector::Operation::New => vector::Item::New,
+            owned_vector::Operation::Len => vector::Item::Len,
+            owned_vector::Operation::Capacity => vector::Item::Capacity,
+            owned_vector::Operation::TryReserve => vector::Item::TryReserve,
+            owned_vector::Operation::PushReserved => vector::Item::PushReserved,
+            owned_vector::Operation::PopLast => vector::Item::PopLast,
+            owned_vector::Operation::Truncate => vector::Item::Truncate,
+            owned_vector::Operation::Take => vector::Item::Take,
+        };
+        self.vector_anchor(item)
+    }
+    pub(super) fn owned_candidate_index_bytes(
+        &self,
+        work: &WorkMeter,
+    ) -> Result<usize, Box<Diagnostic>> {
+        let at = self.sources().eof();
+        let mut bytes = size_of::<Self>();
+        for (capacity, width) in [
+            (self.tables.originals.capacity(), size_of::<OriginalRow>()),
+            (self.tables.original_order.capacity(), size_of::<u32>()),
+            (self.tables.functions.capacity(), size_of::<FunctionRow>()),
+            (self.tables.records.capacity(), size_of::<RecordRow>()),
+            (self.tables.fields.capacity(), size_of::<FieldRow>()),
+            (self.tables.enums.capacity(), size_of::<EnumRow>()),
+            (self.tables.variants.capacity(), size_of::<VariantRow>()),
+            (self.tables.modules.capacity(), size_of::<ModuleRow>()),
+            (self.tables.children.capacity(), size_of::<u32>()),
+            (self.tables.imports.capacity(), size_of::<ImportRow>()),
+            (self.tables.aliases.capacity(), size_of::<AliasCell>()),
+            (self.tables.alias_order.capacity(), size_of::<u32>()),
+        ] {
+            work.debit(1, at, "owned vector retained index capacity")?;
+            bytes = bytes
+                .checked_add(capacity.checked_mul(width).ok_or_else(|| overflow(at))?)
+                .ok_or_else(|| overflow(at))?;
+        }
+        Ok(bytes)
     }
     pub(super) fn template_function_count(&self) -> usize {
         self.tables.functions.len()

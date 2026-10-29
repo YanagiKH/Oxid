@@ -1,6 +1,13 @@
 //! The sealed boundary. Sibling consumers cannot construct or mutate fields.
+use super::owned_vector_descriptors::context::signature_queries::ShapeDeclarationQueries;
 use super::*;
 use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
+
+pub(super) use super::owned_vector_descriptors::context::owning::VerifiedOwnedVectorProgram;
+
+#[path = "verified_program_queries.rs"]
+mod program_queries;
+pub(super) use program_queries::PlanWitness;
 
 #[derive(Debug)]
 pub(super) struct VerifiedOwnedProgram {
@@ -35,8 +42,8 @@ pub(super) enum ProjectionAccess {
     Borrow(BorrowKind),
 }
 
-pub(super) struct ProjectionPermission<'a> {
-    witness: &'a VerifiedOwnedProgram,
+pub(super) struct ProjectionPermission<'a, W: PlanWitness = VerifiedOwnedProgram> {
+    witness: &'a W,
     function: hir::DefId,
     block: BlockId,
     statement: usize,
@@ -44,10 +51,10 @@ pub(super) struct ProjectionPermission<'a> {
     access: ProjectionAccess,
 }
 
-impl ProjectionPermission<'_> {
+impl<W: PlanWitness> ProjectionPermission<'_, W> {
     pub(super) fn permits(
         &self,
-        witness: &VerifiedOwnedProgram,
+        witness: &W,
         function: hir::DefId,
         block: BlockId,
         statement: usize,
@@ -377,6 +384,81 @@ mod projection_permission_tests {
     }
 }
 
+fn projection_permission<'a, W: PlanWitness>(
+    witness: &'a W,
+    function: hir::DefId,
+    block: BlockId,
+    statement: usize,
+    request: ProjectionRequest<'_>,
+) -> Option<ProjectionPermission<'a, W>> {
+    let f = witness
+        .functions()
+        .get(function.0)
+        .filter(|f| f.id == function)?;
+    let instruction = &f.blocks.get(block.0)?.statements.get(statement)?.kind;
+    let (base, access) = match (instruction, request) {
+        (
+            OwnedInstruction::ReadField { base, field, .. },
+            ProjectionRequest::Field {
+                base: requested,
+                field: target,
+                write: false,
+            },
+        ) if *base == requested && *field == target => (*base, ProjectionAccess::Read),
+        (
+            OwnedInstruction::WriteField { base, field, .. },
+            ProjectionRequest::Field {
+                base: requested,
+                field: target,
+                write: true,
+            },
+        ) if *base == requested && *field == target => (*base, ProjectionAccess::Write),
+        (
+            OwnedInstruction::ReadProjection { base, path, .. }
+            | OwnedInstruction::CopyIndexInitialize { base, path, .. }
+            | OwnedInstruction::ProjectionLength { base, path, .. },
+            ProjectionRequest::Path {
+                base: requested,
+                path: target,
+                write: false,
+            },
+        ) if *base == requested && !path.is_empty() && std::ptr::eq(path.as_slice(), target) => {
+            (*base, ProjectionAccess::Read)
+        }
+        (
+            OwnedInstruction::WriteProjection { base, path, .. }
+            | OwnedInstruction::CopyIndexWrite { base, path, .. },
+            ProjectionRequest::Path {
+                base: requested,
+                path: target,
+                write: true,
+            },
+        ) if *base == requested && !path.is_empty() && std::ptr::eq(path.as_slice(), target) => {
+            (*base, ProjectionAccess::Write)
+        }
+        (
+            OwnedInstruction::PrepareBorrow { loan, .. }
+            | OwnedInstruction::PrepareBorrowRange { loan, .. },
+            ProjectionRequest::Borrow(requested),
+        ) if *loan == requested => {
+            let loan = f.loans.get(loan.0)?;
+            if loan.projection.is_empty() {
+                return None;
+            }
+            (loan.authority, ProjectionAccess::Borrow(loan.kind))
+        }
+        _ => return None,
+    };
+    Some(ProjectionPermission {
+        witness,
+        function,
+        block,
+        statement,
+        base,
+        access,
+    })
+}
+
 impl VerifiedOwnedProgram {
     pub(super) fn projection_permission(
         &self,
@@ -385,89 +467,13 @@ impl VerifiedOwnedProgram {
         statement: usize,
         request: ProjectionRequest<'_>,
     ) -> Option<ProjectionPermission<'_>> {
-        let f = self
-            .program
-            .functions
-            .get(function.0)
-            .filter(|f| f.id == function)?;
-        let instruction = &f.blocks.get(block.0)?.statements.get(statement)?.kind;
-        let (base, access) = match (instruction, request) {
-            (
-                OwnedInstruction::ReadField { base, field, .. },
-                ProjectionRequest::Field {
-                    base: requested,
-                    field: target,
-                    write: false,
-                },
-            ) if *base == requested && *field == target => (*base, ProjectionAccess::Read),
-            (
-                OwnedInstruction::WriteField { base, field, .. },
-                ProjectionRequest::Field {
-                    base: requested,
-                    field: target,
-                    write: true,
-                },
-            ) if *base == requested && *field == target => (*base, ProjectionAccess::Write),
-            (
-                OwnedInstruction::ReadProjection { base, path, .. }
-                | OwnedInstruction::CopyIndexInitialize { base, path, .. }
-                | OwnedInstruction::ProjectionLength { base, path, .. },
-                ProjectionRequest::Path {
-                    base: requested,
-                    path: target,
-                    write: false,
-                },
-            ) if *base == requested
-                && !path.is_empty()
-                && std::ptr::eq(path.as_slice(), target) =>
-            {
-                (*base, ProjectionAccess::Read)
-            }
-            (
-                OwnedInstruction::WriteProjection { base, path, .. }
-                | OwnedInstruction::CopyIndexWrite { base, path, .. },
-                ProjectionRequest::Path {
-                    base: requested,
-                    path: target,
-                    write: true,
-                },
-            ) if *base == requested
-                && !path.is_empty()
-                && std::ptr::eq(path.as_slice(), target) =>
-            {
-                (*base, ProjectionAccess::Write)
-            }
-            (
-                OwnedInstruction::PrepareBorrow { loan, .. }
-                | OwnedInstruction::PrepareBorrowRange { loan, .. },
-                ProjectionRequest::Borrow(requested),
-            ) if *loan == requested => {
-                let loan = f.loans.get(loan.0)?;
-                if loan.projection.is_empty() {
-                    return None;
-                }
-                (loan.authority, ProjectionAccess::Borrow(loan.kind))
-            }
-            _ => return None,
-        };
-        Some(ProjectionPermission {
-            witness: self,
-            function,
-            block,
-            statement,
-            base,
-            access,
-        })
+        projection_permission(self, function, block, statement, request)
     }
     pub(super) fn experimental_function(
         &self,
         item: crate::frontend::builtin_catalog::experimental::Function,
     ) -> Option<hir::DefId> {
-        let rank = self.program.builtins.experimental_function_rank(item)?;
-        self.program
-            .fixed_builtin_base()?
-            .checked_add(rank)
-            .map(hir::DefId)
+        PlanWitness::experimental_function(self, item)
     }
     /// Only the exact concrete suffix survives both descriptor and ownership
     /// proof. A matching ordinary body never acquires vector identity.
@@ -475,52 +481,25 @@ impl VerifiedOwnedProgram {
         &self,
         id: hir::DefId,
     ) -> Option<crate::frontend::builtin_catalog::vector::Function> {
-        self.program.vector_operation_claim(id)
+        PlanWitness::vector_operation(self, id)
     }
     pub(super) fn has_experimental_operations(&self) -> bool {
-        self.program.builtins.experimental().functions() != 0
-            || !self.program.vector_functions.is_empty()
+        PlanWitness::has_experimental_operations(self)
     }
     pub(super) fn builtin_function(&self) -> Option<hir::DefId> {
-        let rank = self
-            .program
-            .builtins
-            .function_rank(BuiltinFunction::ReadStdin)?;
-        self.program
-            .fixed_builtin_base()?
-            .checked_add(rank)
-            .map(hir::DefId)
+        PlanWitness::builtin_function(self)
     }
     pub(super) fn builtin_enumeration(&self) -> Option<EnumId> {
-        let rank = self.program.builtins.enum_rank(BuiltinEnum::ReadStatus)?;
-        self.program
-            .enums
-            .len()
-            .checked_sub(self.program.builtins.extra_enums())?
-            .checked_add(rank)
-            .map(EnumId)
+        PlanWitness::builtin_enumeration(self)
     }
     pub(super) fn builtin_output_function(&self) -> Option<hir::DefId> {
-        let rank = self
-            .program
-            .builtins
-            .function_rank(BuiltinFunction::WriteStdout)?;
-        self.program
-            .fixed_builtin_base()?
-            .checked_add(rank)
-            .map(hir::DefId)
+        PlanWitness::builtin_output_function(self)
     }
     pub(super) fn builtin_output_enumeration(&self) -> Option<EnumId> {
-        let rank = self.program.builtins.enum_rank(BuiltinEnum::WriteStatus)?;
-        self.program
-            .enums
-            .len()
-            .checked_sub(self.program.builtins.extra_enums())?
-            .checked_add(rank)
-            .map(EnumId)
+        PlanWitness::builtin_output_enumeration(self)
     }
     pub(super) fn has_builtin_origins(&self) -> bool {
-        self.program.builtins != BuiltinOrigins::None
+        PlanWitness::has_builtin_origins(self)
     }
     pub(super) fn functions(&self) -> &[RawOwnedFunction] {
         &self.program.functions
@@ -562,6 +541,24 @@ pub(super) fn verify_associated(
 ) -> Result<VerifiedOwnedProgram, OwnedFailure> {
     let (raw, sources) = associated.into_parts();
     let (mut usage, declarations, mut meter) = prepare(&raw, sources, budget::Limits::DEFAULT)?;
+    inventory_carriers(&raw, &mut meter)?;
+    validate_proof_impl(&raw, &declarations, sources, &mut usage, &mut meter, true)?;
+    Ok(VerifiedOwnedProgram {
+        program: raw,
+        declarations,
+        usage,
+        seal: OwnershipSeal,
+    })
+}
+
+/// The candidate source caller prepays its enclosing transports independently.
+/// The legacy entry above retains its original default allowance and body.
+pub(super) fn verify_associated_with_limits(
+    associated: super::source::association::AssociatedOwned<'_>,
+    limits: budget::Limits,
+) -> Result<VerifiedOwnedProgram, OwnedFailure> {
+    let (raw, sources) = associated.into_parts();
+    let (mut usage, declarations, mut meter) = prepare(&raw, sources, limits)?;
     inventory_carriers(&raw, &mut meter)?;
     validate_proof_impl(&raw, &declarations, sources, &mut usage, &mut meter, true)?;
     Ok(VerifiedOwnedProgram {
@@ -626,18 +623,23 @@ fn validate_proof_impl(
     meter: &mut budget::Meter,
     source_associated: bool,
 ) -> Result<(), OwnedFailure> {
-    shape::signatures(raw, declarations, sources)?;
+    let mut queries = declarations;
+    validate_with_queries(raw, &mut queries, sources, usage, meter, source_associated)
+}
+
+fn validate_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
+    raw: &RawOwnedProgram,
+    declarations: &mut Q,
+    sources: &SourceMap,
+    usage: &mut OwnershipUsage,
+    meter: &mut budget::Meter,
+    source_associated: bool,
+) -> Result<(), OwnedFailure> {
+    shape::signatures_with_queries(raw, declarations, sources)?;
     // Check every instruction in every function before accepting reachability
     // or any ownership result, including malformed unreachable operations.
     for f in &raw.functions {
-        shape::check_with_conversion_authority(
-            f,
-            raw,
-            declarations,
-            sources,
-            meter,
-            source_associated,
-        )?;
+        shape::check_with_queries(f, raw, declarations, sources, meter, source_associated)?;
     }
     for f in &raw.functions {
         super::super::verify::cfg(f)?;
@@ -654,18 +656,38 @@ fn validate_proof_impl(
             )?;
         }
         if budget::active(f) {
-            let checked = shape::check_with_conversion_authority(
-                f,
-                raw,
-                declarations,
-                sources,
-                meter,
-                source_associated,
-            )?;
+            let checked =
+                shape::check_with_queries(f, raw, declarations, sources, meter, source_associated)?;
             flow::check(f, &checked, meter)?;
         }
     }
     Ok(())
+}
+
+/// This continuation returns inert usage only. It shares the production
+/// inventory and complete proof ordering and can never select source authority.
+pub(super) fn probe_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
+    raw: &RawOwnedProgram,
+    declarations: &mut Q,
+    sources: &SourceMap,
+    usage: &mut OwnershipUsage,
+    meter: &mut budget::Meter,
+) -> Result<(), OwnedFailure> {
+    inventory_carriers(raw, meter)?;
+    validate_with_queries(raw, declarations, sources, usage, meter, false)
+}
+
+/// Inert source-aware continuation used only by the separate owning factory.
+/// This returns no seal; that factory first consumes its exact source owner.
+pub(super) fn probe_source_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
+    raw: &RawOwnedProgram,
+    declarations: &mut Q,
+    sources: &SourceMap,
+    usage: &mut OwnershipUsage,
+    meter: &mut budget::Meter,
+) -> Result<(), OwnedFailure> {
+    inventory_carriers(raw, meter)?;
+    validate_with_queries(raw, declarations, sources, usage, meter, true)
 }
 
 /// Non-executable enum observation: only inert usage or denial escapes. This

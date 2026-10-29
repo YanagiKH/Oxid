@@ -70,26 +70,34 @@ fn helper(aggregate: AggregateTy, mode: Mode) -> String {
     format!("__oxid_composed_{}_{family}{id}", mode.key())
 }
 
-pub(super) fn needed(plan: &ExecutionPlan<'_>, aggregate: AggregateTy) -> bool {
+pub(super) fn needed<W: PlanWitness>(plan: &ExecutionPlan<'_, W>, aggregate: AggregateTy) -> bool {
+    if matches!(aggregate, AggregateTy::OwnedRecordVector(_)) {
+        plan.witness()
+            .aggregate_layout(aggregate)
+            .expect("sealed owned vector layout");
+        return false;
+    }
     plan.witness()
         .declarations()
         .has_enum_record_nesting(aggregate)
         .expect("verified aggregate nesting")
 }
 
-pub(super) fn construction_cells(plan: &ExecutionPlan<'_>, aggregate: AggregateTy) -> usize {
+pub(super) fn construction_cells<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    aggregate: AggregateTy,
+) -> usize {
     if matches!(aggregate, AggregateTy::Record(_) | AggregateTy::Enum(_)) {
         1
     } else {
         plan.witness()
-            .declarations()
             .aggregate_width(aggregate)
             .expect("verified aggregate width")
     }
 }
 
-pub(super) fn helper_inventory(
-    plan: &ExecutionPlan<'_>,
+pub(super) fn helper_inventory<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     visits: &mut usize,
 ) -> Result<usize, Box<Diagnostic>> {
     if !plan.uses_enum_record_nesting() {
@@ -134,29 +142,51 @@ pub(super) fn helper_inventory(
 /// Internal helpers propagate a closed status code, keeping source diagnostics
 /// at the original operation instead of creating synthetic source locations.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn transfer(
+pub(super) fn transfer<W: PlanWitness>(
     out: &mut Emission,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     source: &str,
     intent: TransferIntent<'_>,
     expansion: Expansion,
     failure: (&Diagnostics, Span),
+    prevalidated: bool,
 ) {
     if !out.expand(expansion) {
         return;
     }
-    let validate = helper(aggregate, Mode::Validate);
-    writeln!(out, "  %{name}_composed_status = call i32 @{validate}(ptr {source})\n  switch i32 %{name}_composed_status, label %{name}_composed_payload_error [\n    i32 0, label %{name}_composed_ok\n    i32 1, label %{name}_composed_tag_error\n    i32 3, label %{name}_composed_resource_error\n  ]\n{name}_composed_tag_error:").unwrap();
-    emit_failure(out, failure.0, FailureKind::EnumTag, failure.1);
-    writeln!(out, "{name}_composed_payload_error:").unwrap();
-    emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
-    writeln!(out, "{name}_composed_resource_error:").unwrap();
-    emit_failure(out, failure.0, FailureKind::ResourceDescriptor, failure.1);
-    writeln!(out, "{name}_composed_ok:").unwrap();
+    if !(prevalidated && plan.uses_owned_vectors()) {
+        let validate = helper(aggregate, Mode::Validate);
+        let fuel = if plan.uses_owned_vectors() {
+            if matches!(intent, TransferIntent::Release) {
+                ", ptr %fuel, i1 true"
+            } else {
+                ", ptr %fuel, i1 false"
+            }
+        } else {
+            ""
+        };
+        let fuel_case = if plan.uses_owned_vectors() {
+            format!("    i32 4, label %{name}_composed_fuel_error\n")
+        } else {
+            String::new()
+        };
+        writeln!(out, "  %{name}_composed_status = call i32 @{validate}(ptr {source}{fuel})\n  switch i32 %{name}_composed_status, label %{name}_composed_payload_error [\n    i32 0, label %{name}_composed_ok\n    i32 1, label %{name}_composed_tag_error\n    i32 3, label %{name}_composed_resource_error\n{fuel_case}  ]\n{name}_composed_tag_error:").unwrap();
+        emit_failure(out, failure.0, FailureKind::EnumTag, failure.1);
+        writeln!(out, "{name}_composed_payload_error:").unwrap();
+        emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
+        writeln!(out, "{name}_composed_resource_error:").unwrap();
+        emit_failure(out, failure.0, FailureKind::ResourceDescriptor, failure.1);
+        if plan.uses_owned_vectors() {
+            writeln!(out, "{name}_composed_fuel_error:").unwrap();
+            emit_failure(out, failure.0, FailureKind::Fuel, failure.1);
+        }
+        writeln!(out, "{name}_composed_ok:").unwrap();
+    }
     match intent {
         TransferIntent::Validate => (),
-        TransferIntent::Move(destination) => {
+        TransferIntent::Move(destination) | TransferIntent::MoveAdmitted(destination) => {
             let function = helper(aggregate, Mode::Move);
             writeln!(
                 out,
@@ -231,8 +261,23 @@ fn resource(
     source: &str,
     destination: &str,
     mode: Mode,
+    owned_vectors: bool,
 ) {
     let (family, carrier) = match aggregate {
+        AggregateTy::OwnedRecordVector(record) => {
+            assert!(owned_vectors, "sealed owned vector helper domain");
+            let fresh = if out.policy.hosted() {
+                "  store i64 -1, ptr %fuel, align 8\n"
+            } else {
+                ""
+            };
+            match mode {
+                Mode::Validate => writeln!(out, "  %{name}_heap = call ptr @__oxid_owned_vector_heap()\n  br i1 %maintenance, label %{name}_maintenance, label %{name}_paid\n{name}_maintenance:\n  %{name}_maintenance_status = call i32 @oxid_owned_vector_validate_maintenance(ptr %{name}_heap, ptr {source}, i32 {})\n  br label %{name}_checked\n{name}_paid:\n{fresh}  %{name}_paid_status = call i32 @oxid_owned_vector_validate(ptr %{name}_heap, ptr {source}, i32 {}, ptr %fuel)\n  br label %{name}_checked\n{name}_checked:\n  %{name}_status = phi i32 [%{name}_maintenance_status, %{name}_maintenance], [%{name}_paid_status, %{name}_paid]\n  %{name}_valid = icmp eq i32 %{name}_status, 0\n  br i1 %{name}_valid, label %{name}_ok, label %{name}_error\n{name}_error:\n  %{name}_fuel = icmp eq i32 %{name}_status, -2\n  %{name}_failure = select i1 %{name}_fuel, i32 4, i32 3\n  ret i32 %{name}_failure\n{name}_ok:", record.0, record.0).unwrap(),
+                Mode::Move => writeln!(out, "  %{name}_descriptor = load {{ i64, i32, i32 }}, ptr {source}, align 1\n  store {{ i64, i32, i32 }} %{name}_descriptor, ptr {destination}, align 1\n  store {{ i64, i32, i32 }} zeroinitializer, ptr {source}, align 1").unwrap(),
+                Mode::Drop => writeln!(out, "  %{name}_heap = call ptr @__oxid_owned_vector_heap()\n  %{name}_drop_status = call i32 @oxid_owned_vector_release(ptr %{name}_heap, ptr {source}, i32 {})", record.0).unwrap(),
+            }
+            return;
+        }
         AggregateTy::ByteBuf => ("bytebuf", "{ i64, i32, i32 }"),
         AggregateTy::File => ("file", "{ i64, i64 }"),
         aggregate @ (AggregateTy::Vector(_) | AggregateTy::RecordVector(_)) => {
@@ -278,6 +323,7 @@ fn value(
     source: &str,
     destination: &str,
     mode: Mode,
+    owned_vectors: bool,
 ) {
     match value {
         ValueTy::Scalar(ty) => scalar(out, name, ty, source, destination, mode),
@@ -285,12 +331,26 @@ fn value(
             aggregate @ (AggregateTy::ByteBuf
             | AggregateTy::File
             | AggregateTy::Vector(_)
-            | AggregateTy::RecordVector(_)),
-        ) => resource(out, name, aggregate, source, destination, mode),
+            | AggregateTy::RecordVector(_)
+            | AggregateTy::OwnedRecordVector(_)),
+        ) => resource(
+            out,
+            name,
+            aggregate,
+            source,
+            destination,
+            mode,
+            owned_vectors,
+        ),
         ValueTy::Owned(aggregate @ (AggregateTy::Record(_) | AggregateTy::Enum(_))) => {
             let function = helper(aggregate, mode);
+            let fuel = if owned_vectors {
+                ", ptr %fuel, i1 %maintenance"
+            } else {
+                ""
+            };
             match mode {
-                Mode::Validate => writeln!(out, "  %{name}_status = call i32 @{function}(ptr {source})\n  %{name}_valid = icmp eq i32 %{name}_status, 0\n  br i1 %{name}_valid, label %{name}_ok, label %{name}_error\n{name}_error:\n  ret i32 %{name}_status\n{name}_ok:").unwrap(),
+                Mode::Validate => writeln!(out, "  %{name}_status = call i32 @{function}(ptr {source}{fuel})\n  %{name}_valid = icmp eq i32 %{name}_status, 0\n  br i1 %{name}_valid, label %{name}_ok, label %{name}_error\n{name}_error:\n  ret i32 %{name}_status\n{name}_ok:").unwrap(),
                 Mode::Move => writeln!(out, "  call void @{function}(ptr {source}, ptr {destination})").unwrap(),
                 Mode::Drop => writeln!(out, "  call void @{function}(ptr {source})").unwrap(),
             }
@@ -322,17 +382,24 @@ fn value(
     }
 }
 
-fn member(out: &mut Emission, name: &str, ty: ValueTy, offset: usize, mode: Mode) {
+fn member(
+    out: &mut Emission,
+    name: &str,
+    ty: ValueTy,
+    offset: usize,
+    mode: Mode,
+    owned_vectors: bool,
+) {
     let source = field_pointer(out, &format!("{name}_in"), "%source", offset);
     let destination = if mode == Mode::Move {
         field_pointer(out, &format!("{name}_out"), "%destination", offset)
     } else {
         String::new()
     };
-    value(out, name, ty, &source, &destination, mode);
+    value(out, name, ty, &source, &destination, mode, owned_vectors);
 }
 
-pub(super) fn emit_helpers(out: &mut Emission, plan: &ExecutionPlan<'_>) {
+pub(super) fn emit_helpers<W: PlanWitness>(out: &mut Emission, plan: &ExecutionPlan<'_, W>) {
     if !plan.uses_enum_record_nesting() {
         return;
     }
@@ -359,9 +426,14 @@ pub(super) fn emit_helpers(out: &mut Emission, plan: &ExecutionPlan<'_>) {
             } else {
                 ""
             };
+            let fuel = if plan.uses_owned_vectors() && mode == Mode::Validate {
+                ", ptr %fuel, i1 %maintenance"
+            } else {
+                ""
+            };
             writeln!(
                 out,
-                "\ndefine internal {} @{function}(ptr %source{destination}) {{\nentry:",
+                "\ndefine internal {} @{function}(ptr %source{destination}{fuel}) {{\nentry:",
                 mode.result()
             )
             .unwrap();
@@ -381,6 +453,7 @@ pub(super) fn emit_helpers(out: &mut Emission, plan: &ExecutionPlan<'_>) {
                             field.value_ty(),
                             field.offset(),
                             mode,
+                            plan.uses_owned_vectors(),
                         );
                     }
                     writeln!(out, "  {}\n}}", mode.success()).unwrap();
@@ -425,6 +498,7 @@ pub(super) fn emit_helpers(out: &mut Emission, plan: &ExecutionPlan<'_>) {
                                 payload,
                                 variant.payload_offset().expect("payload offset"),
                                 mode,
+                                plan.uses_owned_vectors(),
                             );
                         }
                         if mode == Mode::Move {

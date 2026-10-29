@@ -5,6 +5,10 @@
 
 static oxid_byte_heap execution_heap;
 #include "experimental_files.c"
+#ifdef OXID_OWNED_VECTOR_RUNTIME
+#include "experimental_owned_vector.c"
+oxid_byte_heap *__oxid_owned_vector_heap(void) { return &execution_heap; }
+#endif
 void __oxid_bytebuf_start(void) { oxid_heap_init(&execution_heap); }
 void __oxid_bytebuf_cleanup(void) { oxid_heap_cleanup(&execution_heap); }
 int32_t __oxid_bytebuf_finish(void) {
