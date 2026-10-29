@@ -130,7 +130,10 @@ LLVM_COMMANDS = r'''
 $ErrorActionPreference = 'Stop'
 $archive = Join-Path $env:RUNNER_TEMP 'clang+llvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
 $url = 'https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/clang%2Bllvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
-Invoke-WebRequest -Uri $url -OutFile $archive
+Write-Host 'Downloading the pinned LLVM archive'
+curl.exe --proto '=https' --tlsv1.2 --location --fail --silent --show-error --connect-timeout 30 --max-time 900 --retry 2 --retry-delay 5 --retry-max-time 900 --output $archive $url
+if ($LASTEXITCODE -ne 0) { throw "LLVM download failed (curl exit code $LASTEXITCODE)" }
+Write-Host 'Download complete; verifying archive length and SHA256'
 if ((Get-Item -LiteralPath $archive).Length -ne 845236708) { throw 'LLVM archive length differs' }
 $digest = 'b4557b4f012161f56a2f5d9e877ab9635cafd7a08f7affe14829bd60c9d357f0'
 if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -ne $digest) {
@@ -138,8 +141,10 @@ if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant
 }
 $extract = Join-Path $env:RUNNER_TEMP 'oxid-llvm-msvc'
 New-Item -ItemType Directory -Path $extract | Out-Null
+Write-Host 'Archive verified; extracting the LLVM toolchain'
 tar -xJf $archive -C $extract
 if ($LASTEXITCODE -ne 0) { throw 'LLVM extraction failed' }
+Write-Host 'Extraction complete; verifying LLVM tools'
 $bin = Join-Path $extract 'clang+llvm-19.1.7-x86_64-pc-windows-msvc/bin'
 foreach ($tool in @('clang.exe', 'opt.exe', 'lld-link.exe')) {
   $version = & (Join-Path $bin $tool) --version
@@ -218,6 +223,7 @@ def validate_windows_native_job(workflow):
         scalar(step, 'shell', 'pwsh')
         require(step_commands(step) == command_lines(expected),
                 f'{name}: initialization and authenticated toolchain checks must execute intact')
+    scalar(named(LLVM_STEP), 'timeout-minutes', '45')
     expected_commands = {
         BUILD_STEP: ['cargo build --locked', EXIT_CHECK, 'cargo build --release --locked', EXIT_CHECK],
         TEST_STEP: [DOCTOR_COMMAND, EXIT_CHECK, SCOPE_COMMAND, EXIT_CHECK],
@@ -348,7 +354,12 @@ class WindowsNativeCiTests(unittest.TestCase):
         self.reject_mutations([
             ('wrong-download-host', 'https://github.com/llvm/llvm-project/', 'https://example.invalid/llvm/'),
             ('wrong-version', 'llvmorg-19.1.7/', 'llvmorg-19.1.6/'),
-            ('download-replaced', 'Invoke-WebRequest -Uri $url -OutFile $archive', 'Write-Host $url'),
+            ('download-replaced', 'curl.exe --proto', 'Write-Host --proto'),
+            ('unbounded-connect', '--connect-timeout 30', '--connect-timeout 0'),
+            ('unbounded-download', '--max-time 900', '--max-time 0'),
+            ('unbounded-retries', '--retry-max-time 900', '--retry-max-time 0'),
+            ('unbounded-toolchain-step', '        timeout-minutes: 45\n', ''),
+            ('download-failure-ignored', 'if ($LASTEXITCODE -ne 0) { throw "LLVM download failed (curl exit code $LASTEXITCODE)" }', 'Write-Host "download accepted"'),
             ('wrong-size', '.Length -ne 845236708', '.Length -ne 1'),
             ('length-unchecked', "if ((Get-Item -LiteralPath $archive).Length -ne 845236708) { throw 'LLVM archive length differs' }", ''),
             ('wrong-digest', 'b4557b4f012161f56a2f5d9e877ab9635cafd7a08f7affe14829bd60c9d357f0', '0' * 64),

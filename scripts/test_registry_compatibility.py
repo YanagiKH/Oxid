@@ -15,6 +15,7 @@ from unittest.mock import patch
 import verify_registry_compatibility as gate
 
 ROOT = Path(__file__).resolve().parents[1]
+LLVM_SETUP_PIN = (2353, "817afbb1754e41f1e585b7293a188210c5983b1e70e0b1b605563693d454516a")
 SDK_TRANSPORT_PIN = (3657, "73ed97d799025f258631fee2f8874f4ceb83fccfde5537a4a01cb8984b200224")
 SDK_PREDECESSOR_TRANSPORT = b'          $PSNativeCommandArgumentPassing = \'Legacy\'\n          $settings = & $env:ComSpec /d /s /c "`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"\n          if ($LASTEXITCODE -ne 0) { throw \'Visual Studio environment initialization failed\' }\n'
 REGISTRY_NATIVE_STEP = b'      - name: Verify private registry publication offline builds and deployment\n        run: |\n          python3 -B scripts/verify_typed_registry.py target/debug/oxid target/release/oxid \\\n            --output "$RUNNER_TEMP/current-typed-registry" --native\n'
@@ -262,7 +263,7 @@ class RegistryAdmission(unittest.TestCase):
 
 
 class FrozenScalarLibraryReplay(unittest.TestCase):
-    def restore_reviewed_sdk_transport(self, current):
+    def restore_reviewed_windows_setup(self, current):
         start = b"          $sdkStart = [System.Diagnostics.ProcessStartInfo]::new()\n"
         end = (b"          $names = @('Path', 'INCLUDE', 'LIB', 'LIBPATH', "
                b"'VCINSTALLDIR', 'VCToolsInstallDir',\n")
@@ -281,11 +282,19 @@ class FrozenScalarLibraryReplay(unittest.TestCase):
         self.assertEqual(step.group().count(end), 1)
         body = current[begin:finish]
         self.assertEqual((len(body), gate.sha(body)), SDK_TRANSPORT_PIN)
-        return current[:begin] + SDK_PREDECESSOR_TRANSPORT + current[finish:]
+        restored = current[:begin] + SDK_PREDECESSOR_TRANSPORT + current[finish:]
+        pattern = (rb"^      - name: Verify and extract the complete LLVM 19\.1\.7 toolchain\n"
+                   rb".*?(?=^      - name: Build both compiler profiles\n)")
+        llvm = re.search(pattern, restored, flags=re.M | re.S)
+        predecessor = re.search(pattern, git_body(gate.PREDECESSOR, ".github/workflows/ci.yml"), flags=re.M | re.S)
+        self.assertIsNotNone(llvm)
+        self.assertIsNotNone(predecessor)
+        self.assertEqual((len(llvm.group()), gate.sha(llvm.group())), LLVM_SETUP_PIN)
+        return restored[:llvm.start()] + predecessor.group() + restored[llvm.end():]
 
-    def test_reviewed_sdk_transport_normalizes_only_its_exact_bounded_process_block(self):
+    def test_reviewed_windows_setup_normalizes_only_its_exact_bounded_blocks(self):
         current = gate.regular(ROOT, ".github/workflows/ci.yml")
-        restored = self.restore_reviewed_sdk_transport(current)
+        restored = self.restore_reviewed_windows_setup(current)
         self.assertEqual(restored.count(SDK_PREDECESSOR_TRANSPORT), 1)
         parent = git_body(gate.PREDECESSOR, ".github/workflows/ci.yml")
         self.assertEqual(parent.count(SDK_PREDECESSOR_TRANSPORT), 1)
@@ -325,13 +334,17 @@ class FrozenScalarLibraryReplay(unittest.TestCase):
             (b"$sdk.Kill($true)", b"$sdk.Kill($false)"),
             (b"$sdk.WaitForExit(5000)", b"$sdk.WaitForExit(0)"),
             (b"$sdk.Dispose()", b"# removed dispose"),
+            (b"--connect-timeout 30", b"--connect-timeout 0"),
+            (b"--max-time 900", b"--max-time 0"),
+            (b"--retry-max-time 900", b"--retry-max-time 0"),
+            (b"        timeout-minutes: 45\n", b""),
         )
         regular = gate.regular
         for index, (before, after) in enumerate(changes):
             self.assertEqual(current.count(before), 1, index)
             changed = current.replace(before, after, 1)
             with self.subTest(case=index), self.assertRaises(AssertionError):
-                self.restore_reviewed_sdk_transport(changed)
+                self.restore_reviewed_windows_setup(changed)
             def selected(root, path):
                 return changed if path == name else regular(root, path)
             with self.subTest(full_comparison=index), patch.object(gate, "regular", side_effect=selected):
@@ -353,7 +366,7 @@ class FrozenScalarLibraryReplay(unittest.TestCase):
                         current.replace(block, b"", 1),
                         current.replace(block, block + b"          # hidden extra transport\n", 1)):
             with self.subTest(block_mutation=gate.sha(changed)), self.assertRaises(AssertionError):
-                self.restore_reviewed_sdk_transport(changed)
+                self.restore_reviewed_windows_setup(changed)
         for index, changed in enumerate(outside):
             def selected(root, path):
                 return changed if path == name else regular(root, path)
@@ -471,7 +484,7 @@ class FrozenScalarLibraryReplay(unittest.TestCase):
         self.assertEqual(restored.count(REGISTRY_NATIVE_STEP), 1)
         self.assertEqual(restored.count(REGISTRY_NATIVE_EVIDENCE), 1)
         restored = restored.replace(REGISTRY_NATIVE_STEP, b"", 1).replace(REGISTRY_NATIVE_EVIDENCE, b"", 1)
-        restored = self.restore_reviewed_sdk_transport(restored)
+        restored = self.restore_reviewed_windows_setup(restored)
         entrypoint = b"scripts/verify_registry_compatibility.py"
         self.assertEqual(restored.count(entrypoint), 1)
         self.assertEqual(restored.replace(entrypoint, b"scripts/verify_scalar_library_compatibility.py", 1),
