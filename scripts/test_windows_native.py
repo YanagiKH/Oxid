@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 import unittest
 
-from verify_windows_native import pe, failure_controls
+from verify_windows_native import pe, failure_controls, io_controls, msvc_link_command
 from windows_native_process import run
 
 
@@ -89,6 +89,23 @@ class WindowsNativePeTests(unittest.TestCase):
 
 
 class WindowsNativeCommandInputTests(unittest.TestCase):
+    def test_link_command_selects_the_existing_absolute_unicode_executable_without_driver_lookup(self):
+        with tempfile.TemporaryDirectory(prefix="oxid-selected-linker-") as temporary:
+            root = Path(temporary).resolve() / "LLVM 工具 with spaces"
+            root.mkdir()
+            linker = root / "lld-link.exe"
+            linker.write_bytes(b"argument-only input; never executed\n")
+            program, runtime, output = (root / name for name in ("program.obj", "runtime.obj", "output 遷移.exe"))
+            command = msvc_link_command(linker, [program, runtime], output)
+            self.assertEqual(command, [linker,
+                "/Brepro", "/DYNAMICBASE", "/HIGHENTROPYVA", "/NXCOMPAT", "/SUBSYSTEM:CONSOLE",
+                "/STACK:8388608", "/OPT:REF", "/MACHINE:X64", "/DEFAULTLIB:libcmt",
+                "/DEFAULTLIB:oldnames", "/DEFAULTLIB:kernel32", program, runtime, "/OUT:" + str(output)])
+            self.assertTrue(command[0].is_absolute())
+            for candidate in (Path("lld-link.exe"), root / "absent" / "lld-link.exe", root / "clang.exe"):
+                with self.subTest(linker=candidate), self.assertRaisesRegex(ValueError, "absolute selected"):
+                    msvc_link_command(candidate, [program, runtime], output)
+
     def test_embedded_nul_cannot_truncate_recorded_arguments_or_paths(self):
         for argv, cwd, stdout, stderr, incoming in [
             (["not-a-program\0.exe"], ".", "out", "err", None),
@@ -113,6 +130,70 @@ class WindowsNativeCommandInputTests(unittest.TestCase):
 
 
 class WindowsNativeFixtureTests(unittest.TestCase):
+    def test_selected_linker_failure_requires_its_own_marker_and_diagnostic(self):
+        class BeforeUnrelatedPublicationControls(Exception):
+            pass
+        diagnostic = b'{"code":"E0701","stage":"native-toolchain"}'
+        for marked in (False, True):
+            with self.subTest(selected_linker_invoked=marked), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                def command(label, argv, cwd, environment, **kwargs):
+                    built = cwd / ".oxid/bin/app.exe"
+                    if label.endswith("-old-output"):
+                        built.parent.mkdir(parents=True)
+                        built.write_bytes(b"preserved executable")
+                        return b"", b""
+                    if label.endswith("-link-failure"):
+                        state = Path(environment["OXID_NATIVE_PROBE_STATE"])
+                        self.assertTrue(state.is_dir())
+                        if marked:
+                            (state / "linker.pid").write_bytes(b"1234")
+                        return diagnostic + b"controlled lld-link failure", b""
+                    if label.endswith("-no-overwrite"):
+                        raise BeforeUnrelatedPublicationControls()
+                    return diagnostic, b""
+                expected = (self.assertRaises(BeforeUnrelatedPublicationControls) if marked else
+                            self.assertRaisesRegex(ValueError, "selected absolute lld-link.exe was not invoked"))
+                with expected:
+                    failure_controls(Path("not-executed.exe"), "linker-marker", root, {}, {},
+                                     command, {}, lambda: None)
+
+    def test_raw_io_objects_compile_strictly_before_direct_selected_linking(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            tools = root / "LLVM 工具 with spaces"
+            tools.mkdir()
+            linker = tools / "lld-link.exe"
+            linker.write_bytes(b"argument-only input; never executed\n")
+            calls = []
+            payload = bytes((0, 13, 10, 26, 255))
+            def command(label, argv, cwd, environment, **kwargs):
+                calls.append((label, argv))
+                if label.startswith("link-raw-io-"):
+                    Path(str(argv[-1]).removeprefix("/OUT:")).write_bytes(image())
+                if label == "raw-bytes":
+                    self.assertEqual(kwargs["expected"], 1)
+                    return payload, payload
+                if label == "raw-print":
+                    return b"-2147483648\n2147483647\ntrue\nfalse\n()\n", b""
+                return b"", b""
+            c_flags = ["--no-default-config", "--target=x86_64-pc-windows-msvc",
+                       "-fms-runtime-lib=static", "-std=c11", "-Wall", "-Wextra", "-Werror"]
+            io_controls(root, tools, {}, c_flags, command)
+            for optimization in ("O0", "O2"):
+                selected = [(label, argv) for label, argv in calls
+                            if label.startswith(("compile-raw-io-" + optimization, "link-raw-io-" + optimization))]
+                self.assertEqual([label for label, _ in selected], [
+                    "compile-raw-io-" + optimization + "-runtime",
+                    "compile-raw-io-" + optimization + "-input", "link-raw-io-" + optimization])
+                for _, argv in selected[:2]:
+                    self.assertEqual(argv[0], tools / "clang.exe")
+                    self.assertEqual(argv[1:1 + len(c_flags)], c_flags)
+                    self.assertIn("-c", argv)
+                self.assertEqual(selected[-1][1][0], linker)
+                self.assertFalse(any(str(arg).startswith(("--ld-path=", "-fuse-ld=", "-Wl,"))
+                                     for _, argv in selected for arg in argv))
+
     def test_failure_controls_start_with_a_supported_result_project(self):
         class ReadyToBuild(Exception):
             pass
