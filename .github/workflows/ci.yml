@@ -812,11 +812,61 @@ jobs:
           if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -ne $digest) {
             throw 'LLVM archive SHA256 differs'
           }
-          $extract = Join-Path $env:RUNNER_TEMP 'oxid-llvm-msvc'
+          $sevenZip = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
+          if (!(Test-Path -LiteralPath $sevenZip -PathType Leaf)) { throw 'The preinstalled Windows 7-Zip is required' }
+          function Invoke-LlvmSevenZip {
+            param(
+              [string]$Stage,
+              [ValidateSet('xz', 'tar')][string]$Format,
+              [string]$InputArchive,
+              [string]$Destination,
+              [ValidateRange(1, 900)][int]$TimeoutSeconds
+            )
+            $start = [System.Diagnostics.ProcessStartInfo]::new()
+            $start.FileName = $sevenZip
+            $start.UseShellExecute = $false
+            $start.CreateNoWindow = $true
+            $start.RedirectStandardInput = $true
+            foreach ($argument in @('x', "-t$Format", '-y', '-bsp0', '-bb0', "-o$Destination", $InputArchive)) {
+              $start.ArgumentList.Add($argument)
+            }
+            $extraction = [System.Diagnostics.Process]::new()
+            $extraction.StartInfo = $start
+            $started = $false
+            try {
+              Write-Host "$Stage started (deadline $TimeoutSeconds seconds)"
+              if (!$extraction.Start()) { throw "$Stage did not start" }
+              $started = $true
+              $extraction.StandardInput.Close()
+              if (!$extraction.WaitForExit($TimeoutSeconds * 1000)) { throw "$Stage timed out" }
+              if ($extraction.ExitCode -ne 0) { throw "$Stage failed (7-Zip exit code $($extraction.ExitCode))" }
+              Write-Host "$Stage complete"
+            } finally {
+              try {
+                if ($started -and !$extraction.HasExited) {
+                  try { $extraction.Kill($true) } catch [System.InvalidOperationException] {
+                    if (!$extraction.HasExited) { throw }
+                  }
+                  if (!$extraction.WaitForExit(5000)) { throw "$Stage process did not terminate" }
+                }
+              } finally {
+                $extraction.Dispose()
+              }
+            }
+          }
+          $staging = Join-Path $env:RUNNER_TEMP ('oxid-llvm-msvc-' + [Guid]::NewGuid().ToString('N'))
+          $tarDirectory = Join-Path $staging 'tar'
+          $extract = Join-Path $staging 'toolchain'
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          New-Item -ItemType Directory -Path $tarDirectory | Out-Null
           New-Item -ItemType Directory -Path $extract | Out-Null
-          Write-Host 'Archive verified; extracting the LLVM toolchain'
-          tar -xJf $archive -C $extract
-          if ($LASTEXITCODE -ne 0) { throw 'LLVM extraction failed' }
+          Write-Host 'Archive verified; decompressing the complete LLVM XZ stream'
+          Invoke-LlvmSevenZip -Stage 'LLVM XZ decompression' -Format xz -InputArchive $archive -Destination $tarDirectory -TimeoutSeconds 600
+          $tarArchive = Join-Path $tarDirectory 'clang+llvm-19.1.7-x86_64-pc-windows-msvc.tar'
+          if (!(Test-Path -LiteralPath $tarArchive -PathType Leaf) -or (Get-Item -LiteralPath $tarArchive).Length -le 0) { throw 'LLVM XZ decompression produced no TAR archive' }
+          Write-Host 'XZ decompression complete; extracting every LLVM TAR member'
+          Invoke-LlvmSevenZip -Stage 'LLVM TAR extraction' -Format tar -InputArchive $tarArchive -Destination $extract -TimeoutSeconds 900
+          Remove-Item -LiteralPath $tarArchive
           Write-Host 'Extraction complete; verifying LLVM tools'
           $bin = Join-Path $extract 'clang+llvm-19.1.7-x86_64-pc-windows-msvc/bin'
           foreach ($tool in @('clang.exe', 'opt.exe', 'lld-link.exe')) {
