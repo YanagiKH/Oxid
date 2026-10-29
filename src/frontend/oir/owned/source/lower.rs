@@ -3141,6 +3141,26 @@ pub(super) fn lower_with_limits(
             typed.index().sources().eof(),
         )?;
     }
+    for (rank, key) in typed
+        .index()
+        .owned_vector_functions()
+        .iter()
+        .copied()
+        .enumerate()
+    {
+        let function = super::vector_lower::owned_function(typed.index(), typed.work(), rank, key)?;
+        require(function.id.0 == functions.len(), function.span)?;
+        bytes = budget::add(
+            bytes,
+            budget::function_bytes(super::vector_lower::owned_counts(key))?,
+        )?;
+        budget::append(
+            &mut functions,
+            function,
+            typed.index().function_count(),
+            typed.index().sources().eof(),
+        )?;
+    }
     if bytes != expected.raw_bytes {
         let mut error = OwnedFailure::resource("source count mismatch");
         error.kind = OwnedFailureKind::Malformed(Malformed::CanonicalSite);

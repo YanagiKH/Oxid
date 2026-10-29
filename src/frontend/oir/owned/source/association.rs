@@ -23,6 +23,137 @@ impl<'s> AssociatedOwned<'s> {
         (self.raw, self.sources)
     }
 }
+
+/// Source authority for the distinct affine vector domain owns this exact
+/// fresh lowering result. Raw factories cannot construct this wrapper.
+pub(in crate::frontend::oir::owned) struct AssociatedOwnedVector<'s> {
+    wrapper: super::super::owned_vector_descriptors::RawOwnedVectorProgram,
+    sources: &'s SourceMap,
+}
+// The new source banks prepay this complete inline transport. Keep the
+// consuming association free of an additional fallible allocation.
+#[allow(clippy::large_enum_variant)]
+pub(in crate::frontend::oir::owned) enum AssociatedSourceDomain<'s> {
+    Legacy(AssociatedOwned<'s>),
+    OwnedVector(AssociatedOwnedVector<'s>),
+}
+impl<'s> AssociatedOwnedVector<'s> {
+    pub(in crate::frontend::oir::owned) fn into_source_domain(self) -> AssociatedSourceDomain<'s> {
+        let Self { wrapper, sources } = self;
+        match wrapper.try_into_legacy() {
+            Ok(raw) => AssociatedSourceDomain::Legacy(AssociatedOwned { raw, sources }),
+            Err(wrapper) => AssociatedSourceDomain::OwnedVector(Self { wrapper, sources }),
+        }
+    }
+    pub(in crate::frontend::oir::owned) fn into_parts(
+        self,
+    ) -> (
+        super::super::owned_vector_descriptors::RawOwnedVectorProgram,
+        &'s SourceMap,
+    ) {
+        (self.wrapper, self.sources)
+    }
+}
+
+pub(super) fn lower_and_associate_owned_vector<'s>(
+    typed: &'s super::typeck::TypedOwnedProgram<'_>,
+) -> Result<AssociatedOwnedVector<'s>, Box<Diagnostic>> {
+    use super::super::owned_vector_descriptors::{OwnedVectorImportClaims, RawOwnedVectorProgram};
+    use crate::frontend::{builtin_catalog::owned_vector, project::budget::Allocator};
+    let index = typed.index();
+    if typed.admission() != super::resolve::SourceAdmission::OwnedVectorPipeline
+        || !index.is_owned_vector_candidate_pipeline()
+    {
+        return Err(bad());
+    }
+    let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
+        return Err(bad());
+    };
+    let seed = typed.conversion_association_storage_bytes()?;
+    super::budget::admit_conversion_scratch(seed, owned_vector_scope_bytes())
+        .map_err(|error| super::diagnostic::lower(&error, sources))?;
+    index
+        .validate_owned_vector_candidate(typed.work(), &mut Allocator::default())
+        .map_err(first_owned_vector_error)?;
+    let raw =
+        super::lower::lower(typed).map_err(|error| super::diagnostic::lower(&error, sources))?;
+    check_impl::<true>(&raw, index, sources, true, true, Some(typed))?;
+    let mut imports = OwnedVectorImportClaims::empty();
+    for item in owned_vector::Item::ALL {
+        if index
+            .builtin_set()
+            .experimental()
+            .contains_owned_vector(item)
+        {
+            imports = imports.admit(item);
+        }
+    }
+    let wrapper = RawOwnedVectorProgram::prepare(
+        raw,
+        imports,
+        index.owned_vector_functions(),
+        sources,
+        super::super::budget::Limits::DEFAULT,
+        &mut Allocator::default(),
+    )
+    .map_err(|error| super::diagnostic::verify(&error, sources))?;
+    Ok(AssociatedOwnedVector { wrapper, sources })
+}
+
+fn first_owned_vector_error(errors: Vec<Diagnostic>) -> Box<Diagnostic> {
+    errors.into_iter().next().map_or_else(bad, Box::new)
+}
+
+#[allow(dead_code)]
+struct OwnedVectorAssociationCarriers {
+    domain: AssociatedSourceDomain<'static>,
+    returned_domain: AssociatedSourceDomain<'static>,
+    typed: &'static super::typeck::TypedOwnedProgram<'static>,
+    raw: RawOwnedProgram,
+    raw_return: Result<RawOwnedProgram, OwnedFailure>,
+    wrapper: super::super::owned_vector_descriptors::RawOwnedVectorProgram,
+    wrapper_return:
+        Result<super::super::owned_vector_descriptors::RawOwnedVectorProgram, OwnedFailure>,
+    constructed: AssociatedOwnedVector<'static>,
+    returned: Result<AssociatedOwnedVector<'static>, Box<Diagnostic>>,
+    keys: &'static [crate::frontend::builtin_catalog::owned_vector::Function],
+    key_iterator: std::iter::Enumerate<
+        std::iter::Copied<
+            std::slice::Iter<'static, crate::frontend::builtin_catalog::owned_vector::Function>,
+        >,
+    >,
+    next_key: Option<(
+        usize,
+        crate::frontend::builtin_catalog::owned_vector::Function,
+    )>,
+    key_rank: usize,
+    key: crate::frontend::builtin_catalog::owned_vector::Function,
+    selected: super::owned_vector_source::SelectedSignature,
+    selected_return: Result<super::owned_vector_source::SelectedSignature, Box<Diagnostic>>,
+    raw_function: Option<&'static RawOwnedFunction>,
+    sums: [Option<usize>; 4],
+    checked_sums: [Result<usize, OwnedFailure>; 2],
+    scopes: [usize; 4],
+    predicates: [bool; 6],
+    items: std::array::IntoIter<crate::frontend::builtin_catalog::owned_vector::Item, 2>,
+    imports: super::super::owned_vector_descriptors::OwnedVectorImportClaims,
+    allocator: crate::frontend::project::budget::Allocator,
+    rebuilt: Result<(), Vec<Diagnostic>>,
+    errors: std::vec::IntoIter<Diagnostic>,
+    index: &'static DeclarationIndex<'static>,
+    source: &'static SourceMap,
+    seeded: Result<usize, Box<Diagnostic>>,
+    checked: Result<BindUsage, Box<Diagnostic>>,
+}
+pub(super) const fn owned_vector_carrier_bytes() -> usize {
+    std::mem::size_of::<OwnedVectorAssociationCarriers>()
+}
+
+/// The facade caller remains live while association, lowering and conversion
+/// tracking run. Standalone private candidates reserve the same envelope.
+pub(super) const fn owned_vector_scope_bytes() -> usize {
+    owned_vector_carrier_bytes() + super::program::owned_vector_source_carrier_bytes()
+}
 /// Source authority is minted only from this exact trusted lowering invocation.
 /// No production caller may supply raw operations or a detachable source permit.
 pub(super) fn lower_and_associate<'s>(
@@ -36,7 +167,7 @@ pub(super) fn lower_and_associate<'s>(
         super::lower::lower(typed).map_err(|error| super::diagnostic::lower(&error, sources))?;
     let index = typed.index();
     index.require_current_source_pipeline()?;
-    check_impl(
+    check_impl::<false>(
         &raw,
         index,
         sources,
@@ -59,7 +190,7 @@ fn associate_lowered<'s>(
     let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
         return Err(bad());
     };
-    check_impl(
+    check_impl::<false>(
         &raw,
         index,
         sources,
@@ -94,7 +225,7 @@ pub(super) fn associate_candidate<'s>(
     let crate::frontend::source::SourceView::Map(sources) = index.sources().view() else {
         return Err(bad());
     };
-    check_impl(&raw, index, sources, true, builtins, Some(typed))?;
+    check_impl::<false>(&raw, index, sources, true, builtins, Some(typed))?;
     Ok(AssociatedOwned { raw, sources })
 }
 
@@ -133,6 +264,8 @@ fn origins(
 pub(super) enum FunctionSource<'a> {
     Count,
     Synthetic,
+    OwnedVectorCount,
+    OwnedVectorSynthetic,
     Original(
         &'a crate::frontend::ast::Program,
         &'a crate::frontend::ast::Function,
@@ -192,6 +325,14 @@ fn function(
                     visitor.span(start.span)?;
                     visitor.span(end.span)?;
                 }
+                OwnedInstruction::OwnedVector { .. } => {
+                    if !matches!(
+                        source,
+                        FunctionSource::OwnedVectorCount | FunctionSource::OwnedVectorSynthetic
+                    ) {
+                        return Err(bad());
+                    }
+                }
                 OwnedInstruction::Experimental { .. } | OwnedInstruction::Vector { .. } => {
                     if matches!(source, FunctionSource::Original(..)) {
                         return Err(bad());
@@ -208,7 +349,10 @@ fn function(
                     }
                 }
                 OwnedInstruction::DestructureRecord { .. } => {
-                    if matches!(source, FunctionSource::Synthetic) {
+                    if matches!(
+                        source,
+                        FunctionSource::Synthetic | FunctionSource::OwnedVectorSynthetic
+                    ) {
                         return Err(bad());
                     }
                 }
@@ -229,20 +373,21 @@ fn function(
                 }
                 OwnedInstruction::Scalar(statement) => {
                     visitor.statement(statement)?;
-                    if matches!(source, FunctionSource::Synthetic)
-                        && matches!(
-                            statement,
-                            Statement::Assign(Assign {
-                                value: Rvalue::CheckedI32ToU8 { .. }
-                                    | Rvalue::U8ToI32 { .. }
-                                    | Rvalue::WidenI64 { .. }
-                                    | Rvalue::CheckedI64ToI32 { .. }
-                                    | Rvalue::CheckedI64ToU8 { .. }
-                                    | Rvalue::CheckedIntegerCast { .. },
-                                ..
-                            })
-                        )
-                    {
+                    if matches!(
+                        source,
+                        FunctionSource::Synthetic | FunctionSource::OwnedVectorSynthetic
+                    ) && matches!(
+                        statement,
+                        Statement::Assign(Assign {
+                            value: Rvalue::CheckedI32ToU8 { .. }
+                                | Rvalue::U8ToI32 { .. }
+                                | Rvalue::WidenI64 { .. }
+                                | Rvalue::CheckedI64ToI32 { .. }
+                                | Rvalue::CheckedI64ToU8 { .. }
+                                | Rvalue::CheckedIntegerCast { .. },
+                            ..
+                        })
+                    ) {
                         return Err(bad());
                     }
                     if let (
@@ -297,7 +442,10 @@ fn function(
                 OwnedInstruction::ProjectionLength { .. } => (),
                 OwnedInstruction::AcquireLocalBorrow(_)
                 | OwnedInstruction::ReleaseLocalBorrow(_) => {
-                    if matches!(source, FunctionSource::Synthetic) {
+                    if matches!(
+                        source,
+                        FunctionSource::Synthetic | FunctionSource::OwnedVectorSynthetic
+                    ) {
                         return Err(bad());
                     }
                 }
@@ -357,7 +505,7 @@ pub(super) fn check(
     // Reuse the same provenance helper/result as fresh typing, after that
     // invocation has ended. Candidate-marked indices stay on the private seam.
     index.require_current_source_pipeline()?;
-    check_impl(
+    check_impl::<false>(
         raw,
         index,
         sources,
@@ -375,7 +523,7 @@ pub(super) fn check_enum_candidate(
     sources: &SourceMap,
 ) -> Result<BindUsage, Box<Diagnostic>> {
     index.require_no_builtin_candidate()?;
-    check_impl(raw, index, sources, true, false, None)
+    check_impl::<false>(raw, index, sources, true, false, None)
 }
 
 /// Import-derived identity is checked separately from the raw descriptor proof.
@@ -387,7 +535,7 @@ pub(super) fn check_builtin_candidate(
     sources: &SourceMap,
 ) -> Result<BindUsage, Box<Diagnostic>> {
     index.require_builtin_candidate_pipeline()?;
-    check_impl(raw, index, sources, true, true, None)
+    check_impl::<false>(raw, index, sources, true, true, None)
 }
 
 // Only builtin identity/anchor transports, not inherited Visitor internals.
@@ -485,7 +633,7 @@ fn builtin_kind(
     }
 }
 
-fn check_impl(
+fn check_impl<const OWNED_VECTOR: bool>(
     raw: &RawOwnedProgram,
     index: &DeclarationIndex<'_>,
     sources: &SourceMap,
@@ -493,6 +641,29 @@ fn check_impl(
     allow_builtins: bool,
     typed: Option<&super::typeck::TypedOwnedProgram<'_>>,
 ) -> Result<BindUsage, Box<Diagnostic>> {
+    if OWNED_VECTOR {
+        let typed = typed.ok_or_else(bad)?;
+        if !allow_builtins
+            || typed.admission() != super::resolve::SourceAdmission::OwnedVectorPipeline
+            || !index.is_owned_vector_candidate_pipeline()
+            || !std::ptr::eq(index, typed.index())
+        {
+            return Err(bad());
+        }
+        index
+            .validate_owned_vector_candidate(
+                typed.work(),
+                &mut crate::frontend::project::budget::Allocator::default(),
+            )
+            .map_err(first_owned_vector_error)?;
+        for (rank, key) in index.owned_vector_functions().iter().copied().enumerate() {
+            let expected = super::owned_vector_source::signature(index, typed.work(), rank, key)?;
+            let actual = raw.functions.get(expected.id.0).ok_or_else(bad)?;
+            if actual.id != expected.id || actual.span != expected.anchor {
+                return Err(bad());
+            }
+        }
+    }
     let expected_vectors = index.vector_functions();
     if raw.vector_functions.len() != expected_vectors.len()
         || raw.vector_functions.capacity() != expected_vectors.len()
@@ -514,23 +685,27 @@ fn check_impl(
         }
         // A retained table is not its own source authority. Rebuild from the
         // immutable authenticated templates before trusting its concrete keys.
-        index.validate_generic_source(typed.work())?;
+        if !OWNED_VECTOR {
+            index.validate_generic_source(typed.work())?;
+        }
     }
     // Public association already requires Current. The shared helper retains
     // an independent exact-origin check for output claims; the older private
     // input candidate may never acquire output merely by changing raw shapes.
     if (raw.builtins.has_output() || index.builtin_set().has_output())
         && (!allow_builtins
-            || !(index.is_current_source_pipeline() || {
-                #[cfg(test)]
-                {
-                    index.is_output_candidate_pipeline()
-                }
-                #[cfg(not(test))]
-                {
-                    false
-                }
-            }))
+            || !(index.is_current_source_pipeline()
+                || (OWNED_VECTOR && index.is_owned_vector_candidate_pipeline())
+                || {
+                    #[cfg(test)]
+                    {
+                        index.is_output_candidate_pipeline()
+                    }
+                    #[cfg(not(test))]
+                    {
+                        false
+                    }
+                }))
     {
         return Err(bad());
     }
@@ -538,7 +713,18 @@ fn check_impl(
         if raw.builtins != index.builtin_set() {
             return Err(bad());
         }
-        let ids = builtins::check(raw).map_err(|_| bad())?;
+        let ids = if OWNED_VECTOR {
+            builtins::check_candidate_prefix(
+                raw,
+                raw.functions
+                    .len()
+                    .checked_sub(index.owned_vector_functions().len())
+                    .ok_or_else(bad)?,
+            )
+        } else {
+            builtins::check(raw)
+        }
+        .map_err(|_| bad())?;
         // Enum and function suffixes have independent family ranks. A status
         // without a function must never shift another family's function ID.
         for enumeration_kind in BuiltinEnum::ALL {
@@ -638,7 +824,11 @@ fn check_impl(
             } else {
                 None
             },
-            FunctionSource::Count,
+            if OWNED_VECTOR {
+                FunctionSource::OwnedVectorCount
+            } else {
+                FunctionSource::Count
+            },
             &mut ConversionSeen::empty(),
         )?;
     }
@@ -665,6 +855,12 @@ fn check_impl(
         let requested = conversion_seen_bytes(owners, expressions)?;
         if let Some(typed) = typed {
             let seed = typed.conversion_association_storage_bytes()?;
+            let seed = if OWNED_VECTOR {
+                super::budget::add(seed, owned_vector_scope_bytes())
+                    .map_err(|error| super::diagnostic::lower(&error, sources))?
+            } else {
+                seed
+            };
             // The fixed RFC0030 bank already paid the shared authentication
             // helper. Only tracker/header/reservation overlap is additional.
             let additional = requested
@@ -781,7 +977,17 @@ fn check_impl(
                 } else {
                     None
                 },
-                FunctionSource::Synthetic,
+                if OWNED_VECTOR
+                    && ordinal
+                        >= index
+                            .function_count()
+                            .checked_sub(index.owned_vector_functions().len())
+                            .ok_or_else(bad)?
+                {
+                    FunctionSource::OwnedVectorSynthetic
+                } else {
+                    FunctionSource::Synthetic
+                },
                 &mut seen,
             )?;
             continue;
@@ -1657,7 +1863,7 @@ mod array_tests {
             // occurs; only the existing boxed diagnostic is allocated.
             let (denied, allocations) =
                 super::super::super::reviewer_origins::integration_counted(|| {
-                    check_impl(&raw, typed.index(), &sources, true, true, None)
+                    check_impl::<false>(&raw, typed.index(), &sources, true, true, None)
                 });
             let error = denied.unwrap_err();
             assert_eq!(error.code, "E0500");
@@ -1832,8 +2038,9 @@ mod enum_tests {
         .unwrap();
         let typed = super::super::resolve::type_enum_source(&index, &work, &mut allocator).unwrap();
         let mut raw = super::super::lower::lower(&typed).unwrap();
-        let check =
-            |raw: &RawOwnedProgram| check_impl(raw, &index, &sources, true, false, Some(&typed));
+        let check = |raw: &RawOwnedProgram| {
+            check_impl::<false>(raw, &index, &sources, true, false, Some(&typed))
+        };
         assert!(check(&raw).is_ok());
         // These are valid declaration shapes with different nominal or
         // structural payload identities; none can inherit the source index.

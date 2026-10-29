@@ -112,7 +112,7 @@ def _require_statement(body, source):
         raise AssertionError('retained runner binding changed: ' + source)
 
 
-def _retained_delegate(tree, context, invocation):
+def _retained_delegate(tree, context, invocation, guard_inside=False):
     """Require the original call and its immediate failure guard on the live path."""
     run = _function(tree.body, 'run')
     attempts = [node for node in run.body if isinstance(node, ast.Try)]
@@ -124,10 +124,16 @@ def _retained_delegate(tree, context, invocation):
         raise AssertionError('expected one unconditional retained replay call')
     call = calls[0]
     expected = ast.parse('with ' + context + ':\n    status = ' + invocation).body[0]
-    if ast.dump(call) != ast.dump(expected):
+    if (len(call.items) != 1 or ast.dump(call.items[0]) != ast.dump(expected.items[0])
+            or not call.body or ast.dump(call.body[0]) != ast.dump(expected.body[0])):
         raise AssertionError('retained replay call changed')
-    index = attempt.body.index(call)
-    guard = attempt.body[index + 1] if index + 1 < len(attempt.body) else None
+    if guard_inside:
+        guard = call.body[1] if len(call.body) > 1 else None
+    else:
+        if len(call.body) != 1:
+            raise AssertionError('retained replay call scope changed')
+        index = attempt.body.index(call)
+        guard = attempt.body[index + 1] if index + 1 < len(attempt.body) else None
     if not (isinstance(guard, ast.Expr) and isinstance(guard.value, ast.Call)
             and isinstance(guard.value.func, ast.Name) and guard.value.func.id == 'require'
             and guard.value.args
@@ -191,8 +197,11 @@ def require_retained_replay_binding(route, read=None):
         _retained_bound(_function(tree.body, 'bound_registry').body,
                         "{'PREDECESSOR': PREDECESSOR, 'PREDECESSOR_ADDED': PREDECESSOR_ADDED, "
                         "'PREDECESSOR_POLICIES': PREDECESSOR_POLICIES, 'PINS_PROVISIONAL': PINS_PROVISIONAL, "
-                        "'capture_sources': capture_sources, 'current_manifest': current_manifest}")
-        _retained_delegate(tree, 'bound_registry()', 'RETAINED_RUN(delegated)')
+                        "'capture_sources': capture_sources, 'current_manifest': current_manifest, "
+                        "'OBSERVER_ADAPTER': OWNED_VECTOR_OBSERVER_ADAPTER, "
+                        "'authenticate_observer_adapter': authenticate_owned_vector_observer_adapter, "
+                        "'prepare_current_observer': prepare}")
+        _retained_delegate(tree, 'bound_registry() as context', 'RETAINED_RUN(delegated)', guard_inside=True)
 
 
 class CiTriggerPolicyTests(unittest.TestCase):

@@ -62,7 +62,8 @@ impl<'a, V: StoredValue> Cells<'a, V> {
                     AggregateTy::ByteBuf
                     | AggregateTy::File
                     | AggregateTy::Vector(_)
-                    | AggregateTy::RecordVector(_),
+                    | AggregateTy::RecordVector(_)
+                    | AggregateTy::OwnedRecordVector(_),
                 ) => self.length -= 1,
                 ValueTy::Owned(AggregateTy::FixedArray(array)) => {
                     if next < array.length().max(1) {
@@ -275,7 +276,7 @@ mod tests {
         source[..4].copy_from_slice(&0u32.to_le_bytes());
         source[8] = 255;
         let mut destination = vec![0x5a; 12];
-        copy_active_bytes_for::<RuntimeScalar>(
+        copy_active_bytes_for::<RuntimeScalar, _>(
             &declarations,
             aggregate,
             &source,

@@ -7,8 +7,10 @@ A temporary source checkout and target directory leave the candidate untouched.
 """
 import json
 import os
+import re
 from pathlib import Path
 import shutil
+import sys
 import subprocess
 import tempfile
 
@@ -130,12 +132,12 @@ PROBES = [
             let _ = flow::DenialContext::owner(raw, OwnerPlaceId(0));
         }
     """),
-    ("raw-program-cannot-enter-reference", False, ("E0308",), """
+    ("raw-program-cannot-enter-reference", False, ("E0277",), """
         fn run_raw(raw: &RawOwnedProgram) {
             let _ = execute::run(raw, Some(hir::DefId(0)));
         }
     """),
-    ("raw-program-cannot-enter-native", False, ("E0308",), """
+    ("raw-program-cannot-enter-native", False, ("E0277",), """
         fn compile_raw(raw: &RawOwnedProgram, sources: &SourceMap) {
             let _ = native::native_module(raw, Some(hir::DefId(0)), sources);
         }
@@ -214,7 +216,7 @@ TEST_PROBES = [
     ("array-reference-observation-cannot-be-witness", False, ("E0308",), """
         fn forge(observation: execute::ReferenceObservation) -> VerifiedOwnedProgram { observation }
     """),
-    ("array-reference-observation-cannot-build-plan", False, ("E0308",), """
+    ("array-reference-observation-cannot-build-plan", False, ("E0277",), """
         fn forge(observation: &execute::ReferenceObservation) {
             let _ = plan::ExecutionPlan::build(observation);
         }
@@ -240,7 +242,7 @@ TEST_PROBES = [
     ("array-native-observation-cannot-be-witness", False, ("E0308",), """
         fn forge(observation: native::NativeObservation) -> VerifiedOwnedProgram { observation }
     """),
-    ("array-native-observation-cannot-build-plan", False, ("E0308",), """
+    ("array-native-observation-cannot-build-plan", False, ("E0277",), """
         fn forge(observation: &native::NativeObservation) {
             let _ = plan::ExecutionPlan::build(observation);
         }
@@ -254,12 +256,12 @@ TEST_PROBES = [
     ("array-native-observation-has-no-executable-accessor", False, ("E0599",), """
         fn forge(observation: &native::NativeObservation) { let _ = observation.witness(); }
     """),
-    ("array-native-observation-cannot-enter-native", False, ("E0308",), """
+    ("array-native-observation-cannot-enter-native", False, ("E0277",), """
         fn compile(observation: &native::NativeObservation, sources: &SourceMap) {
             let _ = native::native_module(observation, Some(hir::DefId(0)), sources);
         }
     """),
-    ("raw-program-cannot-enter-observed-native", False, ("E0308",), """
+    ("raw-program-cannot-enter-observed-native", False, ("E0277",), """
         fn compile(raw: &RawOwnedProgram, sources: &SourceMap) {
             let _ = native::run_array_observed(raw, Some(hir::DefId(0)), sources,
                 native::NativeControl::default());
@@ -377,6 +379,11 @@ PRODUCER_DIAGNOSTIC_COMPILE_TIME_FIXTURES = (
 COMPILE_TIME_FIXTURES = (*ARRAY_COMPILE_TIME_FIXTURES, *ENUM_COMPILE_TIME_FIXTURES,
                          *HIR_IMPORT_COMPILE_TIME_FIXTURES, *HIR_IMPORT_V2_COMPILE_TIME_FIXTURES,
                          *PRODUCER_DIAGNOSTIC_COMPILE_TIME_FIXTURES)
+# One literal source input outside the original tests roster; its DATA neighbors
+# are not part of the privacy-probe checkout.
+OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES = (
+    'scripts/owned_record_vector_acceptance/enum16.ox',
+)
 
 
 def materialize_checkout(root, checkout):
@@ -385,7 +392,7 @@ def materialize_checkout(root, checkout):
         shutil.copy2(root / name, checkout / name)
     for name in ["src", "native", "compiler", "stdlib", "rfcs", "fixtures"]:
         shutil.copytree(root / name, checkout / name)
-    for name in COMPILE_TIME_FIXTURES:
+    for name in (*COMPILE_TIME_FIXTURES, *OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES):
         destination = checkout / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / name, destination)
@@ -423,10 +430,16 @@ def main():
             else:
                 assert result.returncode != 0 and any(code in actual_codes for code in codes), (
                     name, result.returncode, actual_codes, result.stdout, result.stderr)
+                if name in ('raw-program-cannot-enter-reference', 'raw-program-cannot-enter-native', 'array-reference-observation-cannot-build-plan', 'array-native-observation-cannot-build-plan', 'raw-program-cannot-enter-observed-native', 'array-native-observation-cannot-enter-native'):
+                    assert any(error.get("code", {}).get("code") == "E0277"
+                               and re.fullmatch(r"the trait bound `[^`]+: (?:[A-Za-z_][A-Za-z_0-9]*::)*PlanWitness` is not satisfied",
+                                                error["message"])
+                               for error in errors if error.get("code")), (name, errors)
                 assert not any(code in actual_codes for code in ["E0412", "E0422", "E0432", "E0433"]), (
                     "probe failed on a missing import/type instead of witness privacy", name, actual_codes)
             reports.append({"probe": name, "expected_success": succeeds,
                             "exit_code": result.returncode, "error_codes": actual_codes})
+            print(json.dumps(reports[-1]), file=sys.stderr, flush=True)
         print(json.dumps({"owned_witness_privacy": "passed", "probes": reports}, indent=2))
 
 

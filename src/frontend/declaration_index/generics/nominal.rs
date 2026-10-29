@@ -53,6 +53,74 @@ struct RecordVectorKeyControls {
 }
 
 impl Nominals {
+    pub(super) fn candidate_payload_bytes(
+        &self,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<usize, Box<Diagnostic>> {
+        let mut bytes = self
+            .records
+            .capacity()
+            .checked_mul(size_of::<RecordApplication>())
+            .and_then(|n| {
+                n.checked_add(
+                    self.enumerations
+                        .capacity()
+                        .checked_mul(size_of::<EnumApplication>())?,
+                )
+            })
+            .and_then(|n| {
+                n.checked_add(
+                    self.emitted_enums
+                        .capacity()
+                        .checked_mul(size_of::<usize>())?,
+                )
+            })
+            .and_then(|n| {
+                n.checked_add(
+                    self.emitted_records
+                        .capacity()
+                        .checked_mul(size_of::<usize>())?,
+                )
+            })
+            .ok_or_else(|| exhausted(at))?;
+        for record in &self.records {
+            work.debit(1, at, "owned vector retained record capacity")?;
+            bytes = bytes
+                .checked_add(
+                    record
+                        .arguments
+                        .capacity()
+                        .checked_mul(size_of::<Value>())
+                        .ok_or_else(|| exhausted(at))?,
+                )
+                .and_then(|n| {
+                    n.checked_add(record.fields.capacity().checked_mul(size_of::<Value>())?)
+                })
+                .ok_or_else(|| exhausted(at))?;
+        }
+        for enumeration in &self.enumerations {
+            work.debit(1, at, "owned vector retained enum capacity")?;
+            bytes = bytes
+                .checked_add(
+                    enumeration
+                        .arguments
+                        .capacity()
+                        .checked_mul(size_of::<Value>())
+                        .ok_or_else(|| exhausted(at))?,
+                )
+                .and_then(|n| {
+                    n.checked_add(
+                        enumeration
+                            .variants
+                            .capacity()
+                            .checked_mul(size_of::<Option<Value>>())?,
+                    )
+                })
+                .ok_or_else(|| exhausted(at))?;
+        }
+        Ok(bytes)
+    }
     pub(super) fn concrete(&self, value: Value) -> bool {
         match value {
             Value::Concrete(_) => true,
@@ -173,7 +241,8 @@ impl Nominals {
                             depth + 1,
                         )?
                         .value(argument.span)?;
-                    let value = Value::Vector(Element::checked(value, self, argument.span)?);
+                    let value =
+                        Value::Vector(index.candidate_element(value, self, argument.span)?);
                     Ok(match syntax.kind {
                         TypeSyntaxKind::AppliedReference { mutable, .. } => Type::Reference {
                             value,
@@ -434,6 +503,12 @@ impl Nominals {
                     field.ty.span,
                 ));
             }
+            if matches!(value, Value::Vector(element) if element.owned()) {
+                return Err(error(
+                    "owned record vectors cannot be stored in record declarations",
+                    field.ty.span,
+                ));
+            }
             storage.push(&mut fields, value, allocator, work, field.span)?;
         }
         self.records[id].fields = fields;
@@ -530,6 +605,12 @@ impl Nominals {
                 ),
                 None => None,
             };
+            if matches!(value, Some(Value::Vector(element)) if element.owned()) {
+                return Err(error(
+                    "owned record vectors cannot be enum payloads",
+                    variant.span,
+                ));
+            }
             storage.push(&mut variants, value, allocator, work, variant.span)?;
         }
         self.enumerations[id].variants = variants;
@@ -715,6 +796,7 @@ impl Nominals {
 
     pub(super) fn value(&self, value: Value, at: Span) -> Result<ValueTy, Box<Diagnostic>> {
         match value {
+            Value::Concrete(ValueTy::Owned(AggregateTy::OwnedRecordVector(_))) => Err(bad(at)),
             Value::Concrete(ValueTy::Owned(AggregateTy::Enum(id)))
                 if id.0 >= self.template_enum_count =>
             {
@@ -737,6 +819,12 @@ impl Nominals {
                 .ok_or_else(|| bad(at)),
             Value::Parameter { .. } => Err(bad(at)),
             Value::Vector(element) => match self.value(element.value(), at)? {
+                ValueTy::Owned(AggregateTy::Record(id)) if element.owned() => {
+                    if self.record_is_copy(id, at)? {
+                        return Err(bad(at));
+                    }
+                    Ok(ValueTy::Owned(AggregateTy::OwnedRecordVector(id)))
+                }
                 ValueTy::Scalar(ty) => Ok(ValueTy::Owned(AggregateTy::Vector(ty))),
                 ValueTy::Owned(AggregateTy::Record(id)) if self.record_is_copy(id, at)? => {
                     Ok(ValueTy::Owned(AggregateTy::RecordVector(id)))

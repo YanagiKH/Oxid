@@ -11,9 +11,13 @@ use std::{
 
 #[path = "file_resources.rs"]
 mod files;
+#[path = "owned_vector_resources.rs"]
+mod owned_vectors;
 #[path = "vector_resources.rs"]
 mod vectors;
 pub(super) use files::{FileAccess, FileDescriptor, OpenValue};
+pub(in crate::frontend::oir::owned) use owned_vectors::control_bytes as owned_vector_control_bytes;
+pub(in crate::frontend::oir::owned) use owned_vectors::OwnedVectorDescriptor;
 pub(in crate::frontend::oir::owned) use vectors::{
     CheckedElement as CheckedVectorElement, Element as VectorElement,
     RecordElement as RecordVectorElement, VectorDescriptor,
@@ -484,6 +488,7 @@ impl Heap {
         unsafe {
             let header = node.as_ref();
             let vector = header.capacity == vectors::VECTOR_NODE;
+            let owned_vector = header.capacity == owned_vectors::OWNED_VECTOR_NODE;
             let capacity = if header.capacity == files::FILE_NODE {
                 let _ = files::close_node(header);
                 0
@@ -492,6 +497,8 @@ impl Heap {
             };
             let charge = if vector {
                 vectors::node_charge(header)
+            } else if owned_vector {
+                owned_vectors::node_charge(header)
             } else {
                 capacity as u64 + ALLOCATION_CHARGE
             };
@@ -505,6 +512,8 @@ impl Heap {
             }
             if vector {
                 vectors::deallocate_node(node);
+            } else if owned_vector {
+                owned_vectors::deallocate_node(node);
             } else {
                 dealloc(node.as_ptr().cast(), allocation_layout(capacity));
             }

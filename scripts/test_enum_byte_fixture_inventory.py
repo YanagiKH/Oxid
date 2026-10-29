@@ -107,7 +107,23 @@ class CurrentByteFixtureInventory(unittest.TestCase):
                                     root / 'tests/fixtures/copy_records/wide_unicode.ox'}
                          and not copies & (current | previous | vectors),
                          'portable Copy fixture registration differs')
-            gate.require(not current & previous and verify_repo.fixture_data_sources(root) - copies == current | previous | vectors,
+            owned_names = (
+                'aliases.ox', 'bytebuf.ox', 'conflicting_borrows.ox', 'copy_operation.ox',
+                'double_move.ox', 'empty_new.ox', 'enum16.ox', 'failed_reserve.ox',
+                'fault_pop.ox', 'fault_push_file.ox', 'files.ox', 'generic_record.ox',
+                'index_read.ox', 'nested_vector.ox', 'package_main.ox', 'package_model.ox',
+                'unused_pop.ox', 'unused_push.ox', 'unused_template.ox', 'zero_key.ox',
+            )
+            owned_vectors = verify_repo.owned_record_vector_fixture_data_sources(root)
+            gate.require(len(owned_vectors) == 20
+                         and owned_vectors == {root / 'scripts/owned_record_vector_acceptance' / name
+                                               for name in owned_names}
+                         and not owned_vectors & (current | previous | vectors | copies),
+                         'portable owned-record vector fixture registration differs')
+            registered = verify_repo.fixture_data_sources(root)
+            gate.require(registered == current | previous | vectors | copies | owned_vectors,
+                         'portable complete fixture registration differs')
+            gate.require(not current & previous and registered - copies - owned_vectors == current | previous | vectors,
                          'portable fixture registration differs')
             verify_repo.verify_test_fixture_registration(root)
             gate.require(not {'resource', 'verify_bounded_stdin_native', 'verify_bounded_u8_native'} & sys.modules.keys(),

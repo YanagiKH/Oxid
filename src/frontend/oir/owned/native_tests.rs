@@ -453,6 +453,9 @@ impl Scratch {
         std::fs::create_dir(&root).unwrap();
         Self(root)
     }
+    pub(super) fn path(&self, name: &str) -> std::path::PathBuf {
+        self.0.join(name)
+    }
     pub(super) fn compile(&self, module: &str, name: &str) -> std::path::PathBuf {
         let assembler = std::env::var_os("OXID_LLVM_BIN").map_or_else(
             || std::path::PathBuf::from("llvm-as-19"),

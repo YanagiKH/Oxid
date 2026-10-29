@@ -131,6 +131,10 @@ static int vector_record_source(oxid_byte_heap *heap, uint32_t element,
     for (oxid_allocation *node = heap->head; node; node = node->next) {
         uint64_t charge = node->capacity == OXID_VECTOR_NODE
             ? ((const oxid_vector_header *)node)->allocation_bytes
+#ifdef OXID_OWNED_VECTOR_RUNTIME
+            : node->capacity == OXID_OWNED_VECTOR_NODE
+                ? oxid_owned_vector_node_charge(node)
+#endif
             : OXID_BYTEBUF_HEADER + (node->capacity == UINT32_MAX ? 0 : (uint64_t)node->capacity);
         if (charge > SIZE_MAX) return 0;
         if (!vector_overlaps(source, length, node, (size_t)charge)) continue;

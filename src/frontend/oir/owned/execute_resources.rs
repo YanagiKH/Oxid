@@ -1,6 +1,183 @@
 //! Built-in resource ownership inside the reference consumer. All layouts
 //! originate in checked declarations; no scalar can act as an allocation ID.
 use super::*;
+use crate::frontend::oir::owned::owned_record_codec::{bounds::CheckedElementView, Element};
+
+/// The legacy declaration-only input and the real exact-witness scope share
+/// one active validation/copy/release body. No trait object or table is stored.
+pub(super) trait ResourceQueries<'facade> {
+    fn declarations(&self) -> &'facade Declarations;
+    fn leaves<F>(
+        &self,
+        aggregate: AggregateTy,
+        reader: F,
+    ) -> std::result::Result<ResourceLeaves<'facade, F>, DeclarationError>
+    where
+        F: FnMut(usize) -> std::result::Result<usize, DeclarationError>;
+    fn validate_owned(
+        &mut self,
+        heap: &byte_buffer::Heap,
+        record: u32,
+        bytes: &[u8],
+        span: Span,
+    ) -> Result<()>;
+    fn release_owned(
+        &mut self,
+        heap: &mut byte_buffer::Heap,
+        record: u32,
+        bytes: &[u8],
+        span: Span,
+    ) -> Result<()>;
+}
+
+impl<'a> ResourceQueries<'a> for &'a Declarations {
+    fn declarations(&self) -> &'a Declarations {
+        self
+    }
+    fn leaves<F>(
+        &self,
+        aggregate: AggregateTy,
+        reader: F,
+    ) -> std::result::Result<ResourceLeaves<'a, F>, DeclarationError>
+    where
+        F: FnMut(usize) -> std::result::Result<usize, DeclarationError>,
+    {
+        self.resource_leaves(aggregate, reader)
+    }
+    fn validate_owned(
+        &mut self,
+        _: &byte_buffer::Heap,
+        _: u32,
+        _: &[u8],
+        span: Span,
+    ) -> Result<()> {
+        Err(bad(
+            "owned vector resource requires its complete consumer",
+            span,
+        ))
+    }
+    fn release_owned(
+        &mut self,
+        _: &mut byte_buffer::Heap,
+        _: u32,
+        _: &[u8],
+        span: Span,
+    ) -> Result<()> {
+        Err(bad(
+            "owned vector resource requires its complete consumer",
+            span,
+        ))
+    }
+}
+
+pub(super) struct RuntimeResourceScope<'a, W: PlanWitness> {
+    witness: &'a W,
+    fuel: Option<&'a mut usize>,
+}
+impl<'a, W: PlanWitness> RuntimeResourceScope<'a, W> {
+    pub(super) fn paid(witness: &'a W, fuel: &'a mut usize) -> Self {
+        Self {
+            witness,
+            fuel: Some(fuel),
+        }
+    }
+    pub(super) fn maintenance(witness: &'a W) -> Self {
+        Self {
+            witness,
+            fuel: None,
+        }
+    }
+    fn element(&self, record: u32, span: Span) -> Result<Element<'a>> {
+        self.witness
+            .elements()
+            .ok_or_else(|| bad("owned vector resource witness", span))?
+            .element(RecordId(record as usize))
+            .map_err(|_| bad("owned vector resource element", span))
+    }
+}
+impl<'a, W: PlanWitness> ResourceQueries<'a> for RuntimeResourceScope<'a, W> {
+    fn declarations(&self) -> &'a Declarations {
+        self.witness.declarations()
+    }
+    fn leaves<F>(
+        &self,
+        aggregate: AggregateTy,
+        reader: F,
+    ) -> std::result::Result<ResourceLeaves<'a, F>, DeclarationError>
+    where
+        F: FnMut(usize) -> std::result::Result<usize, DeclarationError>,
+    {
+        self.witness.resource_leaves(aggregate, reader)
+    }
+    fn validate_owned(
+        &mut self,
+        heap: &byte_buffer::Heap,
+        record: u32,
+        bytes: &[u8],
+        span: Span,
+    ) -> Result<()> {
+        let element = self.element(record, span)?;
+        let value = byte_buffer::OwnedVectorDescriptor::decode(bytes)
+            .map_err(|error| experimental::heap_failure(error, span))?;
+        if let Some(fuel) = self.fuel.as_deref_mut() {
+            let hosted = *fuel == HOSTED_FUEL;
+            heap.owned_vector_validate(&value, element, fuel)
+                .map_err(|error| experimental::heap_failure(error, span))?;
+            if hosted {
+                *fuel = HOSTED_FUEL;
+            }
+            Ok(())
+        } else {
+            // Normal release maintenance is separate from user-fueled moves.
+            heap.owned_vector_descriptor(bytes, element)
+                .map(|_| ())
+                .map_err(|error| experimental::heap_failure(error, span))
+        }
+    }
+    fn release_owned(
+        &mut self,
+        heap: &mut byte_buffer::Heap,
+        record: u32,
+        bytes: &[u8],
+        span: Span,
+    ) -> Result<()> {
+        let element = self.element(record, span)?;
+        let mut value = byte_buffer::OwnedVectorDescriptor::decode(bytes)
+            .map_err(|error| experimental::heap_failure(error, span))?;
+        heap.owned_vector_release(&mut value, element)
+            .map_err(|error| experimental::heap_failure(error, span))
+    }
+}
+
+struct OwnedResourceCarriers<'a, W: PlanWitness> {
+    witness: [&'a W; 2],
+    scope: RuntimeResourceScope<'a, W>,
+    scope_return: RuntimeResourceScope<'a, W>,
+    scope_receiver: &'a mut RuntimeResourceScope<'a, W>,
+    fuel: &'a mut usize,
+    fuel_option: Option<&'a mut usize>,
+    view: Option<CheckedElementView<'a>>,
+    element: Element<'a>,
+    element_return: Result<Element<'a>>,
+    descriptor: byte_buffer::OwnedVectorDescriptor,
+    decoded_return: std::result::Result<byte_buffer::OwnedVectorDescriptor, byte_buffer::Failure>,
+    mapped_return: Result<byte_buffer::OwnedVectorDescriptor>,
+    validation_return: std::result::Result<(), byte_buffer::Failure>,
+    mapped_validation_return: Result<()>,
+    caller_validation_return: Result<()>,
+    maintenance_descriptor_return:
+        std::result::Result<byte_buffer::OwnedVectorDescriptor, byte_buffer::Failure>,
+    selected_failure: byte_buffer::Failure,
+    selected_record: RecordId,
+    bytes: [&'a [u8]; 2],
+    declaration_return: &'a Declarations,
+    hosted: bool,
+    transfer_keys: [OwnerKey; 2],
+    admitted_replacement: Option<(std::ops::Range<usize>, AggregateTy, std::ops::Range<usize>)>,
+}
+pub(super) fn owned_control_bytes<W: PlanWitness>() -> usize {
+    size_of::<OwnedResourceCarriers<'_, W>>()
+}
 
 fn vector_type_error_mapper(
     span: &Span,
@@ -99,19 +276,44 @@ fn extent(offset: usize, length: usize, span: Span) -> Result<std::ops::Range<us
     Ok(offset..end)
 }
 
-pub(super) fn preflight(
-    declarations: &Declarations,
+pub(super) fn preflight<'a, Q: ResourceQueries<'a>>(
+    mut queries: Q,
     heap: &byte_buffer::Heap,
     aggregate: AggregateTy,
     source: &[u8],
     destination_length: usize,
     span: Span,
 ) -> Result<()> {
-    for leaf in leaves(declarations, aggregate, source).map_err(|_| bad("resource layout", span))? {
+    preflight_impl(
+        &mut queries,
+        heap,
+        aggregate,
+        source,
+        destination_length,
+        span,
+    )
+}
+
+fn preflight_impl<'a, Q: ResourceQueries<'a>>(
+    queries: &mut Q,
+    heap: &byte_buffer::Heap,
+    aggregate: AggregateTy,
+    source: &[u8],
+    destination_length: usize,
+    span: Span,
+) -> Result<()> {
+    let declarations = queries.declarations();
+    for leaf in queries
+        .leaves(aggregate, tag_reader(source))
+        .map_err(|_| bad("resource layout", span))?
+    {
         let leaf = leaf.map_err(|_| bad("resource active alternative", span))?;
         let source_extent = extent(leaf.offset, source.len(), span)?;
         extent(leaf.offset, destination_length, span)?;
         match leaf.kind {
+            ResourceKind::OwnedRecordVector(record) => {
+                queries.validate_owned(heap, record, &source[source_extent], span)?;
+            }
             ResourceKind::ByteBuf => {
                 heap.descriptor(&source[source_extent])
                     .map_err(|_| bad("resource descriptor", span))?;
@@ -143,14 +345,17 @@ pub(super) fn preflight(
 
 /// Physical descriptor transfer after complete preflight. Ownership-state
 /// transitions, rather than stale bytes in moved storage, determine liveness.
-pub(super) fn copy(
-    declarations: &Declarations,
+pub(super) fn copy<'a, Q: ResourceQueries<'a>>(
+    queries: Q,
     aggregate: AggregateTy,
     source: &[u8],
     destination: &mut [u8],
     span: Span,
 ) -> Result<()> {
-    for leaf in leaves(declarations, aggregate, source).map_err(|_| bad("resource layout", span))? {
+    for leaf in queries
+        .leaves(aggregate, tag_reader(source))
+        .map_err(|_| bad("resource layout", span))?
+    {
         let leaf = leaf.map_err(|_| bad("resource active alternative", span))?;
         let source_extent = extent(leaf.offset, source.len(), span)?;
         let destination_extent = extent(leaf.offset, destination.len(), span)?;
@@ -162,18 +367,25 @@ pub(super) fn copy(
 /// No allocation and no fuel debit. Invalid private bytes fail before the
 /// first release; verified unique resource obligations cannot become invalid
 /// while the execution is exclusively borrowed by this operation.
-pub(super) fn release(
-    declarations: &Declarations,
+pub(super) fn release<'a, Q: ResourceQueries<'a>>(
+    mut queries: Q,
     heap: &mut byte_buffer::Heap,
     aggregate: AggregateTy,
     bytes: &[u8],
     span: Span,
 ) -> Result<()> {
-    preflight(declarations, heap, aggregate, bytes, bytes.len(), span)?;
-    for leaf in leaves(declarations, aggregate, bytes).map_err(|_| bad("resource layout", span))? {
+    preflight_impl(&mut queries, heap, aggregate, bytes, bytes.len(), span)?;
+    let declarations = queries.declarations();
+    for leaf in queries
+        .leaves(aggregate, tag_reader(bytes))
+        .map_err(|_| bad("resource layout", span))?
+    {
         let leaf = leaf.map_err(|_| bad("resource active alternative", span))?;
         let range = extent(leaf.offset, bytes.len(), span)?;
         match leaf.kind {
+            ResourceKind::OwnedRecordVector(record) => {
+                queries.release_owned(heap, record, &bytes[range], span)?;
+            }
             ResourceKind::ByteBuf => {
                 let mut value = heap
                     .descriptor(&bytes[range])

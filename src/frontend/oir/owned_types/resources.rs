@@ -8,6 +8,7 @@ pub(in crate::frontend::oir) enum ResourceKind {
     File,
     Vector(hir::Ty),
     RecordVector(u32),
+    OwnedRecordVector(u32),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,6 +102,10 @@ struct PresenceFrame {
     aggregate: AggregateTy,
     next: usize,
     contains: bool,
+}
+
+pub(super) const fn summary_stack_request_bytes() -> usize {
+    size_of::<[Option<PresenceFrame>; MAX_CONTAINMENT_DEPTH + 1]>()
 }
 
 /// One summary per checked nominal declaration. Shared suffixes are evaluated
@@ -213,6 +218,7 @@ pub(super) fn summaries(
                                 | AggregateTy::File
                                 | AggregateTy::Vector(_)
                                 | AggregateTy::RecordVector(_)
+                                | AggregateTy::OwnedRecordVector(_)
                         )
                     );
                     top.next += 1;
@@ -231,6 +237,7 @@ impl Declarations {
     ) -> Result<bool, DeclarationError> {
         self.check_aggregate_type(aggregate)?;
         match aggregate {
+            AggregateTy::OwnedRecordVector(_) => return Err(DeclarationError::TypeMismatch),
             AggregateTy::ByteBuf
             | AggregateTy::File
             | AggregateTy::Vector(_)
@@ -259,14 +266,27 @@ impl Declarations {
         F: FnMut(usize) -> Result<usize, DeclarationError>,
     {
         self.check_aggregate_type(aggregate)?;
+        Ok(self.resource_leaves_for_checked_type(aggregate, read_tag))
+    }
+
+    /// An inert iterator over a root already authenticated by a sealed
+    /// witness's concrete type/layout query. It cannot create a language owner.
+    pub(in crate::frontend::oir) fn resource_leaves_for_checked_type<F>(
+        &self,
+        aggregate: AggregateTy,
+        read_tag: F,
+    ) -> ResourceLeaves<'_, F>
+    where
+        F: FnMut(usize) -> Result<usize, DeclarationError>,
+    {
         let mut stack = [None; MAX_CONTAINMENT_DEPTH + 1];
         stack[0] = Some((ValueTy::Owned(aggregate), 0, 0));
-        Ok(ResourceLeaves {
+        ResourceLeaves {
             declarations: self,
             read_tag,
             stack,
             length: 1,
-        })
+        }
     }
 
     /// Inspect each direct checked field/payload once. Nested vectors must have
@@ -335,6 +355,16 @@ where
             let position = self.length - 1;
             let (ty, offset, next) = self.stack[position].expect("checked traversal stack");
             match ty {
+                ValueTy::Owned(AggregateTy::OwnedRecordVector(record)) => {
+                    self.length -= 1;
+                    return Ok(Some(ResourceLeaf {
+                        offset,
+                        kind: ResourceKind::OwnedRecordVector(
+                            u32::try_from(record.0)
+                                .map_err(|_| DeclarationError::LayoutOverflow)?,
+                        ),
+                    }));
+                }
                 ValueTy::Scalar(_) | ValueTy::Owned(AggregateTy::FixedArray(_)) => self.length -= 1,
                 ValueTy::Owned(AggregateTy::File) => {
                     self.length -= 1;

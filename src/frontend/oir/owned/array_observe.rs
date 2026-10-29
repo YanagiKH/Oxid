@@ -185,7 +185,7 @@ impl Observer {
         });
     }
 }
-impl<V: StoredValue> ValueMachine<'_, '_, V> {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     pub(super) fn record_event(&mut self, event: Event<V>) {
         if self.observer.silent {
             return;
@@ -349,7 +349,7 @@ pub(in super::super) enum FaultKind {
         owner: OwnerPlaceId,
     },
 }
-impl<V: StoredValue> ValueMachine<'_, '_, V> {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     fn pending_fault(&mut self, span: Span) -> Option<FaultKind> {
         if !self.observer.collecting() || self.observer.fault_attempted {
             return None;
@@ -542,7 +542,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
     }
 }
 
-impl<V: StoredValue> ValueMachine<'_, '_, V> {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     fn inject_enum_owner(&mut self, frame: usize, kind: FaultKind, span: Span) -> bool {
         let owner = match kind {
             FaultKind::EnumOwnerTag { owner, .. }

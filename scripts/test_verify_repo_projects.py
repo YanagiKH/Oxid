@@ -107,7 +107,21 @@ class ProjectRegistrationTests(unittest.TestCase):
             destination = self.root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(verify_repo.ROOT / name, destination)
+        owned_vector_names = tuple('scripts/owned_record_vector_acceptance/' + name + '.ox' for name in (
+            'aliases', 'bytebuf', 'conflicting_borrows', 'copy_operation', 'double_move',
+            'empty_new', 'enum16', 'failed_reserve', 'fault_pop', 'fault_push_file', 'files',
+            'generic_record', 'index_read', 'nested_vector', 'package_main', 'package_model',
+            'unused_pop', 'unused_push', 'unused_template', 'zero_key',
+        ))
+        for name in owned_vector_names:
+            destination = self.root / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(verify_repo.ROOT / name, destination)
         self.data_sources = list(verify_repo.fixture_data_sources(self.root))
+        owned_vector_data = verify_repo.owned_record_vector_fixture_data_sources(self.root)
+        self.assertEqual(owned_vector_data, {self.root / name for name in owned_vector_names})
+        self.assertEqual(len(owned_vector_data), 20)
+        self.assertTrue(owned_vector_data <= set(self.data_sources))
         copy_data = verify_repo.copy_record_fixture_data_sources(self.root)
         self.assertEqual(copy_data, {self.root / name for name in copy_names})
         self.assertEqual(len(copy_data), 2)
@@ -125,8 +139,9 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.assertEqual(vector_data, expected_vectors)
         self.assertEqual(len(vector_data), 30)
         self.assertTrue(vector_data <= set(self.data_sources))
-        predecessor_data = set(self.data_sources) - copy_data - vector_data
+        predecessor_data = set(self.data_sources) - owned_vector_data - copy_data - vector_data
         byte_data = verify_repo.byte_storage_fixture_data_sources(self.root)
+        self.assertFalse(owned_vector_data & (copy_data | vector_data | byte_data))
         self.assertFalse(copy_data & (vector_data | byte_data))
         self.assertFalse(vector_data & byte_data)
         self.assertEqual(len(byte_data), 325)

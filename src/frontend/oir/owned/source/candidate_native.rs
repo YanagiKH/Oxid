@@ -135,6 +135,7 @@ fn argv_fuel_harness(module: &str, budget: usize) -> String {
 
 fn kind(statement: &OwnedInstruction) -> &'static str {
     match statement {
+        OwnedInstruction::OwnedVector { .. } => "unsupported-owned-vector",
         OwnedInstruction::PrepareBorrowRange { .. }
         | OwnedInstruction::Experimental { .. }
         | OwnedInstruction::Vector { .. }

@@ -244,8 +244,8 @@ pub(super) fn status(
 }
 
 #[allow(clippy::too_many_arguments)] // Closed instruction and existing emission context.
-pub(super) fn operation(
-    storage: &NativeFunctionStorage<'_, '_>,
+pub(super) fn operation<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     operation: Function,
     destination: CallResult,
@@ -378,8 +378,8 @@ pub(super) fn operation(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn argument_operation(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn argument_operation<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     operation: Function,
     destination: CallResult,
@@ -437,8 +437,8 @@ fn argument_operation(
     );
 }
 
-pub(super) fn resource_borrow(
-    plan: &ExecutionPlan<'_>,
+pub(super) fn resource_borrow<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     f: &RawOwnedFunction,
     loan: LoanId,
 ) -> bool {
@@ -466,8 +466,8 @@ pub(super) fn resource_borrow(
     }
 }
 #[allow(clippy::too_many_arguments)] // Closed loan, endpoint operands and existing emission context.
-pub(super) fn borrow(
-    storage: &NativeFunctionStorage<'_, '_>,
+pub(super) fn borrow<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     loan: LoanId,
     range: Option<(Operand, Operand)>,
@@ -573,8 +573,8 @@ pub(super) fn borrow(
     }
 }
 
-fn file_operation(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn file_operation<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     operation: Function,
     diagnostics: &Diagnostics,

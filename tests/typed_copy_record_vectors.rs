@@ -387,9 +387,9 @@ fn rejects(body: &str, code: &str, markers: &[&str]) {
 }
 
 #[test]
-fn vector_elements_still_exclude_affine_resources_enums_nested_vectors_and_arrays() {
+fn copy_vector_operations_and_unsupported_element_types_remain_rejected() {
     for (body, code, markers) in [
-        ("struct Affine { x:i32 } fn main()->i32 { let v=new::<Affine>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("struct Affine { x:i32 } fn main()->i32 { let mut v=new::<Affine>(); try_push(&mut v,Affine{x:1}); return 0; }", "E0300", &["copy", "element"][..]),
         ("enum E { Value(i32) } fn main()->i32 { let v=new::<E>(); return 0; }", "E0300", &["copy", "element"][..]),
         ("fn main()->i32 { let v=new::<Vec<P>>(); return 0; }", "E0300", &["copy", "element"][..]),
         ("fn main()->i32 { let v=new::<[P;2]>(); return 0; }", "E0101", &["unsupported typed-preview construct `P`"][..]),
@@ -402,6 +402,14 @@ fn vector_elements_still_exclude_affine_resources_enums_nested_vectors_and_array
     ] {
         rejects(body, code, markers);
     }
+}
+
+#[test]
+fn affine_record_vectors_are_available_without_copy_operations() {
+    accepts(
+        "struct Affine{x:i32}fn main()->i32{let values=new::<Affine>();return len(&values);}",
+        b"0\n",
+    );
 }
 
 #[test]

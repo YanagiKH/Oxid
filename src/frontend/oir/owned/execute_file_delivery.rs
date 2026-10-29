@@ -92,7 +92,7 @@ pub(in super::super) fn seek_control_bytes<V>() -> usize {
     size_of::<SeekCarriers<V>>() + byte_buffer::file_seek_helper_control_bytes()
 }
 
-impl<V: StoredValue> ValueMachine<'_, '_, V> {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     fn prepare_file_delivery(
         &self,
         frame: usize,

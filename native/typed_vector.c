@@ -14,6 +14,9 @@ static int vector_heap_overlap(const void *pointer, size_t length) {
     if (vector_overlaps(pointer, length, &execution_heap, sizeof execution_heap)) return 1;
     for (oxid_allocation *node = execution_heap.head; node; node = node->next) {
         uint64_t charge = node->capacity == OXID_VECTOR_NODE ? oxid_vector_node_charge(node)
+#ifdef OXID_OWNED_VECTOR_RUNTIME
+            : node->capacity == OXID_OWNED_VECTOR_NODE ? oxid_owned_vector_node_charge(node)
+#endif
             : OXID_BYTEBUF_HEADER + (node->capacity == UINT32_MAX ? 0 : (uint64_t)node->capacity);
         if (charge > SIZE_MAX || vector_overlaps(pointer, length, node, (size_t)charge)) return 1;
     }

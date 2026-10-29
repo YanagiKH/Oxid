@@ -33,6 +33,7 @@ impl VectorTy {
         match ty {
             AggregateTy::Vector(ty) => Some(Self::Scalar(ty)),
             AggregateTy::RecordVector(id) => Some(Self::Record(id)),
+            AggregateTy::OwnedRecordVector(_) => None,
             _ => None,
         }
     }

@@ -29,6 +29,16 @@ class PrivacyCheckoutTests(unittest.TestCase):
             "tests/fixtures/bounded_enum_scanner/scanner.ox",
         ))
 
+    def test_exact_owned_record_vector_compile_time_fixture_roster(self):
+        expected = ("scripts/owned_record_vector_acceptance/enum16.ox",)
+        self.assertEqual(privacy.OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES, expected)
+        includer = ROOT / "src/frontend/oir/owned/source/owned_vector_source_resource_tests.rs"
+        references = re.findall(r'include_str!\("([^"\n]+)"\)', includer.read_text())
+        self.assertEqual(references, ["../../../../../" + expected[0]] * 2)
+        self.assertEqual({(includer.parent / name).resolve() for name in references},
+                         {ROOT / name for name in expected})
+        self.assertFalse(set(expected) & set(privacy.COMPILE_TIME_FIXTURES))
+
     def test_exact_hir_compile_time_fixture_roster(self):
         stems = ('public', 'rich', 'scalar-arithmetic', 'scalar-assignment',
                  'scalar-boolean', 'scalar-comparison', 'scalar-loop', 'scalar-unit',
@@ -83,7 +93,11 @@ class PrivacyCheckoutTests(unittest.TestCase):
             actual = {path.relative_to(checkout).as_posix()
                       for path in (checkout / 'tests').rglob('*') if path.is_file()}
             self.assertEqual(actual, set(privacy.COMPILE_TIME_FIXTURES))
-            for name in actual:
+            self.assertFalse((checkout / 'tests/native_library.rs').exists())
+            external = {path.relative_to(checkout).as_posix()
+                        for path in (checkout / 'scripts').rglob('*') if path.is_file()}
+            self.assertEqual(external, set(privacy.OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES))
+            for name in actual | external:
                 self.assertEqual((checkout / name).read_bytes(), (ROOT / name).read_bytes())
             empty = checkout / 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox'
             self.assertEqual(empty.read_bytes(), b'')
@@ -143,11 +157,21 @@ class PrivacyCheckoutTests(unittest.TestCase):
             for name in ("typed_vector.c", "experimental_vector.c", "experimental_vector.h"):
                 self.assertEqual((checkout / "native" / name).read_bytes(),
                                  (ROOT / "native" / name).read_bytes())
+            owned_record_runtime_inputs = 2
+            owned_vector_runtime_inputs = 2
+            for name in ("experimental_owned_record.c", "experimental_owned_record.h",
+                         "experimental_owned_vector.c", "experimental_owned_vector.h"):
+                self.assertEqual((checkout / "native" / name).read_bytes(),
+                                 (ROOT / "native" / name).read_bytes())
+            # Two literal include sites share the one explicitly copied source.
+            owned_vector_fixture_reads = 2
             self.assertEqual((checkout / "native/typed_character.c").read_bytes(),
                              (ROOT / "native/typed_character.c").read_bytes())
             self.assertEqual(count, vector_runtime_inputs + character_runtime_inputs + float_runtime_inputs + predecessor_include_sites + u8_boundary_source_reads
                              + byte_buffer_runtime_reads + native_file_runtime_reads
-                             + program_argument_runtime_reads + integer128_runtime_reads)
+                             + program_argument_runtime_reads + integer128_runtime_reads
+                             + owned_record_runtime_inputs + owned_vector_runtime_inputs
+                             + owned_vector_fixture_reads)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -159,6 +183,23 @@ class PrivacyCheckoutTests(unittest.TestCase):
                 (root / name).mkdir()
             with self.assertRaises(FileNotFoundError):
                 privacy.materialize_checkout(root, Path(directory) / 'checkout')
+
+    def test_missing_owned_record_vector_fixture_fails_materialization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'source'
+            root.mkdir()
+            for name in ('Cargo.toml', 'Cargo.lock', 'build.rs'):
+                (root / name).write_bytes(b'')
+            for name in ('src', 'native', 'compiler', 'stdlib', 'rfcs', 'fixtures'):
+                (root / name).mkdir()
+            for name in privacy.COMPILE_TIME_FIXTURES:
+                fixture = root / name
+                fixture.parent.mkdir(parents=True, exist_ok=True)
+                fixture.write_bytes(b'fixture')
+            with self.assertRaises(FileNotFoundError) as error:
+                privacy.materialize_checkout(root, Path(directory) / 'checkout')
+            self.assertEqual(Path(error.exception.filename),
+                             root / 'scripts/owned_record_vector_acceptance/enum16.ox')
 
 
 if __name__ == '__main__':

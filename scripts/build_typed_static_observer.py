@@ -32,6 +32,8 @@ SOURCE_FILES = (
     "declaration_index/source_owner.rs", "project.rs", "project/filesystem.rs", "project/packages.rs", "project/editor_sources.rs", "project/module_syntax.rs",
     "oir/owned_types.rs", "oir/owned_types/enums.rs", "oir/owned_types/resources.rs",
     "oir/owned_types/composition.rs",
+    "owned_vector_builtins.rs", "oir/owned_types/owned_vector.rs",
+    "declaration_index/generics/owned_candidate.rs",
 )
 WRAPPER_FILES = (
     ("main.rs", "main.rs"),

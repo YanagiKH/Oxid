@@ -3,7 +3,10 @@ use super::*;
 
 pub(super) trait EmittedFunctions: Copy {
     const CONTROL_BYTES: usize;
-    fn build(plan: &ExecutionPlan<'_>, entry: hir::DefId) -> Result<Self, Box<Diagnostic>>;
+    fn build<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
+        entry: hir::DefId,
+    ) -> Result<Self, Box<Diagnostic>>;
     fn contains(self, function: hir::DefId) -> bool;
     fn work(self) -> usize;
 }
@@ -13,7 +16,10 @@ pub(super) trait EmittedFunctions: Copy {
 pub(super) struct Full;
 impl EmittedFunctions for Full {
     const CONTROL_BYTES: usize = 0;
-    fn build(_: &ExecutionPlan<'_>, _: hir::DefId) -> Result<Self, Box<Diagnostic>> {
+    fn build<W: PlanWitness>(
+        _: &ExecutionPlan<'_, W>,
+        _: hir::DefId,
+    ) -> Result<Self, Box<Diagnostic>> {
         Ok(Self)
     }
     fn contains(self, _: hir::DefId) -> bool {
@@ -46,7 +52,10 @@ const _: () = assert!(
 impl EmittedFunctions for Reachable {
     const CONTROL_BYTES: usize = CONTROL_BYTES;
 
-    fn build(plan: &ExecutionPlan<'_>, entry: hir::DefId) -> Result<Self, Box<Diagnostic>> {
+    fn build<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
+        entry: hir::DefId,
+    ) -> Result<Self, Box<Diagnostic>> {
         let functions = plan.witness().functions();
         if functions.len() > MAX_SELECTION_FUNCTIONS || entry.0 >= functions.len() {
             return Err(mismatch("native reachability entry"));
@@ -186,7 +195,7 @@ mod tests {
         limits: Limits,
     ) -> (Result<String, Box<Diagnostic>>, NativeMetrics) {
         let mut accounting = Accounting::default();
-        let result = native_module_policy_accounted_with_selection::<R>(
+        let result = native_module_policy_accounted_with_selection::<_, R>(
             &case.witness,
             Some(case.entry),
             &case.sources,

@@ -4,6 +4,9 @@
  */
 #include "experimental_bytebuf.h"
 #include "experimental_vector.h"
+#ifdef OXID_OWNED_VECTOR_RUNTIME
+#include "experimental_owned_vector.h"
+#endif
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -68,6 +71,10 @@ static void unlink_node(oxid_byte_heap *heap, oxid_allocation *node) {
     uint32_t capacity = node->capacity;
     if (capacity == OXID_VECTOR_NODE) {
         charge = oxid_vector_node_charge(node);
+#ifdef OXID_OWNED_VECTOR_RUNTIME
+    } else if (capacity == OXID_OWNED_VECTOR_NODE) {
+        charge = oxid_owned_vector_node_charge(node);
+#endif
     } else {
         if (capacity == UINT32_MAX) {
             if (node->initialized != UINT32_MAX) (void)close((int)node->initialized);

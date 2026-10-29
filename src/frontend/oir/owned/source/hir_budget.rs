@@ -766,6 +766,81 @@ pub(super) fn preflight_current_hir(
     preflight_hir(index, work, false)
 }
 
+/// The existing source counter prices its unchanged source/fixed/old-vector
+/// domains. This private continuation adds only the authenticated new suffix;
+/// it does not widen the historical calculate_with_vectors count policy.
+pub(super) fn preflight_owned_vector_hir(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+) -> Result<Option<HirPlan>, Box<Diagnostic>> {
+    preflight_owned_vector_hir_with_limit(index, work, MAX_HIR_BYTES)
+}
+pub(super) fn preflight_owned_vector_hir_with_limit(
+    index: &DeclarationIndex<'_>,
+    work: &WorkMeter,
+    limit: usize,
+) -> Result<Option<HirPlan>, Box<Diagnostic>> {
+    if !index.is_owned_vector_candidate_pipeline() {
+        return Err(invalid(index.sources().eof()));
+    }
+    let at = index.sources().eof();
+    let mut plan = preflight_hir(index, work, false)?.ok_or_else(|| invalid(at))?;
+    let mut counts = plan.counts;
+    let mut parameters = 0usize;
+    for (rank, key) in index.owned_vector_functions().iter().copied().enumerate() {
+        let selected = super::owned_vector_source::signature(index, work, rank, key)?;
+        visit(
+            work,
+            1 + selected.signature.parameters().len(),
+            selected.anchor,
+        )?;
+        increment(&mut counts.signatures, 1, selected.anchor)?;
+        increment(
+            &mut counts.parameters,
+            selected.signature.parameters().len(),
+            selected.anchor,
+        )?;
+        increment(
+            &mut parameters,
+            selected.signature.parameters().len(),
+            selected.anchor,
+        )?;
+    }
+    if counts.signatures != index.function_count() {
+        return Err(invalid(at));
+    }
+    let keys = index.owned_vector_functions().len();
+    let resolved = add(
+        mul(keys, size_of::<Signature>(), at)?,
+        mul(parameters, size_of::<ParameterTy>(), at)?,
+        at,
+    )?;
+    // Preserve the historical per-signature scratch rows, then add the new
+    // source query/entry transports independently. No old bank is spare credit.
+    let per_signature = add(
+        add(
+            size_of::<Vec<ParameterTy>>(),
+            resolve::builtin_signature_carrier_bytes(),
+            at,
+        )?,
+        size_of::<BuiltinPreflightCarriers>(),
+        at,
+    )?;
+    let scratch = mul(keys, per_signature, at)?;
+    let fixed = add(
+        super::owned_vector_source::carrier_bytes(),
+        crate::frontend::oir::source::owned_vector_route_carrier_bytes(),
+        at,
+    )?;
+    let extra = add(add(resolved, scratch, at)?, fixed, at)?;
+    plan.resolved = admit(plan.resolved, resolved, MAX_HIR_BYTES, at)?;
+    plan.resolver_scratch = admit(plan.resolver_scratch, scratch, MAX_HIR_BYTES, at)?;
+    plan.fixed = admit(plan.fixed, fixed, MAX_HIR_BYTES, at)?;
+    plan.total = admit(plan.total, extra, limit, at)?;
+    plan.counts = counts;
+    Ok(Some(plan))
+}
+
 /// Private candidate selection remains paid even without imports or source enums.
 #[cfg(test)]
 pub(super) fn preflight_builtin_hir(

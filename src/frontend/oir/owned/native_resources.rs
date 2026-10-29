@@ -22,11 +22,11 @@ struct EmitterWalkCarriers {
     enumeration_item: (usize, Result<ResourceLeaf, DeclarationError>),
 }
 
-pub(super) fn control_bytes(plan: &ExecutionPlan<'_>) -> usize {
-    let declarations = plan.witness().declarations();
+pub(super) fn control_bytes<W: PlanWitness>(plan: &ExecutionPlan<'_, W>) -> usize {
+    let witness = plan.witness();
     let aggregate = AggregateTy::ByteBuf;
     // Use the real enclosing closure capture shape and real zero-sized reader.
-    let walk = || declarations.resource_leaves(aggregate, tag_refusal());
+    let walk = || witness.resource_leaves(aggregate, tag_refusal());
     let reader = tag_refusal();
     resource_walk_control_bytes(&reader)
         + enumerated_resource_walk_bytes(&reader)
@@ -34,9 +34,11 @@ pub(super) fn control_bytes(plan: &ExecutionPlan<'_>) -> usize {
         + size_of::<EmitterWalkCarriers>()
 }
 
-pub(super) fn contains(plan: &ExecutionPlan<'_>, aggregate: AggregateTy) -> bool {
+pub(super) fn contains<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    aggregate: AggregateTy,
+) -> bool {
     plan.witness()
-        .declarations()
         .contains_resources(aggregate)
         .expect("verified resource containment")
 }
@@ -45,15 +47,16 @@ pub(super) fn contains(plan: &ExecutionPlan<'_>, aggregate: AggregateTy) -> bool
 pub(super) enum Action<'a> {
     Validate,
     Move(&'a str),
+    MovePrevalidated(&'a str),
     Release,
 }
 
 /// Only aggregates without enum fields use this static walk. Enum alternatives
 /// and records with tagged descendants use their enclosing active transfer.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn leaves(
+pub(super) fn leaves<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     source: &str,
@@ -64,9 +67,9 @@ pub(super) fn leaves(
     if !contains(plan, aggregate) {
         return;
     }
-    let declarations = plan.witness().declarations();
+    let witness = plan.witness();
     let walk = || {
-        declarations
+        witness
             .resource_leaves(aggregate, tag_refusal())
             .expect("verified static resource leaves")
     };
@@ -75,7 +78,10 @@ pub(super) fn leaves(
     for (index, leaf) in walk().enumerate() {
         let leaf = leaf.expect("enum alternatives handled by the enclosing emitter");
         let descriptor_cells = match leaf.kind {
-            ResourceKind::ByteBuf | ResourceKind::Vector(_) | ResourceKind::RecordVector(_) => 3,
+            ResourceKind::ByteBuf
+            | ResourceKind::Vector(_)
+            | ResourceKind::RecordVector(_)
+            | ResourceKind::OwnedRecordVector(_) => 3,
             ResourceKind::File => 2,
         };
         for _ in 0..descriptor_cells {
@@ -86,6 +92,20 @@ pub(super) fn leaves(
         let cell = format!("{name}_resource{index}");
         let input = field_pointer(out, &cell, source, leaf.offset);
         match leaf.kind {
+            ResourceKind::OwnedRecordVector(record) => {
+                if matches!(action, Action::MovePrevalidated(_)) {
+                    continue;
+                }
+                writeln!(out, "  %{cell}_heap = call ptr @__oxid_owned_vector_heap()").unwrap();
+                if matches!(action, Action::Release) {
+                    writeln!(out, "  %{cell}_status = call i32 @oxid_owned_vector_validate_maintenance(ptr %{cell}_heap, ptr {input}, i32 {record})").unwrap();
+                } else {
+                    owned_vector::fuel_scope(out);
+                    writeln!(out, "  %{cell}_status = call i32 @oxid_owned_vector_validate(ptr %{cell}_heap, ptr {input}, i32 {record}, ptr %fuel)\n  %{cell}_fuel_available = icmp ne i32 %{cell}_status, -2\n  br i1 %{cell}_fuel_available, label %{cell}_fuel_ok, label %{cell}_fuel_error\n{cell}_fuel_error:").unwrap();
+                    emit_failure(out, failure.0, FailureKind::Fuel, failure.1);
+                    writeln!(out, "{cell}_fuel_ok:").unwrap();
+                }
+            }
             ResourceKind::ByteBuf => {
                 writeln!(
                     out,
@@ -126,6 +146,9 @@ pub(super) fn leaves(
         let input = format!("%{cell}_ptr");
         match action {
             Action::Release => match leaf.kind {
+                ResourceKind::OwnedRecordVector(record) => {
+                    writeln!(out, "  %{cell}_drop_heap = call ptr @__oxid_owned_vector_heap()\n  %{cell}_drop_status = call i32 @oxid_owned_vector_release(ptr %{cell}_drop_heap, ptr {input}, i32 {record})").unwrap();
+                }
                 ResourceKind::ByteBuf => {
                     writeln!(out, "  call void @__oxid_bytebuf_drop(ptr {input})").unwrap();
                 }
@@ -145,7 +168,7 @@ pub(super) fn leaves(
                     .unwrap();
                 }
             },
-            Action::Move(destination) => {
+            Action::Move(destination) | Action::MovePrevalidated(destination) => {
                 let output = field_pointer(out, &format!("{cell}_out"), destination, leaf.offset);
                 // A descriptor is a resource, not a ScalarLeaf or scalar value.
                 // The old bytes become empty while the destination acquires the
@@ -153,7 +176,8 @@ pub(super) fn leaves(
                 let carrier = match leaf.kind {
                     ResourceKind::ByteBuf
                     | ResourceKind::Vector(_)
-                    | ResourceKind::RecordVector(_) => "{ i64, i32, i32 }",
+                    | ResourceKind::RecordVector(_)
+                    | ResourceKind::OwnedRecordVector(_) => "{ i64, i32, i32 }",
                     ResourceKind::File => "{ i64, i64 }",
                 };
                 writeln!(out, "  %{cell}_descriptor = load {carrier}, ptr {input}, align 8\n  store {carrier} %{cell}_descriptor, ptr {output}, align 8\n  store {carrier} zeroinitializer, ptr {input}, align 8").unwrap();
@@ -163,16 +187,15 @@ pub(super) fn leaves(
     }
 }
 
-pub(super) fn initialize(
+pub(super) fn initialize<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     aggregate: AggregateTy,
     pointer: &str,
 ) {
     if contains(plan, aggregate) {
         let size = plan
             .witness()
-            .declarations()
             .aggregate_layout(aggregate)
             .expect("verified owner layout")
             .size();
@@ -186,9 +209,9 @@ pub(super) fn initialize(
     }
 }
 
-pub(super) fn drop_owner(
+pub(super) fn drop_owner<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     pointer: &str,
@@ -199,9 +222,9 @@ pub(super) fn drop_owner(
     }
 }
 
-pub(super) fn drop_frame(
+pub(super) fn drop_frame<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     f: &RawOwnedFunction,
     name: &str,
     failure: (&Diagnostics, Span),

@@ -13,6 +13,7 @@ fn emitted(aggregate: AggregateTy, mode: Mode) -> String {
         "%source",
         "%destination",
         mode,
+        false,
     );
     assert!(!output.exceeded);
     let text = output.text.unwrap();
@@ -57,6 +58,7 @@ fn composed_vector_value_dispatch_moves_only_the_descriptor() {
         "%source",
         "%destination",
         Mode::Move,
+        false,
     );
     let text = output.text.unwrap();
     assert_eq!(

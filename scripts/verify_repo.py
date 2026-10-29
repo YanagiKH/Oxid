@@ -16,6 +16,7 @@ from verify_fixture_data import fixture_data_sources as predecessor_fixture_data
 from verify_bounded_byte_storage import fixture_data_sources as byte_storage_fixture_data_sources
 from verify_typed_vector_fixture_data import fixture_data_sources as typed_vector_fixture_data_sources
 from verify_copy_record_fixture_data import fixture_data_sources as copy_record_fixture_data_sources
+from verify_owned_record_vector_fixture_data import fixture_data_sources as owned_record_vector_fixture_data_sources
 from verify_typed_formatter import verify as verify_typed_formatter
 
 
@@ -34,7 +35,10 @@ def fixture_data_sources(root: Path) -> set[Path]:
     copies = copy_record_fixture_data_sources(root)
     if copies & (previous | current | vectors):
         raise RuntimeError("Copy record DATA overlaps predecessor inventory")
-    return previous | current | vectors | copies
+    owned_vectors = owned_record_vector_fixture_data_sources(root)
+    if owned_vectors & (previous | current | vectors | copies):
+        raise RuntimeError("owned-record vector DATA overlaps predecessor inventory")
+    return previous | current | vectors | copies | owned_vectors
 
 RUNNABLE_GROUPS = ("tests", "examples", "tools", "apps")
 RUNNABLE_PACKAGE_FILES = (
@@ -107,6 +111,10 @@ TYPED_MANIFEST_PROJECTS = {
         "examples/copy-record-vectors/src/main.ox",
         "examples/copy-record-vectors/tests/records.ox",
     ),
+    "examples/owned-record-vectors": (
+        "examples/owned-record-vectors/src/main.ox",
+        "examples/owned-record-vectors/tests/messages.ox",
+    ),
     "packages/matrix": ("packages/matrix/src/lib.ox",),
     "examples/typed-matrix": ("examples/typed-matrix/src/main.ox", "examples/typed-matrix/tests/contracts.ox"),
     "apps/cpu-training": (
@@ -165,6 +173,7 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix", "examples/typed-vectors")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records", "examples/copy-record-vectors")
+TYPED_TESTED_MANIFEST_PROJECTS += ("examples/owned-record-vectors",)
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (
@@ -1046,7 +1055,10 @@ def verify_test_fixture_registration(root: Path = ROOT) -> None:
     except (OSError, ValueError) as error:
         raise RuntimeError(f"unreadable test fixture registration: {error}") from error
     configured = manifest.get("test-fixtures", {})
-    expected = {path.relative_to(root).as_posix() for path in fixture_data}
+    # Legacy test discovery only visits tests/ and examples/. DATA elsewhere
+    # remains authenticated by source_plan, without an invalid test exclusion.
+    expected = {path.relative_to(root).as_posix() for path in fixture_data
+                if path.relative_to(root).parts[0] in ("tests", "examples")}
     # Typed projects below the legacy test search roots run only through their
     # explicit typed root. Never exclude neighboring files or whole directories.
     expected.update(member for members in TYPED_PROJECTS.values() for member in members

@@ -86,6 +86,21 @@ RECORD_VECTOR_PROJECTS = {
     ),
 }
 RECORD_VECTOR_MEMBERS = {member for members in RECORD_VECTOR_PROJECTS.values() for member in members}
+OWNED_RECORD_VECTOR_PROJECTS = {
+    "examples/owned-record-vectors": (
+        "examples/owned-record-vectors/src/main.ox",
+        "examples/owned-record-vectors/tests/messages.ox",
+    ),
+}
+OWNED_RECORD_VECTOR_MEMBERS = {member for members in OWNED_RECORD_VECTOR_PROJECTS.values() for member in members}
+OWNED_RECORD_VECTOR_DATA = Path("scripts/owned_record_vector_acceptance")
+OWNED_RECORD_VECTOR_DATA_SOURCES = tuple((OWNED_RECORD_VECTOR_DATA / (name + ".ox")).as_posix()
+                                       for name in (
+    "aliases", "bytebuf", "conflicting_borrows", "copy_operation", "double_move",
+    "empty_new", "enum16", "failed_reserve", "fault_pop", "fault_push_file", "files",
+    "generic_record", "index_read", "nested_vector", "package_main", "package_model",
+    "unused_pop", "unused_push", "unused_template", "zero_key",
+))
 COPY_DATA = Path("tests/fixtures/copy_records")
 COPY_DATA_SOURCES = ("tests/fixtures/copy_records/all_scalars.ox",
                      "tests/fixtures/copy_records/wide_unicode.ox")
@@ -151,6 +166,13 @@ def copy_u8_data(root):
     destination.mkdir(parents=True, exist_ok=True)
     shutil.copy2(verify_repo.ROOT / U8_MANIFEST, root / U8_MANIFEST)
     shutil.copytree(verify_repo.ROOT / U8_DATA / "oracle", destination / "oracle")
+
+
+def copy_owned_record_vector_data(root):
+    for name in OWNED_RECORD_VECTOR_DATA_SOURCES:
+        destination = root / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(verify_repo.ROOT / name, destination)
 
 SAMPLE_MEMBERS = (
     "fixtures/typed-array-samples/main.ox",
@@ -308,6 +330,47 @@ def record_vector_predecessor_report(text):
     return text
 
 
+def owned_record_vector_predecessor_report(text):
+    """Project only the two-member owned-vector example from the printed totals."""
+    report = list(re.finditer(
+        r"^repository verification passed: (?P<language>\d+) language sources, "
+        r"(?P<checks>\d+) checks, (?P<runs>\d+) runnable programs "
+        r"\(\d+ legacy sources, \d+ legacy runnable programs, "
+        r"(?P<members>\d+) typed source members / (?P<entries>\d+) typed entry runs; "
+        r"\d+ v2 overlay source members / \d+ materialized typed checks in a \d+-module closure; "
+        r"\d+ wide parser overlay members / 2 materialized typed checks; "
+        r"(?P<projects>\d+) manifest projects checked; (?P<project_runs>\d+) run; "
+        r"(?P<project_tests>\d+) tested\)", text, re.M))
+    if len(report) != 1:
+        raise AssertionError("expected one complete repository summary")
+    deltas = {"language": len(OWNED_RECORD_VECTOR_MEMBERS), "checks": len(OWNED_RECORD_VECTOR_PROJECTS),
+              "runs": len(OWNED_RECORD_VECTOR_PROJECTS), "members": len(OWNED_RECORD_VECTOR_MEMBERS),
+              "entries": len(OWNED_RECORD_VECTOR_PROJECTS), "projects": len(OWNED_RECORD_VECTOR_PROJECTS),
+              "project_runs": len(OWNED_RECORD_VECTOR_PROJECTS), "project_tests": len(OWNED_RECORD_VECTOR_PROJECTS)}
+    edits = []
+    for name, delta in deltas.items():
+        value = int(report[0].group(name))
+        if value < delta:
+            raise AssertionError("owned-record-vector successor exceeds its reported category")
+        edits.append((*report[0].span(name), str(value - delta)))
+    for start, end, value in sorted(edits, reverse=True):
+        text = text[:start] + value + text[end:]
+    return text
+
+
+def owned_record_vector_data_predecessor_report(text):
+    """Remove only the twenty DATA sources; language and execution totals stay exact."""
+    reports = list(re.finditer(r"^fixture-data validation passed: (?P<data>\d+) source-only files", text, re.M))
+    if len(reports) != 1:
+        raise AssertionError("expected one complete DATA summary")
+    report = reports[0]
+    count = int(report.group("data"))
+    if count < len(OWNED_RECORD_VECTOR_DATA_SOURCES):
+        raise AssertionError("owned-record-vector DATA successor exceeds its reported category")
+    start, end = report.span("data")
+    return text[:start] + str(count - len(OWNED_RECORD_VECTOR_DATA_SOURCES)) + text[end:]
+
+
 class PublishedRegistrationTests(unittest.TestCase):
     def test_full_published_inputs_and_exact_predecessor_inventory(self):
         root = verify_repo.ROOT
@@ -349,12 +412,49 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(copy_data, {root / name for name in COPY_DATA_SOURCES})
         self.assertEqual(len(copy_data), 2)
         self.assertFalse(copy_data & (data_sources | byte_data | vector_data))
-        self.assertEqual(verify_repo.fixture_data_sources(root) - copy_data, data_sources | byte_data | vector_data)
+        owned_vector_data = verify_repo.owned_record_vector_fixture_data_sources(root)
+        self.assertEqual(owned_vector_data, {root / name for name in OWNED_RECORD_VECTOR_DATA_SOURCES})
+        self.assertEqual(len(owned_vector_data), 20)
+        self.assertFalse(owned_vector_data & (data_sources | byte_data | vector_data | copy_data))
+        predecessor_fixture_data = verify_repo.fixture_data_sources(root) - owned_vector_data
+        self.assertEqual(predecessor_fixture_data - copy_data, data_sources | byte_data | vector_data)
         self.assertEqual(len(data_sources | byte_data), 188 + 325)
         language = [p.relative_to(root).as_posix() for p in sources if p not in data_sources | byte_data]
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        self.assertEqual([name for name in language if name in OWNED_RECORD_VECTOR_DATA_SOURCES],
+                         sorted(OWNED_RECORD_VECTOR_DATA_SOURCES))
+        self.assertFalse(any(name in OWNED_RECORD_VECTOR_DATA_SOURCES
+                             for name, _ in check_inventory + run_inventory))
+        language = [name for name in language if name not in OWNED_RECORD_VECTOR_DATA_SOURCES]
+        # Authenticate the owned-vector example before retaining every earlier
+        # inventory and fingerprint. Only its two members and one root are new.
+        self.assertEqual([name for name in language if name in OWNED_RECORD_VECTOR_MEMBERS],
+                         sorted(OWNED_RECORD_VECTOR_MEMBERS))
+        self.assertFalse(any(name in OWNED_RECORD_VECTOR_MEMBERS
+                             for name, _ in check_inventory + run_inventory))
+        self.assertEqual([row for row in check_inventory if row[0] in OWNED_RECORD_VECTOR_PROJECTS],
+                         [("examples/owned-record-vectors", True)])
+        self.assertEqual([row for row in run_inventory if row[0] in OWNED_RECORD_VECTOR_PROJECTS],
+                         [("examples/owned-record-vectors", True)])
+        self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+                          if name in OWNED_RECORD_VECTOR_PROJECTS}, OWNED_RECORD_VECTOR_PROJECTS)
+        self.assertFalse(OWNED_RECORD_VECTOR_MEMBERS &
+                         (RECORD_VECTOR_MEMBERS | COPY_MEMBERS | GROWABLE_VECTOR_MEMBERS))
+        self.assertFalse({root / name for name in OWNED_RECORD_VECTOR_MEMBERS} &
+                         verify_repo.fixture_data_sources(root))
+        self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/owned-record-vectors"), 1)
+        self.assertNotIn("examples/owned-record-vectors", verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
+        before_owned_vector_manifest_projects = {
+            name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+            if name not in OWNED_RECORD_VECTOR_PROJECTS}
+        language = [name for name in language if name not in OWNED_RECORD_VECTOR_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
+        run_inventory = [row for row in run_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
+        typed_members -= len(OWNED_RECORD_VECTOR_MEMBERS)
+        typed_entries = [path for path in typed_entries
+                         if path.relative_to(root).as_posix() not in OWNED_RECORD_VECTOR_PROJECTS]
         # Authenticate the one new library root before every frozen predecessor
         # count and fingerprint. It is source, checked once, and never run alone.
         self.assertEqual([name for name in language if name == PYTHON_LIBRARY_ENTRY], [PYTHON_LIBRARY_ENTRY])
@@ -378,7 +478,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
                           if name in RECORD_VECTOR_PROJECTS}, RECORD_VECTOR_PROJECTS)
         self.assertFalse(RECORD_VECTOR_MEMBERS & (COPY_MEMBERS | GROWABLE_VECTOR_MEMBERS))
-        predecessor_manifest_projects = {name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+        predecessor_manifest_projects = {name: members for name, members in before_owned_vector_manifest_projects.items()
                                          if name not in RECORD_VECTOR_PROJECTS}
         language = [name for name in language if name not in RECORD_VECTOR_MEMBERS]
         check_inventory = [row for row in check_inventory if row[0] not in RECORD_VECTOR_PROJECTS]
@@ -683,6 +783,18 @@ class PublishedRegistrationTests(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
+        self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
+                             for name in OWNED_RECORD_VECTOR_DATA_SOURCES for call in run.call_args_list))
+        owned_vector_root = verify_repo.ROOT / "examples/owned-record-vectors"
+        owned_vector_calls = [call for call in run.call_args_list
+                              if call.kwargs.get("cwd") == owned_vector_root]
+        self.assertEqual([call.args[0] for call in owned_vector_calls],
+                         [[str(Path(sys.executable).resolve()), command] for command in ("check", "run", "test")])
+        self.assertTrue(all(call.kwargs.get("input_text") == "" for call in owned_vector_calls[1:]))
+        self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
+                             for name in OWNED_RECORD_VECTOR_MEMBERS for call in run.call_args_list))
+        before_owned_vector_calls = [call for call in run.call_args_list
+                                     if call.kwargs.get("cwd") != owned_vector_root]
         copy_root = verify_repo.ROOT / "examples/copy-records"
         copy_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == copy_root]
         self.assertEqual([call.args[0] for call in copy_calls],
@@ -699,7 +811,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertTrue(all(call.kwargs.get("input_text") == "" for call in record_vector_calls[1:]))
         self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
                              for name in RECORD_VECTOR_MEMBERS for call in run.call_args_list))
-        before_record_vector_calls = [call for call in run.call_args_list
+        before_record_vector_calls = [call for call in before_owned_vector_calls
                                       if call.kwargs.get("cwd") != record_vector_root]
         predecessor_calls = [call for call in before_record_vector_calls if call.kwargs.get("cwd") != copy_root]
         library = str(verify_repo.ROOT / PYTHON_LIBRARY_ENTRY)
@@ -707,7 +819,8 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in library_calls],
                          [[str(Path(sys.executable).resolve()), "check", library, "--edition=typed-preview"]])
         predecessor_calls = [call for call in predecessor_calls if library not in call.args[0]]
-        output = io.StringIO(copy_predecessor_report(record_vector_predecessor_report(output.getvalue())))
+        output = io.StringIO(copy_predecessor_report(record_vector_predecessor_report(
+            owned_record_vector_predecessor_report(owned_record_vector_data_predecessor_report(output.getvalue())))))
         application = verify_repo.ROOT / "apps/byte-count"
         application_calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == application]
         self.assertEqual([call.args[0] for call in application_calls],
@@ -898,6 +1011,7 @@ class FixtureAdmissionTests(unittest.TestCase):
         shutil.copytree(verify_repo.ROOT / BYTE_DATA, self.root / BYTE_DATA)
         shutil.copytree(verify_repo.ROOT / VECTOR_DATA, self.root / VECTOR_DATA)
         shutil.copytree(verify_repo.ROOT / COPY_DATA, self.root / COPY_DATA)
+        copy_owned_record_vector_data(self.root)
         self.manifest = self.root / verify_fixture_data.SOURCE_DATA_MANIFESTS[0][0]
         self.document = json.loads(self.manifest.read_bytes())
         self.source = next(self.manifest.parent / name for name in self.document["files"] if name.endswith(".ox"))
@@ -1102,6 +1216,81 @@ class FixtureAdmissionTests(unittest.TestCase):
                 path.unlink()
                 self.assert_no_compiler("typed manifest application missing from discovery")
                 path.write_bytes(body)
+
+    def owned_record_vector_example(self):
+        project = "examples/owned-record-vectors"
+        for name in (project + "/oxid.toml", *OWNED_RECORD_VECTOR_PROJECTS[project]):
+            self.write(name, (verify_repo.ROOT / name).read_bytes())
+        return project
+
+    def test_owned_record_vector_example_adds_one_typed_root_and_exactly_two_members(self):
+        before_checks, before_entries, before_count = verify_repo.source_plan(discover(self.root), self.root)
+        project = self.owned_record_vector_example()
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertEqual([row for row in checks if row[0] == self.root / project], [(self.root / project, True)])
+        self.assertEqual([row for row in checks if row[0] != self.root / project], before_checks)
+        self.assertEqual(entries, before_entries + [self.root / project])
+        self.assertEqual(count - before_count, 2)
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS[project], OWNED_RECORD_VECTOR_PROJECTS[project])
+        self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count(project), 1)
+        self.assertNotIn(project, verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
+        self.assertFalse(any(path == self.root / name for path, _ in checks
+                             for name in OWNED_RECORD_VECTOR_MEMBERS))
+        neighbours = [self.write(project + "/tests/unlisted.ox", b"unregistered source\n"),
+                      self.write("examples/owned-record-vectors-neighbor/main.ox", b"unregistered source\n")]
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        for neighbour in neighbours:
+            self.assertIn((neighbour, False), checks)
+            self.assertNotIn(neighbour, entries)
+        self.assertEqual([row for row in checks if row[0] not in neighbours + [self.root / project]], before_checks)
+        self.assertEqual(entries, before_entries + [self.root / project])
+        self.assertEqual(count - before_count, 2)
+
+    def test_owned_record_vector_example_missing_member_or_manifest_rejects_before_compiler(self):
+        project = self.owned_record_vector_example()
+        for name in (project + "/oxid.toml", *OWNED_RECORD_VECTOR_PROJECTS[project]):
+            path = self.root / name
+            body = path.read_bytes()
+            with self.subTest(source=name):
+                path.unlink()
+                self.assert_no_compiler("typed manifest application missing from discovery")
+                path.write_bytes(body)
+
+    def test_owned_record_vector_data_is_authenticated_before_any_compiler_call(self):
+        for name in OWNED_RECORD_VECTOR_DATA_SOURCES:
+            source = self.root / name
+            body = source.read_bytes()
+            with self.subTest(source=name, change="same-size"):
+                source.write_bytes(bytes([body[0] ^ 1]) + body[1:])
+                self.assert_no_compiler("owned-record vector fixture-data body identity mismatch")
+                source.write_bytes(body)
+            with self.subTest(source=name, change="missing"):
+                source.unlink()
+                self.assert_no_compiler("unreadable owned-record vector fixture-data input")
+                source.write_bytes(body)
+
+    def test_owned_record_vector_data_missing_discovery_rejects_and_neighbors_remain_legacy(self):
+        sources = discover(self.root)
+        for name in OWNED_RECORD_VECTOR_DATA_SOURCES:
+            with self.subTest(source=name), self.assertRaisesRegex(RuntimeError, "source-only fixture data missing from discovery"):
+                verify_repo.source_plan([source for source in sources if source != self.root / name], self.root)
+        before_checks, before_entries, before_count = verify_repo.source_plan(sources, self.root)
+        neighbors = [self.write(OWNED_RECORD_VECTOR_DATA / "unlisted.ox", b"unregistered source\n"),
+                     self.write("scripts/owned_record_vector_acceptance_neighbor/main.ox", b"unregistered source\n")]
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        for neighbor in neighbors:
+            self.assertIn((neighbor, False), checks)
+            self.assertNotIn(neighbor, entries)
+        self.assertEqual([row for row in checks if row[0] not in neighbors], before_checks)
+        self.assertEqual(entries, before_entries)
+        self.assertEqual(count, before_count)
+        self.assertFalse(any(path == self.root / name for path, _ in checks
+                             for name in OWNED_RECORD_VECTOR_DATA_SOURCES))
+
+    def test_owned_record_vector_data_cannot_overlap_a_predecessor_registration(self):
+        previous = {self.root / COPY_DATA_SOURCES[0]}
+        with patch.object(verify_repo, "owned_record_vector_fixture_data_sources", return_value=previous):
+            self.assert_no_compiler("owned-record vector DATA overlaps predecessor inventory")
 
     def test_vector_data_is_authenticated_before_any_compiler_call(self):
         source = self.root / VECTOR_DATA_SOURCES[0]
@@ -1333,6 +1522,7 @@ class TypedOverlayAdmissionTests(unittest.TestCase):
         shutil.copytree(verify_repo.ROOT / BYTE_DATA, self.root / BYTE_DATA)
         shutil.copytree(verify_repo.ROOT / VECTOR_DATA, self.root / VECTOR_DATA)
         shutil.copytree(verify_repo.ROOT / COPY_DATA, self.root / COPY_DATA)
+        copy_owned_record_vector_data(self.root)
         members = set(verify_repo.TYPED_SOURCE_FILES + verify_repo.TYPED_CHECK_ONLY_FILES)
         members.update(name for project in verify_repo.TYPED_PROJECTS.values() for name in project)
         members.update(V2_OVERLAY_FILES)

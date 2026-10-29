@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_msvc_linker_compatibility.py --source-policy registry \
+          python3 -B scripts/verify_owned_record_vector_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -1151,6 +1151,11 @@ jobs:
             --output "$RUNNER_TEMP/current-copy-record-native" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-copy-record-vector-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_owned_record_vectors.py \
+            --repo . --expected-head "$(git rev-parse HEAD)" \
+            --oxid-debug target/debug/oxid --oxid-release target/release/oxid \
+            --output "$RUNNER_TEMP/current-owned-record-vector-native" \
+            --llvm-bin "$OXID_LLVM_BIN" --native
           python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-matrix-native" --llvm-bin "$OXID_LLVM_BIN"
       - name: Verify native CPU training, gradients and checkpoint recovery
@@ -1185,6 +1190,7 @@ jobs:
           python3 -B scripts/test_integer128_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_bytebuf_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_binary_delivery.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_owned_record_vectors.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_hosted_bytebuf.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_bytebuf_transfer.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_files_runtime.py
@@ -1235,6 +1241,7 @@ jobs:
             ${{ runner.temp }}/current-typed-vector-native
             ${{ runner.temp }}/current-copy-record-native
             ${{ runner.temp }}/current-copy-record-vector-native
+            ${{ runner.temp }}/current-owned-record-vector-native
             ${{ runner.temp }}/current-utf8-characters-native
             ${{ runner.temp }}/current-utf8-text-application
             ${{ runner.temp }}/current-native-files

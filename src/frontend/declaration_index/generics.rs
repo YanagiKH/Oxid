@@ -3,6 +3,7 @@
 mod flow;
 mod inference;
 mod nominal;
+pub(super) mod owned_candidate;
 #[cfg(test)]
 mod vector_tests;
 use super::*;
@@ -126,14 +127,16 @@ enum Value {
     Vector(Element),
 }
 
-/// Scalar storage only. Copy parameters retain their position until concrete
-/// substitution; an owned Copy candidate never becomes a scalar element.
+/// Generic vector element identities. Copy parameters retain their position
+/// until substitution; private owned candidates use a separate key domain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Element {
     Concrete(Ty),
     CopyParameter(usize),
     RecordApplication(usize),
     ConcreteRecord(RecordId),
+    OwnedRecordApplication(usize),
+    OwnedConcreteRecord(RecordId),
 }
 impl Element {
     fn check(value: Value, at: Span) -> Result<Self, Box<Diagnostic>> {
@@ -160,6 +163,10 @@ impl Element {
             },
             Self::RecordApplication(id) => Value::Record(id),
             Self::ConcreteRecord(id) => Value::Concrete(ValueTy::Owned(AggregateTy::Record(id))),
+            Self::OwnedRecordApplication(id) => Value::Record(id),
+            Self::OwnedConcreteRecord(id) => {
+                Value::Concrete(ValueTy::Owned(AggregateTy::Record(id)))
+            }
         }
     }
     fn checked(value: Value, nominals: &Nominals, at: Span) -> Result<Self, Box<Diagnostic>> {
@@ -213,6 +220,14 @@ impl Value {
             Self::Vector(element) => Some(element),
             _ => None,
         }
+    }
+}
+impl Element {
+    fn owned(self) -> bool {
+        matches!(
+            self,
+            Self::OwnedRecordApplication(_) | Self::OwnedConcreteRecord(_)
+        )
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -505,6 +520,8 @@ impl Plan {
             bytes: size_of::<Plan>(),
             ..Default::default()
         };
+        index.activate_owned_storage(&mut storage, work)?;
+        index.record_owned_sources(&mut storage, allocator, work)?;
         let mut plan = Self {
             instances: Vec::new(),
             ordinary: Vec::new(),
@@ -725,6 +742,7 @@ impl Plan {
         plan.freeze_calls(index, &mut storage, work)?;
         nominals.finish(&mut storage, allocator, work, index.sources().eof())?;
         plan.nominals = nominals;
+        index.finish_owned_storage(&storage)?;
         Ok(plan)
     }
     fn register_vector(
@@ -757,6 +775,9 @@ impl Plan {
         storage: &mut Storage,
         work: &WorkMeter,
     ) -> Result<(), Box<Diagnostic>> {
+        if index.owned_vector_builder().is_some() {
+            return index.freeze_owned_calls(self, storage, work);
+        }
         let at = index.sources().eof();
         // The existing fixed-builtin rewrite does not reserve vector controls
         // or spend vector freeze work when no concrete vector key exists.
@@ -2884,7 +2905,15 @@ impl<'a, 's> Walker<'a, 's> {
             | Type::Reference {
                 value: Value::Vector(element),
                 ..
-            } => Ok(element),
+            } => {
+                if element.owned() {
+                    return Err(error(
+                        "owned vector elements must be moved with pop_last",
+                        base,
+                    ));
+                }
+                Ok(element)
+            }
             _ => Err(error(
                 "indexing requires an array, slice, byte buffer or vector",
                 base,
@@ -3104,6 +3133,11 @@ impl<'a, 's> Walker<'a, 's> {
         arguments: &[Argument],
         at: Span,
     ) -> Result<Type, Box<Diagnostic>> {
+        if self.index.owned_vector_builder().is_some() {
+            if let Some(operation) = self.index.owned_template(definition, self.work, at)? {
+                return self.owned_vector_call(expression, definition, operation, arguments, at);
+            }
+        }
         if self.index.builtin_set().contains_vector(vector::Item::Vec) {
             if let Some(operation) = self.index.vector_template(definition, self.work, at)? {
                 return self.vector_call(expression, definition, operation, arguments, at);
@@ -3274,7 +3308,10 @@ impl<'a, 's> Walker<'a, 's> {
         }
         let mut element = if let Some(types) = explicit {
             let value = self.ty(types[0])?.value(types[0].span)?;
-            Some(Element::checked(value, self.nominals, types[0].span)?)
+            Some(
+                self.index
+                    .candidate_element(value, self.nominals, types[0].span)?,
+            )
         } else {
             None
         };
@@ -3298,6 +3335,20 @@ impl<'a, 's> Walker<'a, 's> {
         }
         let element =
             element.ok_or_else(|| error("cannot infer new element; specify new::<T>", at))?;
+        if element.owned() {
+            let operation = match operation {
+                vector::Operation::New => owned_vector::Operation::New,
+                vector::Operation::Len => owned_vector::Operation::Len,
+                vector::Operation::Capacity => owned_vector::Operation::Capacity,
+                vector::Operation::TryReserve => owned_vector::Operation::TryReserve,
+                vector::Operation::Truncate => owned_vector::Operation::Truncate,
+                vector::Operation::Take => owned_vector::Operation::Take,
+                _ => return Err(error("owned record vectors require push_reserved and pop_last; copying operations remain unavailable", at)),
+            };
+            return self.owned_vector_selected(
+                expression, template, operation, arguments, element, actuals, at,
+            );
+        }
         let grow = if operation.requires_grow_status() {
             let id = self
                 .index

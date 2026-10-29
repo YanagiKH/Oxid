@@ -34,6 +34,7 @@ pub(in crate::frontend::oir) fn requires_paid_source(index: &DeclarationIndex<'_
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SourceAdmission {
     Executable,
+    OwnedVectorPipeline,
     #[cfg(test)]
     ObserveArrayTypes,
     #[cfg(test)]
@@ -58,6 +59,9 @@ impl SourceAdmission {
         if index.is_current_source_pipeline() {
             return self == Self::Executable;
         }
+        if self == Self::OwnedVectorPipeline {
+            return index.is_owned_vector_candidate_pipeline();
+        }
         #[cfg(test)]
         {
             self == Self::BuiltinPipeline
@@ -71,7 +75,7 @@ impl SourceAdmission {
     }
     pub(super) fn allows_lowering(self) -> bool {
         match self {
-            Self::Executable => true,
+            Self::Executable | Self::OwnedVectorPipeline => true,
             #[cfg(test)]
             Self::ObserveArrayPipeline
             | Self::ArrayConsumer
@@ -359,6 +363,24 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 (4 + selected.signature.parameters().len()) as u64,
                 selected.anchor,
                 "vector signature identity",
+            )?;
+            if actual.params != selected.signature.parameters()
+                || actual.result != selected.signature.result
+                || actual.span != selected.anchor
+            {
+                return Err(invalid_signature_identity(selected.anchor));
+            }
+        }
+        for (rank, key) in index.owned_vector_functions().iter().copied().enumerate() {
+            let selected = super::owned_vector_source::signature(index, self.work(), rank, key)?;
+            let actual = self
+                .signatures
+                .get(selected.id.0)
+                .ok_or_else(|| invalid_signature_identity(selected.anchor))?;
+            self.work().debit(
+                (4 + selected.signature.parameters().len()) as u64,
+                selected.anchor,
+                "owned vector signature identity",
             )?;
             if actual.params != selected.signature.parameters()
                 || actual.result != selected.signature.result
@@ -799,6 +821,20 @@ pub(in crate::frontend::oir) fn type_enum_source<'s>(
     type_paid_source(index, work, allocator, SourceAdmission::Executable)
 }
 
+/// Private finite-owned-vector typing only. The index remains candidate-marked;
+/// neither this owner nor its admission may construct a public SourceProgram.
+pub(in crate::frontend::oir) fn type_owned_vector_source<'s>(
+    index: &'s DeclarationIndex<'s>,
+    work: &'s WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<super::typeck::TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    if !index.is_owned_vector_candidate_pipeline() {
+        return Err(vec![*invalid_signature_identity(index.sources().eof())]);
+    }
+    index.validate_owned_vector_candidate(work, allocator)?;
+    type_paid_source(index, work, allocator, SourceAdmission::OwnedVectorPipeline)
+}
+
 /// Sole caller is program.rs's fresh private candidate continuation. The
 /// borrowed typed owner remains inside that continuation and never grants
 /// SourceProgram/executable authority, including a candidate without imports.
@@ -828,6 +864,9 @@ fn type_paid_source<'s>(
     let at = index.sources().eof();
     let attempts_before = allocator.attempts;
     let plan = match admission {
+        SourceAdmission::OwnedVectorPipeline => {
+            super::hir_budget::preflight_owned_vector_hir(index, work)
+        }
         #[cfg(test)]
         SourceAdmission::BuiltinPipeline => super::hir_budget::preflight_builtin_hir(index, work),
         _ => super::hir_budget::preflight_current_hir(index, work),
@@ -872,6 +911,9 @@ fn type_paid_source<'s>(
     // The scalar checkpoint detects any request inserted between reconciled
     // resolution and paid typing; it is not a caller-chosen seed or capability.
     match admission {
+        SourceAdmission::OwnedVectorPipeline => {
+            super::typeck::finish_owned_vector_source(program, &plan, allocator, resolver_end)
+        }
         #[cfg(test)]
         SourceAdmission::BuiltinPipeline => {
             super::typeck::finish_builtin_source(program, &plan, allocator, resolver_end)
@@ -1729,6 +1771,40 @@ fn resolve_index_impl(
                 (1 + selected.signature.parameters().len()) as u64,
                 selected.anchor,
                 "vector signature construction",
+            )?;
+            let mut params = paid.reserve(
+                allocator,
+                Kind::Parameters,
+                selected.signature.parameters().len(),
+                selected.anchor,
+            )?;
+            for parameter in selected.signature.parameters() {
+                storage::room(&params, params.capacity(), true, selected.anchor)?;
+                params.push(*parameter);
+            }
+            storage::room(&signatures, signatures.capacity(), true, selected.anchor)?;
+            signatures.push(Signature {
+                params,
+                result: selected.signature.result,
+                span: selected.anchor,
+            });
+            Ok(())
+        };
+        append().map_err(|error| vec![*error])?;
+    }
+    for (rank, key) in index.owned_vector_functions().iter().copied().enumerate() {
+        let mut append = || -> Result<(), Box<Diagnostic>> {
+            let selected = super::owned_vector_source::signature(index, work, rank, key)?;
+            if selected.id.0 != signatures.len() {
+                return Err(invalid_signature_identity(selected.anchor));
+            }
+            let paid = paid
+                .as_deref_mut()
+                .ok_or_else(|| invalid_signature_identity(selected.anchor))?;
+            work.debit(
+                (1 + selected.signature.parameters().len()) as u64,
+                selected.anchor,
+                "owned vector signature construction",
             )?;
             let mut params = paid.reserve(
                 allocator,

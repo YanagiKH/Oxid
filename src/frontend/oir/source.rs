@@ -4,12 +4,15 @@ use super::*;
 #[cfg(test)]
 use crate::frontend::ast;
 pub(in crate::frontend::oir) mod association;
+#[cfg(test)]
+mod owned_vector_route_tests;
 mod sealed;
 // Explicit import is separate from every default source route.
 #[allow(dead_code)]
 mod hir_import;
 pub(in crate::frontend) use hir_import::{import_checked, import_produced, Imported, IMPORT_BYTES};
 pub(in crate::frontend::oir) use sealed::enum_facade_carrier_bytes;
+pub(in crate::frontend::oir) use sealed::owned_vector_route_carrier_bytes;
 pub(in crate::frontend::oir) use sealed::{
     check_package_executable, check_project_candidate, check_project_executable_candidate,
 };

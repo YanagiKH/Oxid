@@ -78,8 +78,26 @@ class ManifestApplications(unittest.TestCase):
             path.write_bytes((verify_repo.ROOT / name).read_bytes())
         record_vector_paths = {self.root / name for name in record_vector_members}
         self.assertFalse(record_vector_paths & (selected | copy_paths))
+        owned_vector_project = "examples/owned-record-vectors"
+        owned_vector_members = ("examples/owned-record-vectors/src/main.ox",
+                                "examples/owned-record-vectors/tests/messages.ox")
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS[owned_vector_project], owned_vector_members)
+        for name in (owned_vector_project + "/oxid.toml", *owned_vector_members):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((verify_repo.ROOT / name).read_bytes())
+        owned_vector_paths = {self.root / name for name in owned_vector_members}
+        self.assertFalse(owned_vector_paths & (selected | copy_paths | record_vector_paths))
         neighbor = self.root / "apps/frame-filter/unregistered.ox"
-        admitted, roots = verify_repo.manifest_project_members(list(selected | copy_paths | record_vector_paths) + [neighbor], self.root, required=True)
+        owned_neighbors = [self.root / owned_vector_project / "tests/unregistered.ox",
+                           self.root / "examples/owned-record-vectors-neighbor/main.ox"]
+        admitted, roots = verify_repo.manifest_project_members(
+            list(selected | copy_paths | record_vector_paths | owned_vector_paths) + [neighbor, *owned_neighbors],
+            self.root, required=True)
+        self.assertTrue(owned_vector_paths <= admitted)
+        self.assertEqual(roots.count(self.root / owned_vector_project), 1)
+        admitted -= owned_vector_paths
+        roots = [path for path in roots if path != self.root / owned_vector_project]
         self.assertTrue(record_vector_paths <= admitted)
         self.assertEqual(roots.count(self.root / record_vector_project), 1)
         admitted -= record_vector_paths
@@ -91,13 +109,22 @@ class ManifestApplications(unittest.TestCase):
         self.assertEqual(admitted, selected)
         self.assertEqual(roots, entries)
         self.assertNotIn(neighbor, admitted)
+        for path in owned_neighbors:
+            self.assertNotIn(path, admitted)
         for missing in selected - set(self.members):
             with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
-                verify_repo.manifest_project_members(list((selected - {missing}) | copy_paths | record_vector_paths), self.root, required=True)
+                verify_repo.manifest_project_members(
+                    list((selected - {missing}) | copy_paths | record_vector_paths | owned_vector_paths),
+                    self.root, required=True)
         for missing in record_vector_paths:
             with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
-                verify_repo.manifest_project_members(list(selected | copy_paths | (record_vector_paths - {missing})),
+                verify_repo.manifest_project_members(list(selected | copy_paths | (record_vector_paths - {missing}) | owned_vector_paths),
                                                     self.root, required=True)
+        for missing in owned_vector_paths:
+            with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
+                verify_repo.manifest_project_members(
+                    list(selected | copy_paths | record_vector_paths | (owned_vector_paths - {missing})),
+                    self.root, required=True)
 
 
 if __name__ == "__main__":

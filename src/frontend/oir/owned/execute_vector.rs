@@ -7,9 +7,9 @@ use super::*;
 use crate::frontend::builtin_catalog::vector::{Function, Operation};
 use std::ops::Range;
 
-struct VectorPlace {
-    frame: usize,
-    bytes: Range<usize>,
+pub(super) struct VectorPlace {
+    pub(super) frame: usize,
+    pub(super) bytes: Range<usize>,
 }
 
 /// A scalar slice retains its real backing resource class. Vec<u8> is not a
@@ -41,21 +41,67 @@ struct PreparedRelease {
     owner: bool,
     kind: BorrowKind,
 }
-struct Delivery {
-    local: ResultPlace,
-    caller_result: ResultPlace,
+pub(super) struct Delivery {
+    pub(super) local: ResultPlace,
+    pub(super) caller_result: ResultPlace,
     from: Option<(OwnerKey, u64)>,
     to: Option<OwnerKey>,
     releases: [Option<PreparedRelease>; 2],
-    caller: usize,
+    pub(super) caller: usize,
     resume: Resume,
     function: hir::DefId,
-    cost: usize,
+    pub(super) cost: usize,
 }
-enum Returned {
+pub(super) enum Returned {
     Scalar(Scalar),
     Descriptor([u8; 16]),
     Status(u32),
+}
+
+/// The two real compact key domains authenticate the same canonical delivery
+/// protocol. Only the new consuming key admits consume access to its T input.
+pub(super) trait VectorPrimitive: Copy {
+    fn authenticates<W: PlanWitness>(self, witness: &W, function: hir::DefId) -> bool;
+    fn input_record(self) -> Option<RecordId>;
+    fn input_access(self) -> Access;
+}
+impl VectorPrimitive for Function {
+    fn authenticates<W: PlanWitness>(self, witness: &W, function: hir::DefId) -> bool {
+        witness.vector_operation(function) == Some(self)
+    }
+    fn input_record(self) -> Option<RecordId> {
+        self.record_id()
+    }
+    fn input_access(self) -> Access {
+        Access::Read
+    }
+}
+
+struct DeliveryCarriers<'a, V, K> {
+    key: K,
+    delivery: Delivery,
+    delivery_return: Result<Delivery>,
+    local: ResultPlace,
+    local_return: Result<ResultPlace>,
+    caller: ResultPlace,
+    caller_return: Result<ResultPlace>,
+    releases: [Option<PreparedRelease>; 2],
+    selected_release: PreparedRelease,
+    current_frame: &'a ValueFrame<V>,
+    parent_frame: &'a ValueFrame<V>,
+    functions: [&'a RawOwnedFunction; 2],
+    block: &'a OwnedBlock,
+    terminator: &'a OwnedTerminator,
+    call: &'a CallDecl,
+    selected_owner: &'a OwnerDecl,
+    binding: ParameterBinding,
+    handles: [ReferenceHandle; 2],
+    keys: [OwnerKey; 2],
+    loan: LoanKey,
+    counters: [usize; 8],
+}
+pub(super) const fn delivery_control_bytes<V, K: VectorPrimitive>() -> usize {
+    size_of::<DeliveryCarriers<'_, V, K>>()
 }
 enum Footprint {
     Activation(Range<u64>),
@@ -181,7 +227,7 @@ fn unpacked_range(offset: u64, span: Span) -> Result<(i32, i32)> {
     ))
 }
 
-impl<V: StoredValue> ValueMachine<'_, '_, V> {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     fn vector_at(
         &self,
         root: OwnerKey,
@@ -889,7 +935,6 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             _ => self
                 .plan
                 .witness()
-                .declarations()
                 .aggregate_layout(actual)
                 .map_err(|_| bad("vector alias layout", span))?
                 .size() as u64,
@@ -958,8 +1003,19 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         access: Access,
         span: Span,
     ) -> Result<(VectorPlace, byte_buffer::VectorDescriptor)> {
+        let (root, view) = self.vector_parameter_view(frame, key.aggregate(), access, span)?;
+        self.vector_at(root, view.offset, VectorTy::function(key), span)
+    }
+
+    pub(super) fn vector_parameter_view(
+        &self,
+        frame: usize,
+        expected: AggregateTy,
+        access: Access,
+        span: Span,
+    ) -> Result<(OwnerKey, BorrowView)> {
         if self.authority_referent(frame, AccessBase::Parameter(ReferenceParamId(0)), span)?
-            != BorrowedTy::Exact(key.aggregate())
+            != BorrowedTy::Exact(expected)
         {
             return Err(bad("vector parameter type", span));
         }
@@ -973,7 +1029,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             .get(index(handle.permission.loan, span)?)
             .map(LoanDecl::referent)
             .ok_or_else(|| bad("vector parameter loan", span))?;
-        if referent != BorrowedTy::Exact(key.aggregate()) {
+        if referent != BorrowedTy::Exact(expected) {
             return Err(bad("vector parameter requires whole authority", span));
         }
         let root = self.base(
@@ -988,9 +1044,9 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             root,
             span,
         )?;
-        self.vector_at(root, view.offset, VectorTy::function(key), span)
+        Ok((root, view))
     }
-    fn vector_i32(&self, frame: usize, local: usize, span: Span) -> Result<i32> {
+    pub(super) fn vector_i32(&self, frame: usize, local: usize, span: Span) -> Result<i32> {
         match self
             .read(
                 frame,
@@ -1059,6 +1115,28 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 let bytes = self.owner_extent(key, span)?;
                 match aggregate {
                     AggregateTy::Vector(_) | AggregateTy::RecordVector(_) if bytes.len() == 16 => {}
+                    AggregateTy::OwnedRecordVector(record)
+                        if self.plan.uses_owned_vectors() && bytes.len() == 16 =>
+                    {
+                        self.plan
+                            .witness()
+                            .elements()
+                            .ok_or_else(|| bad("owned vector caller bounds", span))?
+                            .element(record)
+                            .map_err(|_| bad("owned vector caller type", span))?;
+                    }
+                    AggregateTy::Record(record) if self.plan.uses_owned_vectors() => {
+                        let element = self
+                            .plan
+                            .witness()
+                            .elements()
+                            .ok_or_else(|| bad("owned vector caller bounds", span))?
+                            .element(record)
+                            .map_err(|_| bad("owned vector caller record", span))?;
+                        if bytes.len() != element.size() {
+                            return Err(bad("owned vector caller record extent", span));
+                        }
+                    }
                     AggregateTy::Enum(enumeration) => {
                         let variants = self
                             .plan
@@ -1087,16 +1165,16 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
             _ => Err(bad("vector caller result class", span)),
         }
     }
-    fn prepare_vector_delivery(
+    pub(super) fn prepare_vector_delivery<K: VectorPrimitive>(
         &self,
         frame: usize,
-        key: Function,
+        key: K,
         destination: CallResult,
         span: Span,
     ) -> Result<Delivery> {
         let current = &self.frames[frame];
         let function = self.function(current.function);
-        if self.plan.witness().vector_operation(function.id) != Some(key) {
+        if !key.authenticates(self.plan.witness(), function.id) {
             return Err(bad("vector function identity", span));
         }
         let block = function
@@ -1134,12 +1212,12 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
         for parameter in &function.parameters {
             if let ParameterBinding::Owned(owner) = parameter {
                 let record = key
-                    .record_id()
+                    .input_record()
                     .ok_or_else(|| bad("scalar vector owned input", span))?;
                 if function.owners[owner.0].aggregate() != AggregateTy::Record(record) {
                     return Err(bad("record vector input identity", span));
                 }
-                self.base(frame, AccessBase::Owner(*owner), Access::Read, span)?;
+                self.base(frame, AccessBase::Owner(*owner), key.input_access(), span)?;
             }
         }
         let local = self.prepare_experimental_result(frame, destination, span)?;
@@ -1290,9 +1368,17 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 .copy_from_slice(encoded);
         }
     }
-    fn complete_vector_delivery(&mut self, frame: usize, delivery: Delivery, value: Returned) {
-        self.commit_vector_result(frame, delivery.local, &value);
-        self.commit_vector_result(delivery.caller, delivery.caller_result, &value);
+    pub(super) fn complete_vector_delivery(
+        &mut self,
+        frame: usize,
+        delivery: Delivery,
+        value: Returned,
+    ) {
+        self.commit_vector_result(frame, delivery.local.clone(), &value);
+        self.commit_vector_result(delivery.caller, delivery.caller_result.clone(), &value);
+        self.complete_vector_return(frame, delivery);
+    }
+    pub(super) fn complete_vector_return(&mut self, frame: usize, delivery: Delivery) {
         if let Some((from, generation)) = delivery.from {
             let row = &mut self.frames[frame].owners[from.owner as usize];
             row.generation = generation;

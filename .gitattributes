@@ -100,3 +100,25 @@ tests/fixtures/typed_vectors/scenarios/projected-vector.ox -text
 
 tests/fixtures/copy_records/all_scalars.ox -text
 tests/fixtures/copy_records/wide_unicode.ox -text
+
+# Owned-record vector acceptance sources retain exact bytes on every host.
+scripts/owned_record_vector_acceptance/aliases.ox -text
+scripts/owned_record_vector_acceptance/bytebuf.ox -text
+scripts/owned_record_vector_acceptance/conflicting_borrows.ox -text
+scripts/owned_record_vector_acceptance/copy_operation.ox -text
+scripts/owned_record_vector_acceptance/double_move.ox -text
+scripts/owned_record_vector_acceptance/empty_new.ox -text
+scripts/owned_record_vector_acceptance/enum16.ox -text
+scripts/owned_record_vector_acceptance/failed_reserve.ox -text
+scripts/owned_record_vector_acceptance/fault_pop.ox -text
+scripts/owned_record_vector_acceptance/fault_push_file.ox -text
+scripts/owned_record_vector_acceptance/files.ox -text
+scripts/owned_record_vector_acceptance/generic_record.ox -text
+scripts/owned_record_vector_acceptance/index_read.ox -text
+scripts/owned_record_vector_acceptance/nested_vector.ox -text
+scripts/owned_record_vector_acceptance/package_main.ox -text
+scripts/owned_record_vector_acceptance/package_model.ox -text
+scripts/owned_record_vector_acceptance/unused_pop.ox -text
+scripts/owned_record_vector_acceptance/unused_push.ox -text
+scripts/owned_record_vector_acceptance/unused_template.ox -text
+scripts/owned_record_vector_acceptance/zero_key.ox -text

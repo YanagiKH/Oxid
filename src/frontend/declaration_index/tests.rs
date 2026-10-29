@@ -106,14 +106,26 @@ fn dense_per_kind_ids_precede_child_recursion() {
 #[cfg(target_os = "linux")]
 #[test]
 fn paired_import_failure_rolls_back_both_target_lanes() {
-    let (result, work) = run(&[
+    let files = [
         (
             "main.ox",
             "mod a; use crate::a::X as bool; use crate::a::X as Y; fn main()->i32{return Y();}",
         ),
         ("a.ox", "pub struct X {} pub fn X()->i32{return 1;}"),
-    ]);
-    let errors = result.unwrap_err();
+    ];
+    let fixture = Fixture::new(&files);
+    let sources = fixture.load();
+    let work = WorkMeter::default();
+    work.enable_observation();
+    let mut allocator = Allocator::default();
+    let facts = collect_originals(
+        SourceOwner::project(&sources),
+        IndexLimits::default(),
+        &work,
+        &mut allocator,
+    )
+    .unwrap();
+    let errors = facts.finish(&work, &mut allocator).unwrap_err();
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].code, "E0202");
     let events = work.observations.borrow();
@@ -143,6 +155,47 @@ fn paired_import_failure_rolls_back_both_target_lanes() {
     assert!(!events
         .iter()
         .any(|e| matches!(e, Observation::Frozen { .. })));
+    drop(events);
+
+    // The public result retains the original semantic transaction. The failed
+    // candidate still spends its actual work, but contributes no committed
+    // declarations, imports or diagnostics.
+    let (result, replay) = run(&files);
+    let replay_errors = result.unwrap_err();
+    assert_eq!(replay_errors.len(), errors.len());
+    for (actual, expected) in replay_errors.iter().zip(&errors) {
+        assert_eq!(
+            actual.render_json(sources.sources()),
+            expected.render_json(sources.sources())
+        );
+    }
+    let events = replay.observations.borrow();
+    let replay_imports: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            Observation::Import {
+                committed,
+                ty,
+                value,
+                ..
+            } => Some((*committed, *ty, *value)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(replay_imports, imports);
+    assert!(replay.used() > work.used());
+    let fills = |meter: &WorkMeter| {
+        meter
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| event.operation == "declaration fill")
+            .count()
+    };
+    assert_eq!(fills(&replay), 2 * fills(&work));
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, Observation::Frozen { .. })));
 }
 #[cfg(target_os = "linux")]
 #[test]

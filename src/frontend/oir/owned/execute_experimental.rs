@@ -33,6 +33,7 @@ struct BufferPlace {
     frame: usize,
     bytes: Range<usize>,
 }
+#[derive(Clone)]
 pub(super) enum ResultPlace {
     Scalar(LocalId),
     Owner {
@@ -62,7 +63,7 @@ fn io_failure(failure: binary_io::Failure, span: Span) -> OwnedRunFailure {
         binary_io::Failure::Host => OwnedRunFailure::BinaryHost(span),
     }
 }
-impl<V: StoredValue> ValueMachine<'_, '_, V> {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     fn buffer_at(
         &self,
         root: OwnerKey,
@@ -248,6 +249,11 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
                 let bytes = self.owner_extent(key, span)?;
                 let generation = epoch(key.generation, span)?;
                 match f.result {
+                    ValueTy::Owned(
+                        aggregate @ (AggregateTy::OwnedRecordVector(_) | AggregateTy::Record(_)),
+                    ) if f.owners[owner.0].aggregate() == aggregate
+                        && self.owned_vector_result_extent(f.id, aggregate)
+                            == Some(bytes.len()) => {}
                     ValueTy::Owned(AggregateTy::ByteBuf) if bytes.len() == 16 => (),
                     ValueTy::Owned(AggregateTy::Vector(element))
                         if bytes.len() == 16
@@ -501,7 +507,7 @@ impl<V: StoredValue> ValueMachine<'_, '_, V> {
     }
 }
 
-impl<V: StoredValue> ValueMachine<'_, '_, V> {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     pub(super) fn stage_byte_view(
         &self,
         frame: usize,

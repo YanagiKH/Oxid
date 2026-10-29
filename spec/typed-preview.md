@@ -313,14 +313,15 @@ O0 and O2.
 
 ## Growable vectors
 
-`alloc::vec::Vec<T>` owns a growable collection of one scalar or finite checked
-Copy record element type.
+`alloc::vec::Vec<T>` owns a growable collection of one scalar, finite checked
+Copy record, or finite non-Copy record element type.
 The type is affine; moving a vector transfers its allocation, and destruction
 releases it. Records and finite enum payloads may contain vectors. `Vec<u8>` is
 a distinct type from `alloc::bytes::ByteBuf`.
 
 `new::<T>()` creates an empty vector without allocating. `len` and `capacity`
-inspect element counts; `try_reserve`, `try_push`, `try_extend` and `try_resize`
+inspect element counts; `try_reserve` returns `GrowStatus`. For scalar and Copy
+elements, `try_push`, `try_extend` and `try_resize` also
 return the canonical `GrowStatus` enumeration. Failure preserves the vector's
 values, length and capacity. `truncate` shortens without shrinking capacity;
 `take` transfers ownership and resets its source to an empty vector. Indices,
@@ -334,7 +335,7 @@ parameters with `T: Copy` specialize both scalar and checked record elements.
 An indexed record read initializes an independent owned Copy value; a whole
 indexed assignment copies a matching value through exclusive authority.
 
-Record element payloads contain only initialized scalar leaves in declaration
+Copy record element payloads contain only initialized scalar leaves in declaration
 order, including a Unit sentinel for empty records. Activation padding is
 neither read nor copied. Record identity and dense stride come from the checked
 nominal declaration and the compiler's read-only native schema catalog. All
@@ -345,9 +346,23 @@ containment depth and `B` is the initialized dense byte count. Pack/unpack
 operations pay the corresponding bound over expanded initialized leaves.
 No heap or compiler resource ceiling is raised.
 
-Non-Copy records, resource or enum elements, nested vectors, arrays of records,
-individual element references, and stored or returned references remain
-unavailable. The vector API and examples are documented in
+Finite non-Copy record elements may contain byte buffers, files, scalar and
+Copy vectors, and finite enum payloads. Their API consists of `new`, `len`,
+`capacity`, `try_reserve`, `push_reserved`, `pop_last`, `truncate`, and `take`.
+`push_reserved(&mut values, value) -> ()` consumes the record and requires
+reserved spare capacity. It never allocates; failure to satisfy the capacity
+precondition stops execution. `pop_last(&mut values) -> T` removes and returns
+the last record and requires a nonempty vector. Both operations preserve the
+single ownership of the record and its active resources. `truncate` releases
+removed records; `take` moves the allocation and leaves the source with zero
+length and capacity. A failed `try_reserve` preserves the existing length,
+capacity, records, and any separate incoming record owned by the caller.
+
+Non-Copy record vectors do not provide indexing, slices, or element references.
+`try_push`, `try_extend`, and `try_resize` do not accept their element type.
+Direct enum elements, nested vectors of non-Copy records, recursive element
+types, arrays of records, individual element references, and stored or returned
+references remain unavailable. The vector API and examples are documented in
 [Growable vectors](../docs/VECTORS.md).
 
 ## Growable byte buffers and partial binary I/O

@@ -72,16 +72,34 @@ pub(super) fn value_summary(
     records: &[ContainmentSummary],
     enums: &[ContainmentSummary],
 ) -> Result<ContainmentSummary, DeclarationError> {
+    value_summary_domain::<false>(value, records, enums)
+}
+
+pub(super) fn value_summary_domain<const OWNED: bool>(
+    value: ValueTy,
+    records: &[ContainmentSummary],
+    enums: &[ContainmentSummary],
+) -> Result<ContainmentSummary, DeclarationError> {
     match value {
         ValueTy::Owned(AggregateTy::Enum(id)) => enums
             .get(id.0)
             .copied()
             .ok_or(DeclarationError::InvalidEnumId(id)),
-        other => super::value_summary(other, records),
+        other => super::value_summary_domain::<OWNED>(other, records),
     }
 }
 
 pub(super) fn layouts(
+    records: &[RawRecordDecl],
+    enums: &[RawEnumDecl],
+    table_bytes: usize,
+    limits: Limits,
+    allocator: &mut Allocator,
+) -> Result<JointLayouts, DeclarationError> {
+    layouts_domain::<false>(records, enums, table_bytes, limits, allocator)
+}
+
+pub(super) fn layouts_domain<const OWNED: bool>(
     records: &[RawRecordDecl],
     enums: &[RawEnumDecl],
     table_bytes: usize,
@@ -210,7 +228,7 @@ pub(super) fn layouts(
                     enum_nesting |= state[nested] & 4 != 0
                         || (node < records.len() && matches!(aggregate, AggregateTy::Enum(_)));
                 }
-                let child = value_summary(
+                let child = value_summary_domain::<OWNED>(
                     value,
                     &summaries[..records.len()],
                     &summaries[records.len()..],
