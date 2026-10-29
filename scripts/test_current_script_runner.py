@@ -133,7 +133,7 @@ def load_tests(loader, tests, pattern):
             "test_copy_record_debug_compatibility", "test_windows_native_compatibility",
             "test_record_field_completion_compatibility", "test_file_seek_compatibility",
             "test_scalar_library_compatibility", "test_arm64_package_compatibility",
-            "test_registry_compatibility"})
+            "test_registry_compatibility", "test_owned_record_vector_compatibility"})
         for module, (_, revision, _) in runner.PREDECESSOR_ONLY.items():
             name = module + ".py"
             for source in (FROZEN_SOURCES[name] + PASSING.encode(), None):
@@ -160,6 +160,18 @@ def load_tests(loader, tests, pattern):
         self.assertIn("test_registry_compatibility_future.CurrentTest.test_passes", result.stderr)
         self.assertIn("Mandatory predecessor replay: test_registry_compatibility.py @ "
                       "e77402de69911a9d45a55fff5a8a0dd8de61f3e5", result.stderr)
+
+    def test_owned_vector_replay_keeps_its_exact_source_and_does_not_hide_text_successors(self):
+        self.assertEqual(runner.PREDECESSOR_ONLY["test_owned_record_vector_compatibility"], (
+            "0981b5cc24a281f892ee1c8b6d26cbfc3c2a7d0f4a4dfa8c2743714c35723f3b",
+            "0e8f23f7481c7ec4e24cd416ed30607f8eb75daf",
+            "requires the pre-owned-text compiler and exact 572-input source authority"))
+        self.assertNotIn("test_owned_record_vector_compatibility", runner.HISTORICAL_ONLY)
+        result = self.execute({"test_owned_text_compatibility_future.py": PASSING})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("test_owned_text_compatibility_future.CurrentTest.test_passes", result.stderr)
+        self.assertIn("Mandatory predecessor replay: test_owned_record_vector_compatibility.py @ "
+                      "0e8f23f7481c7ec4e24cd416ed30607f8eb75daf", result.stderr)
 
     def test_empty_or_only_delegated_test_sets_cannot_report_success(self):
         for files in [

@@ -17,6 +17,9 @@ mod experimental_source_tests;
 #[path = "i64_source_tests.rs"]
 mod i64_source_tests;
 #[cfg(test)]
+#[path = "owned_text_source_resource_tests.rs"]
+mod owned_text_source_resource_tests;
+#[cfg(test)]
 #[path = "owned_vector_source_execution_tests.rs"]
 mod owned_vector_source_execution_tests;
 #[cfg(test)]

@@ -37,12 +37,16 @@ REGISTRY_REPLAY = ('scripts/verify_registry_compatibility.py',
                    (35050, 'd6bd23496f38bde3d89e7e97a2d724b73a0f233cfef99a6dc9fad752bdec9766'))
 MSVC_REPLAY = 'scripts/verify_msvc_linker_compatibility.py'
 OWNED_VECTOR_REPLAY = 'scripts/verify_owned_record_vector_compatibility.py'
+OWNED_VECTOR_POLICY = (OWNED_VECTOR_REPLAY,
+                       (110006, '16c7affd778deda3d61f9a4e4aebd66c9e01d842c6afe3e9c1a20de57caab6e0'))
+OWNED_TEXT_REPLAY = 'scripts/verify_owned_text_compatibility.py'
 REPLAY_ROUTES = {
     (SCALAR_REPLAY[0],): ('direct', SCALAR_REPLAY),
     (REGISTRY_REPLAY[0],): ('direct', REGISTRY_REPLAY),
     (MSVC_REPLAY, '--source-policy', 'scalar-library'): ('msvc', SCALAR_REPLAY),
     (MSVC_REPLAY, '--source-policy', 'registry'): ('msvc', REGISTRY_REPLAY),
     (OWNED_VECTOR_REPLAY,): ('owned-vector', REGISTRY_REPLAY),
+    (OWNED_TEXT_REPLAY,): ('owned-text', OWNED_VECTOR_POLICY),
 }
 
 
@@ -147,6 +151,16 @@ def _retained_bound(body, expected):
         raise AssertionError('retained binding scope changed')
 
 
+def _require_condition(body, condition):
+    expected = ast.dump(ast.parse(condition, mode='eval').body)
+    guards = [node for node in body if isinstance(node, ast.Expr)
+              and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name)
+              and node.value.func.id == 'require' and node.value.args
+              and ast.dump(node.value.args[0]) == expected]
+    if len(guards) != 1:
+        raise AssertionError('owned-text retained admission condition changed: ' + condition)
+
+
 def require_retained_replay_binding(route, read=None):
     """Check route ownership against immutable parents without importing controllers."""
     read = read or (lambda name: (REPO / name).read_bytes())
@@ -184,6 +198,56 @@ def require_retained_replay_binding(route, read=None):
                                 if isinstance(node, ast.Try)).body,
                            'selected = load_policy(repo, args.source_policy)')
         _retained_delegate(tree, 'selected.bound()', 'selected.original_run(delegated)')
+    elif kind == 'owned-text':
+        for name, expected in (
+            ('PREDECESSOR', '0e8f23f7481c7ec4e24cd416ed30607f8eb75daf'),
+            ('PREDECESSOR_POLICY', OWNED_VECTOR_POLICY[0]),
+            ('PREDECESSOR_POLICY_PIN', OWNED_VECTOR_POLICY[1]),
+            ('PROGRAM', 'src/frontend/oir/owned/source/program.rs'),
+            ('TEST', 'src/frontend/oir/owned/source/owned_text_source_resource_tests.rs'),
+            ('ASSET', 'packages/utf8_text/src/lib.ox'),
+        ):
+            if _literal(tree.body, name) != expected:
+                raise AssertionError('owned-text retained parent/input changed: ' + name)
+        require_retained_replay_binding((OWNED_VECTOR_REPLAY,), read)
+        for statement in (
+            'predecessor = load_predecessor(ROOT)', 'library = predecessor.library',
+            'RETAINED_RUN = predecessor.RETAINED_RUN', 'PREDECESSOR_ADDED = predecessor.PARENT_ADDED',
+            'TEXT_CHANGED = frozenset((PROGRAM,))', 'TEXT_ADDED = frozenset((TEST,))',
+            'PARENT_ADDED = PREDECESSOR_ADDED | TEXT_ADDED | frozenset(TEXT_SOURCE_ASSETS)',
+        ):
+            _require_statement(tree.body, statement)
+        captured = _function(tree.body, 'capture_sources').body
+        _require_statement(captured, 'expected_parent = set(baseline) | PREDECESSOR_ADDED')
+        _require_statement(captured, 'expected = expected_parent | TEXT_ADDED | set(TEXT_SOURCE_ASSETS)')
+        _require_condition(captured, 'set(parent) == expected_parent and len(parent) == 572')
+        _require_condition(captured,
+                           'TEXT_CHANGED == {PROGRAM} and TEXT_ADDED == {TEST} '
+                           'and TEXT_CHANGED <= expected_parent and not TEXT_ADDED & expected_parent '
+                           'and not set(TEXT_SOURCE_ASSETS) & expected_parent and len(expected) == 574')
+        _require_condition(captured, 'inputs[PROGRAM] == approved_program(parent[PROGRAM])')
+        bound = _function(tree.body, 'bound_predecessor')
+        _retained_bound(bound.body,
+                        "{'PREDECESSOR': PREDECESSOR, 'PREDECESSOR_ADDED': PREDECESSOR_ADDED, "
+                        "'PREDECESSOR_POLICIES': PREDECESSOR_POLICIES, 'PINS_PROVISIONAL': PINS_PROVISIONAL, "
+                        "'capture_sources': capture_sources, 'current_manifest': current_manifest}")
+        scopes = [node for node in bound.body if isinstance(node, ast.With)]
+        expected = ast.parse('with predecessor.bound_registry() as context:\n    pass').body[0]
+        if (len(scopes) != 1 or len(scopes[0].items) != 1
+                or ast.dump(scopes[0].items[0]) != ast.dump(expected.items[0])):
+            raise AssertionError('owned-text predecessor observer scope changed')
+        _retained_delegate(tree, 'bound_predecessor() as context', 'RETAINED_RUN(delegated)', guard_inside=True)
+        attempt = next(node for node in _function(tree.body, 'run').body if isinstance(node, ast.Try))
+        _require_condition(attempt.body, 'args.prepare_only or not PINS_PROVISIONAL')
+        scope = next(node for node in attempt.body if isinstance(node, ast.With))
+        controls = [node for node in scope.body if isinstance(node, ast.If)
+                    and ast.dump(node.test) == ast.dump(ast.parse('not args.prepare_only', mode='eval').body)]
+        if len(controls) != 1:
+            raise AssertionError('owned-text full observer replay changed')
+        _require_statement(controls[0].body,
+                           'report.update(predecessor.run_owned_vector_observer_controls('
+                           'repo, delegated.output, context["selected"], context["seam"], '
+                           'context["original"], context["adapter"], retained["test_function_executions"]))')
     else:
         for name, expected in (
             ('PREDECESSOR', 'af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7'),
@@ -391,6 +455,38 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('retention-days: 14', replay)
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
 
+    def test_owned_vector_source_policy_replay_is_mandatory_on_the_exact_published_source(self):
+        replay = block(self.ci, 'owned-record-vector-source-policy-predecessor', 2)
+        self.assertIn('runs-on: ubuntu-latest', replay)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', replay)
+        self.assertIn('cp scripts/replay_owned_record_vector_source_policy.py '
+                      '"$RUNNER_TEMP/owned-vector-source-policy-replay.py"', replay)
+        self.assertIn('ref: 0e8f23f7481c7ec4e24cd416ed30607f8eb75daf', replay)
+        self.assertIn('fetch-depth: 0', replay)
+        self.assertIn('python3 -B "$RUNNER_TEMP/owned-vector-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/owned-vector-source-policy-replay"', replay)
+        self.assertIn('if: always()', replay)
+        self.assertIn('path: ${{ runner.temp }}/owned-vector-source-policy-replay', replay)
+        self.assertIn('if-no-files-found: error', replay)
+        self.assertIn('retention-days: 14', replay)
+        self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+
+    def test_arm_owned_text_driver_binds_expected_head_from_the_same_step_environment(self):
+        arm = block(self.ci, 'linux-arm64-native', 2)
+        steps = re.findall(
+            r'^      - name: Verify native ARM64 builds and source-free execution\n'
+            r'(.*?)(?=^      - |\Z)', arm, re.MULTILINE | re.DOTALL)
+        self.assertEqual(len(steps), 1)
+        self.assertIn('        env:\n', steps[0])
+        self.assertIn('          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}\n', steps[0])
+        command = ('          python3 -B scripts/verify_owned_text.py \\\n'
+                   '            --repo . --expected-head "$EXPECTED_HEAD" \\\n'
+                   '            --oxid-debug target/debug/oxid --oxid-release target/release/oxid \\\n'
+                   '            --output "$RUNNER_TEMP/linux-arm64-native/owned-text" \\\n'
+                   '            --llvm-bin "$OXID_LLVM_BIN" --native\n')
+        self.assertEqual(steps[0].count(command), 1)
+        self.assertNotRegex(steps[0], r'(?m)^        if:|continue-on-error:')
+
     def test_private_registry_acceptance_is_mandatory_and_keeps_native_evidence(self):
         native = block(self.ci, 'native-numeric-and-packages', 2) + '\n'
         self.assertIn('      - name: Verify private registry publication offline builds and deployment\n'
@@ -561,6 +657,34 @@ class RetainedReplayRouteTests(unittest.TestCase):
                     self.command, '          python3 -B ' + ' '.join(route) + ' \\', 1)
                 self.assertEqual(retained_replay_route(changed), route)
 
+    def test_live_text_route_binds_the_pinned_owned_vector_wrapper_and_exact_source_membership(self):
+        self.assertEqual(self.route, (OWNED_TEXT_REPLAY,))
+        self.assertEqual(len(REPLAY_ROUTES), 6)
+        self.assertEqual(REPLAY_ROUTES[self.route], ('owned-text', OWNED_VECTOR_POLICY))
+        require_retained_replay_binding(self.route)
+
+    def test_text_parent_cardinality_hooks_observer_and_provisional_guard_cannot_drift(self):
+        wrapper = OWNED_TEXT_REPLAY
+        original = (REPO / wrapper).read_bytes()
+        mutations = (
+            (b'0e8f23f7481c7ec4e24cd416ed30607f8eb75daf', b'f' * 40),
+            (b'PREDECESSOR_POLICY_PIN = (110006,', b'PREDECESSOR_POLICY_PIN = (110007,'),
+            (b'len(parent) == 572', b'len(parent) == 571'),
+            (b'len(expected) == 574', b'len(expected) == 575'),
+            (b'RETAINED_RUN = predecessor.RETAINED_RUN', b'RETAINED_RUN = library.run'),
+            (b'inputs[PROGRAM] == approved_program(parent[PROGRAM])', b'True'),
+            (b'with predecessor.bound_registry() as context:', b'with unreviewed_registry() as context:'),
+            (b'predecessor.run_owned_vector_observer_controls(', b'predecessor.unreviewed_controls('),
+            (b'args.prepare_only or not PINS_PROVISIONAL', b'True'),
+        )
+        for before, after in mutations:
+            with self.subTest(before=before):
+                changed = original.replace(before, after, 1)
+                self.assertNotEqual(changed, original, 'mutation must reach the real text controller')
+                with self.assertRaises(AssertionError):
+                    require_retained_replay_binding(
+                        (wrapper,), lambda name: changed if name == wrapper else (REPO / name).read_bytes())
+
     def test_missing_duplicate_unknown_or_bypassed_replay_commands_are_refused(self):
         malformed = [
             self.current.replace(self.command, '          # ' + self.command.strip(), 1),
@@ -606,8 +730,10 @@ class RetainedReplayRouteTests(unittest.TestCase):
         original = (REPO / wrapper).read_bytes()
         invocation = ('selected.original_run(delegated)' if kind == 'msvc'
                       else 'RETAINED_RUN(delegated)')
+        parent = (b'0e8f23f7481c7ec4e24cd416ed30607f8eb75daf' if kind == 'owned-text'
+                  else b'af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7')
         mutations = [
-            (b'af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7', b'f' * 40),
+            (parent, b'f' * 40),
             (invocation.encode(), b'0'),
             (b'status == 0', b'status == 0 or True'),
             (b'"capture_sources":', b'"run":'),

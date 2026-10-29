@@ -120,10 +120,27 @@ class CurrentByteFixtureInventory(unittest.TestCase):
                                                for name in owned_names}
                          and not owned_vectors & (current | previous | vectors | copies),
                          'portable owned-record vector fixture registration differs')
+            text_project = 'examples/typed-owned-text'
+            text_names = ('moved-text.ox', 'private-bytes.ox', 'returned-borrow.ox', 'self-append.ox')
+            text_data = verify_repo.owned_text_fixture_data_sources(root)
+            gate.require(len(text_data) == 4
+                         and text_data == {root / text_project / 'tests/reject' / name for name in text_names}
+                         and not text_data & (current | previous | vectors | copies | owned_vectors),
+                         'portable owned-text fixture registration differs')
+            text_members = (text_project + '/src/main.ox', text_project + '/tests/text.ox')
+            gate.require(verify_repo.TYPED_MANIFEST_PROJECTS[text_project] == text_members
+                         and all((root / name).is_file() for name in text_members)
+                         and (root / text_project / 'oxid.toml').is_file()
+                         and verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count(text_project) == 1
+                         and text_project not in verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
+                         'portable owned-text live project registration differs')
             registered = verify_repo.fixture_data_sources(root)
-            gate.require(registered == current | previous | vectors | copies | owned_vectors,
+            gate.require(not {root / name for name in text_members} & registered,
+                         'portable owned-text members must remain real language sources')
+            gate.require(registered == current | previous | vectors | copies | owned_vectors | text_data,
                          'portable complete fixture registration differs')
-            gate.require(not current & previous and registered - copies - owned_vectors == current | previous | vectors,
+            gate.require(not current & previous
+                         and registered - copies - owned_vectors - text_data == current | previous | vectors,
                          'portable fixture registration differs')
             verify_repo.verify_test_fixture_registration(root)
             gate.require(not {'resource', 'verify_bounded_stdin_native', 'verify_bounded_u8_native'} & sys.modules.keys(),

@@ -2,6 +2,8 @@ use alloc::bytes::ByteBuf;
 use alloc::bytes::GrowStatus;
 use alloc::bytes::new as new_bytes;
 use alloc::bytes::len as bytes_len;
+use alloc::bytes::capacity as bytes_capacity;
+use alloc::bytes::try_reserve as reserve_bytes;
 use alloc::bytes::try_extend;
 use alloc::bytes::take;
 use alloc::bytes::truncate as truncate_bytes;
@@ -29,6 +31,14 @@ pub enum Validation {
 pub enum FromBytes {
     Ok(Text),
     Invalid(ByteBuf)
+}
+
+pub enum FromUtf8 {
+    Ok(Text),
+    InvalidInput(i32),
+    CapacityOverflow,
+    AllocationFailed,
+    MemoryLimit
 }
 
 pub enum AppendStatus {
@@ -144,8 +154,37 @@ pub fn from_bytes(input: ByteBuf) -> FromBytes {
     }
 }
 
+pub fn from_utf8(input: &[u8]) -> FromUtf8 {
+    let checked = validate(&*input);
+    match checked {
+        Validation::Valid => {},
+        Validation::Invalid(invalid_offset) => {
+            return FromUtf8::InvalidInput(invalid_offset);
+        },
+    }
+    let mut bytes = new_bytes();
+    let grown = try_extend(&mut bytes, &*input);
+    match grown {
+        GrowStatus::Ok => { return FromUtf8::Ok(Text { bytes: bytes }); },
+        GrowStatus::CapacityOverflow => { return FromUtf8::CapacityOverflow; },
+        GrowStatus::AllocationFailed => { return FromUtf8::AllocationFailed; },
+        GrowStatus::MemoryLimit => { return FromUtf8::MemoryLimit; },
+    }
+}
+
 pub fn byte_len(text: &Text) -> i32 {
     return bytes_len(&*text.bytes);
+}
+
+pub fn byte_capacity(text: &Text) -> i32 {
+    return bytes_capacity(&*text.bytes);
+}
+
+pub fn try_reserve_bytes(text: &mut Text, additional: i32) -> GrowStatus {
+    if additional < 0 {
+        return GrowStatus::CapacityOverflow;
+    }
+    return reserve_bytes(&mut *text.bytes, additional);
 }
 
 fn count_valid_scalars(input: &[u8]) -> i32 {
@@ -181,6 +220,10 @@ pub fn append_utf8(text: &mut Text, input: &[u8]) -> AppendStatus {
         GrowStatus::AllocationFailed => { return AppendStatus::AllocationFailed; },
         GrowStatus::MemoryLimit => { return AppendStatus::MemoryLimit; },
     }
+}
+
+pub fn append_text(text: &mut Text, input: &Text) -> GrowStatus {
+    return try_extend(&mut *text.bytes, &*input.bytes);
 }
 
 fn equal_initialized_bytes(actual: &[u8], input: &[u8]) -> bool {
