@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7"
 PREDECESSOR_POLICY = "scripts/verify_registry_compatibility.py"
 PREDECESSOR_POLICY_PIN = (35050, "d6bd23496f38bde3d89e7e97a2d724b73a0f233cfef99a6dc9fad752bdec9766")
-REVIEWED_SOURCE_HEAD = 'bd8978a411e4dba19430037640a24b3f08fe5a33'
+REVIEWED_SOURCE_HEAD = 'e1fee2b5834763c86ea99e4a4b35116d6ce7eac7'
 PINS_PROVISIONAL = False
 OWNED_VECTOR_OBSERVER_ADAPTER = "scripts/owned_record_vector_compatibility_observer.py"
 OWNED_VECTOR_OBSERVER_ADAPTER_PIN = (
@@ -29,7 +29,7 @@ OWNED_VECTOR_OBSERVER_ADAPTER_PIN = (
 OWNED_VECTOR_OBSERVER_PROVISIONAL = False
 
 # This one source asset is compiled by the two new enum regressions. It is
-# separate from the 107 compiler-file directive rows and the 44 new modules.
+# separate from the 106 compiler-file directive rows and the 44 new modules.
 OWNED_VECTOR_SOURCE_ASSETS = {
     "scripts/owned_record_vector_acceptance/enum16.ox": (
         1746, "34a810415ec8697d9b74ff58f39e3c0787cabb33970bf3eed7e64a9e5472a715"),
@@ -106,7 +106,6 @@ OWNED_VECTOR_CHANGED = frozenset((
     "src/frontend/oir/source/sealed.rs",
     "src/frontend/parser.rs",
     "src/frontend/vector_builtins.rs",
-    'src/frontend/declaration_index/resource.rs',
 ))
 OWNED_VECTOR_ADDED = frozenset((
     "native/experimental_owned_record.c",
@@ -190,7 +189,7 @@ REVIEWED_INPUTS = {
     "native/typed_bytebuf.c": (7171, "93bd553c27c95ebf44f03e98fa10a9981df1376130c544776139425426626e84"),
     "native/typed_vector.c": (13271, "dba4dbe9f87b054324e31ac4a0055ec04ba3c88c20d13a2a7ee4f31b0fa793da"),
     "src/frontend/builtin_catalog.rs": (16047, "04715518121dfdba149fe57ae95d8ac284523c66169d07248f2fd29b99c7e3dd"),
-    "src/frontend/declaration_index.rs": (88927, 'd8fb66a407a598a84ba67d771caf5fe80f6d8f6038f798dbbbe96afc322d7bca'),
+    "src/frontend/declaration_index.rs": (91357, '5f2a91d8d12e3893e4dc2e4b2ee416ab33a817b4dbef6754baea5b785a99526c'),
     "src/frontend/declaration_index/generics.rs": (136375, "c6f188c5853cc47d2e3e600805c831b7cebec8debde131dac23227804d123a81"),
     "src/frontend/declaration_index/generics/nominal.rs": (33872, "4dfea0a548a46534f555721960174c21bc33994f040db466f3966f601123e216"),
     "src/frontend/declaration_index/generics/owned_candidate.rs": (77372, "402c0a472e493af11a7acb28a6c8345be1ab8b610d135af043919e04cb18550e"),
@@ -290,7 +289,6 @@ REVIEWED_INPUTS = {
     "src/frontend/owned_vector_builtins.rs": (10964, "ec68a168a344b9dd0b6025918c7ddcdbc8d3f101568334f4c4f285fd22f3fd5b"),
     "src/frontend/parser.rs": (108481, "da3bb5bf78b1ce2bc60e6f8475b0df75495ebe2e76f0110f6a08a9bcc376cb7c"),
     "src/frontend/vector_builtins.rs": (16545, "665a72d3389ccdde34b12648ecd7762a73c8e2f7470dd3eeb3a36fc4f96c862c"),
-    "src/frontend/declaration_index/resource.rs": (19774, '98cb16f86d1bfeceb22889aae3e5457af34dbdd1818830024b1f34d2951d15bb'),
 }
 
 REVIEWED_DIRECTIVES = {
@@ -359,7 +357,7 @@ REVIEWED_DIRECTIVES = {
     },
     "src/frontend/declaration_index.rs": {
         "legacy": ([], []),
-        "attributes": ((b'#![allow(dead_code)]', 1), (b'#[cfg(test)]', 7), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 2), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[derive(Debug)]', 2), (b'#[allow(dead_code)]', 1), (b'#[repr(C, align(8))]', 1), (b'#[allow(dead_code)]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 3), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[derive(Clone, Copy, PartialEq, Eq)]', 1), (b'#[derive(Clone, Copy, Debug)]', 2), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[cfg(test)]', 4), (b'#[derive(Debug)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1),),
+        "attributes": ((b'#![allow(dead_code)]', 1), (b'#[cfg(test)]', 11), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 2), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[repr(C)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[derive(Debug)]', 2), (b'#[allow(dead_code)]', 1), (b'#[repr(C, align(8))]', 1), (b'#[allow(dead_code)]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 3), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[derive(Clone, Copy, PartialEq, Eq)]', 1), (b'#[derive(Clone, Copy, Debug)]', 2), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[cfg(test)]', 4), (b'#[derive(Debug)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1)),
         "macros": (),
         "c_preprocessor": (),
         "build_script": None,
@@ -1036,13 +1034,6 @@ REVIEWED_DIRECTIVES = {
         "c_preprocessor": (),
         "build_script": None,
     },
-    "src/frontend/declaration_index/resource.rs": {
-        "legacy": ([], []),
-        "attributes": ((b'#[cfg(test)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[derive(Debug)]', 1), (b'#[cfg(test)]', 5), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[cfg(test)]', 9), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 2), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 5), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Debug)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 1), (b'#[test]', 1)),
-        "macros": (),
-        "c_preprocessor": (),
-        "build_script": None,
-    },
 }
 
 
@@ -1110,7 +1101,7 @@ def capture_sources(repo, baseline, parent):
     require(set(parent) == expected_parent and len(parent) == 527,
             "wrong retained registry compiler input membership")
     require(OWNED_VECTOR_CHANGED <= expected_parent and not OWNED_VECTOR_ADDED & expected_parent
-            and len(OWNED_VECTOR_CHANGED) == 63 and len(OWNED_VECTOR_ADDED) == 44,
+            and len(OWNED_VECTOR_CHANGED) == 62 and len(OWNED_VECTOR_ADDED) == 44,
             "wrong finite owned-vector delta membership")
     require(set(REVIEWED_INPUTS) == OWNED_VECTOR_CHANGED | OWNED_VECTOR_ADDED
             and set(REVIEWED_DIRECTIVES) == set(REVIEWED_INPUTS),

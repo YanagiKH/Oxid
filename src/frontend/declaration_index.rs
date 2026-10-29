@@ -45,9 +45,85 @@ use resource::{add, allocate, allocate_exact, compact, compare_bytes, merge_sort
 #[cfg(test)]
 pub(super) use resource::{
     AliasObservation, NominalAliasObservation, Observation, SeenObservation,
-    SemanticObservationTransaction,
 };
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
+
+/// Semantic observations describe the selected source pipeline. WorkEvent,
+/// spent work, work limits and allocator traces describe every actual attempt.
+/// This guard changes only test telemetry; it does not exist in production.
+#[cfg(test)]
+pub(in crate::frontend) struct SemanticObservationTransaction<'w> {
+    work: &'w WorkMeter,
+    enabled: bool,
+    original_start: usize,
+    candidate_start: Option<(usize, &'static str)>,
+}
+#[cfg(test)]
+impl SemanticObservationTransaction<'_> {
+    pub fn candidate_started(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        assert!(self.candidate_start.is_none());
+        let observations = self.work.observations.borrow();
+        let phase = observations
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                Observation::Phase(phase) => Some(*phase),
+                _ => None,
+            })
+            .expect("the original source attempt must observe its phase");
+        self.candidate_start = Some((observations.len(), phase));
+    }
+
+    pub fn candidate_selected(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        let (original_end, _) = self
+            .candidate_start
+            .take()
+            .expect("semantic candidate must be started before selection");
+        drop(
+            self.work
+                .observations
+                .borrow_mut()
+                .drain(self.original_start..original_end),
+        );
+    }
+}
+#[cfg(test)]
+impl Drop for SemanticObservationTransaction<'_> {
+    fn drop(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        if let Some((original_end, original_phase)) = self.candidate_start {
+            // Restore the private cursor through its ordinary phase primitive,
+            // then remove both the abandoned suffix and this transient reset.
+            self.work.phase(original_phase);
+            self.work.observations.borrow_mut().truncate(original_end);
+        }
+    }
+}
+#[cfg(test)]
+impl WorkMeter {
+    pub fn semantic_observation_transaction(&self) -> SemanticObservationTransaction<'_> {
+        let enabled = self.observing();
+        SemanticObservationTransaction {
+            work: self,
+            enabled,
+            original_start: if enabled {
+                self.observations.borrow().len()
+            } else {
+                0
+            },
+            candidate_start: None,
+        }
+    }
+}
+
 pub(super) use sealed::collect_owned_vector_candidate;
 #[cfg(test)]
 pub(super) use sealed::{

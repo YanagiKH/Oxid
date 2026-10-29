@@ -62,7 +62,7 @@ class OwnedVectorSourceAdmission(unittest.TestCase):
         self.assertEqual(len(self.baseline), 376)
         self.assertEqual(len(self.parent), 527)
         self.assertEqual(len(inputs), 572)
-        self.assertEqual(len(gate.OWNED_VECTOR_CHANGED), 63)
+        self.assertEqual(len(gate.OWNED_VECTOR_CHANGED), 62)
         self.assertEqual(len(gate.OWNED_VECTOR_ADDED), 44)
         self.assertEqual(set(inputs), set(self.parent) | gate.OWNED_VECTOR_ADDED | set(gate.OWNED_VECTOR_SOURCE_ASSETS))
         self.assertEqual(gate.PREDECESSOR_ADDED, gate.library.PARENT_ADDED)
@@ -154,7 +154,7 @@ class OwnedVectorSourceAdmission(unittest.TestCase):
         self.assertEqual(manifest["source_policy_parent"], gate.PREDECESSOR)
         self.assertEqual(manifest["source_policy_input_members"], 60)
         self.assertEqual(manifest["owned_vector_pins_provisional"], gate.PINS_PROVISIONAL)
-        self.assertEqual(len(manifest["owned_vector_directive_inventory"]), 107)
+        self.assertEqual(len(manifest["owned_vector_directive_inventory"]), 106)
         self.assertEqual([row["path"] for row in manifest["owned_vector_compiled_source_assets"]], [self.asset])
         self.assertNotIn(self.asset, {row["path"] for row in manifest["owned_vector_directive_inventory"]})
         self.assertEqual(manifest["owned_vector_compiled_source_assets"][0]["include_occurrences"], 2)
@@ -169,7 +169,7 @@ class OwnedVectorSourceAdmission(unittest.TestCase):
 
 class FrozenRegistryDelegation(unittest.TestCase):
     def test_reviewed_actual_source_pins_and_every_directive_are_exact(self):
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "bd8978a411e4dba19430037640a24b3f08fe5a33")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "e1fee2b5834763c86ea99e4a4b35116d6ce7eac7")
         self.assertEqual(set(gate.REVIEWED_INPUTS), gate.OWNED_VECTOR_CHANGED | gate.OWNED_VECTOR_ADDED)
         self.assertEqual(set(gate.REVIEWED_DIRECTIVES), set(gate.REVIEWED_INPUTS))
         for name, expected in gate.REVIEWED_INPUTS.items():
@@ -257,7 +257,7 @@ class FrozenRegistryDelegation(unittest.TestCase):
 
 class OwnedVectorObserverBinding(unittest.TestCase):
     def test_source_anchor_and_all_old_function_objects_stay_exact(self):
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "bd8978a411e4dba19430037640a24b3f08fe5a33")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "e1fee2b5834763c86ea99e4a4b35116d6ce7eac7")
         self.assertIs(gate.PINS_PROVISIONAL, False)
         names = ("verify_current_observer", "verify_materialized", "authenticate_index_resource_adapter",
                  "authenticate_parser_resource_adapter", "run_byte_buffer_observer_controls",

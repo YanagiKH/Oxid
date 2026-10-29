@@ -50,46 +50,6 @@ pub(in crate::frontend) struct WorkEvent {
     pub origin: Span,
     pub units: u64,
 }
-
-/// Semantic observations describe the selected source pipeline. WorkEvent,
-/// spent work, work limits and allocator traces describe every actual attempt.
-/// This guard changes only test telemetry; it does not exist in production.
-#[cfg(test)]
-pub(in crate::frontend) struct SemanticObservationTransaction<'w> {
-    work: &'w WorkMeter,
-    original_start: usize,
-    candidate_start: Option<(usize, &'static str)>,
-}
-#[cfg(test)]
-impl SemanticObservationTransaction<'_> {
-    pub fn candidate_started(&mut self) {
-        assert!(self.candidate_start.is_none());
-        self.candidate_start = Some((self.work.observations.borrow().len(), self.work.phase.get()));
-    }
-
-    pub fn candidate_selected(&mut self) {
-        let (original_end, _) = self
-            .candidate_start
-            .take()
-            .expect("semantic candidate must be started before selection");
-        drop(
-            self.work
-                .observations
-                .borrow_mut()
-                .drain(self.original_start..original_end),
-        );
-    }
-}
-#[cfg(test)]
-impl Drop for SemanticObservationTransaction<'_> {
-    fn drop(&mut self) {
-        if let Some((original_end, original_phase)) = self.candidate_start {
-            self.work.observations.borrow_mut().truncate(original_end);
-            self.work.phase.set(original_phase);
-        }
-    }
-}
-
 impl WorkMeter {
     pub fn new(limit: u64) -> Self {
         Self {
@@ -176,14 +136,6 @@ impl WorkMeter {
     #[cfg(test)]
     pub fn observing(&self) -> bool {
         self.observing.get()
-    }
-    #[cfg(test)]
-    pub fn semantic_observation_transaction(&self) -> SemanticObservationTransaction<'_> {
-        SemanticObservationTransaction {
-            work: self,
-            original_start: self.observations.borrow().len(),
-            candidate_start: None,
-        }
     }
     #[cfg(test)]
     pub fn observe(&self, event: Observation) {
