@@ -129,6 +129,7 @@ fn owned_vector_public_route_zero_key_types_and_unused_new_imports_choose_real_d
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn owned_vector_public_route_package_owner_keeps_namespaces_and_unused_generic_facts() {
     let fixture = Fixture::new(&workflow());
@@ -181,6 +182,56 @@ fn owned_vector_public_route_package_owner_keeps_namespaces_and_unused_generic_f
     assert!(candidate_attempted(&allocator));
     assert!(!boxed(&allocator));
     assert_eq!(program.run_test_i32().unwrap(), 3);
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[test]
+fn owned_vector_public_route_package_owner_refuses_unqualified_hosts_before_source_loading() {
+    let fixture = Fixture::new(&workflow());
+    let root = fs::canonicalize(&fixture.0).unwrap();
+    let single = [PackageSpec {
+        root: root.clone(),
+        entry: root.join("main.ox"),
+        dependencies: vec![],
+    }];
+    fs::create_dir(root.join("app")).unwrap();
+    fs::create_dir(root.join("model")).unwrap();
+    fs::write(root.join("app/main.ox"), "fn main()->i32{return 3;}").unwrap();
+    fs::write(root.join("model/lib.ox"), "use alloc::bytes::ByteBuf;use alloc::vec::Vec;pub struct Entry{pub bytes:ByteBuf}pub fn inspect<Marker>(values:&Vec<Entry>)->(){return;}").unwrap();
+    let multiple = [
+        PackageSpec {
+            root: root.join("app"),
+            entry: root.join("app/main.ox"),
+            dependencies: vec![PackageDependency {
+                alias: "model".into(),
+                package: 1,
+            }],
+        },
+        PackageSpec {
+            root: root.join("model"),
+            entry: root.join("model/lib.ox"),
+            dependencies: vec![],
+        },
+    ];
+    for specs in [single.as_slice(), multiple.as_slice()] {
+        let failure = PackageSources::load(specs, None, ProjectLimits::default()).unwrap_err();
+        assert_eq!(failure.diagnostics.len(), 1);
+        assert_eq!(
+            (failure.diagnostics[0].code, failure.diagnostics[0].stage),
+            ("E0006", "package"),
+        );
+        assert_eq!(
+            failure.diagnostics[0].message,
+            "package source policy is qualified only on Linux or macOS",
+        );
+        assert!(failure.sources.files().is_empty());
+        assert_eq!(
+            failure.usage,
+            crate::frontend::project::SourceUsage::default()
+        );
+        assert_eq!(failure.allocator.attempts, 0);
+        assert!(failure.allocator.trace.is_empty());
+    }
 }
 
 #[test]

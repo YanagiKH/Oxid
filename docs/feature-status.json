@@ -1111,7 +1111,7 @@
       "evidence": [
         "docs/architecture/project-workflow-validation.md"
       ],
-      "limitations": "Existing bounded language with local path dependencies, typed input locks, bounded workspaces, native object reuse and native diagnosis. Source bundles retain complete local layouts. Opt-in relative native diagnostic paths support relocation with a fixed compiler/toolchain/SDK/environment and preserved relative source layout; no cross-toolchain reproducibility claim. Native project dev/bounded profiles compile program and runtime at O0; release uses O2 with the same execution limits. No typed Git/registry resolution, vendor command, registry publication, per-module frontend incrementality, debugger information or new native target. Workspace v3 locks bind input manifests and imported sources, not artifacts. Compatibility, default-native and explicit profile checks have separate scopes; these experimental features do not complete v1 acceptance."
+      "limitations": "Existing bounded language with local path dependencies, typed input locks, bounded workspaces, native object reuse and native diagnosis. Source bundles retain complete local layouts. Opt-in relative native diagnostic paths support relocation with a fixed compiler/toolchain/SDK/environment and preserved relative source layout; no cross-toolchain reproducibility claim. Native project dev/bounded profiles compile program and runtime at O0; release uses O2 with the same execution limits. Per-module frontend incrementality and complete cross-target acceptance remain incomplete. Workspace v3 locks bind input manifests and imported sources, not artifacts. Compatibility, default-native and explicit profile checks have separate scopes; these experimental features do not complete v1 acceptance."
     },
     {
       "id": "typed-preview-standalone-byte-storage",
@@ -2342,7 +2342,7 @@
         "scripts/verify_typed_registry.py"
       ],
       "evidence": [],
-      "limitations": "Exact stable versions and trusted file:/// registries only. No version ranges, HTTPS registry service, publisher authentication, search, yank, mirrors or vendor command. First-use trust does not authenticate a publisher; recorded source and artifact hashes remain immutable. Registry and existing project resource limits apply."
+      "limitations": "Exact stable versions and trusted file:/// registries only. No version ranges, HTTPS registry service, publisher authentication, search, yank or mirrors. Use oxid vendor to copy admitted local and cached dependencies into a self-contained checkout. First-use trust does not authenticate a publisher; recorded source and artifact hashes remain immutable. Registry and existing project resource limits apply."
     }
   ]
 }

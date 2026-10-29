@@ -15,6 +15,7 @@ mod project_cli;
 mod project_lock;
 mod project_package;
 mod project_registry;
+mod project_vendor;
 
 fn main() {
     let mut invocation = match program_arguments::Invocation::parse(std::env::args_os().collect()) {
@@ -30,6 +31,9 @@ fn main() {
         std::process::exit(code);
     }
     if let Some(code) = project_package::dispatch(&args) {
+        std::process::exit(code);
+    }
+    if let Some(code) = project_vendor::dispatch(&args) {
         std::process::exit(code);
     }
     if let Some(code) = project_registry::dispatch(&args) {

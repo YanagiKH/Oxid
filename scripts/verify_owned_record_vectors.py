@@ -173,8 +173,9 @@ def cache_tree(path):
 
 
 class Driver:
-    def __init__(self, output, environment, report):
+    def __init__(self, output, environment, report, *, repo=None):
         self.output, self.environment, self.report = output, environment, report
+        self.repo = Path(ROOT if repo is None else repo).resolve(strict=True)
         self.commands = report["commands"] = []
         for name in ("commands", "projects", "artifacts", "deployments", "retained-sources", "scratch"):
             (output / name).mkdir()
@@ -185,7 +186,12 @@ class Driver:
         (folder / "stdin.bin").write_bytes(b"")
         environment = {**self.environment, **(overrides or {})}
         require(set(environment) <= set(ENV_NAMES), "environment recording requires an allowlisted name")
-        row = {"name": name, "argv": [str(item) for item in argv], "cwd": str(cwd),
+        arguments = [str(item) for item in argv]
+        if arguments[:1] == ["git"]:
+            # The isolated child intentionally has no HOME/global Git config.
+            # Trust only this selected checkout, on this Git command.
+            arguments[1:1] = ["-c", "safe.directory=" + str(self.repo)]
+        row = {"name": name, "argv": arguments, "cwd": str(cwd),
                "environment": environment, "expected_status": status, "status": "running"}
         self.commands.append(row)
         child, started = None, time.monotonic()
@@ -355,7 +361,7 @@ def verify(args):
               "source_policy_reference": {"commit": POLICY_COMMIT, "controller": POLICY,
                                           "inherited_input_members": 527, "executed_by_this_gate": False},
               "compilers": {}, "tools": [], "builds": [], "deployments": [], "cases": []}
-    driver = Driver(output, environment, report)
+    driver = Driver(output, environment, report, repo=repo)
     try:
         head = driver.command("head", ["git", "--no-replace-objects", "rev-parse", "HEAD"], repo).stdout.decode().strip()
         require(head == args.expected_head and re.fullmatch(r"[0-9a-f]{40}", head), "checkout does not match --expected-head")
