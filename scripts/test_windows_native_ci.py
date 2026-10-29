@@ -139,11 +139,61 @@ $digest = 'b4557b4f012161f56a2f5d9e877ab9635cafd7a08f7affe14829bd60c9d357f0'
 if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -ne $digest) {
   throw 'LLVM archive SHA256 differs'
 }
-$extract = Join-Path $env:RUNNER_TEMP 'oxid-llvm-msvc'
+$sevenZip = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
+if (!(Test-Path -LiteralPath $sevenZip -PathType Leaf)) { throw 'The preinstalled Windows 7-Zip is required' }
+function Invoke-LlvmSevenZip {
+  param(
+    [string]$Stage,
+    [ValidateSet('xz', 'tar')][string]$Format,
+    [string]$InputArchive,
+    [string]$Destination,
+    [ValidateRange(1, 900)][int]$TimeoutSeconds
+  )
+  $start = [System.Diagnostics.ProcessStartInfo]::new()
+  $start.FileName = $sevenZip
+  $start.UseShellExecute = $false
+  $start.CreateNoWindow = $true
+  $start.RedirectStandardInput = $true
+  foreach ($argument in @('x', "-t$Format", '-y', '-bsp0', '-bb0', "-o$Destination", $InputArchive)) {
+    $start.ArgumentList.Add($argument)
+  }
+  $extraction = [System.Diagnostics.Process]::new()
+  $extraction.StartInfo = $start
+  $started = $false
+  try {
+    Write-Host "$Stage started (deadline $TimeoutSeconds seconds)"
+    if (!$extraction.Start()) { throw "$Stage did not start" }
+    $started = $true
+    $extraction.StandardInput.Close()
+    if (!$extraction.WaitForExit($TimeoutSeconds * 1000)) { throw "$Stage timed out" }
+    if ($extraction.ExitCode -ne 0) { throw "$Stage failed (7-Zip exit code $($extraction.ExitCode))" }
+    Write-Host "$Stage complete"
+  } finally {
+    try {
+      if ($started -and !$extraction.HasExited) {
+        try { $extraction.Kill($true) } catch [System.InvalidOperationException] {
+          if (!$extraction.HasExited) { throw }
+        }
+        if (!$extraction.WaitForExit(5000)) { throw "$Stage process did not terminate" }
+      }
+    } finally {
+      $extraction.Dispose()
+    }
+  }
+}
+$staging = Join-Path $env:RUNNER_TEMP ('oxid-llvm-msvc-' + [Guid]::NewGuid().ToString('N'))
+$tarDirectory = Join-Path $staging 'tar'
+$extract = Join-Path $staging 'toolchain'
+New-Item -ItemType Directory -Path $staging | Out-Null
+New-Item -ItemType Directory -Path $tarDirectory | Out-Null
 New-Item -ItemType Directory -Path $extract | Out-Null
-Write-Host 'Archive verified; extracting the LLVM toolchain'
-tar -xJf $archive -C $extract
-if ($LASTEXITCODE -ne 0) { throw 'LLVM extraction failed' }
+Write-Host 'Archive verified; decompressing the complete LLVM XZ stream'
+Invoke-LlvmSevenZip -Stage 'LLVM XZ decompression' -Format xz -InputArchive $archive -Destination $tarDirectory -TimeoutSeconds 600
+$tarArchive = Join-Path $tarDirectory 'clang+llvm-19.1.7-x86_64-pc-windows-msvc.tar'
+if (!(Test-Path -LiteralPath $tarArchive -PathType Leaf) -or (Get-Item -LiteralPath $tarArchive).Length -le 0) { throw 'LLVM XZ decompression produced no TAR archive' }
+Write-Host 'XZ decompression complete; extracting every LLVM TAR member'
+Invoke-LlvmSevenZip -Stage 'LLVM TAR extraction' -Format tar -InputArchive $tarArchive -Destination $extract -TimeoutSeconds 900
+Remove-Item -LiteralPath $tarArchive
 Write-Host 'Extraction complete; verifying LLVM tools'
 $bin = Join-Path $extract 'clang+llvm-19.1.7-x86_64-pc-windows-msvc/bin'
 foreach ($tool in @('clang.exe', 'opt.exe', 'lld-link.exe')) {
@@ -370,6 +420,32 @@ class WindowsNativeCiTests(unittest.TestCase):
             ('linker-unverified', "'clang.exe', 'opt.exe', 'lld-link.exe'", "'clang.exe', 'opt.exe'"),
             ('wrong-tool-version', '(clang version|LLVM version|LLD) 19\\.1\\.7', '(clang version|LLVM version|LLD) 19\\.1\\.6'),
             ('missing-llvm-export', 'OXID_LLVM_BIN=$bin', 'UNUSED_LLVM_BIN=$bin'),
+        ])
+
+    def test_complete_llvm_extraction_requires_both_bounded_checked_stages(self):
+        self.reject_mutations([
+            ('wrong-preinstalled-extractor', "'7-Zip/7z.exe'", "'Other/7z.exe'"),
+            ('missing-preinstalled-extractor-check',
+             "if (!(Test-Path -LiteralPath $sevenZip -PathType Leaf)) { throw 'The preinstalled Windows 7-Zip is required' }", ''),
+            ('not-extracting-archive', "@('x', \"-t$Format\"", "@('t', \"-t$Format\""),
+            ('partial-extraction-filter', "@('x', \"-t$Format\"", "@('x', 'bin/*', \"-t$Format\""),
+            ('unsafe-argument-joining', '$start.ArgumentList.Add($argument)', '$start.Arguments += $argument'),
+            ('missing-xz-stage', "Invoke-LlvmSevenZip -Stage 'LLVM XZ decompression' -Format xz -InputArchive $archive -Destination $tarDirectory -TimeoutSeconds 600", ''),
+            ('missing-tar-stage', "Invoke-LlvmSevenZip -Stage 'LLVM TAR extraction' -Format tar -InputArchive $tarArchive -Destination $extract -TimeoutSeconds 900", ''),
+            ('unbounded-xz-stage', '-Destination $tarDirectory -TimeoutSeconds 600', '-Destination $tarDirectory -TimeoutSeconds 0'),
+            ('unbounded-tar-stage', '-Destination $extract -TimeoutSeconds 900', '-Destination $extract -TimeoutSeconds 0'),
+            ('stage-deadline-ignored', '$extraction.WaitForExit($TimeoutSeconds * 1000)', '$extraction.WaitForExit()'),
+            ('stage-failure-accepted', '$extraction.ExitCode -ne 0', '$extraction.ExitCode -gt 1'),
+            ('stage-input-not-closed', '$extraction.StandardInput.Close()', ''),
+            ('stage-child-tree-not-killed', '$extraction.Kill($true)', '$extraction.Kill($false)'),
+            ('stage-cleanup-wait-omitted',
+             'if (!$extraction.WaitForExit(5000)) { throw "$Stage process did not terminate" }', ''),
+            ('stage-owner-not-disposed', '$extraction.Dispose()', ''),
+            ('reused-output-path', "[Guid]::NewGuid().ToString('N')", "'reused-output'"),
+            ('tar-output-unchecked',
+             "if (!(Test-Path -LiteralPath $tarArchive -PathType Leaf) -or (Get-Item -LiteralPath $tarArchive).Length -le 0) { throw 'LLVM XZ decompression produced no TAR archive' }", ''),
+            ('missing-stage-start-message', 'Write-Host "$Stage started (deadline $TimeoutSeconds seconds)"', ''),
+            ('missing-stage-complete-message', 'Write-Host "$Stage complete"', ''),
         ])
 
     def test_verifier_requires_both_compilers_toolchain_and_evidence_directory(self):
