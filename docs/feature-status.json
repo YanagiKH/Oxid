@@ -2285,7 +2285,7 @@
       "classification": "production-path",
       "edition": "typed-preview",
       "backend": "Typed project and workspace resolution with exact-version source archives and versioned input locks.",
-      "target_scope": "Linux implementation; direct release qualification is pending.",
+      "target_scope": "Publication, verified offline reuse and dev/release native deployment validated on Linux x86_64 with LLVM 19.1.7. Other hosts remain unverified.",
       "owner": "unassigned",
       "reviewer": "unassigned",
       "spec": [

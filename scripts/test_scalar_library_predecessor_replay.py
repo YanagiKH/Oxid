@@ -28,10 +28,14 @@ class ScalarLibraryPredecessorEvidence(unittest.TestCase):
     def test_all_thirty_four_unchanged_tests_are_required_with_terminal_success(self):
         self.assertEqual(replay.REVISION, "8f2c29eaffabbd90c591bbdc440ae6e23acf1353")
         self.assertEqual(replay.MODULES, {MODULE: (
-            "9315dbe8332a349b88f617a7a55cc0b6b0795fbb4952885ad8f3e2fd4f5429fa", 34)})
+            "9315dbe8332a349b88f617a7a55cc0b6b0795fbb4952885ad8f3e2fd4f5429fa", 34),
+            "test_arm64_package_compatibility": (
+                "d59c1bfeb9873c866a521f560a66e20dba3078d4f57139cc7585b5a1b5044ee5", 20)})
         self.assertEqual(replay.POLICIES, {
             "verify_scalar_library_compatibility.py":
                 "29c1d76604adfeddf2006213922ceb59947f7a193454ffb542df2ba0f7597119",
+            "verify_arm64_package_compatibility.py":
+                "df76772e3fcef3418761c50d95d26d0995982673d20d6c5b27a24e24a7f31db5",
             "run_record_vector_predecessor_tests.py":
                 "6dc9ee36351bdafab40399038133c8547dfb89ac0d0f33076b76b41ef374b75c",
         })
@@ -59,6 +63,39 @@ class ScalarLibraryPredecessorEvidence(unittest.TestCase):
         changed = self.body.replace(b"def test_", b"def no_longer_a_test_", 1)
         with self.assertRaisesRegex(ValueError, "census changed"):
             self.engine.validate_execution(MODULE, changed, child)
+
+    def test_all_twenty_unchanged_package_host_tests_require_complete_success(self):
+        module = "test_arm64_package_compatibility"
+        body = (ROOT / "scripts" / (module + ".py")).read_bytes()
+        self.assertEqual(self.engine.sha(body), replay.MODULES[module][0])
+        names = sorted(module + "." + cls.name + "." + method.name
+                       for cls in ast.parse(body).body if isinstance(cls, ast.ClassDef)
+                       for method in cls.body if isinstance(method, ast.FunctionDef)
+                       and method.name.startswith("test_"))
+        self.assertEqual(len(names), 20)
+        lines = [name.rsplit(".", 1)[1] + " (" + name + ") ... ok\n" for name in names]
+        stream = ("".join(lines) + "\nRan 20 tests in 0.001s\n\nOK\n").encode()
+        child = subprocess.CompletedProcess([], 0, b"", stream)
+        self.assertEqual(self.engine.validate_execution(module, body, child), names)
+        for invalid in (
+            b"", stream.replace(lines[0].encode(), b"", 1),
+            stream + lines[0].encode(),
+            stream.replace(b"... ok", b"... skipped 'platform'", 1),
+            stream.replace(b"Ran 20 tests", b"Ran 19 tests"),
+            stream.replace(b"\nOK\n", b"\nOK (skipped=1)\n"),
+            stream.replace(b"\nOK\n", b"\nFAILED (failures=1)\n"),
+            stream + replay.EXPECTED_DENIAL, stream + b"unbound output\n",
+        ):
+            with self.subTest(stream=invalid), self.assertRaises(ValueError):
+                self.engine.validate_execution(
+                    module, body, subprocess.CompletedProcess([], 0, b"", invalid))
+        for code, stdout in ((1, b""), (0, b"unbound output")):
+            with self.subTest(code=code), self.assertRaisesRegex(ValueError, "controls failed"):
+                self.engine.validate_execution(
+                    module, body, subprocess.CompletedProcess([], code, stdout, stream))
+        changed = body.replace(b"def test_", b"def no_longer_a_test_", 1)
+        with self.assertRaisesRegex(ValueError, "census changed"):
+            self.engine.validate_execution(module, changed, child)
 
     def test_failure_and_unexpected_stdout_cannot_be_replay_success(self):
         for code, stdout in ((1, b""), (0, b"unbound output")):

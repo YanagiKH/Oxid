@@ -218,7 +218,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
 
     def test_private_registry_acceptance_is_mandatory_and_keeps_native_evidence(self):
-        native = block(self.ci, 'native-numeric-and-packages', 2)
+        native = block(self.ci, 'native-numeric-and-packages', 2) + '\n'
         self.assertIn('      - name: Verify private registry publication offline builds and deployment\n'
                       '        run: |\n'
                       '          python3 -B scripts/verify_typed_registry.py '

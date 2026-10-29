@@ -59,7 +59,7 @@
         "Multi-version dependencies, registry publishing, lockfiles, offline/frozen/vendor builds, integrity and supply-chain verification."
       ],
       "remaining": [
-        "Manifest-selected project/workspace commands, local dependency sessions, typed input locks, source bundles, native object reuse and relocatable builds for a fixed toolchain/layout are experimental; vendoring, registry/version resolution and broader native artifact qualification remain incomplete."
+        "Typed project/workspace commands, local and pinned Git dependencies, input locks, portable source bundles, native object reuse, relocatable dev/release builds and exact-version private file registries are experimental. Version ranges, authenticated remote registries, vendoring, per-module frontend incrementality and broader native artifact qualification remain incomplete."
       ]
     },
     {

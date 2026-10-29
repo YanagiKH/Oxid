@@ -18,7 +18,7 @@ import types
 PREDECESSOR = "8f2c29eaffabbd90c591bbdc440ae6e23acf1353"
 PREDECESSOR_POLICY = "scripts/verify_scalar_library_compatibility.py"
 PREDECESSOR_POLICY_PIN = (63079, '29c1d76604adfeddf2006213922ceb59947f7a193454ffb542df2ba0f7597119')
-PINS_PROVISIONAL = True
+PINS_PROVISIONAL = False
 REGISTRY_CHANGED = frozenset(['src/cli.rs',
  'src/main.rs',
  'src/project_cli.rs',

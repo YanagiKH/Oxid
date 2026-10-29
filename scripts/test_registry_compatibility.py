@@ -557,7 +557,7 @@ class FrozenScalarLibraryReplay(unittest.TestCase):
                     self.test_existing_native_library_commands_test_selector_and_host_guard_stay_exact()
 
     def test_reviewed_inputs_bind_only_the_integrated_reachable_registry_checkpoint(self):
-        frozen = "9f6f551fe6f4e60f2b71a4d532d703ca829b5bb6"
+        frozen = "5a8d74ad33dafccba39aa23870ad78ca16aa9c28"
         subprocess.check_call(["git", "--no-replace-objects", "merge-base", "--is-ancestor",
                                frozen, "HEAD"], cwd=ROOT)
         self.assertEqual(len(gate.REGISTRY_CHANGED), 10)

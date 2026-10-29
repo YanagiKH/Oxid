@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay the unchanged scalar-library policies on their fixed source.
+"""Replay unchanged scalar-library and package-host policies on their fixed source.
 
 This preserves their complete source-admission assertions; the result does not
 qualify the successor compiler or its registry behavior.
@@ -18,9 +18,12 @@ ENGINE_SHA = "6dc9ee36351bdafab40399038133c8547dfb89ac0d0f33076b76b41ef374b75c"
 MODULES = {
     "test_scalar_library_compatibility": (
         "9315dbe8332a349b88f617a7a55cc0b6b0795fbb4952885ad8f3e2fd4f5429fa", 34),
+    "test_arm64_package_compatibility": (
+        "d59c1bfeb9873c866a521f560a66e20dba3078d4f57139cc7585b5a1b5044ee5", 20),
 }
 POLICIES = {
     "verify_scalar_library_compatibility.py": "29c1d76604adfeddf2006213922ceb59947f7a193454ffb542df2ba0f7597119",
+    "verify_arm64_package_compatibility.py": "df76772e3fcef3418761c50d95d26d0995982673d20d6c5b27a24e24a7f31db5",
     ENGINE: ENGINE_SHA,
 }
 DENIAL_TEST = ("test_provisional_pins_refuse_qualification_before_any_process "
@@ -50,14 +53,16 @@ def load_engine(repo):
         # One source-pinned negative test writes its expected refusal between
         # unittest's name and its terminal `ok`. Preserve the raw stream in the
         # engine's artifact, and join only this exact, unique observation.
-        if child.stderr.count(EXPECTED_DENIAL) != 1:
-            raise ValueError("missing or ambiguous expected predecessor denial")
-        normalized = child.stderr.replace(EXPECTED_DENIAL, DENIAL_SUCCESS, 1)
+        normalized = child.stderr
+        if selected == "test_scalar_library_compatibility":
+            if child.stderr.count(EXPECTED_DENIAL) != 1:
+                raise ValueError("missing or ambiguous expected predecessor denial")
+            normalized = child.stderr.replace(EXPECTED_DENIAL, DENIAL_SUCCESS, 1)
         names = original_validate(selected, source, subprocess.CompletedProcess(
             child.args, child.returncode, child.stdout, normalized))
         for line in normalized.decode("utf-8").splitlines():
             if (not line or line == "-" * 70 or line == "OK"
-                    or re.fullmatch(r"Ran 34 tests in .+", line)
+                    or re.fullmatch(r"Ran " + str(MODULES[selected][1]) + r" tests in .+", line)
                     or re.fullmatch(r"test_\w+ \([\w.]+\) \.\.\. ok", line)):
                 continue
             raise ValueError("unrecognized predecessor test output")
