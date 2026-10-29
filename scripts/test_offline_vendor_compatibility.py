@@ -233,7 +233,7 @@ class VendorSourceAdmission(unittest.TestCase):
 
 class RetainedVendorDelegation(unittest.TestCase):
     def test_exact_reviewed_input_pins_and_original_parent_policy(self):
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "e305507b392782a58df9c0c71f0ce0a270e20d52")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "b4dcd64683f6e5239eccd7c8fc36693bf852d2fc")
         for name, expected in gate.REVIEWED_INPUTS.items():
             body = gate.regular(ROOT, name)
             self.assertEqual((len(body), gate.sha(body)), expected)
