@@ -152,7 +152,7 @@ class TextSourceAdmission(unittest.TestCase):
 
 class RetainedTextDelegation(unittest.TestCase):
     def test_source_pins_directives_asset_and_frozen_controller_are_exact(self):
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "d5fed6b59d419e2f515b4dc724f318c106f18d73")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "798cb875e1cd45592e11f9658aa0fab54dc3331d")
         for name, expected in gate.REVIEWED_INPUTS.items():
             body = gate.regular(ROOT, name)
             self.assertEqual((len(body), gate.sha(body)), expected)
