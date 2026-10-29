@@ -1115,6 +1115,8 @@ jobs:
       OXID_LLVM_BIN: /usr/lib/llvm-19/bin
       OXID_TEST_LLVM_BIN: /usr/lib/llvm-19/bin
     steps:
+      - name: Record the native evidence root inside the container
+        run: printf 'OXID_NATIVE_EVIDENCE_ROOT=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Install pinned LLVM and host tools
         run: |
           apt-get update
@@ -1126,6 +1128,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - name: Allow Git access to the checked out workspace
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: dtolnay/rust-toolchain@1.99.0
@@ -1289,40 +1292,41 @@ jobs:
         with:
           name: current-native
           path: |
-            ${{ runner.temp }}/current-native
-            ${{ runner.temp }}/current-reproducible-native
-            ${{ runner.temp }}/current-native-profiles
-            ${{ runner.temp }}/current-owned-enum-application
-            ${{ runner.temp }}/current-local-references-debug
-            ${{ runner.temp }}/current-local-references-release
-            ${{ runner.temp }}/current-local-reference-bindings
-            ${{ runner.temp }}/current-generic-field-borrows
-            ${{ runner.temp }}/current-native-reachability
-            ${{ runner.temp }}/current-byte-storage-debug
-            ${{ runner.temp }}/current-byte-storage-release
-            ${{ runner.temp }}/current-byte-fields-debug
-            ${{ runner.temp }}/current-byte-fields-release
-            ${{ runner.temp }}/current-byte-buffers-debug
-            ${{ runner.temp }}/current-byte-buffers-release
-            ${{ runner.temp }}/current-byte-reverse-application
-            ${{ runner.temp }}/current-typed-vector-native
-            ${{ runner.temp }}/current-copy-record-native
-            ${{ runner.temp }}/current-copy-record-vector-native
-            ${{ runner.temp }}/current-owned-record-vector-native
-            ${{ runner.temp }}/current-owned-text-native
-            ${{ runner.temp }}/current-utf8-characters-native
-            ${{ runner.temp }}/current-utf8-text-application
-            ${{ runner.temp }}/current-native-files
-            ${{ runner.temp }}/current-cpu-training
-            ${{ runner.temp }}/current-optimizer-math
-            ${{ runner.temp }}/current-optimizer-checkpoints
-            ${{ runner.temp }}/current-optimizer-training
-            ${{ runner.temp }}/current-data-pipeline
-            ${{ runner.temp }}/current-minibatch-training
-            ${{ runner.temp }}/current-streaming-training
-            ${{ runner.temp }}/current-seekable-streaming
-            ${{ runner.temp }}/current-native-libraries
-          if-no-files-found: warn
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-reproducible-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-profiles
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-owned-enum-application
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-local-references-debug
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-local-references-release
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-local-reference-bindings
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-generic-field-borrows
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-reachability
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-storage-debug
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-storage-release
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-fields-debug
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-fields-release
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-buffers-debug
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-buffers-release
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-reverse-application
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-typed-vector-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-copy-record-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-copy-record-vector-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-owned-record-vector-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-owned-text-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-utf8-characters-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-utf8-text-application
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-files
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-cpu-training
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-optimizer-math
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-optimizer-checkpoints
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-optimizer-training
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-data-pipeline
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-minibatch-training
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-streaming-training
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-seekable-streaming
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-libraries
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 14
 
 
@@ -1331,7 +1335,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: current-copy-record-debug
-          path: ${{ runner.temp }}/current-copy-record-debug-*
+          path: ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-copy-record-debug-*
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

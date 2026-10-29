@@ -466,7 +466,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
         native = block(self.ci, 'native-projects', 2)
         self.assertIn('python3 -B scripts/verify_seekable_streaming.py target/debug/oxid target/release/oxid', native)
         self.assertIn('--output "$RUNNER_TEMP/current-seekable-streaming" --llvm-bin "$OXID_LLVM_BIN"', native)
-        self.assertIn('${{ runner.temp }}/current-seekable-streaming', native)
+        self.assertIn('${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-seekable-streaming', native)
         self.assertIn('          python3 -B scripts/test_native_file_seek_runtime.py\n', native)
         self.assertIn('          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_file_seek_runtime.py\n', native)
         self.assertNotRegex(native, r'(?m)^    (?:if|needs):|continue-on-error:')
@@ -499,7 +499,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
             command = ('cargo test ' + profile + '--locked --test native_library '
                        'actual_same_library -- --ignored --nocapture')
             self.assertEqual(native.count(command), 1)
-        self.assertIn('${{ runner.temp }}/current-native-libraries', native)
+        self.assertIn('${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-libraries', native)
         self.assertNotRegex(native, r'(?m)^    (?:if|needs):|continue-on-error:')
 
     def test_scalar_library_source_policy_replay_is_mandatory_and_keeps_evidence(self):
@@ -702,6 +702,179 @@ exit 0
 
     def test_cross_platform_benchmark_step_propagates_every_failed_command(self):
         self.exercise_cross_platform_exit_propagation('Exercise current benchmark reporting')
+
+
+NATIVE_EVIDENCE_DIRECTORIES = (
+    'current-native', 'current-reproducible-native', 'current-native-profiles',
+    'current-owned-enum-application', 'current-local-references-debug',
+    'current-local-references-release', 'current-local-reference-bindings',
+    'current-generic-field-borrows', 'current-native-reachability',
+    'current-byte-storage-debug', 'current-byte-storage-release',
+    'current-byte-fields-debug', 'current-byte-fields-release',
+    'current-byte-buffers-debug', 'current-byte-buffers-release',
+    'current-byte-reverse-application', 'current-typed-vector-native',
+    'current-copy-record-native', 'current-copy-record-vector-native',
+    'current-owned-record-vector-native', 'current-owned-text-native',
+    'current-utf8-characters-native', 'current-utf8-text-application',
+    'current-native-files', 'current-cpu-training', 'current-optimizer-math',
+    'current-optimizer-checkpoints', 'current-optimizer-training',
+    'current-data-pipeline', 'current-minibatch-training',
+    'current-streaming-training', 'current-seekable-streaming',
+    'current-native-libraries',
+)
+
+
+def require_native_project_evidence(native):
+    checkout = ('      - uses: actions/checkout@v4\n'
+                '        with:\n'
+                '          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n'
+                '          fetch-depth: 0\n')
+    if native.count('actions/checkout@') != 1 or checkout not in native:
+        raise AssertionError('native policy reads require current-head complete history')
+    capture = ('      - name: Record the native evidence root inside the container\n'
+               '        run: printf \'OXID_NATIVE_EVIDENCE_ROOT=%s\\n\' "$RUNNER_TEMP" >> "$GITHUB_ENV"\n')
+    if (native.count(capture) != 1
+            or native.index(capture) > native.index('      - name: Install pinned LLVM and host tools\n')):
+        raise AssertionError('native evidence must bind the actual container root before fallible work')
+    steps = re.findall(r'^      - name: Retain current native evidence\n(.*?)(?=^      - |\Z)',
+                       native, re.MULTILINE | re.DOTALL)
+    if len(steps) != 1:
+        raise AssertionError('expected one current native evidence upload')
+    upload = steps[0]
+    paths = re.findall(r'^            (.+)$', upload, re.MULTILINE)
+    if tuple(paths) != tuple('${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/' + name
+                             for name in NATIVE_EVIDENCE_DIRECTORIES):
+        raise AssertionError('native evidence directory roster or container root changed')
+    expected = ('        if: always()\n'
+                '        uses: actions/upload-artifact@v4\n'
+                '        with:\n'
+                '          name: current-native\n'
+                '          path: |\n'
+                + ''.join('            ' + path + '\n' for path in paths)
+                + '          include-hidden-files: true\n'
+                  '          if-no-files-found: error\n'
+                  '          retention-days: 14\n')
+    if upload.strip() != expected.strip():
+        raise AssertionError('native upload must retain failure evidence and hidden inputs without suppressing missing files')
+    debug = ('      - name: Retain Copy record debugger binaries and transcripts\n'
+             '        if: always()\n'
+             '        uses: actions/upload-artifact@v4\n'
+             '        with:\n'
+             '          name: current-copy-record-debug\n'
+             '          path: ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-copy-record-debug-*\n'
+             '          include-hidden-files: true\n'
+             '          if-no-files-found: error\n'
+             '          retention-days: 14')
+    if native.count(debug) != 1:
+        raise AssertionError('debugger upload must use the same actual root and retain failure evidence')
+    return capture.split('        run: ', 1)[1].strip(), paths
+
+
+class NativeProjectEvidenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        ci = (REPO / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+        cls.native = block(ci, 'native-projects', 2)
+
+    def test_native_checkout_and_complete_explicit_container_evidence_roster(self):
+        _, paths = require_native_project_evidence(self.native)
+        self.assertEqual(len(paths), 33)
+        self.assertEqual(len(set(paths)), 33)
+        self.assertNotIn('${{ runner.temp }}', '\n'.join(paths))
+        self.assertFalse(any('*' in path or '..' in path for path in paths))
+
+    def test_shallow_local_git_cannot_read_a_policy_ancestor_until_history_is_fetched(self):
+        git = shutil.which('git')
+        self.assertIsNotNone(git, 'native history controls require Git')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            upstream, shallow = root / 'upstream', root / 'shallow'
+            upstream.mkdir()
+            hooks = root / 'empty-hooks'
+            hooks.mkdir()
+
+            def run(directory, *arguments, check=True):
+                command = [git, '-c', 'user.name=Oxid CI', '-c', 'user.email=ci@example.invalid',
+                           '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=' + str(hooks),
+                           '-c', 'protocol.file.allow=always', *arguments]
+                result = subprocess.run(command, cwd=directory, capture_output=True, timeout=10)
+                if check:
+                    self.assertEqual(result.returncode, 0, (command, result.stdout, result.stderr))
+                return result
+
+            run(upstream, 'init', '--initial-branch=main')
+            policy = upstream / 'policy.py'
+            policy.write_bytes(b'original frozen policy\n')
+            run(upstream, 'add', 'policy.py')
+            run(upstream, 'commit', '-m', 'Frozen policy')
+            parent = run(upstream, 'rev-parse', 'HEAD').stdout.decode().strip()
+            policy.write_bytes(b'current policy\n')
+            run(upstream, 'commit', '-am', 'Current source')
+            run(root, 'clone', '--depth=1', '--no-local', upstream.as_uri(), str(shallow))
+            self.assertEqual(run(shallow, 'rev-parse', '--is-shallow-repository').stdout, b'true\n')
+            missing = run(shallow, 'show', parent + ':policy.py', check=False)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertEqual(missing.stdout, b'')
+            run(shallow, 'fetch', '--unshallow', 'origin')
+            self.assertEqual(run(shallow, 'rev-parse', '--is-shallow-repository').stdout, b'false\n')
+            run(shallow, 'merge-base', '--is-ancestor', parent, 'HEAD')
+            self.assertEqual(run(shallow, 'show', parent + ':policy.py').stdout,
+                             b'original frozen policy\n')
+            require_native_project_evidence(self.native)
+
+    def test_actual_root_capture_survives_a_later_failure_and_resolves_every_upload_line(self):
+        command, paths = require_native_project_evidence(self.native)
+        bash = shutil.which('bash')
+        self.assertIsNotNone(bash, 'native container evidence controls require Bash')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            container = root / 'container temporary directory'
+            container.mkdir()
+            environment = root / 'GITHUB_ENV'
+            result = subprocess.run([bash, '--noprofile', '--norc', '-c', command + '\nexit 47\n'],
+                                    env={'RUNNER_TEMP': str(container), 'GITHUB_ENV': str(environment)},
+                                    capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 47, (result.stdout, result.stderr))
+            self.assertEqual(environment.read_text(), 'OXID_NATIVE_EVIDENCE_ROOT=' + str(container) + '\n')
+            for name, expression in zip(NATIVE_EVIDENCE_DIRECTORIES, paths, strict=True):
+                directory = container / name
+                directory.mkdir()
+                hidden = directory / '.oxid'
+                hidden.mkdir()
+                (hidden / 'receipt.json').write_text('{}\n')
+                resolved = Path(expression.replace('${{ env.OXID_NATIVE_EVIDENCE_ROOT }}', str(container)))
+                self.assertEqual(resolved, directory)
+                self.assertEqual((resolved / '.oxid/receipt.json').read_text(), '{}\n')
+
+    def test_shallow_history_or_host_path_regressions_are_refused(self):
+        mutations = [
+            self.native.replace('          fetch-depth: 0\n', '', 1),
+            self.native.replace('          fetch-depth: 0\n', '          fetch-depth: 1\n', 1),
+            self.native.replace('"$RUNNER_TEMP" >> "$GITHUB_ENV"', '"/host/tmp" >> "$GITHUB_ENV"', 1),
+            self.native.replace('${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-seekable-streaming',
+                                '${{ runner.temp }}/current-seekable-streaming', 1),
+            self.native.replace('            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-owned-text-native\n', '', 1),
+            self.native.replace('${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native\n',
+                                '${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/**\n', 1),
+        ]
+        for changed in mutations:
+            with self.subTest(changed=changed):
+                self.assertNotEqual(changed, self.native)
+                with self.assertRaises(AssertionError):
+                    require_native_project_evidence(changed)
+
+    def test_native_upload_cannot_skip_failures_hidden_inputs_or_missing_evidence(self):
+        original = '      - name: Retain current native evidence\n'
+        for before, after in [
+            (original + '        if: always()\n', original + '        if: success()\n'),
+            ('          include-hidden-files: true\n', '          include-hidden-files: false\n'),
+            ('          if-no-files-found: error\n', '          if-no-files-found: warn\n'),
+            (original, original + '        continue-on-error: true\n'),
+        ]:
+            changed = self.native.replace(before, after, 1)
+            self.assertNotEqual(changed, self.native)
+            with self.subTest(before=before), self.assertRaises(AssertionError):
+                require_native_project_evidence(changed)
 
 
 class RetainedReplayRouteTests(unittest.TestCase):
