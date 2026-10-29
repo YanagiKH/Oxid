@@ -506,7 +506,7 @@ class FrozenFileSeekReplay(unittest.TestCase):
                         restored, flags=re.M | re.S)
         self.assertIsNotNone(sdk)
         self.assertEqual((len(sdk.group()), gate.sha(sdk.group())),
-                         (3451, "698042accd0ae6f47fbef134e5abfe8007b27415a45da837e244868e16f1132e"))
+                         (3657, "73ed97d799025f258631fee2f8874f4ceb83fccfde5537a4a01cb8984b200224"))
         previous_sdk = (
             b"          $PSNativeCommandArgumentPassing = 'Legacy'\n"
             + (r'          $settings = & $env:ComSpec /d /s /c "`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"' + "\n").encode()
@@ -533,11 +533,13 @@ class FrozenFileSeekReplay(unittest.TestCase):
         regular = gate.regular
         for before, after in (
             (b"$sdkStart.Arguments = ", b"$sdkStart.ArgumentList = "),
+            (b"-no_logo -arch=x64 -host_arch=x64 >nul", b'"-no_logo" "-arch=x64" "-host_arch=x64" >nul'),
             (b"/d /u /s /c", b"/d /s /c"),
             (b"-ge 120", b"-ge 3600"),
             (b"-gt 1048576", b"-gt 2147483647"),
             (b"-gt 65536", b"-gt 2147483647"),
             (b"$sdk.ExitCode -ne 0", b"$sdk.ExitCode -ne 37"),
+            (b"Min(256, $sdkErrorText.Length)", b"Min(65536, $sdkErrorText.Length)"),
             (b"$sdk.Dispose()", b"# no dispose"),
         ):
             self.assertEqual(current.count(before), 1)

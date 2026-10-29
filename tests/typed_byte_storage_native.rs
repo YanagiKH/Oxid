@@ -9,6 +9,12 @@ use std::{
 
 const SOURCE: &str = "fn byte(x:i32)->u8{return x.to_u8_checked();}fn read(a:&[u8])->i32{let b=a[0];return b.to_i32();}fn main()->i32{let a=[byte(255)];return read(&a);}";
 const SENTINEL: &[u8] = b"byte storage output sentinel\x00\xff\n";
+const WINDOWS_SCALAR_NATIVE: bool = cfg!(all(
+    target_os = "windows",
+    target_arch = "x86_64",
+    target_env = "msvc"
+));
+const WINDOWS_SCOPE: &str = "Windows native builds currently support bounded result-entry bool, i32 and unit scalar functions";
 static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Case(PathBuf);
 impl Case {
@@ -71,8 +77,15 @@ fn diagnostic(output: Output, code: &str, stage: &str) -> String {
 fn byte_storage_native_public_no_clobber_missing_tools_and_host_gate() {
     let case = Case::new(SOURCE);
     for output in ["existing", "fresh"] {
-        let text = diagnostic(case.compile(output, &[]), "E0701", "native-toolchain");
-        if cfg!(all(
+        let text = if WINDOWS_SCALAR_NATIVE {
+            diagnostic(case.compile(output, &[]), "E0700", "native-admission")
+        } else {
+            diagnostic(case.compile(output, &[]), "E0701", "native-toolchain")
+        };
+        if WINDOWS_SCALAR_NATIVE {
+            assert!(text.contains(WINDOWS_SCOPE), "{text}");
+            assert!(!text.contains("E0701"), "{text}");
+        } else if cfg!(all(
             any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
@@ -104,7 +117,10 @@ fn byte_storage_native_public_entry_and_capacity_refuse_before_tool_and_output()
         let case = Case::new(&source);
         for output in ["existing", "fresh"] {
             let text = diagnostic(case.compile(output, &[]), "E0700", "native-admission");
-            assert!(text.contains(marker), "{text}");
+            assert!(
+                text.contains(if WINDOWS_SCALAR_NATIVE { WINDOWS_SCOPE } else { marker }),
+                "{text}"
+            );
             assert!(!text.contains("E0701"), "{text}");
             case.unchanged();
         }
