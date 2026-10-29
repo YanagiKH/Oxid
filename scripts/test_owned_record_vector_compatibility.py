@@ -169,7 +169,7 @@ class OwnedVectorSourceAdmission(unittest.TestCase):
 
 class FrozenRegistryDelegation(unittest.TestCase):
     def test_reviewed_actual_source_pins_and_every_directive_are_exact(self):
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "e1fee2b5834763c86ea99e4a4b35116d6ce7eac7")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "d71786845668be721897ea7d42ffa516fd8ca493")
         self.assertEqual(set(gate.REVIEWED_INPUTS), gate.OWNED_VECTOR_CHANGED | gate.OWNED_VECTOR_ADDED)
         self.assertEqual(set(gate.REVIEWED_DIRECTIVES), set(gate.REVIEWED_INPUTS))
         for name, expected in gate.REVIEWED_INPUTS.items():
@@ -257,7 +257,7 @@ class FrozenRegistryDelegation(unittest.TestCase):
 
 class OwnedVectorObserverBinding(unittest.TestCase):
     def test_source_anchor_and_all_old_function_objects_stay_exact(self):
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "e1fee2b5834763c86ea99e4a4b35116d6ce7eac7")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "d71786845668be721897ea7d42ffa516fd8ca493")
         self.assertIs(gate.PINS_PROVISIONAL, False)
         names = ("verify_current_observer", "verify_materialized", "authenticate_index_resource_adapter",
                  "authenticate_parser_resource_adapter", "run_byte_buffer_observer_controls",
