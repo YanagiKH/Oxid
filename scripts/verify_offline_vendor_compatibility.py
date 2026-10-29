@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "7279208226a3d4185c0b996491332519971e916e"
 PREDECESSOR_POLICY = "scripts/verify_owned_text_compatibility.py"
 PREDECESSOR_POLICY_PIN = (16603, "61bf3bf55b9c1f958fdf48fcc89e747cdf61700109ab979b098851249d9fa109")
-REVIEWED_SOURCE_HEAD = "b4dcd64683f6e5239eccd7c8fc36693bf852d2fc"
-PINS_PROVISIONAL = False
+REVIEWED_SOURCE_HEAD = "f3c02495c5d8aa4f155808263c0734f63e2f790c"
+PINS_PROVISIONAL = True
 CLI = "src/cli.rs"
 MAIN = "src/main.rs"
 PACKAGE = "src/project_package.rs"
@@ -48,7 +48,7 @@ REVIEWED_INPUTS = {
     PACKAGE: (48290, "193754d0742ffb2fe62d5fdf4ae13bc5a63b37d303714b164989037545f3f601"),
     COMMAND: (14655, "5d2ca5dd17f0046f6c4caa693bfb86b9323ed8fcd2c6cc220f88180df9869401"),
     TEST: (15493, "11c9e415276863d59b5f9814a28cd4a86c7b62fc4a88ff073b41c8bc65c3762a"),
-    TEXT_RESOURCE_TEST: (10952, "6264b8d39334ba52dab7900abac9c147a78acceae856b4775c3556f68f61dde4"),
+    TEXT_RESOURCE_TEST: (11224, "6c9e5f0f10a16493d67f338f1fe4f9cb89b9bd0b8816b766da906a0fbd578698"),
     VECTOR_ROUTE_TEST: (24514, "8f70ed5591221e313b95e94ad3209b1680bed60321cf8513d59296c0c9fd17bd"),
 }
 
@@ -92,12 +92,16 @@ TEXT_NEW_EXERCISE = b'''fn exercise(body: &str, skip: usize, allocations: u64, p
     )
     .unwrap();
     let text_path = fixture.0.join("app/src/text.ox").canonicalize().unwrap();
-    let library = project
-        .sources()
-        .files()
+    let mut matching_modules = project
+        .modules()
         .iter()
-        .find(|file| file.path() == text_path.to_str().unwrap())
-        .unwrap();
+        .filter(|module| module.canonical_path.as_ref() == Some(&text_path));
+    let module = matching_modules
+        .next()
+        .expect("loaded Text module must retain its canonical source identity");
+    assert!(matching_modules.next().is_none());
+    assert_eq!(module.relative_path, "text.ox");
+    let library = project.sources().get(module.file);
     assert_eq!(library.text().as_bytes(), TEXT_SOURCE.as_bytes());
     exercise_owner(SourceOwner::project(&project), skip, allocations, peak);
 }

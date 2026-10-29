@@ -114,6 +114,12 @@ class VendorSourceAdmission(unittest.TestCase):
             (gate.TEXT_RESOURCE_TEST,
              b"fn owned_text_source_resource_reserve_failure_preserves_owner_and_retry_succeeds()",
              b"fn renamed_old_fault_entry()"),
+            (gate.TEXT_RESOURCE_TEST, b"module.canonical_path.as_ref() == Some(&text_path)",
+             b'module.relative_path == "text.ox"'),
+            (gate.TEXT_RESOURCE_TEST, b"assert!(matching_modules.next().is_none());",
+             b"let _ = matching_modules.next();"),
+            (gate.TEXT_RESOURCE_TEST, b"let library = project.sources().get(module.file);",
+             b"let library = &project.sources().files()[0];"),
             (gate.VECTOR_ROUTE_TEST, b"assert_eq!(program.run_test_i32().unwrap(), 58);",
              b"assert_eq!(program.run_test_i32().unwrap(), 0);"),
         ):
@@ -233,7 +239,7 @@ class VendorSourceAdmission(unittest.TestCase):
 
 class RetainedVendorDelegation(unittest.TestCase):
     def test_exact_reviewed_input_pins_and_original_parent_policy(self):
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "b4dcd64683f6e5239eccd7c8fc36693bf852d2fc")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "f3c02495c5d8aa4f155808263c0734f63e2f790c")
         for name, expected in gate.REVIEWED_INPUTS.items():
             body = gate.regular(ROOT, name)
             self.assertEqual((len(body), gate.sha(body)), expected)

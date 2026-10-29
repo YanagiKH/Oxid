@@ -152,8 +152,8 @@ def replace_once(body, before, after):
 
 
 class Driver(public.Driver):
-    def __init__(self, output, environment, report):
-        super().__init__(output, environment, report)
+    def __init__(self, output, environment, report, *, repo=None):
+        super().__init__(output, environment, report, repo=repo)
         (output / "compilers").mkdir()
         self.spy = output / "no-native-tools"
         self.spy.mkdir()
@@ -343,7 +343,7 @@ def verify(args):
               "compiler_source_provenance_verified": False, "compilers": {}, "tools": [], "tool_invocations": [], "inputs": {},
               "positive_cases": [], "rejections": [], "declared_tests": [], "locks": [], "builds": [],
               "deployments": [], "materializations": []}
-    driver = Driver(output, environment, report)
+    driver = Driver(output, environment, report, repo=repo)
     try:
         result = driver.command("head", ["git", "--no-replace-objects", "rev-parse", "HEAD"], repo)
         public.require(result.stdout == (args.expected_head + "\n").encode() and not result.stderr,

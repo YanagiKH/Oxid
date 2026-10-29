@@ -211,12 +211,16 @@ fn exercise(body: &str, skip: usize, allocations: u64, peak: u64) {
     )
     .unwrap();
     let text_path = fixture.0.join("app/src/text.ox").canonicalize().unwrap();
-    let library = project
-        .sources()
-        .files()
+    let mut matching_modules = project
+        .modules()
         .iter()
-        .find(|file| file.path() == text_path.to_str().unwrap())
-        .unwrap();
+        .filter(|module| module.canonical_path.as_ref() == Some(&text_path));
+    let module = matching_modules
+        .next()
+        .expect("loaded Text module must retain its canonical source identity");
+    assert!(matching_modules.next().is_none());
+    assert_eq!(module.relative_path, "text.ox");
+    let library = project.sources().get(module.file);
     assert_eq!(library.text().as_bytes(), TEXT_SOURCE.as_bytes());
     exercise_owner(SourceOwner::project(&project), skip, allocations, peak);
 }
