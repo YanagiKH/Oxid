@@ -25,6 +25,7 @@ EXPRESSION_MEMBERS = (
 STDIN_ENTRY = 'fixtures/typed-expression-samples/stdin.ox'
 STACK_MAIN_ENTRY = 'fixtures/typed-expression-samples/stack_main.ox'
 STACK_STDIN_ENTRY = 'fixtures/typed-expression-samples/stack_stdin.ox'
+PYTHON_LIBRARY_ENTRY = 'apps/python-pricing/src/pricing.ox'
 ARTIFACT_MAIN_ENTRY = "fixtures/typed-expression-samples/artifact_main.ox"
 ARTIFACT_LOAD_ENTRY = "fixtures/typed-expression-samples/artifact_load.ox"
 ARTIFACT_ADDED_FILES = (
@@ -143,6 +144,11 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.members = sorted(set(self.members))
 
     def assert_static_addition(self, checks, entries, count):
+        library = self.root / PYTHON_LIBRARY_ENTRY
+        self.assertEqual([row for row in checks if row[0] == library], [(library, True)])
+        self.assertNotIn(library, entries)
+        checks = [row for row in checks if row[0] != library]
+        count -= 1
         # Strip only the RFC0031 runnable pilot before replaying historical totals.
         byte_entry = self.root / "fixtures/typed-byte-storage/main.ox"
         self.assertEqual([row for row in checks if row[0] == byte_entry], [(byte_entry, True)])
@@ -215,7 +221,8 @@ class ProjectRegistrationTests(unittest.TestCase):
 
     def assert_stack_addition(self, checks, entries, count):
         checks, entries, count = self.assert_artifact_addition(checks, entries, count)
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY, STACK_STDIN_ENTRY))
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES,
+                         (STDIN_ENTRY, STACK_STDIN_ENTRY, PYTHON_LIBRARY_ENTRY))
         self.assertEqual(verify_repo.TYPED_PROJECTS[STACK_MAIN_ENTRY], STACK_MEMBERS)
         self.assertEqual({pair: members for pair, members in verify_repo.TYPED_PROJECT_SHARED_MEMBERS.items()
                           if not pair.intersection(STATIC_ROOTS)}, {

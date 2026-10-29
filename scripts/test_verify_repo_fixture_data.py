@@ -17,6 +17,8 @@ import verify_fixture_data
 import verify_repo
 import verify_typed_vector_fixture_data
 
+PYTHON_LIBRARY_ENTRY = 'apps/python-pricing/src/pricing.ox'
+
 ENUM_PROJECTS = {
     "apps/frame-filter": (
         "apps/frame-filter/src/main.ox", "apps/frame-filter/tests/codec.ox",
@@ -353,6 +355,16 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        # Authenticate the one new library root before every frozen predecessor
+        # count and fingerprint. It is source, checked once, and never run alone.
+        self.assertEqual([name for name in language if name == PYTHON_LIBRARY_ENTRY], [PYTHON_LIBRARY_ENTRY])
+        self.assertEqual([row for row in check_inventory if row[0] == PYTHON_LIBRARY_ENTRY],
+                         [(PYTHON_LIBRARY_ENTRY, True)])
+        self.assertFalse(any(name == PYTHON_LIBRARY_ENTRY for name, _ in run_inventory))
+        self.assertNotIn(root / PYTHON_LIBRARY_ENTRY, verify_repo.fixture_data_sources(root))
+        language = [name for name in language if name != PYTHON_LIBRARY_ENTRY]
+        check_inventory = [row for row in check_inventory if row[0] != PYTHON_LIBRARY_ENTRY]
+        typed_members -= 1
         # Pin the new exact project before projecting it from the historical
         # inventories. No directory, DATA class or predecessor selector changes.
         self.assertEqual([name for name in language if name in RECORD_VECTOR_MEMBERS],
@@ -608,7 +620,8 @@ class PublishedRegistrationTests(unittest.TestCase):
         language = [name for name in language if name not in ARTIFACT_ADDED_FILES]
         check_inventory = [row for row in check_inventory if row[0] not in ARTIFACT_ADDED_FILES]
         typed_members -= len(ARTIFACT_ADDED_FILES)
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY, STACK_STDIN_ENTRY))
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES,
+                         (STDIN_ENTRY, STACK_STDIN_ENTRY, PYTHON_LIBRARY_ENTRY))
         self.assertEqual(verify_repo.TYPED_PROJECTS[STACK_MAIN_ENTRY], STACK_SAMPLE_MEMBERS)
         self.assertEqual([name for name in language if name in STACK_ADDED_FILES], sorted(STACK_ADDED_FILES))
         self.assertEqual([row for row in check_inventory if row[0] in STACK_ADDED_FILES],
@@ -689,6 +702,11 @@ class PublishedRegistrationTests(unittest.TestCase):
         before_record_vector_calls = [call for call in run.call_args_list
                                       if call.kwargs.get("cwd") != record_vector_root]
         predecessor_calls = [call for call in before_record_vector_calls if call.kwargs.get("cwd") != copy_root]
+        library = str(verify_repo.ROOT / PYTHON_LIBRARY_ENTRY)
+        library_calls = [call for call in predecessor_calls if library in call.args[0]]
+        self.assertEqual([call.args[0] for call in library_calls],
+                         [[str(Path(sys.executable).resolve()), "check", library, "--edition=typed-preview"]])
+        predecessor_calls = [call for call in predecessor_calls if library not in call.args[0]]
         output = io.StringIO(copy_predecessor_report(record_vector_predecessor_report(output.getvalue())))
         application = verify_repo.ROOT / "apps/byte-count"
         application_calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == application]
@@ -788,13 +806,13 @@ class PublishedRegistrationTests(unittest.TestCase):
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
         application_members = len(verify_repo.TYPED_MANIFEST_PROJECTS["apps/byte-count"])
-        self.assertIn(f"{146 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
-                      f"{131 + 2 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(UNICODE_PROJECTS) + len(VECTOR_PROJECTS) + len(MATRIX_PROJECTS) + len(CPU_PROJECTS) + len(GROWABLE_VECTOR_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
+        self.assertIn(f"{146 + 1 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
+                      f"{131 + 2 + 1 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(UNICODE_PROJECTS) + len(VECTOR_PROJECTS) + len(MATRIX_PROJECTS) + len(CPU_PROJECTS) + len(GROWABLE_VECTOR_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
                       f"{83 + len(GROWABLE_VECTOR_PROJECTS)} runnable programs", output.getvalue())
         self.assertIn(f"{17 + len(GROWABLE_VECTOR_PROJECTS)} manifest projects checked; "
                       f"{7 + len(GROWABLE_VECTOR_PROJECTS)} run; {4 + len(GROWABLE_VECTOR_PROJECTS)} tested", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
-                      f"{25 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(additional_members)} typed source members / "
+                      f"{25 + 1 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(additional_members)} typed source members / "
                       f"{16 + len(GROWABLE_VECTOR_PROJECTS)} typed entry runs", output.getvalue())
         self.assertIn("11 wide parser overlay members / 2 materialized typed checks", output.getvalue())
         self.assertIn("9 v2 overlay source members / 2 materialized typed checks in a 31-module closure",
@@ -906,6 +924,11 @@ class FixtureAdmissionTests(unittest.TestCase):
                 self.assertNotIn(self.root / child, entries)
 
     def assert_stdin_addition(self, checks, entries, count, predecessor_check_count):
+        library = self.root / PYTHON_LIBRARY_ENTRY
+        self.assertEqual([row for row in checks if row[0] == library], [(library, True)])
+        self.assertNotIn(library, entries)
+        checks = [row for row in checks if row[0] != library]
+        count -= 1
         byte_pilot = self.root / BYTE_PILOT
         self.assertEqual([row for row in checks if row[0] == byte_pilot], [(byte_pilot, True)])
         self.assertEqual([path for path in entries if path == byte_pilot], [byte_pilot])
@@ -1386,7 +1409,10 @@ class TypedOverlayAdmissionTests(unittest.TestCase):
         self.assertNotIn(extra, entries)
         self.assertIn((self.root / BYTE_PILOT, True), checks)
         self.assertIn(self.root / BYTE_PILOT, entries)
-        self.assertEqual(count - 1, 79)  # Explicit RFC0031 pilot subtraction.
+        library = self.root / PYTHON_LIBRARY_ENTRY
+        self.assertEqual([row for row in checks if row[0] == library], [(library, True)])
+        self.assertNotIn(library, entries)
+        self.assertEqual(count - 1 - 1, 79)  # Explicit pilot and library additions.
         self.assertFalse(any(path == self.root / name for path, _ in checks for name in V2_OVERLAY_FILES))
 
     def test_overlay_cannot_also_be_a_standalone_typed_source_or_legacy_run(self):

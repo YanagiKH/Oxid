@@ -82,7 +82,7 @@
         "Migration tooling explicitly reports unsupported features, and Python native extensions support standard packaging."
       ],
       "remaining": [
-        "Experimental Linux scalar shared libraries provide direct C, Rust and Python calls with returning errors and per-invocation execution limits. Resource-bearing ownership, callbacks, standard Python extension packaging, broader ABI/platform support and migration tooling remain incomplete."
+        "Experimental Linux scalar shared libraries provide direct C, Rust and Python calls with returning errors and per-invocation execution limits. An experimental PEP 517 backend builds and installs real CPython extension wheels and source distributions. Resource-bearing ownership, callbacks, broader ABI/platform support and migration tooling remain incomplete."
       ]
     },
     {

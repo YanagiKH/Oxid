@@ -115,6 +115,7 @@ calls; `--fuel` selects `0` through `1000000`, with `1000000` as the default.
 `dev` uses O0 and `release` uses O2; both retain these checks.
 
 Helpers can use `bool`, `i32`, `()`, conditions, loops and direct calls, including
-declared source modules. References, owned values, I/O, recursion, callbacks and
-packaged Python extensions are not supported by this interface. See the
+declared source modules. References, owned values, I/O, recursion and callbacks
+are not supported by this interface. For an installable CPython extension using
+this bounded scalar ABI, see [Python packages](PYTHON_PACKAGES.md). See the
 [ABI contract](../rfcs/0074-scalar-native-libraries.md) for publication and limits.

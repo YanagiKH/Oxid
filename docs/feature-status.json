@@ -2231,7 +2231,7 @@
       "edition": "typed-preview",
       "backend": "Separate PIC LLVM shared-library compilation at O0/O2, without executable runtime or object-cache reuse.",
       "target_scope": "Linux x86_64 and ARM64 implementation; direct C, Rust and Python calls validated on Linux x86_64 with LLVM 19.1.7.",
-      "limitations": "One explicitly public root function with i32 parameters/result; bool/i32/unit helpers and direct acyclic calls. Bounded execution in every profile. No references, owned resources, I/O, generics, recursion, callbacks, other native targets or packaged Python extensions.",
+      "limitations": "One explicitly public root function with i32 parameters/result; bool/i32/unit helpers and direct acyclic calls. Bounded execution in every profile. No references, owned resources, I/O, generics, recursion, callbacks or other native targets. Experimental CPython extension packaging uses a separate build backend.",
       "spec": [
         "rfcs/0074-scalar-native-libraries.md",
         "docs/NATIVE_LIBRARIES.md",
@@ -2248,6 +2248,33 @@
         "tests/native_library_c.c",
         "tests/native_library_python.py",
         "tests/fixtures/native_library/client.rs"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "cpython-native-packages",
+      "summary": "Install an Oxid scalar function as a Python wheel containing a real CPython extension.",
+      "status": "experimental",
+      "classification": "production-path",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "In-tree PEP 517 wheel and sdist backend; CPython C extension calls an independently loaded Oxid shared library.",
+      "target_scope": "Implementation for GIL-enabled CPython 3.11 or newer on little-endian glibc Linux x86_64 and ARM64. Actual execution qualified on CPython 3.12, Linux x86_64, LLVM 19.1.7 only.",
+      "limitations": "One exported i32 function with zero through 64 arguments, bounded per-call execution and exact Python-version/host wheel tags. No abi3, manylinux, musllinux, free-threaded, Windows, macOS or cross-distribution compatibility claim. Python objects, references, callbacks, owned resources, arrays and I/O do not cross the ABI. Build tools and installed native bytes remain trusted; this does not complete general interoperability.",
+      "spec": [
+        "docs/PYTHON_PACKAGES.md",
+        "rfcs/0077-cpython-native-extension-packaging.md"
+      ],
+      "implementation": [
+        "apps/python-pricing/pyproject.toml",
+        "apps/python-pricing/build_backend/oxid_backend.py",
+        "apps/python-pricing/build_backend/shim.c.in",
+        "apps/python-pricing/src/pricing.ox"
+      ],
+      "tests": [
+        "scripts/test_python_native_package.py",
+        "scripts/verify_python_native_package.py"
       ],
       "evidence": []
     }

@@ -9,6 +9,8 @@ Oxid selects that host's native target automatically.
 To call an Oxid function directly from C, Rust or Python, see
 [native libraries](NATIVE_LIBRARIES.md). That experimental command builds a
 Linux shared library with an explicit integer signature and returning errors.
+For standard Python wheel and source-distribution builds that call the native
+function directly, see [Python packages](PYTHON_PACKAGES.md).
 
 ## Create and run
 
