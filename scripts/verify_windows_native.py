@@ -121,6 +121,16 @@ def changed(environment, **values):
     return {**{key: value for key, value in environment.items() if key.upper() not in names}, **values}
 
 
+def msvc_link_command(linker, objects, program):
+    linker = Path(linker)
+    require(linker.is_absolute() and linker.name.lower() == "lld-link.exe" and linker.is_file(),
+            "requires the existing absolute selected lld-link.exe")
+    return [linker, "/Brepro", "/DYNAMICBASE", "/HIGHENTROPYVA", "/NXCOMPAT",
+            "/SUBSYSTEM:CONSOLE", "/STACK:8388608", "/OPT:REF", "/MACHINE:X64",
+            "/DEFAULTLIB:libcmt", "/DEFAULTLIB:oldnames", "/DEFAULTLIB:kernel32",
+            *objects, "/OUT:" + str(program)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compilers", type=Path, nargs=2, metavar=("DEBUG", "RELEASE"))
@@ -170,16 +180,16 @@ def main():
             stdout, _ = command("version-" + tool, [tools / tool, "--version"], output, environment)
             require(re.search(re.escape(marker.encode()) + rb" 19\.1\.7(?:[ (\r\n]|$)", stdout),
                     "requires exact LLVM 19.1.7: " + tool)
-        link_flags = ["-fms-runtime-lib=static", "--ld-path=" + str(tools / "lld-link.exe"),
-                      "-Wl,/Brepro", "-Wl,/DYNAMICBASE", "-Wl,/HIGHENTROPYVA", "-Wl,/NXCOMPAT",
-                      "-Wl,/SUBSYSTEM:CONSOLE", "-Wl,/STACK:8388608"]
         c_flags = ["--no-default-config", "--target=x86_64-pc-windows-msvc",
-                   "-std=c11", "-Wall", "-Wextra", "-Werror"]
+                   "-fms-runtime-lib=static", "-std=c11", "-Wall", "-Wextra", "-Werror"]
         helper = output / "probe-helper.exe"
+        helper_object = output / "probe-helper.obj"
         command("compile-probe-helper", [tools / "clang.exe", *c_flags, "-O2",
-                ROOT / "tests/native_windows_probe_helper.c", *link_flags, "-o", helper], output, environment)
+                "-c", ROOT / "tests/native_windows_probe_helper.c", "-o", helper_object], output, environment)
+        command("link-probe-helper", msvc_link_command(tools / "lld-link.exe", [helper_object], helper),
+                output, environment)
         pe(helper.read_bytes())
-        fake_tools = output / "tools"
+        fake_tools = output / "tools Ω spaces"
         fake_tools.mkdir()
         for name, source in (("clang.exe", helper), ("opt.exe", tools / "opt.exe"), ("lld-link.exe", helper)):
             try:
@@ -245,7 +255,7 @@ def main():
                         stdout, stderr = command(label + "-source-free", [artifact], deployment, {}, expected=expected_status)
                         require(stdout == expected_out and stderr == expected_error, "source-free exact byte behavior differs: " + label)
             failure_controls(binary, compiler_profile, output, environment, fake_environment, command, report, save)
-        io_controls(output, tools, environment, c_flags, link_flags, command)
+        io_controls(output, tools, environment, c_flags, command)
         report["status"] = "passed"
         save()
     except BaseException as error:
@@ -313,12 +323,21 @@ def failure_controls(binary, label, output, environment, fake_environment, comma
     (project / "src/main.ox").write_text("fn main()->i32{return 43;}", encoding="utf-8")
     for mode in ("wrong-version", "missing-sdk-headers", "link-failure", "missing-tools"):
         changed_env = changed(fake_environment, OXID_NATIVE_PROBE_MODE=mode)
+        linker_state = output / "probe-state" / (label + "-link-failure")
+        if mode == "link-failure":
+            linker_state.mkdir(parents=True)
+            changed_env = changed(changed_env, OXID_NATIVE_PROBE_STATE=str(linker_state))
         if mode == "missing-tools":
             changed_env = changed(changed_env, OXID_LLVM_BIN=str(project / "absent-tools"))
         stdout, stderr = command(label + "-" + mode, [binary, "build", "--message-format=json"],
                                  project, changed_env, expected=1)
         require(not stderr and b'"code":"E0701"' in stdout and b'"stage":"native-toolchain"' in stdout,
                 mode + " must fail as a native toolchain diagnostic")
+        if mode == "link-failure":
+            marker = linker_state / "linker.pid"
+            require(marker.is_file() and marker.read_bytes().isdigit()
+                    and b"controlled lld-link failure" in stdout,
+                    "selected absolute lld-link.exe was not invoked")
         require(built.read_bytes() == old, mode + " replaced an existing executable")
         require(list(built.parent.iterdir()) == [built], mode + " leaked a staged output")
     stdout, stderr = command(label + "-no-overwrite", [binary, "compile", "src/main.ox", "--edition=typed-preview",
@@ -388,14 +407,22 @@ def failure_controls(binary, label, output, environment, fake_environment, comma
                 api.CloseHandle(handle)
 
 
-def io_controls(output, tools, environment, c_flags, link_flags, command):
+def io_controls(output, tools, environment, c_flags, command):
     payload = bytes((0, 13, 10, 26, 255))
     incoming = output / "raw-input"
     incoming.write_bytes(payload)
     for optimization in ("-O0", "-O2"):
         program = output / ("raw-io-" + optimization[1:] + ".exe")
-        command("compile-raw-io-" + optimization[1:], [tools / "clang.exe", *c_flags, optimization,
-                ROOT / "native/typed_preview.c", ROOT / "tests/native_windows_io.c", *link_flags, "-o", program], output, environment)
+        objects = []
+        for name, source in (("runtime", ROOT / "native/typed_preview.c"),
+                             ("input", ROOT / "tests/native_windows_io.c")):
+            object_path = output / ("raw-io-" + optimization[1:] + "-" + name + ".obj")
+            command("compile-raw-io-" + optimization[1:] + "-" + name,
+                    [tools / "clang.exe", *c_flags, optimization, "-c", source, "-o", object_path],
+                    output, environment)
+            objects.append(object_path)
+        command("link-raw-io-" + optimization[1:], msvc_link_command(tools / "lld-link.exe", objects, program),
+                output, environment)
         pe(program.read_bytes())
         stdout, stderr = command("raw-bytes", [program, "raw"], output, {}, expected=1)
         require(stdout == payload and stderr == payload, "Win32 runtime translated CRLF/Ctrl-Z/NUL/non-ASCII bytes")
