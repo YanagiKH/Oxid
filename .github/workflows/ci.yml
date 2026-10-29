@@ -796,11 +796,15 @@ jobs:
           }
       - name: Verify and extract the complete LLVM 19.1.7 toolchain
         shell: pwsh
+        timeout-minutes: 45
         run: |
           $ErrorActionPreference = 'Stop'
           $archive = Join-Path $env:RUNNER_TEMP 'clang+llvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
           $url = 'https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/clang%2Bllvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
-          Invoke-WebRequest -Uri $url -OutFile $archive
+          Write-Host 'Downloading the pinned LLVM archive'
+          curl.exe --proto '=https' --tlsv1.2 --location --fail --silent --show-error --connect-timeout 30 --max-time 900 --retry 2 --retry-delay 5 --retry-max-time 900 --output $archive $url
+          if ($LASTEXITCODE -ne 0) { throw "LLVM download failed (curl exit code $LASTEXITCODE)" }
+          Write-Host 'Download complete; verifying archive length and SHA256'
           if ((Get-Item -LiteralPath $archive).Length -ne 845236708) { throw 'LLVM archive length differs' }
           # Digest from the fixed bazel-contrib/toolchains_llvm catalog:
           # 7c6f33bf0ec0345e5c75fefeceb37d1b2177a2c6/toolchain/distributions/github.jsonc
@@ -810,8 +814,10 @@ jobs:
           }
           $extract = Join-Path $env:RUNNER_TEMP 'oxid-llvm-msvc'
           New-Item -ItemType Directory -Path $extract | Out-Null
+          Write-Host 'Archive verified; extracting the LLVM toolchain'
           tar -xJf $archive -C $extract
           if ($LASTEXITCODE -ne 0) { throw 'LLVM extraction failed' }
+          Write-Host 'Extraction complete; verifying LLVM tools'
           $bin = Join-Path $extract 'clang+llvm-19.1.7-x86_64-pc-windows-msvc/bin'
           foreach ($tool in @('clang.exe', 'opt.exe', 'lld-link.exe')) {
             $version = & (Join-Path $bin $tool) --version

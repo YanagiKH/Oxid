@@ -485,7 +485,7 @@ class FrozenFileSeekReplay(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     self.test_both_complete_Windows_replay_blocks_and_every_selector_are_unchanged()
 
-    def test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch(self):
+    def test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_Windows_setup_patches(self):
         frozen = "9be31bc374bffee230768ecd1fe3e52b5a4ea965"
         name = ".github/workflows/ci.yml"
         current = gate.regular(ROOT, name)
@@ -513,9 +513,18 @@ class FrozenFileSeekReplay(unittest.TestCase):
             + b"          if ($LASTEXITCODE -ne 0) { throw 'Visual Studio environment initialization failed' }\n"
         )
         restored = restored[:sdk.start()] + previous_sdk + restored[sdk.end():]
+        canonical = git_body(frozen, name)
+        llvm_pattern = (rb"^      - name: Verify and extract the complete LLVM 19\.1\.7 toolchain\n"
+                        rb".*?(?=^      - name: Build both compiler profiles\n)")
+        llvm = re.search(llvm_pattern, restored, flags=re.M | re.S)
+        previous_llvm = re.search(llvm_pattern, canonical, flags=re.M | re.S)
+        self.assertIsNotNone(llvm)
+        self.assertIsNotNone(previous_llvm)
+        self.assertEqual((len(llvm.group()), gate.sha(llvm.group())),
+                         (2353, "817afbb1754e41f1e585b7293a188210c5983b1e70e0b1b605563693d454516a"))
+        restored = restored[:llvm.start()] + previous_llvm.group() + restored[llvm.end():]
         gate_name = b"scripts/verify_scalar_library_compatibility.py"
         self.assertEqual(restored.count(gate_name), 1)
-        canonical = git_body(frozen, name)
         self.assertEqual(restored.replace(gate_name, b"scripts/verify_file_seek_compatibility.py", 1), canonical)
         check = (b"          python -B scripts/test_windows_native_ci.py\n"
                  b"          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n")
@@ -541,6 +550,10 @@ class FrozenFileSeekReplay(unittest.TestCase):
             (b"$sdk.ExitCode -ne 0", b"$sdk.ExitCode -ne 37"),
             (b"Min(256, $sdkErrorText.Length)", b"Min(65536, $sdkErrorText.Length)"),
             (b"$sdk.Dispose()", b"# no dispose"),
+            (b"--connect-timeout 30", b"--connect-timeout 0"),
+            (b"--max-time 900", b"--max-time 0"),
+            (b"--retry-max-time 900", b"--retry-max-time 0"),
+            (b"        timeout-minutes: 45\n", b""),
         ):
             self.assertEqual(current.count(before), 1)
             changed = current.replace(before, after, 1)
@@ -548,7 +561,7 @@ class FrozenFileSeekReplay(unittest.TestCase):
                 return changed if path == name else regular(root, path)
             with self.subTest(change=before), patch.object(gate, "regular", side_effect=selected):
                 with self.assertRaises(AssertionError):
-                    self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch()
+                    self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_Windows_setup_patches()
 
     def test_CI_comparison_refuses_an_unrelated_job_after_the_new_replay_job(self):
         name = ".github/workflows/ci.yml"
@@ -564,7 +577,7 @@ class FrozenFileSeekReplay(unittest.TestCase):
                 return changed if path == name else regular(root, path)
             with self.subTest(heading=heading), patch.object(gate, "regular", side_effect=selected):
                 with self.assertRaises(AssertionError):
-                    self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch()
+                    self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_Windows_setup_patches()
 
     def test_native_clients_are_required_in_both_profiles_with_retained_evidence(self):
         current = gate.regular(ROOT, ".github/workflows/ci.yml")
@@ -648,7 +661,7 @@ class FrozenFileSeekReplay(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     self.test_native_clients_are_required_in_both_profiles_with_retained_evidence()
                 with self.assertRaises(AssertionError):
-                    self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch()
+                    self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_Windows_setup_patches()
         public_path = "tests/native_library.rs"
         public = regular(ROOT, public_path)
         ignore = re.search(rb'(?m)^    #\[ignore[^\]]*\]\n(?=    fn ' + NATIVE_LIBRARY_TEST + rb'\()', public)
