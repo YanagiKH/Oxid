@@ -82,7 +82,7 @@
         "Migration tooling explicitly reports unsupported features, and Python native extensions support standard packaging."
       ],
       "remaining": [
-        "Existing subprocess adapters do not implement the required native library ABI and Python extension workflow."
+        "Experimental Linux scalar shared libraries provide direct C, Rust and Python calls with returning errors and per-invocation execution limits. Resource-bearing ownership, callbacks, standard Python extension packaging, broader ABI/platform support and migration tooling remain incomplete."
       ]
     },
     {

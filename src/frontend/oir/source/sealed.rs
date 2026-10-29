@@ -31,6 +31,192 @@ pub(in crate::frontend) struct CheckedSourceProgram<'s> {
     entry: Option<hir::DefId>,
 }
 
+/// Separate opt-in authority: neither an entry option nor a caller-supplied
+/// DefId can construct a source library. Existing checked owners stay unchanged.
+#[derive(Debug)]
+pub(in crate::frontend) struct CheckedScalarLibrary<'s> {
+    sources: &'s SourceMap,
+    program: VerifiedProgram,
+    export: hir::DefId,
+    parameters: usize,
+    limits: IndexLimits,
+}
+
+#[allow(dead_code)]
+struct LibrarySourceBank {
+    owners: [CheckedScalarLibrary<'static>; 3],
+    inputs: [(
+        &'static ProjectSources,
+        &'static str,
+        IndexLimits,
+        &'static WorkMeter,
+        &'static mut Allocator,
+    ); 2],
+    selection: [Option<hir::DefId>; 2],
+    declaration: [(
+        &'static ast::Function,
+        crate::frontend::project::FunctionAstKey,
+        hir::DefId,
+    ); 2],
+    lookup: [Result<hir::DefId, Box<Diagnostic>>; 2],
+    index: &'static index::DeclarationIndex<'static>,
+    counts: [usize; 4],
+    diagnostic_values: [Diagnostic; 2],
+    diagnostic_lists: [Vec<Diagnostic>; 2],
+    diagnostic_messages: [[u8; LIBRARY_SOURCE_ERROR.len()]; 2],
+}
+
+const LIBRARY_SOURCE_ERROR: &str = "scalar libraries support only bool, i32 and unit helper bodies without owned values, references, arrays, resources, generics or I/O";
+
+pub(in crate::frontend) fn check_scalar_library<'s>(
+    project: &'s ProjectSources,
+    export: &str,
+    limits: IndexLimits,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<CheckedScalarLibrary<'s>, Vec<Diagnostic>> {
+    let failure = |message: &'static str| {
+        let message = if message.len() <= LIBRARY_SOURCE_ERROR.len() {
+            message
+        } else {
+            "internal compiler error: unpriced library source diagnostic"
+        };
+        Diagnostic::new("E0700", "native-library", message, None)
+    };
+    let name = crate::frontend::native_library::export_name(export).ok_or_else(|| {
+        vec![*failure(
+            "library export requires exactly crate::<ASCII identifier>",
+        )]
+    })?;
+    let banks = std::mem::size_of::<LibrarySourceBank>() as u64;
+    // New export/constructor transports are additive. The old index limit and
+    // all original source/index carriers retain their previous values/layouts.
+    let limits = IndexLimits {
+        retained: limits
+            .retained
+            .min(IndexLimits::default().retained)
+            .checked_sub(banks)
+            .ok_or_else(|| vec![*failure("library export carrier budget exceeded")])?,
+        scratch: limits
+            .scratch
+            .min(IndexLimits::default().scratch)
+            .checked_sub(banks)
+            .ok_or_else(|| vec![*failure("library export carrier budget exceeded")])?,
+        work: limits.work.min(IndexLimits::default().work),
+    };
+    let sources = SourceOwner::project(project);
+    // Feature facts are denial only. Every loaded module participates, including
+    // unused declarations; only the complete scalar pipeline can mint authority.
+    if sources.owned(work).map_err(|e| vec![*e])? {
+        return Err(vec![*failure(LIBRARY_SOURCE_ERROR)]);
+    }
+    for module in project.modules() {
+        work.debit(1, sources.eof(), "library module admission")
+            .map_err(|e| vec![*e])?;
+        let ast = project
+            .try_file_ast(module.file)
+            .ok_or_else(|| vec![*association::bad()])?;
+        if !ast.generic_headers().is_empty() {
+            return Err(vec![*failure("scalar libraries do not support generic declarations, including unused declarations")]);
+        }
+    }
+    let facts = index::collect_originals(sources, limits, work, allocator).map_err(|e| vec![*e])?;
+    let frozen = facts.finish(work, allocator)?;
+    let root = project
+        .modules()
+        .first()
+        .ok_or_else(|| vec![*association::bad()])?;
+    let ast = project
+        .try_file_ast(root.file)
+        .ok_or_else(|| vec![*association::bad()])?;
+    let mut selected = None;
+    for (ordinal, function) in ast.functions.iter().enumerate() {
+        work.debit(
+            (128 + name.len()) as u64,
+            function.name,
+            "library export selection",
+        )
+        .map_err(|e| vec![*e])?;
+        if project.sources().text(function.name) != name {
+            continue;
+        }
+        if function.public.is_none() {
+            return Err(vec![*failure(
+                "library export must name an explicitly public root function",
+            )]);
+        }
+        let key = crate::frontend::project::FunctionAstKey {
+            file: root.file,
+            index: ordinal,
+        };
+        let id = frozen.def_for(key).map_err(|e| vec![*e])?;
+        if frozen.function(id).map_err(|e| vec![*e])?.0 != key || selected.replace(id).is_some() {
+            return Err(vec![*association::bad()]);
+        }
+    }
+    let export = selected.ok_or_else(|| {
+        vec![*failure(
+            "library export does not name a declared public root function",
+        )]
+    })?;
+    let resolved = hir::resolve_project(&frozen, work)?;
+    let typed = typeck::check(resolved)?;
+    let raw = lower::lower(&typed).map_err(|e| vec![*e.diagnostic(project.sources())])?;
+    let associated =
+        association::authenticate_scalar(raw, project.sources(), Declarations::Project(&frozen))
+            .map_err(|e| vec![*e])?;
+    let program = verify::verify_associated(associated)
+        .map_err(|e| vec![*e.diagnostic(project.sources())])?;
+    let function = program
+        .program
+        .functions
+        .get(export.0)
+        .filter(|f| f.id == export)
+        .ok_or_else(|| vec![*association::bad()])?;
+    if function.result != hir::Ty::I32
+        || function
+            .locals
+            .iter()
+            .take(function.param_count)
+            .any(|p| p.ty != hir::Ty::I32)
+    {
+        return Err(vec![*failure(
+            "library export requires i32 parameters and an i32 result",
+        )]);
+    }
+    let parameters = function.param_count;
+    Ok(CheckedScalarLibrary {
+        sources: project.sources(),
+        program,
+        export,
+        parameters,
+        limits,
+    })
+}
+
+impl CheckedScalarLibrary<'_> {
+    pub(in crate::frontend) fn parameters(&self) -> usize {
+        self.parameters
+    }
+
+    pub(in crate::frontend) fn native_module(
+        &self,
+        fuel: usize,
+        work: &WorkMeter,
+        allocator: &mut Allocator,
+    ) -> Result<String, Box<Diagnostic>> {
+        native::library::module_with_limits(
+            &self.program,
+            self.export,
+            self.sources,
+            fuel,
+            self.limits,
+            work,
+            allocator,
+        )
+    }
+}
+
 pub(in crate::frontend) fn check_source<'s>(
     source: &SourceFile,
     ast: &ast::Program,

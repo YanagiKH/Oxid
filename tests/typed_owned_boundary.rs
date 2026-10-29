@@ -8,6 +8,11 @@ use std::{
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 const SENTINEL: &[u8] = b"existing output remains intact\n";
+const WINDOWS_SCALAR_NATIVE: bool = cfg!(all(
+    target_os = "windows",
+    target_arch = "x86_64",
+    target_env = "msvc"
+));
 
 struct Scratch(PathBuf);
 impl Scratch {
@@ -96,14 +101,25 @@ fn owned_source_reaches_check_reference_and_native_admission() {
         text(&run)
     );
     // Linux and macOS reject the existing output before tools, then the missing
-    // tool path for a fresh output. Other hosts reject the build host first.
+    // tool path for a fresh output. Windows refuses owned native values before
+    // tools or output checks; other hosts reject the build host first.
     for output in ["output", "new-output"] {
         let compile = scratch.typed_with_output("compile", output);
-        diagnostic(&compile, "E0701", "native-toolchain");
+        if WINDOWS_SCALAR_NATIVE {
+            diagnostic(&compile, "E0700", "native-admission");
+        } else {
+            diagnostic(&compile, "E0701", "native-toolchain");
+        }
         let json = text(&compile);
         assert_eq!(json.lines().count(), 2, "{json}");
         assert!(json.contains("\"errors\":1,\"output\":null"), "{json}");
-        if cfg!(all(
+        if WINDOWS_SCALAR_NATIVE {
+            assert!(
+                json.contains("Windows native builds currently support bounded result-entry bool, i32 and unit scalar functions"),
+                "{json}"
+            );
+            assert!(!json.contains("E0701"), "{json}");
+        } else if cfg!(all(
             any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",

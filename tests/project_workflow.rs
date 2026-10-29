@@ -451,12 +451,21 @@ fn unsupported_commands_and_directory_formatting_do_not_reach_legacy() {
 #[test]
 fn invalid_source_or_tool_failure_preserves_previous_managed_executable() {
     let project = Project::new();
-    project.typed("");
-    project.write(".oxid/bin/workflow", "previous successful executable");
+    project.typed(if WINDOWS_NATIVE_HOST {
+        "[build]\nentry-mode = \"result\"\n"
+    } else {
+        ""
+    });
+    let managed = if WINDOWS_NATIVE_HOST {
+        ".oxid/bin/workflow.exe"
+    } else {
+        ".oxid/bin/workflow"
+    };
+    project.write(managed, "previous successful executable");
     project.write("src/main.ox", "fn main() -> i32 { return true; }\n");
     failure(project.run(&["build"]), "E0300");
     assert_eq!(
-        fs::read(project.0.join(".oxid/bin/workflow")).unwrap(),
+        fs::read(project.0.join(managed)).unwrap(),
         b"previous successful executable"
     );
     project.write("src/main.ox", "fn main() -> i32 { return 0; }\n");
@@ -465,9 +474,16 @@ fn invalid_source_or_tool_failure_preserves_previous_managed_executable() {
         .env("OXID_LLVM_BIN", project.0.join("missing"))
         .output()
         .unwrap();
-    failure(output, if PROCESS_HOST { "E0701" } else { "E0608" });
+    failure(
+        output,
+        if PROCESS_HOST || WINDOWS_NATIVE_HOST {
+            "E0701"
+        } else {
+            "E0608"
+        },
+    );
     assert_eq!(
-        fs::read(project.0.join(".oxid/bin/workflow")).unwrap(),
+        fs::read(project.0.join(managed)).unwrap(),
         b"previous successful executable"
     );
 }

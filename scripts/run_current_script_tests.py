@@ -58,6 +58,18 @@ HISTORICAL_ONLY = {
 # These complete source-pinned modules test policies on their exact parent
 # compilers. ci.yml replays them unchanged in separate required jobs.
 PREDECESSOR_ONLY = {
+    "test_arm64_package_compatibility": (
+        "d59c1bfeb9873c866a521f560a66e20dba3078d4f57139cc7585b5a1b5044ee5",
+        "8f2c29eaffabbd90c591bbdc440ae6e23acf1353",
+        "requires the complete pre-registry package implementation"),
+    "test_scalar_library_compatibility": (
+        "9315dbe8332a349b88f617a7a55cc0b6b0795fbb4952885ad8f3e2fd4f5429fa",
+        "8f2c29eaffabbd90c591bbdc440ae6e23acf1353",
+        "requires the complete pre-registry compiler source authority"),
+    "test_file_seek_compatibility": (
+        "c2e47b8f486180178f22dcb36964803bfcb797866852d0a08c2d00ebadcca022",
+        "104c900222ead9d9177025102a90520b08e761a4",
+        "requires the pre-library compiler source authority"),
     "test_record_field_completion_compatibility": (
         "96289f7dfc3a90a00c02aa7e2076f1dde2b550780e4b4757f987ed4f114cbb3f",
         "b273b71237cc6a1d2db76dfe7c971e073d1d5cb3",

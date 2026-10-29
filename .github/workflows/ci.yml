@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_file_seek_compatibility.py \
+          python3 -B scripts/verify_msvc_linker_compatibility.py --source-policy scalar-library \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -416,6 +416,81 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  file-seek-source-policy-predecessor:
+    name: File seek source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_file_seek_predecessor_tests.py "$RUNNER_TEMP/file-seek-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 104c900222ead9d9177025102a90520b08e761a4
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/file-seek-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/file-seek-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-seek-source-policy-predecessor
+          path: ${{ runner.temp }}/file-seek-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  scalar-library-source-policy-predecessor:
+    name: Scalar library source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_scalar_library_source_policy.py "$RUNNER_TEMP/scalar-library-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 8f2c29eaffabbd90c591bbdc440ae6e23acf1353
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/scalar-library-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/scalar-library-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scalar-library-source-policy-predecessor
+          path: ${{ runner.temp }}/scalar-library-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-download-source-policy-predecessor:
+    name: Windows setup source-policy controls on their frozen successor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_windows_download_source_policy.py "$RUNNER_TEMP/windows-download-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: c693662501c7629c67aabaa2675dbb6b5a76d460
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/windows-download-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/windows-download-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-download-source-policy-predecessor
+          path: ${{ runner.temp }}/windows-download-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   macos-native:
     name: Current macOS native (${{ matrix.os }})
     strategy:
@@ -690,12 +765,77 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          python -B scripts/test_windows_native_ci.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
           $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if ($LASTEXITCODE -ne 0 -or !$installation) { throw 'Installed MSVC x64 tools are required' }
           $devcmd = Join-Path $installation 'Common7/Tools/VsDevCmd.bat'
-          $settings = & $env:ComSpec /d /s /c "`"`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set`""
-          if ($LASTEXITCODE -ne 0) { throw 'Visual Studio environment initialization failed' }
+          $sdkStart = [System.Diagnostics.ProcessStartInfo]::new()
+          $sdkStart.FileName = $env:ComSpec
+          $sdkStart.UseShellExecute = $false
+          $sdkStart.CreateNoWindow = $true
+          $sdkStart.RedirectStandardInput = $true
+          $sdkStart.RedirectStandardOutput = $true
+          $sdkStart.RedirectStandardError = $true
+          $sdkStart.StandardOutputEncoding = [System.Text.Encoding]::Unicode
+          $sdkStart.StandardErrorEncoding = [System.Text.Encoding]::Unicode
+          $sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+          $sdk = [System.Diagnostics.Process]::new()
+          $sdk.StartInfo = $sdkStart
+          $sdkStarted = $false
+          try {
+            if (!$sdk.Start()) { throw 'Visual Studio environment initialization did not start' }
+            $sdkStarted = $true
+            $sdk.StandardInput.Close()
+            $sdkOut = [System.Text.StringBuilder]::new()
+            $sdkErr = [System.Text.StringBuilder]::new()
+            $outBuffer = [char[]]::new(4096)
+            $errBuffer = [char[]]::new(4096)
+            $outRead = $sdk.StandardOutput.ReadAsync($outBuffer, 0, $outBuffer.Length)
+            $errRead = $sdk.StandardError.ReadAsync($errBuffer, 0, $errBuffer.Length)
+            $outDone = $false
+            $errDone = $false
+            $sdkTimer = [System.Diagnostics.Stopwatch]::StartNew()
+            while (!$outDone -or !$errDone -or !$sdk.HasExited) {
+              if ($sdkTimer.Elapsed.TotalSeconds -ge 120) { throw 'Visual Studio environment initialization timed out' }
+              if (!$outDone -and $outRead.IsCompleted) {
+                $count = $outRead.GetAwaiter().GetResult()
+                if ($count -eq 0) { $outDone = $true } else {
+                  if ($sdkOut.Length + $count -gt 1048576) { throw 'Visual Studio environment output exceeded its limit' }
+                  [void]$sdkOut.Append($outBuffer, 0, $count)
+                  $outRead = $sdk.StandardOutput.ReadAsync($outBuffer, 0, $outBuffer.Length)
+                }
+              }
+              if (!$errDone -and $errRead.IsCompleted) {
+                $count = $errRead.GetAwaiter().GetResult()
+                if ($count -eq 0) { $errDone = $true } else {
+                  if ($sdkErr.Length + $count -gt 65536) { throw 'Visual Studio environment error output exceeded its limit' }
+                  [void]$sdkErr.Append($errBuffer, 0, $count)
+                  $errRead = $sdk.StandardError.ReadAsync($errBuffer, 0, $errBuffer.Length)
+                }
+              }
+              if (!$outDone -or !$errDone -or !$sdk.HasExited) { Start-Sleep -Milliseconds 10 }
+            }
+            $sdk.WaitForExit()
+            if ($sdk.ExitCode -ne 0) {
+              $sdkErrorText = $sdkErr.ToString().Replace("`r", " ").Replace("`n", " ")
+              $sdkErrorText = $sdkErrorText.Substring(0, [Math]::Min(256, $sdkErrorText.Length))
+              throw "Visual Studio environment initialization failed (cmd exit code $($sdk.ExitCode); captured stderr characters $($sdkErr.Length); first error: $sdkErrorText)"
+            }
+            $settings = $sdkOut.ToString() -split '\r?\n'
+          } finally {
+            try {
+              if ($sdkStarted -and !$sdk.HasExited) {
+                try { $sdk.Kill($true) } catch [System.InvalidOperationException] {
+                  if (!$sdk.HasExited) { throw }
+                }
+                if (!$sdk.WaitForExit(5000)) { throw 'Visual Studio environment process did not terminate' }
+              }
+            } finally {
+              $sdk.Dispose()
+            }
+          }
           $names = @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir',
             'VCToolsVersion', 'WindowsSdkDir', 'WindowsSDKVersion', 'WindowsSDKLibVersion',
             'UniversalCRTSdkDir', 'UCRTVersion', 'VSCMD_ARG_TGT_ARCH', 'VSCMD_ARG_HOST_ARCH')
@@ -706,11 +846,15 @@ jobs:
           }
       - name: Verify and extract the complete LLVM 19.1.7 toolchain
         shell: pwsh
+        timeout-minutes: 45
         run: |
           $ErrorActionPreference = 'Stop'
           $archive = Join-Path $env:RUNNER_TEMP 'clang+llvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
           $url = 'https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/clang%2Bllvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
-          Invoke-WebRequest -Uri $url -OutFile $archive
+          Write-Host 'Downloading the pinned LLVM archive'
+          curl.exe --proto '=https' --tlsv1.2 --location --fail --silent --show-error --connect-timeout 30 --max-time 900 --retry 2 --retry-delay 5 --retry-max-time 900 --output $archive $url
+          if ($LASTEXITCODE -ne 0) { throw "LLVM download failed (curl exit code $LASTEXITCODE)" }
+          Write-Host 'Download complete; verifying archive length and SHA256'
           if ((Get-Item -LiteralPath $archive).Length -ne 845236708) { throw 'LLVM archive length differs' }
           # Digest from the fixed bazel-contrib/toolchains_llvm catalog:
           # 7c6f33bf0ec0345e5c75fefeceb37d1b2177a2c6/toolchain/distributions/github.jsonc
@@ -718,10 +862,62 @@ jobs:
           if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -ne $digest) {
             throw 'LLVM archive SHA256 differs'
           }
-          $extract = Join-Path $env:RUNNER_TEMP 'oxid-llvm-msvc'
+          $sevenZip = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
+          if (!(Test-Path -LiteralPath $sevenZip -PathType Leaf)) { throw 'The preinstalled Windows 7-Zip is required' }
+          function Invoke-LlvmSevenZip {
+            param(
+              [string]$Stage,
+              [ValidateSet('xz', 'tar')][string]$Format,
+              [string]$InputArchive,
+              [string]$Destination,
+              [ValidateRange(1, 900)][int]$TimeoutSeconds
+            )
+            $start = [System.Diagnostics.ProcessStartInfo]::new()
+            $start.FileName = $sevenZip
+            $start.UseShellExecute = $false
+            $start.CreateNoWindow = $true
+            $start.RedirectStandardInput = $true
+            foreach ($argument in @('x', "-t$Format", '-y', '-bsp0', '-bb0', "-o$Destination", $InputArchive)) {
+              $start.ArgumentList.Add($argument)
+            }
+            $extraction = [System.Diagnostics.Process]::new()
+            $extraction.StartInfo = $start
+            $started = $false
+            try {
+              Write-Host "$Stage started (deadline $TimeoutSeconds seconds)"
+              if (!$extraction.Start()) { throw "$Stage did not start" }
+              $started = $true
+              $extraction.StandardInput.Close()
+              if (!$extraction.WaitForExit($TimeoutSeconds * 1000)) { throw "$Stage timed out" }
+              if ($extraction.ExitCode -ne 0) { throw "$Stage failed (7-Zip exit code $($extraction.ExitCode))" }
+              Write-Host "$Stage complete"
+            } finally {
+              try {
+                if ($started -and !$extraction.HasExited) {
+                  try { $extraction.Kill($true) } catch [System.InvalidOperationException] {
+                    if (!$extraction.HasExited) { throw }
+                  }
+                  if (!$extraction.WaitForExit(5000)) { throw "$Stage process did not terminate" }
+                }
+              } finally {
+                $extraction.Dispose()
+              }
+            }
+          }
+          $staging = Join-Path $env:RUNNER_TEMP ('oxid-llvm-msvc-' + [Guid]::NewGuid().ToString('N'))
+          $tarDirectory = Join-Path $staging 'tar'
+          $extract = Join-Path $staging 'toolchain'
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          New-Item -ItemType Directory -Path $tarDirectory | Out-Null
           New-Item -ItemType Directory -Path $extract | Out-Null
-          tar -xJf $archive -C $extract
-          if ($LASTEXITCODE -ne 0) { throw 'LLVM extraction failed' }
+          Write-Host 'Archive verified; decompressing the complete LLVM XZ stream'
+          Invoke-LlvmSevenZip -Stage 'LLVM XZ decompression' -Format xz -InputArchive $archive -Destination $tarDirectory -TimeoutSeconds 600
+          $tarArchive = Join-Path $tarDirectory 'clang+llvm-19.1.7-x86_64-pc-windows-msvc.tar'
+          if (!(Test-Path -LiteralPath $tarArchive -PathType Leaf) -or (Get-Item -LiteralPath $tarArchive).Length -le 0) { throw 'LLVM XZ decompression produced no TAR archive' }
+          Write-Host 'XZ decompression complete; extracting every LLVM TAR member'
+          Invoke-LlvmSevenZip -Stage 'LLVM TAR extraction' -Format tar -InputArchive $tarArchive -Destination $extract -TimeoutSeconds 900
+          Remove-Item -LiteralPath $tarArchive
+          Write-Host 'Extraction complete; verifying LLVM tools'
           $bin = Join-Path $extract 'clang+llvm-19.1.7-x86_64-pc-windows-msvc/bin'
           foreach ($tool in @('clang.exe', 'opt.exe', 'lld-link.exe')) {
             $version = & (Join-Path $bin $tool) --version
@@ -972,6 +1168,14 @@ jobs:
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_i64_output_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer_output_runtime.py
           OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer128_runtime.py
+      - name: Verify returning native libraries from C Rust and Python
+        env:
+          TMPDIR: ${{ runner.temp }}/current-native-libraries
+          OXID_TEST_KEEP_ARTIFACTS: '1'
+        run: |
+          mkdir -p "$TMPDIR"
+          cargo test --locked --test native_library actual_same_library -- --ignored --nocapture
+          cargo test --release --locked --test native_library actual_same_library -- --ignored --nocapture
       - name: Verify source-free file copies larger than the process memory limit
         run: |
           python3 -B scripts/verify_native_files.py target/debug/oxid target/release/oxid \
@@ -1017,6 +1221,7 @@ jobs:
             ${{ runner.temp }}/current-minibatch-training
             ${{ runner.temp }}/current-streaming-training
             ${{ runner.temp }}/current-seekable-streaming
+            ${{ runner.temp }}/current-native-libraries
           if-no-files-found: warn
           retention-days: 14
 

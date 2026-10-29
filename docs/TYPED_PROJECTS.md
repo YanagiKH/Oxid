@@ -6,6 +6,10 @@ A bounded scalar preview also targets Windows MSVC x64.
 Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
 Oxid selects that host's native target automatically.
 
+To call an Oxid function directly from C, Rust or Python, see
+[native libraries](NATIVE_LIBRARIES.md). That experimental command builds a
+Linux shared library with an explicit integer signature and returning errors.
+
 ## Create and run
 
 ```sh

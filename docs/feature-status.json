@@ -2220,6 +2220,36 @@
       ],
       "evidence": [],
       "limitations": "Explicit source entries only. Exact-case child names and regular local NTFS files are required. Child reparse points, network paths and other filesystems are rejected. Native Windows builds, package/workspace commands, process I/O and source bundles remain unavailable. Source, path and module limits are unchanged."
+    },
+    {
+      "id": "scalar-native-libraries",
+      "status": "experimental",
+      "classification": "production-path",
+      "summary": "Shared libraries with an explicit i32 C ABI, returning arithmetic errors and independent per-call execution allowance.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "edition": "typed-preview",
+      "backend": "Separate PIC LLVM shared-library compilation at O0/O2, without executable runtime or object-cache reuse.",
+      "target_scope": "Linux x86_64 and ARM64 implementation; direct C, Rust and Python calls validated on Linux x86_64 with LLVM 19.1.7.",
+      "limitations": "One explicitly public root function with i32 parameters/result; bool/i32/unit helpers and direct acyclic calls. Bounded execution in every profile. No references, owned resources, I/O, generics, recursion, callbacks, other native targets or packaged Python extensions.",
+      "spec": [
+        "rfcs/0074-scalar-native-libraries.md",
+        "docs/NATIVE_LIBRARIES.md",
+        "spec/typed-preview.md"
+      ],
+      "implementation": [
+        "src/frontend/native_library.rs",
+        "src/frontend/native/library.rs",
+        "src/frontend/oir/native_library.rs",
+        "src/frontend/oir/source/sealed.rs"
+      ],
+      "tests": [
+        "tests/native_library.rs",
+        "tests/native_library_c.c",
+        "tests/native_library_python.py",
+        "tests/fixtures/native_library/client.rs"
+      ],
+      "evidence": []
     }
   ]
 }

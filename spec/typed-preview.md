@@ -410,6 +410,23 @@ files, with signal setup before source effects. See
 [native file ownership and I/O](../rfcs/0048-native-file-io.md) for the API and
 error contracts.
 
+## Scalar native libraries
+
+`oxid --edition typed-preview library --export crate::NAME --output NEW_DIRECTORY SOURCE`
+builds a Linux x86_64/ARM64 shared library. The selected root function must be
+explicitly public, take only `i32` parameters and return `i32`. The generated
+header exposes a fixed status-returning C ABI with caller-owned output storage.
+Arithmetic errors and execution exhaustion return to the host without changing
+that output. Every invocation owns its bounded execution allowance.
+
+Helpers support `bool`, `i32`, unit, conditions, loops and direct calls; all loaded
+declarations are checked, including unused functions. Owned values, references,
+I/O, generics and recursion are excluded. Dev and release profiles retain the
+same checks. A complete new library/header/metadata directory is published only
+on success, and an existing destination is never replaced. See the
+[C, Rust and Python examples](../docs/NATIVE_LIBRARIES.md) and
+[ABI contract](../rfcs/0074-scalar-native-libraries.md).
+
 ## Program arguments
 
 On Linux and macOS x86_64/ARM64, `std::env::arg_count()` includes the executable at index 0.

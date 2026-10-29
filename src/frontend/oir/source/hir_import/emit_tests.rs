@@ -14,7 +14,15 @@ use crate::frontend::{
 
 // Specify host headers independently from the native emitter. Source, wire,
 // work and allocation contracts retain their measured predecessor values.
-pub(super) const TARGET_TRIPLE: &str = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+pub(super) const TARGET_TRIPLE: &str = if cfg!(all(
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+)) {
+    "x86_64-pc-windows-msvc"
+} else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
     "aarch64-apple-darwin"
 } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
     "x86_64-apple-darwin"
@@ -25,7 +33,7 @@ pub(super) const TARGET_TRIPLE: &str = if cfg!(all(target_os = "macos", target_a
 };
 
 // The frozen byte counts include the Linux x86_64 triple. Replacing its
-// length also handles the shorter Darwin headers without unsigned underflow.
+// length also handles shorter Darwin/MSVC headers without unsigned underflow.
 pub(super) const fn target_text_bytes(linux_x86_64_bytes: usize) -> usize {
     linux_x86_64_bytes - "x86_64-unknown-linux-gnu".len() + TARGET_TRIPLE.len()
 }

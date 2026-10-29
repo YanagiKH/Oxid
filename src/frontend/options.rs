@@ -11,6 +11,9 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Legacy(Vec<String>),
+    TypedLibrary {
+        request: Box<[super::native_library::Options; 1]>,
+    },
     TypedLexical {
         request: Box<[LexicalOptions; 1]>,
     },
@@ -436,6 +439,17 @@ fn classify(args: &[String], entry: &mut EntryOptionScan) -> Route {
     }
     if edition != Some("typed-preview") {
         return Route::Legacy(forwarded);
+    }
+    if forwarded.first().map(String::as_str) == Some("library") {
+        if entry.seen || import_seen || producer_seen || lexical_seen {
+            return Route::Error {
+                message: "library does not accept entry-mode or experimental input providers"
+                    .into(),
+                json,
+                operation: Operation::Compile,
+            };
+        }
+        return super::native_library::route(forwarded, json, args);
     }
     if forwarded.first().map(String::as_str) == Some("fmt") {
         return route_format(forwarded, json);

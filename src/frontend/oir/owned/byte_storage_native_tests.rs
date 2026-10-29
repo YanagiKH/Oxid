@@ -1010,7 +1010,15 @@ fn byte_text_oracles() -> [ByteTextOracle; 2] {
             ordinary_visits: 64, cost: 46,
         },
     ];
-    let target = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    let target = if cfg!(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )) {
+        "x86_64-pc-windows-msvc"
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         "aarch64-apple-darwin"
     } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
         "x86_64-apple-darwin"

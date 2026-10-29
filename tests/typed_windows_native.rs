@@ -109,7 +109,7 @@ fn unsupported_execution_and_debug_settings_do_not_create_managed_outputs() {
         fixture.clean();
     }
     let fixture = Fixture::new("fn main()->i32{return 0;}");
-    denial(fixture.invoke(&[
+    let output = fixture.invoke(&[
         "compile",
         "main.ox",
         "--edition=typed-preview",
@@ -117,7 +117,27 @@ fn unsupported_execution_and_debug_settings_do_not_create_managed_outputs() {
         "--backend=llvm",
         "--output=program.exe",
         "--message-format=json",
-    ]));
+    ]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.contains("\"code\":\"E0608\",\"stage\":\"oir-run\"")
+            && text.contains(
+                "\"message\":\"process execution requires Linux or macOS on x86_64 or ARM64\""
+            ),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null"
+        ),
+        "{text}"
+    );
+    assert!(
+        !text.contains("E0700") && !text.contains("E0701") && !text.contains("E0500"),
+        "{text}"
+    );
     fixture.clean();
 }
 

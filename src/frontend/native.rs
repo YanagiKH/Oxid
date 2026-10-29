@@ -41,6 +41,7 @@ const VECTOR_HEADER: &str = include_str!("../../native/experimental_vector.h");
 const VECTOR_ADAPTER: &str = include_str!("../../native/typed_vector.c");
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 pub(crate) mod doctor;
+pub(super) mod library;
 fn failure(message: impl Into<String>) -> Box<Diagnostic> {
     Diagnostic::new("E0701", "native-toolchain", message, None)
 }
@@ -178,6 +179,49 @@ fn record_vector_schemas_declared(module: &str) -> bool {
     module
         .lines()
         .any(|line| line.starts_with("@__oxid_record_vector_schema_count = constant i32 "))
+}
+
+fn windows_link_args(program: &OsStr, runtime: &OsStr, output: &OsStr) -> Vec<OsString> {
+    let mut arguments: Vec<OsString> = [
+        "/Brepro",
+        "/DYNAMICBASE",
+        "/HIGHENTROPYVA",
+        "/NXCOMPAT",
+        "/SUBSYSTEM:CONSOLE",
+        "/STACK:8388608",
+        "/OPT:REF",
+        "/MACHINE:X64",
+        "/DEFAULTLIB:libcmt",
+        "/DEFAULTLIB:oldnames",
+        "/DEFAULTLIB:kernel32",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    arguments.push(program.to_owned());
+    arguments.push(runtime.to_owned());
+    let mut destination = OsString::from("/OUT:");
+    destination.push(output);
+    arguments.push(destination);
+    arguments
+}
+
+fn link_tool_and_args<'a>(
+    clang: &'a Path,
+    lld: &'a Path,
+    windows_msvc: bool,
+    mut arguments: Vec<OsString>,
+) -> (&'a Path, Vec<OsString>) {
+    if windows_msvc {
+        // MSVC's Clang driver ignores --ld-path and searches tool names for
+        // -fuse-ld. Invoke the already resolved, version-checked file directly.
+        (lld, arguments)
+    } else {
+        let mut linker = OsString::from("--ld-path=");
+        linker.push(lld);
+        arguments.push(linker);
+        (clang, arguments)
+    }
 }
 
 fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
@@ -608,22 +652,11 @@ fn compile_inner(
     }
     invoke(&clang, runtime_compile_args(&settings))?;
     let mut link = if NativeBuildSettings::windows_msvc_host() {
-        args(&[
-            "--no-default-config",
-            &target,
-            "-fms-runtime-lib=static",
-            "-Wl,/Brepro",
-            "-Wl,/DYNAMICBASE",
-            "-Wl,/HIGHENTROPYVA",
-            "-Wl,/NXCOMPAT",
-            "-Wl,/SUBSYSTEM:CONSOLE",
-            "-Wl,/STACK:8388608",
-            "-Wl,/OPT:REF",
-            NativeBuildSettings::program_object(),
-            NativeBuildSettings::runtime_object(),
-            "-o",
-            NativeBuildSettings::staged_executable(),
-        ])
+        windows_link_args(
+            OsStr::new(NativeBuildSettings::program_object()),
+            OsStr::new(NativeBuildSettings::runtime_object()),
+            OsStr::new(NativeBuildSettings::staged_executable()),
+        )
     } else if cfg!(target_os = "macos") {
         args(&[
             "--no-default-config",
@@ -664,10 +697,9 @@ fn compile_inner(
     if float_operations {
         link.push(OsString::from("-lm"));
     }
-    let mut linker = OsString::from("--ld-path=");
-    linker.push(lld);
-    link.push(linker);
-    invoke(&clang, link)?;
+    let (link_tool, link) =
+        link_tool_and_args(&clang, &lld, NativeBuildSettings::windows_msvc_host(), link);
+    invoke(link_tool, link)?;
     // Atomic no-replace publication on the same filesystem. Unlike rename,
     // hard_link cannot clobber an output created concurrently after preflight.
     fs::hard_link(
@@ -676,6 +708,68 @@ fn compile_inner(
     )
     .map_err(io)?;
     Ok(outcome)
+}
+
+#[cfg(test)]
+mod windows_linker_argument_tests {
+    use super::*;
+
+    #[test]
+    fn windows_invokes_the_exact_absolute_unicode_linker_without_a_driver_search_flag() {
+        let root = std::env::temp_dir().join("Oxid linker 工具 with spaces");
+        let clang = root.join("clang.exe");
+        let linker = root.join("lld-link.exe");
+        let program = root.join("program.obj");
+        let runtime = root.join("runtime.obj");
+        let output = root.join("output 遷移.exe");
+        assert!(linker.is_absolute());
+        let arguments =
+            windows_link_args(program.as_os_str(), runtime.as_os_str(), output.as_os_str());
+        let (selected, arguments) = link_tool_and_args(&clang, &linker, true, arguments);
+        assert_eq!(selected, linker);
+        let mut expected: Vec<OsString> = [
+            "/Brepro",
+            "/DYNAMICBASE",
+            "/HIGHENTROPYVA",
+            "/NXCOMPAT",
+            "/SUBSYSTEM:CONSOLE",
+            "/STACK:8388608",
+            "/OPT:REF",
+            "/MACHINE:X64",
+            "/DEFAULTLIB:libcmt",
+            "/DEFAULTLIB:oldnames",
+            "/DEFAULTLIB:kernel32",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        expected.push(program.into_os_string());
+        expected.push(runtime.into_os_string());
+        let mut destination = OsString::from("/OUT:");
+        destination.push(output);
+        expected.push(destination);
+        assert_eq!(arguments, expected);
+        let absent = root.join("absent installation").join("lld-link.exe");
+        assert_eq!(
+            link_tool_and_args(&clang, &absent, true, Vec::new()).0,
+            absent
+        );
+    }
+
+    #[test]
+    fn unix_keeps_the_clang_driver_and_unchanged_ld_path_argument() {
+        let root = std::env::temp_dir().join("LLVM 工具 with spaces");
+        let clang = root.join("clang-19");
+        let linker = root.join("ld.lld");
+        let original = vec![OsString::from("-pie"), OsString::from("program.o")];
+        let (selected, arguments) = link_tool_and_args(&clang, &linker, false, original.clone());
+        assert_eq!(selected, clang);
+        assert_eq!(&arguments[..original.len()], original.as_slice());
+        let mut expected = OsString::from("--ld-path=");
+        expected.push(linker);
+        assert_eq!(arguments.last(), Some(&expected));
+        assert_eq!(arguments.len(), original.len() + 1);
+    }
 }
 
 #[cfg(test)]
