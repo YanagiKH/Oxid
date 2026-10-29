@@ -132,7 +132,8 @@ def load_tests(loader, tests, pattern):
             "test_typed_vector_compatibility", "test_qualified_completion_compatibility",
             "test_copy_record_debug_compatibility", "test_windows_native_compatibility",
             "test_record_field_completion_compatibility", "test_file_seek_compatibility",
-            "test_scalar_library_compatibility", "test_arm64_package_compatibility"})
+            "test_scalar_library_compatibility", "test_arm64_package_compatibility",
+            "test_registry_compatibility"})
         for module, (_, revision, _) in runner.PREDECESSOR_ONLY.items():
             name = module + ".py"
             for source in (FROZEN_SOURCES[name] + PASSING.encode(), None):
@@ -146,6 +147,19 @@ def load_tests(loader, tests, pattern):
             self.assertIn("Ran 1 test", result.stderr)
             self.assertIn("Mandatory predecessor replay: " + name, result.stderr)
             self.assertIn(revision, result.stderr)
+
+    def test_registry_replay_is_bound_to_its_exact_revision_without_hiding_a_neighbor(self):
+        self.assertEqual(runner.PREDECESSOR_ONLY["test_registry_compatibility"], (
+            "f499348d6de5226fb56802b6cb80f7b7d8b58df8bc25e8800792e8c70bb6e02b",
+            "e77402de69911a9d45a55fff5a8a0dd8de61f3e5",
+            "requires the pre-owned-vector compiler and exact registry workflow source authority"))
+        self.assertNotIn("test_registry_compatibility", runner.HISTORICAL_ONLY)
+        result = self.execute({"test_registry_compatibility_future.py": PASSING})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Ran 1 test", result.stderr)
+        self.assertIn("test_registry_compatibility_future.CurrentTest.test_passes", result.stderr)
+        self.assertIn("Mandatory predecessor replay: test_registry_compatibility.py @ "
+                      "e77402de69911a9d45a55fff5a8a0dd8de61f3e5", result.stderr)
 
     def test_empty_or_only_delegated_test_sets_cannot_report_success(self):
         for files in [

@@ -22,6 +22,7 @@ struct Reader {
     graph_edges_left: usize,
     git: Option<RegularProjectReader>,
     cache_roots: BTreeSet<PathBuf>,
+    registry_budget: Option<crate::project_registry::Allowance>,
 }
 
 fn component(value: &str) -> Result<(), String> {
@@ -97,6 +98,21 @@ fn ordinary_path(path: &Path, file: bool, boundary: Option<&Path>) -> Result<(),
     Ok(())
 }
 
+fn registry_ordinary_path(
+    path: &Path,
+    budget: &mut crate::project_registry::Budget,
+) -> Result<(), String> {
+    let bound = path
+        .as_os_str()
+        .len()
+        .checked_mul(2)
+        .and_then(|bytes| bytes.checked_add(8))
+        .ok_or("registry collector path storage overflow")?;
+    // One temporary PathBuf grows while checking the path. The scoped request
+    // covers its growth and the actual closure/return types; nothing is retained.
+    budget.scoped(bound, || ordinary_path(path, false, None), |_| Ok(0))
+}
+
 impl Reader {
     fn raw(&mut self, path: &Path) -> Result<Arc<[u8]>, String> {
         if let Some(bytes) = self.raw.get(path) {
@@ -146,6 +162,72 @@ impl Reader {
 }
 
 impl ProjectReader for Reader {
+    fn registry_manifest(&mut self, snapshot: &runtime::ManifestSnapshot) -> Result<(), String> {
+        if let Some(allowance) = snapshot
+            .manifest
+            .registry_dependencies
+            .as_ref()
+            .and_then(|entries| entries.allowance.as_ref())
+        {
+            if self
+                .registry_budget
+                .as_ref()
+                .is_some_and(|old| !std::rc::Rc::ptr_eq(old, allowance))
+            {
+                return Err("source bundle registry manifest allowance changed".into());
+            }
+            self.registry_budget = Some(allowance.clone());
+        }
+        if let Some(inner) = &mut self.git {
+            inner.registry_budget = self.registry_budget.clone();
+            inner.registry_manifest(snapshot)?;
+        }
+        Ok(())
+    }
+    fn registry_allowance(&self) -> Option<crate::project_registry::Allowance> {
+        self.registry_budget.clone()
+    }
+    fn registry_dependency(
+        &mut self,
+        root: &Path,
+        dependency: &crate::project_registry::Dependency,
+    ) -> Result<PathBuf, String> {
+        if self.boundary.is_some() {
+            return Err("source package payloads require portable local dependencies".into());
+        }
+        let inner = self
+            .git
+            .as_mut()
+            .ok_or("source package resolver is missing")?;
+        inner.registry_budget = self.registry_budget.clone();
+        let path = inner.registry_dependency(root, dependency)?;
+        self.registry_budget = inner.registry_budget.clone();
+        let allowance = self
+            .registry_budget
+            .as_ref()
+            .ok_or("registry allowance is missing")?;
+        registry_ordinary_path(&path, &mut allowance.borrow_mut())?;
+        // The already retained GraphOrigins supplies this cache parent when
+        // constructing the final collision roster. No second tree owns it here.
+        Ok(path)
+    }
+    fn registry_origin(
+        &self,
+        root: &Path,
+    ) -> Option<std::sync::Arc<crate::project_registry::Origin>> {
+        self.git
+            .as_ref()
+            .and_then(|reader| reader.registry_origin(root))
+    }
+    fn registry_graph(
+        &mut self,
+        packages: &[frontend::PackageSpec],
+    ) -> Result<Option<Box<crate::project_registry::GraphOrigins>>, String> {
+        match self.git.as_mut() {
+            Some(reader) => reader.registry_graph(packages),
+            None => Ok(None),
+        }
+    }
     fn package(&mut self, edges: usize) -> Result<(), String> {
         let nodes = self.graph_nodes_left.checked_sub(1);
         let edges = self.graph_edges_left.checked_sub(edges);
@@ -162,10 +244,24 @@ impl ProjectReader for Reader {
 
     fn manifest(&mut self, path: &Path) -> Result<runtime::ManifestSnapshot, String> {
         if let Some(snapshot) = self.parsed.get(path) {
-            return Ok(snapshot.clone());
+            return match &self.registry_budget {
+                Some(budget) => {
+                    crate::project_registry::clone_manifest(snapshot, &mut budget.borrow_mut())
+                }
+                None => Ok(snapshot.clone()),
+            };
         }
         let bytes = self.raw(path)?;
-        let snapshot = runtime::parse_typed_manifest_bytes(path, &bytes)?;
+        let snapshot = if let Some(budget) = &self.registry_budget {
+            crate::project_registry::parse_manifest(path, &bytes, &mut budget.borrow_mut())?
+        } else {
+            runtime::parse_typed_manifest_bytes_registry(
+                path,
+                &bytes,
+                &mut self.registry_budget,
+                false,
+            )?
+        };
         if let Some(entry) = &snapshot.manifest.entry {
             relative_path(entry, false)?;
         }
@@ -173,12 +269,24 @@ impl ProjectReader for Reader {
             relative_path(path, false)?;
         }
         // Reject every portability violation before traversing the first edge.
-        for path in snapshot.manifest.dependencies.values() {
-            if !(self.boundary.is_none() && git_source(path)) {
+        for (alias, path) in &snapshot.manifest.dependencies {
+            let registry = snapshot
+                .manifest
+                .registry_dependencies
+                .as_deref()
+                .is_some_and(|entries| entries.iter().any(|(name, _)| name == alias));
+            if !(self.boundary.is_none() && (git_source(path) || registry)) {
                 relative_path(path, true)?;
             }
         }
-        self.parsed.insert(path.to_owned(), snapshot.clone());
+        if let Some(allowance) = &self.registry_budget {
+            let mut budget = allowance.borrow_mut();
+            let retained = crate::project_registry::clone_manifest(&snapshot, &mut budget)?;
+            let key = budget.path(path)?;
+            budget.map_insert(&mut self.parsed, key, retained)?;
+        } else {
+            self.parsed.insert(path.to_owned(), snapshot.clone());
+        }
         Ok(snapshot)
     }
 
@@ -319,7 +427,11 @@ fn graph_budget(graphs: &[PackageGraph]) -> Result<(), String> {
 
 /// Re-root an already admitted graph for a dependency's declared tests. Only
 /// reachable package identities remain; no manifest or resolver runs again.
-fn reroot(graph: &PackageGraph, root: usize) -> PackageGraph {
+fn reroot(
+    graph: &PackageGraph,
+    root: usize,
+    reader: &mut dyn ProjectReader,
+) -> Result<PackageGraph, String> {
     fn visit(graph: &PackageGraph, index: usize, order: &mut Vec<usize>) {
         if order.contains(&index) {
             return;
@@ -344,7 +456,12 @@ fn reroot(graph: &PackageGraph, root: usize) -> PackageGraph {
         specs.push(spec);
         manifests.push(graph.manifests[index].clone());
     }
-    PackageGraph { specs, manifests }
+    let registries = reader.registry_graph(&specs)?;
+    Ok(PackageGraph {
+        specs,
+        manifests,
+        registries,
+    })
 }
 
 /// Admission and source retention only. The caller materializes this plan in a
@@ -378,6 +495,7 @@ pub(crate) fn package_source_plan(
         graph_edges_left: 1024,
         git: None,
         cache_roots: BTreeSet::new(),
+        registry_budget: None,
     };
     let mut workspace_root = None;
     let mut nearest = None;
@@ -443,20 +561,13 @@ pub(crate) fn package_source_plan(
         }
         vec![(owner.clone(), owner_snapshot.clone())]
     };
-    let existing = if is_workspace {
-        project_lock::read_workspace(&owner, true)?
-    } else {
-        project_lock::read(&owner, true)?
-    }
-    .ok_or("source packaging requires an existing typed lock")?;
+    let existing =
+        project_lock::read_with_registry(&owner, true, is_workspace, &mut reader.registry_budget)?
+            .ok_or("source packaging requires an existing typed lock")?;
     let mut graphs = Vec::new();
+    reader.git = Some(RegularProjectReader::new(owner.clone(), true, true));
+    reader.git.as_mut().expect("package reader").registry_budget = reader.registry_budget.clone();
     for (root, snapshot) in &members {
-        reader.git = Some(RegularProjectReader {
-            root: owner.clone(),
-            locked: true,
-            offline: true,
-            git_roots: Vec::new(),
-        });
         graphs.push(package_graph_with(root, snapshot, &mut reader)?);
         graph_budget(&graphs)?;
     }
@@ -530,6 +641,11 @@ pub(crate) fn package_source_plan(
         )?;
     }
     let mut fingerprints = Vec::new();
+    if let Some(allowance) = &reader.registry_budget {
+        allowance
+            .borrow_mut()
+            .reserve(&mut fingerprints, graphs.len())?;
+    }
     for graph in &graphs {
         let session = frontend::prepare_package_project_bounded(
             &graph.specs,
@@ -544,39 +660,75 @@ pub(crate) fn package_source_plan(
         } else {
             Some(manifest.entry_mode.as_deref().unwrap_or("process") == "process")
         };
+        graph.verify_registries(&session)?;
         session.source_package_preflight(entry)?;
-        fingerprints.push(session.workspace_fingerprints(&graph.specs[0])?);
+        fingerprints.push(if let Some(allowance) = &reader.registry_budget {
+            registry::publication_fingerprints(&session, graph, allowance)?
+        } else {
+            session.workspace_fingerprints(&graph.specs[0])?
+        });
         roster.collect(&session, graph)?;
     }
     let expected = if is_workspace {
-        let inputs = graphs
-            .iter()
-            .zip(&fingerprints)
-            .map(|(graph, fingerprints)| project_lock::WorkspaceInputs {
-                graph: &graph.specs,
-                manifests: &graph.manifests,
-                fingerprints,
-            })
-            .collect::<Vec<_>>();
-        project_lock::expected_workspace(&owner, &owner_snapshot.digest, &inputs)?
+        if let Some(allowance) = &reader.registry_budget {
+            let mut inputs = Vec::new();
+            allowance.borrow_mut().reserve(&mut inputs, graphs.len())?;
+            for (graph, fingerprints) in graphs.iter().zip(&fingerprints) {
+                inputs.push(project_lock::WorkspaceInputs {
+                    graph: &graph.specs,
+                    manifests: &graph.manifests,
+                    fingerprints,
+                });
+            }
+            project_lock::expected_registry_workspace(
+                &owner,
+                &owner_snapshot.digest,
+                &inputs,
+                &mut allowance.borrow_mut(),
+            )?
+        } else {
+            let inputs = graphs
+                .iter()
+                .zip(&fingerprints)
+                .map(|(graph, fingerprints)| project_lock::WorkspaceInputs {
+                    graph: &graph.specs,
+                    manifests: &graph.manifests,
+                    fingerprints,
+                })
+                .collect::<Vec<_>>();
+            project_lock::expected_workspace(&owner, &owner_snapshot.digest, &inputs)?
+        }
     } else {
-        let dependency_fingerprints = fingerprints[0]
-            .iter()
-            .filter(|(index, _)| *index != 0)
-            .cloned()
-            .collect::<Vec<_>>();
-        project_lock::expected(
-            &graphs[0].specs,
-            &graphs[0].manifests,
-            &dependency_fingerprints,
-        )?
+        if let Some(allowance) = &reader.registry_budget {
+            project_lock::expected_registry(
+                &graphs[0].specs,
+                &graphs[0].manifests,
+                fingerprints[0]
+                    .get(1..)
+                    .ok_or("source package root fingerprint is missing")?,
+                &mut allowance.borrow_mut(),
+            )?
+        } else {
+            let dependency_fingerprints = fingerprints[0]
+                .iter()
+                .filter(|(index, _)| *index != 0)
+                .cloned()
+                .collect::<Vec<_>>();
+            project_lock::expected(
+                &graphs[0].specs,
+                &graphs[0].manifests,
+                &dependency_fingerprints,
+            )?
+        }
     };
+    let expected =
+        expected.with_registries(&owner, graphs.iter().flat_map(PackageGraph::registry_pins))?;
     project_lock::verify(&expected, Some(&existing))?;
     for &(slot, index) in packages.values() {
         if graphs[slot].manifests[index].manifest.tests.is_empty() {
             continue;
         }
-        let graph = reroot(&graphs[slot], index);
+        let graph = reroot(&graphs[slot], index, &mut reader)?;
         let mut declared = graph.manifests[0].manifest.tests.iter().collect::<Vec<_>>();
         declared.sort_by_key(|(name, _)| *name);
         for (_, relative) in declared {
@@ -588,6 +740,7 @@ pub(crate) fn package_source_plan(
                 roster.source_bytes_left,
             )
             .map_err(|error| error.message())?;
+            graph.verify_registries(&session)?;
             session.source_package_preflight(Some(true))?;
             roster.collect(&session, &graph)?;
         }
@@ -601,10 +754,28 @@ pub(crate) fn package_source_plan(
         let manifest = &graph.manifests[index];
         let mut replacements = HashMap::new();
         for edge in &graph.specs[index].dependencies {
-            if git_source(&manifest.manifest.dependencies[&edge.alias]) {
-                let path = project_lock::relative(root, &graph.specs[edge.package].root)?;
-                relative_path(&path, true)?;
-                replacements.insert(edge.alias.clone(), path);
+            if git_source(&manifest.manifest.dependencies[&edge.alias])
+                || manifest
+                    .manifest
+                    .registry_dependencies
+                    .as_deref()
+                    .is_some_and(|entries| entries.iter().any(|(name, _)| name == &edge.alias))
+            {
+                if let Some(allowance) = &reader.registry_budget {
+                    let mut budget = allowance.borrow_mut();
+                    let path = project_lock::relative_registry(
+                        root,
+                        &graph.specs[edge.package].root,
+                        &mut budget,
+                    )?;
+                    relative_path(&path, true)?;
+                    let alias = budget.text(&edge.alias)?;
+                    budget.map_insert(&mut replacements, alias, path)?;
+                } else {
+                    let path = project_lock::relative(root, &graph.specs[edge.package].root)?;
+                    relative_path(&path, true)?;
+                    replacements.insert(edge.alias.clone(), path);
+                }
             }
         }
         if replacements.is_empty() {
@@ -612,7 +783,17 @@ pub(crate) fn package_source_plan(
         }
         let path = root.join("oxid.toml");
         let previous = reader.retained_manifest(&path, manifest)?;
-        let bytes = runtime::rewrite_dependency_sources(&path, previous, &replacements)?;
+        let bytes = if let Some(budget) = &reader.registry_budget {
+            crate::project_registry::rewrite_manifest(
+                &path,
+                previous,
+                &replacements,
+                false,
+                &mut budget.borrow_mut(),
+            )?
+        } else {
+            runtime::rewrite_dependency_sources(&path, previous, &replacements)?
+        };
         manifest_bytes = manifest_bytes
             .checked_sub(previous.len())
             .and_then(|count| count.checked_add(bytes.len()))
@@ -620,12 +801,26 @@ pub(crate) fn package_source_plan(
         if manifest_bytes > MANIFEST_BYTES {
             return Err("exported manifests exceed the 8 MiB aggregate limit".into());
         }
-        let snapshot = runtime::parse_typed_manifest_bytes(&path, &bytes)?;
-        updates.insert(root.clone(), snapshot.digest);
+        let snapshot = if let Some(budget) = &reader.registry_budget {
+            crate::project_registry::parse_manifest(&path, &bytes, &mut budget.borrow_mut())?
+        } else {
+            runtime::parse_typed_manifest_bytes(&path, &bytes)?
+        };
+        if let Some(allowance) = &reader.registry_budget {
+            let mut budget = allowance.borrow_mut();
+            let root = budget.path(root)?;
+            budget.map_insert(&mut updates, root, snapshot.digest)?;
+        } else {
+            updates.insert(root.clone(), snapshot.digest);
+        }
         roster.replace(&path, previous, bytes)?;
     }
     if !updates.is_empty() {
-        let bytes = expected.export_with_manifests(&owner, &updates)?;
+        let bytes = if let Some(budget) = &reader.registry_budget {
+            expected.export_registry_with_manifests(&owner, &updates, &mut budget.borrow_mut())?
+        } else {
+            expected.export_with_manifests(&owner, &updates)?
+        };
         roster.replace(&owner.join("oxid.lock"), existing.bytes(), bytes)?;
     }
     let mut anchor = owner.as_path();
@@ -660,12 +855,97 @@ pub(crate) fn package_source_plan(
         input_paths.insert(path);
     }
     files.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    let mut input_paths = input_paths.into_iter().collect::<Vec<_>>();
+    append_registry_input_paths(&mut input_paths, &graphs)?;
     Ok(crate::project_package::SourcePlan {
         owner,
         root,
         files,
-        input_paths: input_paths.into_iter().collect(),
+        input_paths,
     })
+}
+
+fn append_registry_input_paths(
+    input_paths: &mut Vec<PathBuf>,
+    graphs: &[PackageGraph],
+) -> Result<(), String> {
+    let mut added = false;
+    for graph in graphs {
+        if let Some(origins) = &graph.registries {
+            for (_, origin) in &origins.entries {
+                let parent = origin
+                    .root
+                    .parent()
+                    .ok_or("registry cache root is missing")?;
+                let mut present = false;
+                for path in input_paths.iter() {
+                    if path == parent {
+                        present = true;
+                        break;
+                    }
+                }
+                if present {
+                    continue;
+                }
+                let mut budget = origins.allowance.borrow_mut();
+                budget.reserve(input_paths, 1)?;
+                let path = budget.path(parent)?;
+                input_paths.push(path);
+                added = true;
+            }
+        }
+    }
+    if added {
+        input_paths.sort_unstable();
+        input_paths.dedup();
+    }
+    Ok(())
+}
+
+#[repr(C)]
+struct RegistryCollectorRoles {
+    reader: Reader,
+    snapshot_input: &'static runtime::ManifestSnapshot,
+    snapshot_return: Result<runtime::ManifestSnapshot, String>,
+    retained_snapshot: runtime::ManifestSnapshot,
+    retained_key: PathBuf,
+    old_input_roster: BTreeSet<PathBuf>,
+    input_paths: Vec<PathBuf>,
+    graphs: &'static [PackageGraph],
+    graphs_iter: std::slice::Iter<'static, PackageGraph>,
+    graph: &'static PackageGraph,
+    origins: &'static crate::project_registry::GraphOrigins,
+    origins_iter: std::slice::Iter<'static, (usize, Arc<crate::project_registry::Origin>)>,
+    entry: &'static (usize, Arc<crate::project_registry::Origin>),
+    parent: Option<&'static Path>,
+    parent_return: Result<&'static Path, &'static str>,
+    collision_iter: std::slice::Iter<'static, PathBuf>,
+    collision_path: &'static PathBuf,
+    present: bool,
+    allowance: &'static crate::project_registry::Allowance,
+    budget: std::cell::RefMut<'static, crate::project_registry::Budget>,
+    output_path: PathBuf,
+    output_path_return: Result<PathBuf, String>,
+    reservation_return: Result<(), String>,
+    added: bool,
+    append_return: Result<(), String>,
+    path_input: &'static Path,
+    boundary: Option<&'static Path>,
+    temporary_path: PathBuf,
+    components: std::path::Components<'static>,
+    component_return: Option<Component<'static>>,
+    component: Component<'static>,
+    path_metadata_return: std::io::Result<fs::Metadata>,
+    path_metadata: fs::Metadata,
+    path_file_type: fs::FileType,
+    file: bool,
+    expected_file: bool,
+    path_bound: Option<usize>,
+    admitted_bound: Result<usize, &'static str>,
+}
+
+pub(super) fn registry_control_bytes() -> usize {
+    std::mem::size_of::<RegistryCollectorRoles>()
 }
 
 #[cfg(all(
@@ -867,6 +1147,7 @@ mod tests {
             graph_edges_left: 1024,
             git: None,
             cache_roots: BTreeSet::new(),
+            registry_budget: None,
         };
         let path = fixture.0.join("app/oxid.toml");
         let snapshot = reader.manifest(&path).unwrap();
@@ -895,5 +1176,371 @@ mod tests {
         assert!(roster.insert(fixture.0.join("payload"), b"x").is_err());
         assert!(roster.files.is_empty());
         assert_eq!(roster.bytes, PAYLOAD_BYTES);
+    }
+
+    fn manifest_fixture() -> Fixture {
+        let path = std::env::temp_dir().join(format!(
+            "oxid-registry-collector-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&path).unwrap();
+        let fixture = Fixture(path);
+        fixture.write("app/oxid.toml", "[project]\nname=\"app\"\nedition=\"typed-preview\"\n[dependencies]\ncounts={ registry=\"file:///unread/registry\", package=\"counts\", version=\"1.0.0\" }\n[tests]\nsmoke=\"tests/smoke.ox\"\n");
+        fixture
+    }
+
+    fn manifest_reader(allowance: Option<crate::project_registry::Allowance>) -> Reader {
+        Reader {
+            boundary: None,
+            remaining: MANIFEST_BYTES,
+            raw: HashMap::new(),
+            parsed: HashMap::new(),
+            graph_nodes_left: 256,
+            graph_edges_left: 1024,
+            git: None,
+            cache_roots: BTreeSet::new(),
+            registry_budget: allowance,
+        }
+    }
+
+    #[test]
+    fn registry_collector_initial_snapshot_and_map_have_exact_and_fault_admission() {
+        let fixture = manifest_fixture();
+        let path = fixture.0.join("app/oxid.toml");
+        let original = fs::read(&path).unwrap();
+        let measured = crate::project_registry::operation_budget().unwrap();
+        let mut reader = manifest_reader(Some(measured.clone()));
+        let snapshot = reader.manifest(&path).unwrap();
+        let (_, peak, reservations) = measured.borrow().test_observation();
+        assert!(
+            reservations >= 4,
+            "parser, clone, key and map are separately admitted"
+        );
+        assert_eq!(reader.parsed.len(), 1);
+        assert_eq!(
+            reader.retained_manifest(&path, &snapshot).unwrap(),
+            original
+        );
+        assert!(std::rc::Rc::ptr_eq(
+            snapshot.manifest.registry_dependencies.as_ref().unwrap(),
+            reader.parsed[&path]
+                .manifest
+                .registry_dependencies
+                .as_ref()
+                .unwrap()
+        ));
+
+        let exact = crate::project_registry::operation_budget().unwrap();
+        exact.borrow_mut().test_limit(peak);
+        let repeated = manifest_reader(Some(exact.clone()))
+            .manifest(&path)
+            .unwrap();
+        assert_eq!(repeated.digest, snapshot.digest);
+        assert_eq!(exact.borrow().test_observation().1, peak);
+        let short = crate::project_registry::operation_budget().unwrap();
+        short.borrow_mut().test_limit(peak - 1);
+        let mut denied = manifest_reader(Some(short));
+        assert!(denied.manifest(&path).unwrap_err().contains("metadata"));
+        assert!(denied.parsed.is_empty());
+        for ordinal in 0..reservations {
+            let allowance = crate::project_registry::operation_budget().unwrap();
+            allowance.borrow_mut().test_deny_reservation(ordinal);
+            let mut denied = manifest_reader(Some(allowance));
+            assert!(
+                denied.manifest(&path).unwrap_err().contains("injected"),
+                "reservation {ordinal}"
+            );
+            assert!(denied.parsed.is_empty(), "reservation {ordinal}");
+            assert_eq!(fs::read(&path).unwrap(), original);
+        }
+
+        // Only a real registry descriptor creates the lazy allowance. The
+        // predecessor path-only branch retains its original reader behavior.
+        let mut lazy = manifest_reader(None);
+        lazy.manifest(&path).unwrap();
+        assert!(lazy.registry_budget.is_some());
+        fixture.write(
+            "plain.toml",
+            "[project]\nedition=\"typed-preview\"\n[dependencies]\nlocal=\"../local\"\n",
+        );
+        let mut ordinary = manifest_reader(None);
+        ordinary.manifest(&fixture.0.join("plain.toml")).unwrap();
+        assert!(ordinary.registry_budget.is_none());
+    }
+
+    #[test]
+    fn registry_collector_cached_snapshot_is_paid_without_reopening_inputs() {
+        let fixture = manifest_fixture();
+        let path = fixture.0.join("app/oxid.toml");
+        let warm = || {
+            let allowance = crate::project_registry::operation_budget().unwrap();
+            let mut reader = manifest_reader(Some(allowance.clone()));
+            reader.manifest(&path).unwrap();
+            allowance.borrow_mut().test_reset_peak();
+            (reader, allowance)
+        };
+        let (mut reader, measured) = warm();
+        let (before, _, first_reservation) = measured.borrow().test_observation();
+        let remaining = reader.remaining;
+        let snapshot = reader.manifest(&path).unwrap();
+        let (retained, peak, after_reservation) = measured.borrow().test_observation();
+        assert!(retained > before);
+        assert!(after_reservation > first_reservation);
+        assert_eq!(reader.remaining, remaining);
+        assert!(std::rc::Rc::ptr_eq(
+            snapshot.manifest.registry_dependencies.as_ref().unwrap(),
+            reader.parsed[&path]
+                .manifest
+                .registry_dependencies
+                .as_ref()
+                .unwrap()
+        ));
+        assert_ne!(
+            snapshot.manifest.dependencies["counts"].as_ptr(),
+            reader.parsed[&path].manifest.dependencies["counts"].as_ptr()
+        );
+
+        let (mut exact_reader, exact) = warm();
+        exact.borrow_mut().test_limit(peak);
+        assert_eq!(
+            exact_reader.manifest(&path).unwrap().digest,
+            snapshot.digest
+        );
+        assert_eq!(exact.borrow().test_observation().1, peak);
+        let (mut short_reader, short) = warm();
+        short.borrow_mut().test_limit(peak - 1);
+        assert!(short_reader
+            .manifest(&path)
+            .unwrap_err()
+            .contains("metadata"));
+        assert_eq!(short_reader.parsed[&path].digest, snapshot.digest);
+        for ordinal in first_reservation..after_reservation {
+            let (mut denied, allowance) = warm();
+            allowance.borrow_mut().test_deny_reservation(ordinal);
+            assert!(denied.manifest(&path).unwrap_err().contains("injected"));
+            assert_eq!(denied.parsed[&path].digest, snapshot.digest);
+            assert_eq!(denied.remaining, remaining);
+        }
+        let original = fs::read(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+        let cached = reader.manifest(&path).unwrap();
+        assert_eq!(cached.digest, snapshot.digest);
+        assert_eq!(reader.retained_manifest(&path, &cached).unwrap(), original);
+    }
+
+    #[test]
+    fn registry_collector_path_check_precedes_temporary_allocation() {
+        let fixture = manifest_fixture();
+        let path = fixture.0.join("app");
+        let original = fs::read(path.join("oxid.toml")).unwrap();
+        let mut measured = crate::project_registry::Budget::new().unwrap();
+        let before = measured.test_observation().0;
+        registry_ordinary_path(&path, &mut measured).unwrap();
+        let (retained, peak, reservations) = measured.test_observation();
+        assert_eq!(retained, before);
+        assert_eq!(reservations, 1);
+        let mut exact = crate::project_registry::Budget::new().unwrap();
+        exact.test_limit(peak);
+        registry_ordinary_path(&path, &mut exact).unwrap();
+        assert_eq!(exact.test_observation().1, peak);
+        let mut short = crate::project_registry::Budget::new().unwrap();
+        short.test_limit(peak - 1);
+        assert!(registry_ordinary_path(&path, &mut short)
+            .unwrap_err()
+            .contains("metadata"));
+        assert_eq!(short.test_observation().2, 0);
+        let mut denied = crate::project_registry::Budget::new().unwrap();
+        denied.test_deny_reservation(0);
+        // This missing input would produce an inspection error if the callback
+        // ran. The allocator refusal must take precedence over that read.
+        assert!(registry_ordinary_path(&path.join("missing"), &mut denied)
+            .unwrap_err()
+            .contains("injected"));
+        assert_eq!(fs::read(path.join("oxid.toml")).unwrap(), original);
+    }
+
+    fn registry_graph_fixture() -> Fixture {
+        use crate::project_package::{LibraryArchive, LibraryMember};
+        let fixture = manifest_fixture();
+        fixture.write(
+            "registry/registry.toml",
+            "version = 1\nkind = \"typed-private-registry-v1\"\n",
+        );
+        let release = fixture.0.join("registry/packages/counts/1.0.0");
+        fs::create_dir_all(&release).unwrap();
+        let manifest = b"[project]\nname=\"counts\"\nversion=\"1.0.0\"\nedition=\"typed-preview\"\nkind=\"lib\"\n";
+        let archive = LibraryArchive {
+            root: "source".into(),
+            files: vec![
+                LibraryMember {
+                    path: "source/oxid.toml".into(),
+                    bytes: manifest.to_vec(),
+                },
+                LibraryMember {
+                    path: "source/src/lib.ox".into(),
+                    bytes: b"pub fn answer()->i32{return 7;}".to_vec(),
+                },
+            ],
+        };
+        let info = crate::project_package::write_library(
+            &archive,
+            &mut fs::File::create(release.join("artifact.tar")).unwrap(),
+            &mut crate::project_registry::Budget::new().unwrap(),
+        )
+        .unwrap();
+        fs::write(release.join("release.toml"), format!(
+            "version = 1\nkind = \"typed-library-release-v1\"\nname = \"counts\"\npackage-version = \"1.0.0\"\nedition = \"typed-preview\"\nentry = \"src/lib.ox\"\nmanifest = \"{}\"\nartifact = \"{}\"\nbytes = {}\n",
+            crate::project_registry::hash(manifest), info.sha256, info.bytes
+        )).unwrap();
+        fixture.write("app/oxid.toml", &format!(
+            "[project]\nname=\"app\"\nedition=\"typed-preview\"\n[dependencies]\nfirst={{ registry=\"file://{}\", package=\"counts\", version=\"1.0.0\" }}\nsecond={{ registry=\"file://{}\", package=\"counts\", version=\"1.0.0\" }}\n",
+            fixture.0.join("registry").display(), fixture.0.join("registry").display()
+        ));
+        fixture.write("app/src/main.ox", "fn main()->i32{return 0;}");
+        fixture
+    }
+
+    fn admitted_registry_graphs(
+        fixture: &Fixture,
+    ) -> (Vec<PackageGraph>, crate::project_registry::Allowance) {
+        let root = fixture.0.join("app");
+        let mut reader = manifest_reader(None);
+        reader.git = Some(RegularProjectReader {
+            root: root.clone(),
+            locked: false,
+            offline: false,
+            git_roots: Vec::new(),
+            registry: None,
+            registry_budget: None,
+            registry_no_fetch: false,
+        });
+        let snapshot = reader.manifest(&root.join("oxid.toml")).unwrap();
+        let graphs = vec![
+            package_graph_with(&root, &snapshot, &mut reader).unwrap(),
+            package_graph_with(&root, &snapshot, &mut reader).unwrap(),
+        ];
+        assert!(
+            reader.cache_roots.is_empty(),
+            "registry parents are borrowed from graph origins"
+        );
+        assert_eq!(graphs[0].specs.len(), 2);
+        assert_eq!(
+            graphs[0].specs[0].dependencies[0].package,
+            graphs[0].specs[0].dependencies[1].package
+        );
+        let allowance = reader.registry_budget.unwrap();
+        allowance.borrow_mut().test_reset_peak();
+        (graphs, allowance)
+    }
+
+    #[test]
+    fn registry_collector_collision_roster_preserves_exact_parents_and_admission() {
+        let fixture = registry_graph_fixture();
+        // First establish an authentic immutable cache. Every measured replay
+        // thereafter uses the same complete cache and actual graph origins.
+        admitted_registry_graphs(&fixture);
+        let (graphs, measured) = admitted_registry_graphs(&fixture);
+        let original = vec![fixture.0.join("app/oxid.toml")];
+        let parent = graphs[0].registries.as_ref().unwrap().entries[0]
+            .1
+            .root
+            .parent()
+            .unwrap();
+        let mut expected = original.iter().cloned().collect::<BTreeSet<_>>();
+        expected.insert(parent.to_owned());
+        let expected = expected.into_iter().collect::<Vec<_>>();
+        let mut paths = original.clone();
+        let first_reservation = measured.borrow().test_observation().2;
+        append_registry_input_paths(&mut paths, &graphs).unwrap();
+        assert_eq!(paths, expected);
+        assert_eq!(
+            paths.len(),
+            original.len() + 1,
+            "duplicate graph parents appear once"
+        );
+        let (_, peak, after_reservation) = measured.borrow().test_observation();
+        assert_eq!(
+            after_reservation - first_reservation,
+            2,
+            "one Vec growth and one owned path"
+        );
+        let capacity = paths.capacity();
+        let observation = measured.borrow().test_observation();
+        append_registry_input_paths(&mut paths, &graphs).unwrap();
+        assert_eq!(paths, expected);
+        assert_eq!(paths.capacity(), capacity);
+        assert_eq!(measured.borrow().test_observation(), observation);
+
+        let (exact_graphs, exact) = admitted_registry_graphs(&fixture);
+        exact.borrow_mut().test_limit(peak);
+        let mut exact_paths = original.clone();
+        append_registry_input_paths(&mut exact_paths, &exact_graphs).unwrap();
+        assert_eq!(exact_paths, expected);
+        assert_eq!(exact.borrow().test_observation().1, peak);
+        let (short_graphs, short) = admitted_registry_graphs(&fixture);
+        short.borrow_mut().test_limit(peak - 1);
+        let mut short_paths = original.clone();
+        assert!(append_registry_input_paths(&mut short_paths, &short_graphs)
+            .unwrap_err()
+            .contains("metadata"));
+        assert_eq!(short_paths, original);
+        for ordinal in first_reservation..after_reservation {
+            let (denied_graphs, denied) = admitted_registry_graphs(&fixture);
+            denied.borrow_mut().test_deny_reservation(ordinal);
+            let mut paths = original.clone();
+            assert!(append_registry_input_paths(&mut paths, &denied_graphs)
+                .unwrap_err()
+                .contains("injected"));
+            assert_eq!(paths, original);
+        }
+        let before = original.as_ptr();
+        let mut unchanged = original;
+        let capacity = unchanged.capacity();
+        append_registry_input_paths(
+            &mut unchanged,
+            &[PackageGraph {
+                specs: Vec::new(),
+                manifests: Vec::new(),
+                registries: None,
+            }],
+        )
+        .unwrap();
+        assert_eq!(unchanged.as_ptr(), before);
+        assert_eq!(unchanged.capacity(), capacity);
+        assert_eq!(unchanged, vec![fixture.0.join("app/oxid.toml")]);
+    }
+
+    #[test]
+    fn registry_collector_control_roles_have_independent_offsets_and_alignment() {
+        use std::mem::{align_of, size_of};
+        macro_rules! layout {
+            ($($field:ident : $ty:ty),+ $(,)?) => {{
+                let mut bytes = 0usize;
+                let mut alignment = 1usize;
+                $(let align = align_of::<$ty>(); alignment = alignment.max(align);
+                  bytes = bytes.div_ceil(align) * align;
+                  assert_eq!(std::mem::offset_of!(RegistryCollectorRoles, $field), bytes);
+                  bytes += size_of::<$ty>();)+
+                assert_eq!(align_of::<RegistryCollectorRoles>(), alignment);
+                assert_eq!(registry_control_bytes(), bytes.div_ceil(alignment) * alignment);
+            }};
+        }
+        layout!(reader: Reader, snapshot_input: &'static runtime::ManifestSnapshot,
+            snapshot_return: Result<runtime::ManifestSnapshot,String>, retained_snapshot: runtime::ManifestSnapshot,
+            retained_key: PathBuf, old_input_roster: BTreeSet<PathBuf>, input_paths: Vec<PathBuf>,
+            graphs: &'static [PackageGraph], graphs_iter: std::slice::Iter<'static,PackageGraph>, graph: &'static PackageGraph,
+            origins: &'static crate::project_registry::GraphOrigins,
+            origins_iter: std::slice::Iter<'static,(usize,Arc<crate::project_registry::Origin>)>,
+            entry: &'static (usize,Arc<crate::project_registry::Origin>), parent: Option<&'static Path>,
+            parent_return: Result<&'static Path,&'static str>, collision_iter: std::slice::Iter<'static,PathBuf>,
+            collision_path: &'static PathBuf, present: bool, allowance: &'static crate::project_registry::Allowance,
+            budget: std::cell::RefMut<'static,crate::project_registry::Budget>, output_path: PathBuf,
+            output_path_return: Result<PathBuf,String>, reservation_return: Result<(),String>, added: bool,
+            append_return: Result<(),String>, path_input: &'static Path, boundary: Option<&'static Path>,
+            temporary_path: PathBuf, components: std::path::Components<'static>, component_return: Option<Component<'static>>,
+            component: Component<'static>, path_metadata_return: std::io::Result<fs::Metadata>, path_metadata: fs::Metadata,
+            path_file_type: fs::FileType, file: bool, expected_file: bool, path_bound: Option<usize>,
+            admitted_bound: Result<usize,&'static str>);
     }
 }

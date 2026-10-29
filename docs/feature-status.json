@@ -2277,6 +2277,35 @@
         "scripts/verify_python_native_package.py"
       ],
       "evidence": []
+    },
+    {
+      "id": "private-file-registries",
+      "summary": "Publish immutable library versions to a private file registry and reuse their verified sources offline.",
+      "status": "experimental",
+      "classification": "production-path",
+      "edition": "typed-preview",
+      "backend": "Typed project and workspace resolution with exact-version source archives and versioned input locks.",
+      "target_scope": "Publication, verified offline reuse and dev/release native deployment validated on Linux x86_64 with LLVM 19.1.7. Other hosts remain unverified.",
+      "owner": "unassigned",
+      "reviewer": "unassigned",
+      "spec": [
+        "docs/TYPED_PROJECTS.md",
+        "rfcs/0075-typed-private-registry.md"
+      ],
+      "implementation": [
+        "src/project_registry.rs",
+        "src/project_registry/resources.rs",
+        "src/project_cli/registry.rs",
+        "src/project_lock.rs",
+        "src/project_package/archive/library.rs"
+      ],
+      "tests": [
+        "src/project_registry/tests.rs",
+        "src/project_cli/package.rs",
+        "scripts/verify_typed_registry.py"
+      ],
+      "evidence": [],
+      "limitations": "Exact stable versions and trusted file:/// registries only. No version ranges, HTTPS registry service, publisher authentication, search, yank, mirrors or vendor command. First-use trust does not authenticate a publisher; recorded source and artifact hashes remain immutable. Registry and existing project resource limits apply."
     }
   ]
 }

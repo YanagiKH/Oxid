@@ -31,6 +31,7 @@ pub(super) struct Workspace {
     members: Vec<Member>,
     defaults: Vec<usize>,
     current: Option<usize>,
+    registry_budget: Option<crate::project_registry::Allowance>,
 }
 
 fn member_path(value: &str) -> Result<(), String> {
@@ -75,6 +76,12 @@ fn member_directory(root: &Path, value: &str) -> Result<PathBuf, String> {
 }
 
 pub(super) fn discover() -> Result<Option<Workspace>, String> {
+    discover_with_registry_budget(None)
+}
+
+pub(super) fn discover_with_registry_budget(
+    registry_budget: Option<crate::project_registry::Allowance>,
+) -> Result<Option<Workspace>, String> {
     let cwd = fs::canonicalize(
         std::env::current_dir()
             .map_err(|error| format!("cannot read current directory: {error}"))?,
@@ -100,13 +107,9 @@ pub(super) fn discover() -> Result<Option<Workspace>, String> {
     let Some(root) = found else {
         return Ok(None);
     };
-    let snapshot = runtime::load_typed_manifest(&root.join("oxid.toml"))?;
-    let mut reader = RegularProjectReader {
-        root: root.clone(),
-        locked: true,
-        offline: true,
-        git_roots: Vec::new(),
-    };
+    let mut reader = RegularProjectReader::new(root.clone(), true, true);
+    reader.registry_budget = registry_budget;
+    let snapshot = reader.manifest(&root.join("oxid.toml"))?;
     load_roster(root, &cwd, snapshot, &mut reader).map(Some)
 }
 
@@ -118,6 +121,7 @@ pub(super) fn load_roster(
     snapshot: runtime::ManifestSnapshot,
     reader: &mut dyn ProjectReader,
 ) -> Result<Workspace, String> {
+    reader.registry_manifest(&snapshot)?;
     let declaration = snapshot
         .workspace
         .as_ref()
@@ -240,10 +244,61 @@ pub(super) fn load_roster(
         members,
         defaults,
         current,
+        registry_budget: reader.registry_allowance(),
     })
 }
 
 impl Workspace {
+    pub(super) fn publication(
+        &self,
+        selection: Option<&str>,
+        budget: crate::project_registry::Allowance,
+    ) -> Result<
+        (
+            PathBuf,
+            runtime::ManifestSnapshot,
+            Vec<PackageGraph>,
+            usize,
+            project_lock::Existing,
+        ),
+        String,
+    > {
+        let mut allowance = budget.borrow_mut();
+        let options = Options {
+            package: selection.map(|value| allowance.text(value)).transpose()?,
+            words: {
+                let mut words = Vec::new();
+                allowance.reserve(&mut words, 1)?;
+                words.push(allowance.text("check")?);
+                words
+            },
+            ..Options::default()
+        };
+        let selected = allowance.scoped(
+            2 * self.members.len().max(4).next_power_of_two() * std::mem::size_of::<usize>(),
+            || self.selected(&options),
+            |selected| Ok(selected.capacity() * std::mem::size_of::<usize>()),
+        )?;
+        if selected.len() != 1 {
+            return Err(
+                "publish requires exactly one library member; select it with --package".into(),
+            );
+        }
+        let index = selected[0];
+        crate::project_registry::publication_manifest(&self.members[index].snapshot.manifest)?;
+        let existing = project_lock::read_registry(&self.root, true, true, &mut allowance)?
+            .ok_or("publish requires the existing author lock")?;
+        let mut reader = RegularProjectReader::new(allowance.path(&self.root)?, true, true);
+        let mut scope = Vec::new();
+        allowance.reserve(&mut scope, self.members.len())?;
+        scope.extend(0..self.members.len());
+        let owner = allowance.path(&self.root)?;
+        let snapshot = crate::project_registry::clone_manifest(&self.snapshot, &mut allowance)?;
+        drop(allowance);
+        reader.registry_budget = Some(budget);
+        let graphs = self.graphs_with_reader(&scope, &mut reader)?;
+        Ok((owner, snapshot, graphs, index, existing))
+    }
     pub(super) fn source_members(
         &self,
     ) -> impl Iterator<Item = (&Path, &runtime::ManifestSnapshot)> {
@@ -257,17 +312,27 @@ impl Workspace {
         scope: &[usize],
         locked: bool,
         offline: bool,
+        registry_no_fetch: bool,
+        registry_budget: Option<crate::project_registry::Allowance>,
+    ) -> Result<Vec<PackageGraph>, String> {
+        let mut reader = RegularProjectReader::new(self.root.clone(), locked, offline);
+        reader.registry_budget = registry_budget;
+        reader.registry_no_fetch = registry_no_fetch;
+        self.graphs_with_reader(scope, &mut reader)
+    }
+    fn graphs_with_reader(
+        &self,
+        scope: &[usize],
+        reader: &mut RegularProjectReader,
     ) -> Result<Vec<PackageGraph>, String> {
         let mut graphs = Vec::new();
         let mut nodes = 0usize;
         let mut edges = 0usize;
         for &index in scope {
-            let graph = package_graph_cache_owner(
+            let graph = package_graph_with(
                 &self.members[index].root,
                 &self.members[index].snapshot,
-                locked,
-                offline,
-                &self.root,
+                reader,
             )?;
             nodes += graph.specs.len();
             edges += graph
@@ -289,6 +354,9 @@ impl Workspace {
                     return Err("binary workspace members cannot be imported as library dependencies; declare kind = \"lib\"".into());
                 }
             }
+            if let Some(budget) = &reader.registry_budget {
+                budget.borrow_mut().reserve(&mut graphs, 1)?;
+            }
             graphs.push(graph);
         }
         Ok(graphs)
@@ -299,6 +367,40 @@ impl Workspace {
         graphs: &[PackageGraph],
         prepared: &[frontend::PreparedPackageProject<'_>],
     ) -> Result<project_lock::Snapshot, String> {
+        for (graph, prepared) in graphs.iter().zip(prepared) {
+            graph.verify_registries(prepared)?;
+        }
+        if let Some(origins) = graphs.iter().find_map(|graph| graph.registries.as_ref()) {
+            let allowance = &origins.allowance;
+            let mut fingerprints = Vec::new();
+            allowance
+                .borrow_mut()
+                .reserve(&mut fingerprints, graphs.len())?;
+            for (graph, session) in graphs.iter().zip(prepared) {
+                fingerprints.push(registry::publication_fingerprints(
+                    session, graph, allowance,
+                )?);
+            }
+            let mut inputs = Vec::new();
+            allowance.borrow_mut().reserve(&mut inputs, graphs.len())?;
+            for (graph, fingerprints) in graphs.iter().zip(&fingerprints) {
+                inputs.push(project_lock::WorkspaceInputs {
+                    graph: &graph.specs,
+                    manifests: &graph.manifests,
+                    fingerprints,
+                });
+            }
+            let expected = project_lock::expected_registry_workspace(
+                &self.root,
+                &self.snapshot.digest,
+                &inputs,
+                &mut allowance.borrow_mut(),
+            )?;
+            return expected.with_registries(
+                &self.root,
+                graphs.iter().flat_map(PackageGraph::registry_pins),
+            );
+        }
         let fingerprints = prepared
             .iter()
             .enumerate()
@@ -313,13 +415,19 @@ impl Workspace {
                 fingerprints: &fingerprints[slot],
             })
             .collect::<Vec<_>>();
-        project_lock::expected_workspace(&self.root, &self.snapshot.digest, &inputs)
+        project_lock::expected_workspace(&self.root, &self.snapshot.digest, &inputs)?
+            .with_registries(
+                &self.root,
+                graphs.iter().flat_map(PackageGraph::registry_pins),
+            )
     }
 
     pub(super) fn validate_for_doctor(&self) -> Result<String, String> {
-        let existing = project_lock::read_workspace(&self.root, false)?;
+        let mut registry_budget = self.registry_budget.clone();
+        let existing =
+            project_lock::read_with_registry(&self.root, false, true, &mut registry_budget)?;
         let scope = (0..self.members.len()).collect::<Vec<_>>();
-        let graphs = self.graphs(&scope, true, true)?;
+        let graphs = self.graphs(&scope, true, true, true, registry_budget)?;
         let mut prepared = Vec::new();
         let (mut files, mut bytes) = (0, 0);
         for graph in &graphs {
@@ -461,7 +569,13 @@ impl Workspace {
                 true,
             ));
         }
-        let existing = project_lock::read_workspace(&self.root, options.requires_lock())?;
+        let mut registry_budget = self.registry_budget.clone();
+        let existing = project_lock::read_with_registry(
+            &self.root,
+            options.requires_lock(),
+            true,
+            &mut registry_budget,
+        )?;
         let scope = if existing.is_some() || options.command() == "lock" {
             (0..self.members.len()).collect::<Vec<_>>()
         } else {
@@ -471,6 +585,8 @@ impl Workspace {
             &scope,
             options.requires_lock(),
             options.offline || options.frozen,
+            options.command() == "doc",
+            registry_budget,
         )?;
         let mut prepared = Vec::new();
         let mut files = 0usize;
@@ -527,7 +643,17 @@ impl Workspace {
         let expected = self.lock_snapshot(&graphs, &prepared)?;
         if options.command() == "lock" {
             let changed =
-                project_lock::publish(&self.root, &expected, existing.as_ref(), options.update)?;
+                if let Some(origins) = graphs.iter().find_map(|graph| graph.registries.as_ref()) {
+                    project_lock::publish_registry(
+                        &self.root,
+                        &expected,
+                        existing.as_ref(),
+                        options.update,
+                        &mut origins.allowance.borrow_mut(),
+                    )?
+                } else {
+                    project_lock::publish(&self.root, &expected, existing.as_ref(), options.update)?
+                };
             output(options, &format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"workspace-lock-summary\",\"success\":true,\"members\":{},\"changed\":{changed}}}", self.members.len()), if changed { "workspace lock written" } else { "workspace lock verified" })?;
             return Ok(0);
         }
@@ -574,6 +700,7 @@ impl Workspace {
             }
             let session = frontend::prepare_package_project(&graphs[slot].specs, Some(&entry))
                 .map_err(|error| error.message())?;
+            graphs[slot].verify_registries(&session)?;
             verify_test_dependencies(&prepared[slot], &session)?;
             return Ok(session.execute_with_execution(
                 frontend::PackageCommand::Run,
@@ -716,6 +843,7 @@ impl Workspace {
                 let entry = local_source(&member.root, path)?;
                 let session = frontend::prepare_package_project(&graphs[slot].specs, Some(&entry))
                     .map_err(|error| error.message())?;
+                graphs[slot].verify_registries(&session)?;
                 add_usage(&session, &mut files, &mut bytes)?;
                 verify_test_dependencies(&prepared[slot], &session)?;
                 let status = session.workspace_preflight(options.json(), true, false, false);

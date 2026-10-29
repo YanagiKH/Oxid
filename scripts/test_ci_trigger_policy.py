@@ -366,6 +366,42 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('${{ runner.temp }}/current-native-libraries', native)
         self.assertNotRegex(native, r'(?m)^    (?:if|needs):|continue-on-error:')
 
+    def test_scalar_library_source_policy_replay_is_mandatory_and_keeps_evidence(self):
+        replay = block(self.ci, 'scalar-library-source-policy-predecessor', 2)
+        self.assertIn('runs-on: ubuntu-latest', replay)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', replay)
+        self.assertIn('cp scripts/replay_scalar_library_source_policy.py '
+                      '"$RUNNER_TEMP/scalar-library-source-policy-replay.py"', replay)
+        self.assertIn('ref: 8f2c29eaffabbd90c591bbdc440ae6e23acf1353', replay)
+        self.assertIn('fetch-depth: 0', replay)
+        self.assertIn('python3 -B "$RUNNER_TEMP/scalar-library-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/scalar-library-source-policy-replay"', replay)
+        self.assertIn('if: always()', replay)
+        self.assertIn('path: ${{ runner.temp }}/scalar-library-source-policy-replay', replay)
+        self.assertIn('if-no-files-found: error', replay)
+        self.assertIn('retention-days: 14', replay)
+        self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+
+    def test_private_registry_acceptance_is_mandatory_and_keeps_native_evidence(self):
+        native = block(self.ci, 'native-numeric-and-packages', 2) + '\n'
+        self.assertIn('      - name: Verify private registry publication offline builds and deployment\n'
+                      '        run: |\n'
+                      '          python3 -B scripts/verify_typed_registry.py '
+                      'target/debug/oxid target/release/oxid \\\n'
+                      '            --output "$RUNNER_TEMP/current-typed-registry" --native\n', native)
+        self.assertIn('          cargo build --locked\n', native)
+        self.assertIn('          cargo build --release --locked\n', native)
+        self.assertIn('      - name: Retain private registry evidence\n'
+                      '        if: always()\n'
+                      '        uses: actions/upload-artifact@v4\n'
+                      '        with:\n'
+                      '          name: current-typed-registry\n'
+                      '          path: ${{ runner.temp }}/current-typed-registry\n'
+                      '          include-hidden-files: true\n'
+                      '          if-no-files-found: error\n'
+                      '          retention-days: 14\n', native)
+        self.assertNotRegex(native, r'(?m)^    (?:if|needs):|continue-on-error:')
+
     def test_native_numeric_shard_preserves_the_complete_workload_and_evidence(self):
         primary = block(self.ci, 'native-projects', 2)
         shard = block(self.ci, 'native-numeric-and-packages', 2)
