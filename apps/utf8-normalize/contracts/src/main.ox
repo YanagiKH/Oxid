@@ -26,6 +26,11 @@ use crate::text::into_bytes;
 use crate::text::append_char;
 use crate::text::char_at;
 use crate::text::CharacterRead;
+use crate::text::FromUtf8;
+use crate::text::from_utf8;
+use crate::text::append_text;
+use crate::text::byte_capacity;
+use crate::text::try_reserve_bytes;
 
 fn character_append_succeeded(status: AppendStatus) -> bool {
     match status {
@@ -521,6 +526,201 @@ fn check_into_bytes_at_memory_limit() -> i32 {
     return 0;
 }
 
+fn borrowed_invalid_at(input: &[u8], expected: i32) -> bool {
+    let converted = from_utf8(&*input);
+    match converted {
+        FromUtf8::Ok(text) => { return false; },
+        FromUtf8::InvalidInput(offset) => { return offset == expected; },
+        FromUtf8::CapacityOverflow => { return false; },
+        FromUtf8::AllocationFailed => { return false; },
+        FromUtf8::MemoryLimit => { return false; },
+    }
+}
+
+fn check_borrowed_conversion() -> i32 {
+    let empty: [u8; 0] = [];
+    let empty_result = from_utf8(&empty);
+    match empty_result {
+        FromUtf8::Ok(text) => {
+            if byte_len(&text) != 0 || byte_capacity(&text) != 0 || scalar_count(&text) != 0 { return -92; }
+        },
+        FromUtf8::InvalidInput(offset) => { return -93; },
+        FromUtf8::CapacityOverflow => { return -93; },
+        FromUtf8::AllocationFailed => { return -93; },
+        FromUtf8::MemoryLimit => { return -93; },
+    }
+    let overlong = [192u8, 128u8];
+    let surrogate = [65u8, 237u8, 160u8, 128u8];
+    let too_large = [244u8, 144u8, 128u8, 128u8];
+    let incomplete = [65u8, 240u8, 159u8, 166u8];
+    if !borrowed_invalid_at(&overlong, 0) || !borrowed_invalid_at(&surrogate, 1) || !borrowed_invalid_at(&too_large, 0) || !borrowed_invalid_at(&incomplete, 1) { return -94; }
+    let mut input = b"\0A¢€🦀é";
+    let expected = b"\0A¢€🦀é";
+    let converted = from_utf8(&input);
+    match converted {
+        FromUtf8::Ok(text) => {
+            let mut document = text;
+            input[1] = 90u8;
+            if !equals_utf8(&document, &expected) || input[1] != 90u8 { return -95; }
+            if byte_len(&document) != 14 || scalar_count(&document) != 7 { return -96; }
+            if !character_is(&document, 0, '\0', 1) || !character_is(&document, 1, 'A', 2) || !character_is(&document, 2, '¢', 4) || !character_is(&document, 4, '€', 7) || !character_is(&document, 7, '🦀', 11) || !character_is(&document, 11, 'e', 12) || !character_is(&document, 12, '\u{301}', 14) { return -97; }
+            if !no_character(&document, 3, false) || !no_character(&document, 5, false) || !no_character(&document, 6, false) || !no_character(&document, 8, false) || !no_character(&document, 9, false) || !no_character(&document, 10, false) || !no_character(&document, 13, false) || !no_character(&document, 14, true) { return -98; }
+            if truncate(&mut document, 13) || !equals_utf8(&document, &expected) { return -99; }
+            if !truncate(&mut document, 12) || byte_len(&document) != 12 || scalar_count(&document) != 6 { return -100; }
+        },
+        FromUtf8::InvalidInput(offset) => { return -101; },
+        FromUtf8::CapacityOverflow => { return -101; },
+        FromUtf8::AllocationFailed => { return -101; },
+        FromUtf8::MemoryLimit => { return -101; },
+    }
+    return 0;
+}
+
+fn check_text_reservation() -> i32 {
+    let expected = b"\0A¢€🦀é";
+    let mut document = new_text();
+    let original = byte_capacity(&document);
+    if !grew(try_reserve_bytes(&mut document, 0)) || byte_capacity(&document) != original { return -102; }
+    let copied = append_utf8(&mut document, &expected);
+    match copied {
+        AppendStatus::Ok => {},
+        AppendStatus::InvalidInput(offset) => { return -103; },
+        AppendStatus::CapacityOverflow => { return -103; },
+        AppendStatus::AllocationFailed => { return -103; },
+        AppendStatus::MemoryLimit => { return -103; },
+    }
+    if !grew(try_reserve_bytes(&mut document, 32)) { return -104; }
+    let reserved = byte_capacity(&document);
+    if reserved < 46 || !equals_utf8(&document, &expected) || byte_len(&document) != 14 { return -105; }
+    let negative = try_reserve_bytes(&mut document, -1);
+    match negative {
+        GrowStatus::CapacityOverflow => {},
+        GrowStatus::Ok => { return -106; },
+        GrowStatus::AllocationFailed => { return -106; },
+        GrowStatus::MemoryLimit => { return -106; },
+    }
+    let overflow = try_reserve_bytes(&mut document, 2147483647);
+    match overflow {
+        GrowStatus::CapacityOverflow => {},
+        GrowStatus::Ok => { return -107; },
+        GrowStatus::AllocationFailed => { return -107; },
+        GrowStatus::MemoryLimit => { return -107; },
+    }
+    if byte_capacity(&document) != reserved || !equals_utf8(&document, &expected) || scalar_count(&document) != 7 { return -108; }
+    return 0;
+}
+
+fn append_greeting(source: Text) -> i32 {
+    let prefix = b"Hello, ";
+    let suffix = b"Oxid 🦀";
+    let expected = b"Hello, Oxid 🦀";
+    let mut document = new_text();
+    let initialized = append_utf8(&mut document, &prefix);
+    match initialized {
+        AppendStatus::Ok => {},
+        AppendStatus::InvalidInput(offset) => { return -109; },
+        AppendStatus::CapacityOverflow => { return -109; },
+        AppendStatus::AllocationFailed => { return -109; },
+        AppendStatus::MemoryLimit => { return -109; },
+    }
+    let source_capacity = byte_capacity(&source);
+    if !grew(append_text(&mut document, &source)) { return -110; }
+    if !equals_utf8(&document, &expected) || byte_len(&document) != 16 || scalar_count(&document) != 13 { return -111; }
+    if !equals_utf8(&source, &suffix) || byte_capacity(&source) != source_capacity { return -112; }
+    let empty = new_text();
+    let previous_capacity = byte_capacity(&document);
+    if !grew(append_text(&mut document, &empty)) || byte_capacity(&document) != previous_capacity || !equals_utf8(&document, &expected) { return -113; }
+    return 0;
+}
+
+fn check_text_append() -> i32 {
+    let suffix = b"Oxid 🦀";
+    let converted = from_utf8(&suffix);
+    match converted {
+        FromUtf8::Ok(text) => { return append_greeting(text); },
+        FromUtf8::InvalidInput(offset) => { return -114; },
+        FromUtf8::CapacityOverflow => { return -114; },
+        FromUtf8::AllocationFailed => { return -114; },
+        FromUtf8::MemoryLimit => { return -114; },
+    }
+}
+
+fn refuse_text_growth(source: &Text, output: &mut Text) -> i32 {
+    let expected = b"ABCDEFGH";
+    let source_capacity = byte_capacity(&*source);
+    let output_capacity = byte_capacity(&*output);
+    if source_capacity != 8 || output_capacity != 8 { return -115; }
+    let mut filler = new();
+    // Two text allocations and this filler each have a 32-byte heap header.
+    let available = 16777216 - source_capacity - output_capacity - 96;
+    if !grew(try_reserve(&mut filler, available)) { return -116; }
+    let refused = append_text(&mut *output, &*source);
+    match refused {
+        GrowStatus::MemoryLimit => {},
+        GrowStatus::Ok => { return -117; },
+        GrowStatus::CapacityOverflow => { return -117; },
+        GrowStatus::AllocationFailed => { return -117; },
+    }
+    let reservation = try_reserve_bytes(&mut *output, 1);
+    match reservation {
+        GrowStatus::MemoryLimit => {},
+        GrowStatus::Ok => { return -118; },
+        GrowStatus::CapacityOverflow => { return -118; },
+        GrowStatus::AllocationFailed => { return -118; },
+    }
+    let copied = from_utf8(&expected);
+    match copied {
+        FromUtf8::MemoryLimit => {},
+        FromUtf8::Ok(text) => { return -119; },
+        FromUtf8::InvalidInput(offset) => { return -119; },
+        FromUtf8::CapacityOverflow => { return -119; },
+        FromUtf8::AllocationFailed => { return -119; },
+    }
+    let invalid = [65u8, 255u8];
+    if !borrowed_invalid_at(&invalid, 1) { return -120; }
+    let empty: [u8; 0] = [];
+    let empty_result = from_utf8(&empty);
+    match empty_result {
+        FromUtf8::Ok(text) => {
+            if byte_len(&text) != 0 || byte_capacity(&text) != 0 { return -121; }
+        },
+        FromUtf8::InvalidInput(offset) => { return -122; },
+        FromUtf8::CapacityOverflow => { return -122; },
+        FromUtf8::AllocationFailed => { return -122; },
+        FromUtf8::MemoryLimit => { return -122; },
+    }
+    if !equals_utf8(&*source, &expected) || !equals_utf8(&*output, &expected) || byte_len(&*source) != 8 || byte_len(&*output) != 8 || byte_capacity(&*source) != source_capacity || byte_capacity(&*output) != output_capacity { return -123; }
+    return 0;
+}
+
+fn check_text_memory_refusal() -> i32 {
+    let expected = b"ABCDEFGH";
+    let doubled = b"ABCDEFGHABCDEFGH";
+    let converted = from_utf8(&expected);
+    match converted {
+        FromUtf8::Ok(source) => {
+            let mut document = new_text();
+            let initialized = append_utf8(&mut document, &expected);
+            match initialized {
+                AppendStatus::Ok => {},
+                AppendStatus::InvalidInput(offset) => { return -124; },
+                AppendStatus::CapacityOverflow => { return -124; },
+                AppendStatus::AllocationFailed => { return -124; },
+                AppendStatus::MemoryLimit => { return -124; },
+            }
+            let refused = refuse_text_growth(&source, &mut document);
+            if refused != 0 { return refused; }
+            if !grew(append_text(&mut document, &source)) { return -125; }
+            if !equals_utf8(&document, &doubled) || !equals_utf8(&source, &expected) { return -126; }
+        },
+        FromUtf8::InvalidInput(offset) => { return -127; },
+        FromUtf8::CapacityOverflow => { return -127; },
+        FromUtf8::AllocationFailed => { return -127; },
+        FromUtf8::MemoryLimit => { return -127; },
+    }
+    return 0;
+}
+
 fn main() -> i32 {
     let empty_result = check_empty();
     if empty_result != 0 { return empty_result; }
@@ -552,5 +752,13 @@ fn main() -> i32 {
     if full_heap_result != 0 { return full_heap_result; }
     let character_result = check_character_access();
     if character_result != 0 { return character_result; }
+    let borrowed_result = check_borrowed_conversion();
+    if borrowed_result != 0 { return borrowed_result; }
+    let reservation_result = check_text_reservation();
+    if reservation_result != 0 { return reservation_result; }
+    let text_append_result = check_text_append();
+    if text_append_result != 0 { return text_append_result; }
+    let text_memory_result = check_text_memory_refusal();
+    if text_memory_result != 0 { return text_memory_result; }
     return 0;
 }

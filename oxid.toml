@@ -47,6 +47,12 @@ discord = true
 # scripts/verify_repo.py. Their binary OXS1 corpus requires no .ox exclusion.
 # Other .ox files under tests/ and examples/ remain runnable language tests.
 [test-fixtures]
+"examples/typed-owned-text/src/main.ox" = true
+"examples/typed-owned-text/tests/text.ox" = true
+"examples/typed-owned-text/tests/reject/moved-text.ox" = true
+"examples/typed-owned-text/tests/reject/private-bytes.ox" = true
+"examples/typed-owned-text/tests/reject/returned-borrow.ox" = true
+"examples/typed-owned-text/tests/reject/self-append.ox" = true
 "examples/owned-record-vectors/src/main.ox" = true
 "examples/owned-record-vectors/tests/messages.ox" = true
 "examples/copy-record-vectors/src/main.ox" = true

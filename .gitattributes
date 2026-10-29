@@ -61,6 +61,7 @@ scripts/test_record_composition_current_contracts.py -text
 scripts/test_record_composition_observer_adapters.py -text
 scripts/test_record_composition_runtime_view.py -text
 scripts/test_typed_project_source_binding.py -text
+scripts/test_owned_record_vector_compatibility.py -text
 
 # Preserve the supplied roadmap's original CRLF bytes.
 docs/ROADMAP_V2.md -text
@@ -122,3 +123,12 @@ scripts/owned_record_vector_acceptance/unused_pop.ox -text
 scripts/owned_record_vector_acceptance/unused_push.ox -text
 scripts/owned_record_vector_acceptance/unused_template.ox -text
 scripts/owned_record_vector_acceptance/zero_key.ox -text
+
+# UTF-8 text rejection fixtures retain exact bytes on every host.
+examples/typed-owned-text/tests/reject/moved-text.ox -text
+examples/typed-owned-text/tests/reject/private-bytes.ox -text
+examples/typed-owned-text/tests/reject/returned-borrow.ox -text
+examples/typed-owned-text/tests/reject/self-append.ox -text
+
+# Embedded UTF-8 library source retains exact bytes on every host.
+packages/utf8_text/src/lib.ox -text

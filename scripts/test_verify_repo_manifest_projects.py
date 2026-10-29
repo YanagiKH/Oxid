@@ -88,12 +88,29 @@ class ManifestApplications(unittest.TestCase):
             path.write_bytes((verify_repo.ROOT / name).read_bytes())
         owned_vector_paths = {self.root / name for name in owned_vector_members}
         self.assertFalse(owned_vector_paths & (selected | copy_paths | record_vector_paths))
+        text_project = "examples/typed-owned-text"
+        text_members = ("examples/typed-owned-text/src/main.ox", "examples/typed-owned-text/tests/text.ox")
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS[text_project], text_members)
+        for name in (text_project + "/oxid.toml", *text_members):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((verify_repo.ROOT / name).read_bytes())
+        text_paths = {self.root / name for name in text_members}
+        self.assertFalse(text_paths & (selected | copy_paths | record_vector_paths | owned_vector_paths))
+        self.assertIn(self.root / "packages/utf8_text/src/lib.ox", selected)
         neighbor = self.root / "apps/frame-filter/unregistered.ox"
         owned_neighbors = [self.root / owned_vector_project / "tests/unregistered.ox",
                            self.root / "examples/owned-record-vectors-neighbor/main.ox"]
+        text_neighbors = [self.root / text_project / "tests/unregistered.ox",
+                          self.root / "examples/typed-owned-text-neighbor/main.ox"]
         admitted, roots = verify_repo.manifest_project_members(
-            list(selected | copy_paths | record_vector_paths | owned_vector_paths) + [neighbor, *owned_neighbors],
+            list(selected | copy_paths | record_vector_paths | owned_vector_paths | text_paths)
+            + [neighbor, *owned_neighbors, *text_neighbors],
             self.root, required=True)
+        self.assertTrue(text_paths <= admitted)
+        self.assertEqual(roots.count(self.root / text_project), 1)
+        admitted -= text_paths
+        roots = [path for path in roots if path != self.root / text_project]
         self.assertTrue(owned_vector_paths <= admitted)
         self.assertEqual(roots.count(self.root / owned_vector_project), 1)
         admitted -= owned_vector_paths
@@ -111,20 +128,32 @@ class ManifestApplications(unittest.TestCase):
         self.assertNotIn(neighbor, admitted)
         for path in owned_neighbors:
             self.assertNotIn(path, admitted)
+        for path in text_neighbors:
+            self.assertNotIn(path, admitted)
         for missing in selected - set(self.members):
             with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
                 verify_repo.manifest_project_members(
-                    list((selected - {missing}) | copy_paths | record_vector_paths | owned_vector_paths),
+                    list((selected - {missing}) | copy_paths | record_vector_paths | owned_vector_paths | text_paths),
                     self.root, required=True)
         for missing in record_vector_paths:
             with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
-                verify_repo.manifest_project_members(list(selected | copy_paths | (record_vector_paths - {missing}) | owned_vector_paths),
+                verify_repo.manifest_project_members(list(selected | copy_paths | (record_vector_paths - {missing}) | owned_vector_paths | text_paths),
                                                     self.root, required=True)
         for missing in owned_vector_paths:
             with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
                 verify_repo.manifest_project_members(
-                    list(selected | copy_paths | record_vector_paths | (owned_vector_paths - {missing})),
+                    list(selected | copy_paths | record_vector_paths | (owned_vector_paths - {missing}) | text_paths),
                     self.root, required=True)
+        for missing in text_paths:
+            with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "missing"):
+                verify_repo.manifest_project_members(
+                    list(selected | copy_paths | record_vector_paths | owned_vector_paths | (text_paths - {missing})),
+                    self.root, required=True)
+        (self.root / text_project / "oxid.toml").unlink()
+        with self.assertRaisesRegex(RuntimeError, "missing"):
+            verify_repo.manifest_project_members(
+                list(selected | copy_paths | record_vector_paths | owned_vector_paths | text_paths),
+                self.root, required=True)
 
 
 if __name__ == "__main__":
