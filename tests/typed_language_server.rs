@@ -1943,16 +1943,9 @@ fn record_field_completion_uses_direct_dependency_identity_and_closes_import_ali
     let mut c = Client::spawn(&p, false);
     c.initialize(&p);
     c.open(&path, text);
-    if !cfg!(any(
-        target_os = "linux",
-        target_os = "macos",
-        all(
-            target_os = "windows",
-            target_arch = "x86_64",
-            target_pointer_width = "64",
-            target_endian = "little"
-        )
-    )) {
+    // Direct dependencies use the package policy; Windows module support
+    // alone does not qualify loading a dependency package graph.
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
         let mut position = position_at(text, "point.");
         position["character"] = json!(position["character"].as_u64().unwrap() + 6);
         let response = c.request(
@@ -1964,6 +1957,17 @@ fn record_field_completion_uses_direct_dependency_identity_and_closes_import_ali
             .as_str()
             .unwrap()
             .contains("source policy"));
+        if cfg!(all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )) {
+            assert_eq!(
+                response["error"]["message"],
+                "package source policy is qualified only on Linux or macOS"
+            );
+        }
         assert!(response.get("result").is_none());
     } else {
         assert_eq!(
