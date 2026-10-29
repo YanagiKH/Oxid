@@ -157,9 +157,9 @@ fn paired_import_failure_rolls_back_both_target_lanes() {
         .any(|e| matches!(e, Observation::Frozen { .. })));
     drop(events);
 
-    // Public routing repeats the same transaction on its isolated candidate
-    // index. Both attempts must roll back the failed pair and keep the later
-    // valid pair; the original diagnostic must survive unchanged.
+    // The public result retains the original semantic transaction. The failed
+    // candidate still spends its actual work, but contributes no committed
+    // declarations, imports or diagnostics.
     let (result, replay) = run(&files);
     let replay_errors = result.unwrap_err();
     assert_eq!(replay_errors.len(), errors.len());
@@ -182,7 +182,17 @@ fn paired_import_failure_rolls_back_both_target_lanes() {
             _ => None,
         })
         .collect();
-    assert_eq!(replay_imports, imports.repeat(2));
+    assert_eq!(replay_imports, imports);
+    assert!(replay.used() > work.used());
+    let fills = |meter: &WorkMeter| {
+        meter
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| event.operation == "declaration fill")
+            .count()
+    };
+    assert_eq!(fills(&replay), 2 * fills(&work));
     assert!(!events
         .iter()
         .any(|event| matches!(event, Observation::Frozen { .. })));

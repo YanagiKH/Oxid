@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Bind the finite owned-vector source delta to the unchanged retained replay.
 
-The frozen registry controller owns every inherited semantic/resource predicate,
-observer and debug/release build. New vector, native, platform and debug claims
-remain false. Provisional pins allow preparation only, never qualification.
+The frozen registry controller owns every inherited semantic/resource predicate
+and debug/release build. Two explicit observer exclusions keep owned-record
+vectors outside the old wire. New semantic/platform claims remain false.
+Provisional source or observer pins permit preparation only, never qualification.
 """
 import argparse
 from contextlib import contextmanager
@@ -20,11 +21,15 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7"
 PREDECESSOR_POLICY = "scripts/verify_registry_compatibility.py"
 PREDECESSOR_POLICY_PIN = (35050, "d6bd23496f38bde3d89e7e97a2d724b73a0f233cfef99a6dc9fad752bdec9766")
-REVIEWED_SOURCE_HEAD = "5adb811c3e720e9252558b5d2f05d67dd1a71943"
+REVIEWED_SOURCE_HEAD = 'bd8978a411e4dba19430037640a24b3f08fe5a33'
 PINS_PROVISIONAL = False
+OWNED_VECTOR_OBSERVER_ADAPTER = "scripts/owned_record_vector_compatibility_observer.py"
+OWNED_VECTOR_OBSERVER_ADAPTER_PIN = (
+    7268, "ac49c38f23b0d3a5929fe3d52edae1cb85341c72b16249522e30dc155e1fa8f3")
+OWNED_VECTOR_OBSERVER_PROVISIONAL = False
 
 # This one source asset is compiled by the two new enum regressions. It is
-# separate from the 106 compiler-file directive rows and the 44 new modules.
+# separate from the 107 compiler-file directive rows and the 44 new modules.
 OWNED_VECTOR_SOURCE_ASSETS = {
     "scripts/owned_record_vector_acceptance/enum16.ox": (
         1746, "34a810415ec8697d9b74ff58f39e3c0787cabb33970bf3eed7e64a9e5472a715"),
@@ -101,6 +106,7 @@ OWNED_VECTOR_CHANGED = frozenset((
     "src/frontend/oir/source/sealed.rs",
     "src/frontend/parser.rs",
     "src/frontend/vector_builtins.rs",
+    'src/frontend/declaration_index/resource.rs',
 ))
 OWNED_VECTOR_ADDED = frozenset((
     "native/experimental_owned_record.c",
@@ -184,12 +190,12 @@ REVIEWED_INPUTS = {
     "native/typed_bytebuf.c": (7171, "93bd553c27c95ebf44f03e98fa10a9981df1376130c544776139425426626e84"),
     "native/typed_vector.c": (13271, "dba4dbe9f87b054324e31ac4a0055ec04ba3c88c20d13a2a7ee4f31b0fa793da"),
     "src/frontend/builtin_catalog.rs": (16047, "04715518121dfdba149fe57ae95d8ac284523c66169d07248f2fd29b99c7e3dd"),
-    "src/frontend/declaration_index.rs": (88891, "fc0e34bf111a7d9ffc08adbc525f232b826973ff350acb981e5cd3dd5000fdf4"),
+    "src/frontend/declaration_index.rs": (88927, 'd8fb66a407a598a84ba67d771caf5fe80f6d8f6038f798dbbbe96afc322d7bca'),
     "src/frontend/declaration_index/generics.rs": (136375, "c6f188c5853cc47d2e3e600805c831b7cebec8debde131dac23227804d123a81"),
     "src/frontend/declaration_index/generics/nominal.rs": (33872, "4dfea0a548a46534f555721960174c21bc33994f040db466f3966f601123e216"),
     "src/frontend/declaration_index/generics/owned_candidate.rs": (77372, "402c0a472e493af11a7acb28a6c8345be1ab8b610d135af043919e04cb18550e"),
     "src/frontend/declaration_index/sealed.rs": (120632, "b015eef9a6917570788ddd44cfe63301112d4030ba51c9495982eed98d90b5ea"),
-    "src/frontend/declaration_index/tests.rs": (24376, "32ec64c4bbc437da29bc7f35d4c76ade9fd5cc62c6dc384f39ad20072ba2a0cb"),
+    "src/frontend/declaration_index/tests.rs": (24645, '18740c7fd41777e4c4789a87dccd81f47c1b9e72a504e7b06ad00d583f279803'),
     "src/frontend/experimental_builtins.rs": (30277, "9f724e9a412db4eb58705a40d7b9b7e0432155185bc4721ab8a88dca58505cd0"),
     "src/frontend/native.rs": (30974, "e74711de9a4de85ad6b5c49b622b89093f5e6e763a41a6ee6f3de4681419c5e0"),
     "src/frontend/oir/owned/array_observe.rs": (24256, "becb20579e8669ce8b5af067aff733f58ef8a211a7ac7d1ea7ccac8f4ff303a3"),
@@ -279,11 +285,12 @@ REVIEWED_INPUTS = {
     "src/frontend/oir/owned_types/owned_vector.rs": (13414, "0823df65ff4259f414da05d3efac8017e47824a06550e412d9fbfefac844ef17"),
     "src/frontend/oir/owned_types/resources.rs": (32943, "5a13dcacc213c491900e161df4ab200fbff77a592ad3d0677af8ba6503b217ac"),
     "src/frontend/oir/source.rs": (10166, "91b295d84b5f5e272a2d42406137dd36216611ee0df2b9f63942f15e4b168842"),
-    "src/frontend/oir/source/owned_vector_route_tests.rs": (14195, "2e33cf1fee36fb305ce0779172b27e60c7f035283bbc3c3fdb62d95822d818d8"),
-    "src/frontend/oir/source/sealed.rs": (44976, "400a35d2b087d4a85b2a78c88fbc3f791c4183ffe3199b9c02d3a5dd393876d2"),
+    "src/frontend/oir/source/owned_vector_route_tests.rs": (22494, '6e4826683aec2c058ad884761b08e792818d39ad2ebcfae6854ba4fa5a1be802'),
+    "src/frontend/oir/source/sealed.rs": (45476, '5f6d3d64872f828c82bf45d6496b98010f60c5b559225852e11cf8f27612a6c1'),
     "src/frontend/owned_vector_builtins.rs": (10964, "ec68a168a344b9dd0b6025918c7ddcdbc8d3f101568334f4c4f285fd22f3fd5b"),
     "src/frontend/parser.rs": (108481, "da3bb5bf78b1ce2bc60e6f8475b0df75495ebe2e76f0110f6a08a9bcc376cb7c"),
     "src/frontend/vector_builtins.rs": (16545, "665a72d3389ccdde34b12648ecd7762a73c8e2f7470dd3eeb3a36fc4f96c862c"),
+    "src/frontend/declaration_index/resource.rs": (19774, '98cb16f86d1bfeceb22889aae3e5457af34dbdd1818830024b1f34d2951d15bb'),
 }
 
 REVIEWED_DIRECTIVES = {
@@ -996,14 +1003,14 @@ REVIEWED_DIRECTIVES = {
     },
     "src/frontend/oir/source/owned_vector_route_tests.rs": {
         "legacy": ([], []),
-        "attributes": ((b'#[test]', 5), (b'#[cfg(target_pointer_width = "64")]', 1), (b'#[test]', 3),),
+        "attributes": ((b'#[test]', 5), (b'#[cfg(target_pointer_width = "64")]', 1), (b'#[test]', 7)),
         "macros": (),
         "c_preprocessor": (),
         "build_script": None,
     },
     "src/frontend/oir/source/sealed.rs": {
         "legacy": ([], []),
-        "attributes": ((b'#[allow(clippy::large_enum_variant)]', 1), (b'#[derive(Debug)]', 3), (b'#[allow(dead_code)]', 1), (b'#[derive(Clone, Copy)]', 1), (b'#[allow(clippy::large_enum_variant)]', 1), (b'#[allow(dead_code)]', 1), (b'#[allow(clippy::too_many_arguments)]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Debug)]', 1), (b'#[cfg(test)]', 2), (b'#[allow(dead_code)]', 2), (b'#[cfg(test)]', 2), (b'#[test]', 1), (b'#[cfg(target_pointer_width = "64")]', 2), (b'#[allow(dead_code)]', 1), (b'#[test]', 2),),
+        "attributes": ((b'#[allow(clippy::large_enum_variant)]', 1), (b'#[derive(Debug)]', 3), (b'#[allow(dead_code)]', 1), (b'#[derive(Clone, Copy)]', 1), (b'#[allow(clippy::large_enum_variant)]', 1), (b'#[allow(dead_code)]', 1), (b'#[allow(clippy::too_many_arguments)]', 1), (b'#[cfg(test)]', 7), (b'#[derive(Debug)]', 1), (b'#[cfg(test)]', 2), (b'#[allow(dead_code)]', 2), (b'#[cfg(test)]', 2), (b'#[test]', 1), (b'#[cfg(target_pointer_width = "64")]', 2), (b'#[allow(dead_code)]', 1), (b'#[test]', 2)),
         "macros": (),
         "c_preprocessor": (),
         "build_script": None,
@@ -1025,6 +1032,13 @@ REVIEWED_DIRECTIVES = {
     "src/frontend/vector_builtins.rs": {
         "legacy": ([], []),
         "attributes": ((b'#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[repr(u8)]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[cfg(test)]', 1), (b'#[test]', 4),),
+        "macros": (),
+        "c_preprocessor": (),
+        "build_script": None,
+    },
+    "src/frontend/declaration_index/resource.rs": {
+        "legacy": ([], []),
+        "attributes": ((b'#[cfg(test)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[derive(Debug)]', 1), (b'#[cfg(test)]', 5), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[cfg(test)]', 9), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 2), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 5), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[derive(Clone, Debug)]', 1), (b'#[derive(Clone, Copy, Debug, Default)]', 1), (b'#[derive(Clone, Copy, Debug)]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[cfg(test)]', 1), (b'#[cfg(not(test))]', 1), (b'#[cfg(test)]', 1), (b'#[test]', 1)),
         "macros": (),
         "c_preprocessor": (),
         "build_script": None,
@@ -1076,13 +1090,27 @@ PREDECESSOR_POLICIES = {**library.PREDECESSOR_POLICIES,
                         PREDECESSOR_POLICY: PREDECESSOR_POLICY_PIN[1]}
 
 
+def authenticate_owned_vector_observer_adapter(repo):
+    parent, _ = authenticate_observer_adapter(repo)
+    body = regular(repo, OWNED_VECTOR_OBSERVER_ADAPTER)
+    require((len(body), sha(body)) == OWNED_VECTOR_OBSERVER_ADAPTER_PIN,
+            "changed pinned owned-vector observer adapter")
+    adapter = types.ModuleType("_owned_vector_observer_successor")
+    adapter.__file__ = str(repo / OWNED_VECTOR_OBSERVER_ADAPTER)
+    exec(compile(body, adapter.__file__, "exec"), adapter.__dict__)
+    require(adapter.predecessor.descriptor() == parent.descriptor()
+            and adapter.PARENT_DERIVED_PIN == parent.DERIVED_PIN,
+            "owned-vector observer predecessor differs")
+    return adapter, body
+
+
 def capture_sources(repo, baseline, parent):
     expected_parent = set(baseline) | PREDECESSOR_ADDED
     expected = expected_parent | OWNED_VECTOR_ADDED | set(OWNED_VECTOR_SOURCE_ASSETS)
     require(set(parent) == expected_parent and len(parent) == 527,
             "wrong retained registry compiler input membership")
     require(OWNED_VECTOR_CHANGED <= expected_parent and not OWNED_VECTOR_ADDED & expected_parent
-            and len(OWNED_VECTOR_CHANGED) == 62 and len(OWNED_VECTOR_ADDED) == 44,
+            and len(OWNED_VECTOR_CHANGED) == 63 and len(OWNED_VECTOR_ADDED) == 44,
             "wrong finite owned-vector delta membership")
     require(set(REVIEWED_INPUTS) == OWNED_VECTOR_CHANGED | OWNED_VECTOR_ADDED
             and set(REVIEWED_DIRECTIVES) == set(REVIEWED_INPUTS),
@@ -1149,6 +1177,7 @@ def directive_manifest(value):
 
 
 def current_manifest(inputs, baseline, checkout, parent):
+    observer, observer_body = authenticate_owned_vector_observer_adapter(ROOT)
     inherited = REGISTRY_MANIFEST(parent, baseline, checkout, parent)
     result = {key: value for key, value in inherited.items() if key.endswith("qualified_by_this_gate")}
     result.update({
@@ -1159,6 +1188,9 @@ def current_manifest(inputs, baseline, checkout, parent):
         "source_policy_input_members": len(PREDECESSOR_POLICIES),
         "predecessor_compiler_input_members": len(parent),
         "owned_vector_pins_provisional": PINS_PROVISIONAL,
+        "owned_vector_observer_pins_provisional": OWNED_VECTOR_OBSERVER_PROVISIONAL,
+        "owned_vector_observer_adapter": observer.descriptor(),
+        "owned_vector_observer_adapter_controller": identity(OWNED_VECTOR_OBSERVER_ADAPTER, observer_body),
         "owned_vector_reviewed_source_head": REVIEWED_SOURCE_HEAD,
         "owned_vector_controller": identity("scripts/verify_owned_record_vector_compatibility.py",
                                           regular(ROOT, "scripts/verify_owned_record_vector_compatibility.py")),
@@ -1197,11 +1229,21 @@ def current_manifest(inputs, baseline, checkout, parent):
 
 @contextmanager
 def bound_registry():
-    """Bind only the predecessor's existing manifest admission/parent seams.
+    """Bind admission and the explicit observer successor at existing seams.
 
-    Its run function, assembly, observer adapters, selectors, comparators and
-    artifact verification remain the identical original function objects.
+    Original runner, assembly, selectors, comparators, verification and old
+    control functions stay identical. Preparation delegates without copying its
+    returned context, so additional controls use the actual isolated binaries.
     """
+    context = {}
+
+    def prepare(original, output, captured, adapter, index_adapter, parser_adapter):
+        require(not context, "owned-vector observer preparation repeated")
+        prepared = prepare_current_observer(original, output, captured, adapter, index_adapter, parser_adapter)
+        context.update(original=original, output=output, selected=prepared[0],
+                       seam=prepared[1], adapter=adapter, prepared=prepared)
+        return prepared
+
     bindings = {
         "PREDECESSOR": PREDECESSOR,
         "PREDECESSOR_ADDED": PREDECESSOR_ADDED,
@@ -1209,17 +1251,91 @@ def bound_registry():
         "PINS_PROVISIONAL": PINS_PROVISIONAL,
         "capture_sources": capture_sources,
         "current_manifest": current_manifest,
+        "OBSERVER_ADAPTER": OWNED_VECTOR_OBSERVER_ADAPTER,
+        "authenticate_observer_adapter": authenticate_owned_vector_observer_adapter,
+        "prepare_current_observer": prepare,
     }
     before = {name: getattr(library, name) for name in bindings}
     require(library.run is RETAINED_RUN, "retained runner was replaced")
     try:
         for name, value in bindings.items():
             setattr(library, name, value)
-        yield
+        yield context
         require(library.run is RETAINED_RUN, "retained runner changed")
     finally:
         for name, value in before.items():
             setattr(library, name, value)
+
+
+def run_owned_vector_observer_controls(repo, output, captured, seam, original, adapter, previous_executions):
+    """Append three exclusions per existing binary; no rebuild or old selector change."""
+    require(type(previous_executions) is int and previous_executions > 0,
+            "missing inherited observer execution census")
+    run = output / "unit2/run"
+    controls = output / "owned-record-vector-observer-controls"
+    controls.mkdir()
+    protocol_body = regular(Path(seam["resource_package_root"]), "protocol.py")
+    require(protocol_body == captured["historical_bytes"]["protocol.py"],
+            "owned-vector observer control protocol changed")
+    protocol = types.ModuleType("_owned_vector_observer_control_protocol")
+    exec(compile(protocol_body, "protocol.py", "exec"), protocol.__dict__)
+    receipts = []
+    for profile in ("debug", "release"):
+        original.assert_unchanged(repo, captured)
+        receipt_body = (run / (profile + "-receipt.json")).read_bytes()
+        receipt = json.loads(receipt_body)
+        binary = Path(receipt["binary"])
+        target = run / "target"
+        require(binary.is_absolute() and target in binary.parents and not binary.is_symlink()
+                and binary.resolve(strict=True).is_relative_to(target.resolve(strict=True)),
+                "owned-vector observer control binary outside isolated build")
+        require(sha(binary.read_bytes()) == receipt["binary_sha256"],
+                "owned-vector observer control binary changed")
+        assembly_body = (run / "assembly.json").read_bytes()
+        original.check_entries(run / "source", json.loads(assembly_body)["files"], exact=True)
+        verify_current_observer(output, adapter, captured["observer"])
+        commands, streams = [], {}
+        for label, filters in (("list", ["--list", adapter.OWNED_RECORD_VECTOR_CONTROL_FILTER]),
+                              ("run", [adapter.OWNED_RECORD_VECTOR_CONTROL_FILTER,
+                                       "--test-threads=1", "--color", "never"])):
+            argv = [str(binary), *filters]
+            out, err = controls / (profile + "-" + label + ".stdout"), controls / (profile + "-" + label + ".stderr")
+            with out.open("xb") as stdout, err.open("xb") as stderr:
+                completed = library.subprocess.run(argv, cwd=run / "source", stdout=stdout, stderr=stderr, timeout=60)
+            commands.append({"argv": argv, "exit_status": completed.returncode,
+                             "stdout": identity(out.name, out.read_bytes()),
+                             "stderr": identity(err.name, err.read_bytes())})
+            (controls / (profile + "-commands.json")).write_bytes(encoded(commands))
+            require(completed.returncode == 0 and err.read_bytes() == b"",
+                    "owned-vector observer controls failed; see raw streams")
+            streams[label] = out.read_text(encoding="utf-8")
+        names = list(adapter.OWNED_RECORD_VECTOR_CONTROL_NAMES)
+        protocol.rust_listing(streams["list"], names)
+        result = protocol.rust_success(streams["run"], names)
+        require(sha(binary.read_bytes()) == receipt["binary_sha256"],
+                "owned-vector observer control binary changed")
+        require((run / "assembly.json").read_bytes() == assembly_body
+                and (run / (profile + "-receipt.json")).read_bytes() == receipt_body,
+                "owned-vector observer control source binding changed")
+        original.check_entries(run / "source", json.loads(assembly_body)["files"], exact=True)
+        verify_current_observer(output, adapter, captured["observer"])
+        original.assert_unchanged(repo, captured)
+        record = {"status": "passed", "profile": profile, "tests": names,
+                  "nominal_ordinals_per_control": 3, "result": result,
+                  "binary": identity(str(binary), binary.read_bytes()),
+                  "source_inputs_sha256": original.CURRENT_SOURCE_SHA,
+                  "commands": identity(profile + "-commands.json", (controls / (profile + "-commands.json")).read_bytes())}
+        path = controls / (profile + "-receipt.json")
+        path.write_bytes(encoded(record))
+        receipts.append(identity(str(path.relative_to(output)), path.read_bytes()))
+    original.verify_unit2_result(output, captured, seam, False)
+    count = len(adapter.OWNED_RECORD_VECTOR_CONTROL_NAMES)
+    require(count == 3, "wrong owned-vector observer control count")
+    return {"owned_record_vector_observer_control_tests_per_profile": count,
+            "owned_record_vector_observer_denials_per_profile": count * 3,
+            "owned_record_vector_observer_control_receipts": receipts,
+            "inherited_test_function_executions": previous_executions,
+            "test_function_executions": previous_executions + 2 * count}
 
 
 def run(args):
@@ -1238,25 +1354,37 @@ def run(args):
               "retained_controller": identity(PREDECESSOR_POLICY, regular(repo, PREDECESSOR_POLICY)),
               "source_policy_parent": PREDECESSOR, "inherited_input_members": 527,
               "reviewed_source_head": REVIEWED_SOURCE_HEAD, "pins_provisional": PINS_PROVISIONAL,
+              "observer_pins_provisional": OWNED_VECTOR_OBSERVER_PROVISIONAL,
               "new_feature_qualification": False, "platform_qualification": False}
     try:
         require(args.prepare_only or not PINS_PROVISIONAL,
                 "provisional owned-vector pins permit prepare-only admission, not qualification")
+        require(args.prepare_only or not OWNED_VECTOR_OBSERVER_PROVISIONAL,
+                "provisional owned-vector observer pins permit prepare-only admission, not qualification")
         delegated = argparse.Namespace(**vars(args))
         delegated.output = output / "retained"
-        with bound_registry():
+        with bound_registry() as context:
             status = RETAINED_RUN(delegated)
-        require(status == 0, "retained controller refused; inspect retained/failure.json and raw evidence")
-        artifact = "prepared.json" if args.prepare_only else "result.json"
-        raw = regular(output / "retained", artifact)
-        retained = json.loads(raw)
-        require(retained.get("status") == ("prepared" if args.prepare_only else "passed")
-                and retained.get("semantic_pass") is (not args.prepare_only),
-                "retained result does not establish the requested replay")
-        require(retained.get("current_input_members") == 572
-                and retained.get("controller") == identity(PREDECESSOR_POLICY, regular(repo, PREDECESSOR_POLICY))
-                and retained.get("historical_results_apply_to_current") is False,
-                "retained result lacks the exact new source/materialization binding")
+            require(status == 0, "retained controller refused; inspect retained/failure.json and raw evidence")
+            artifact = "prepared.json" if args.prepare_only else "result.json"
+            raw = regular(output / "retained", artifact)
+            retained = json.loads(raw)
+            require(retained.get("status") == ("prepared" if args.prepare_only else "passed")
+                    and retained.get("semantic_pass") is (not args.prepare_only),
+                    "retained result does not establish the requested replay")
+            require(retained.get("current_input_members") == 572
+                    and retained.get("controller") == identity(PREDECESSOR_POLICY, regular(repo, PREDECESSOR_POLICY))
+                    and retained.get("historical_results_apply_to_current") is False,
+                    "retained result lacks the exact new source/materialization binding")
+            require(context and context["output"] == delegated.output,
+                    "missing real owned-vector observer preparation context")
+            report["owned_vector_observer_adapter"] = context["adapter"].descriptor()
+            report["owned_vector_observer_adapter_controller"] = identity(
+                OWNED_VECTOR_OBSERVER_ADAPTER, regular(repo, OWNED_VECTOR_OBSERVER_ADAPTER))
+            if not args.prepare_only:
+                report.update(run_owned_vector_observer_controls(
+                    repo, delegated.output, context["selected"], context["seam"],
+                    context["original"], context["adapter"], retained["test_function_executions"]))
         require(regular(repo, "scripts/verify_owned_record_vector_compatibility.py") == controller,
                 "wrapper controller changed during qualification")
         report.update(status="prepared" if args.prepare_only else "passed",

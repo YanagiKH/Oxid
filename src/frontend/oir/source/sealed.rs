@@ -397,6 +397,7 @@ fn owned_vector_fallback<'s>(
     depth: CheckDepth,
     route: ProjectRoute,
     original: Vec<Diagnostic>,
+    #[cfg(test)] mut observations: index::SemanticObservationTransaction<'_>,
 ) -> Result<Checked<'s>, Vec<Diagnostic>> {
     if route != ProjectRoute::Owned || original.is_empty() {
         return Err(original);
@@ -433,6 +434,8 @@ fn owned_vector_fallback<'s>(
         scratch,
         work: limits.work.min(defaults.work),
     };
+    #[cfg(test)]
+    observations.candidate_started();
     let candidate = match index::collect_owned_vector_candidate(
         sources,
         candidate_limits,
@@ -451,6 +454,8 @@ fn owned_vector_fallback<'s>(
     if !candidate.owned_vector_source_needed() && !new_imports {
         return Err(original);
     }
+    #[cfg(test)]
+    observations.candidate_selected();
     // Only this exact source fact, not an error message or a guessed type name,
     // replaces the old diagnostic. Its backing is gone before fresh paid typing.
     drop(original);
@@ -559,6 +564,8 @@ fn check_project_owner<'s>(
     work.observe(crate::frontend::declaration_index::Observation::Route {
         owned: route == ProjectRoute::Owned,
     });
+    #[cfg(test)]
+    let observations = work.semantic_observation_transaction();
     let facts = match index::collect_originals(sources, limits, work, allocator) {
         Ok(facts) => facts,
         Err(error) => {
@@ -572,6 +579,8 @@ fn check_project_owner<'s>(
                 depth,
                 route,
                 vec![*error],
+                #[cfg(test)]
+                observations,
             );
         }
     };
@@ -586,7 +595,16 @@ fn check_project_owner<'s>(
         Err(errors) => {
             drop(original_signatures);
             return owned_vector_fallback(
-                project, sources, limits, work, allocator, depth, route, errors,
+                project,
+                sources,
+                limits,
+                work,
+                allocator,
+                depth,
+                route,
+                errors,
+                #[cfg(test)]
+                observations,
             );
         }
     };

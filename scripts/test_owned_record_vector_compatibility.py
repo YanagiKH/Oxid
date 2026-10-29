@@ -62,7 +62,7 @@ class OwnedVectorSourceAdmission(unittest.TestCase):
         self.assertEqual(len(self.baseline), 376)
         self.assertEqual(len(self.parent), 527)
         self.assertEqual(len(inputs), 572)
-        self.assertEqual(len(gate.OWNED_VECTOR_CHANGED), 62)
+        self.assertEqual(len(gate.OWNED_VECTOR_CHANGED), 63)
         self.assertEqual(len(gate.OWNED_VECTOR_ADDED), 44)
         self.assertEqual(set(inputs), set(self.parent) | gate.OWNED_VECTOR_ADDED | set(gate.OWNED_VECTOR_SOURCE_ASSETS))
         self.assertEqual(gate.PREDECESSOR_ADDED, gate.library.PARENT_ADDED)
@@ -154,7 +154,7 @@ class OwnedVectorSourceAdmission(unittest.TestCase):
         self.assertEqual(manifest["source_policy_parent"], gate.PREDECESSOR)
         self.assertEqual(manifest["source_policy_input_members"], 60)
         self.assertEqual(manifest["owned_vector_pins_provisional"], gate.PINS_PROVISIONAL)
-        self.assertEqual(len(manifest["owned_vector_directive_inventory"]), 106)
+        self.assertEqual(len(manifest["owned_vector_directive_inventory"]), 107)
         self.assertEqual([row["path"] for row in manifest["owned_vector_compiled_source_assets"]], [self.asset])
         self.assertNotIn(self.asset, {row["path"] for row in manifest["owned_vector_directive_inventory"]})
         self.assertEqual(manifest["owned_vector_compiled_source_assets"][0]["include_occurrences"], 2)
@@ -169,7 +169,7 @@ class OwnedVectorSourceAdmission(unittest.TestCase):
 
 class FrozenRegistryDelegation(unittest.TestCase):
     def test_reviewed_actual_source_pins_and_every_directive_are_exact(self):
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "5adb811c3e720e9252558b5d2f05d67dd1a71943")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "bd8978a411e4dba19430037640a24b3f08fe5a33")
         self.assertEqual(set(gate.REVIEWED_INPUTS), gate.OWNED_VECTOR_CHANGED | gate.OWNED_VECTOR_ADDED)
         self.assertEqual(set(gate.REVIEWED_DIRECTIVES), set(gate.REVIEWED_INPUTS))
         for name, expected in gate.REVIEWED_INPUTS.items():
@@ -253,6 +253,79 @@ class FrozenRegistryDelegation(unittest.TestCase):
             self.assertFalse((output / "prepared.json").exists())
             self.assertFalse((output / "retained").exists())
             self.assertIn("prepare-only", stderr.getvalue())
+
+
+class OwnedVectorObserverBinding(unittest.TestCase):
+    def test_source_anchor_and_all_old_function_objects_stay_exact(self):
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "bd8978a411e4dba19430037640a24b3f08fe5a33")
+        self.assertIs(gate.PINS_PROVISIONAL, False)
+        names = ("verify_current_observer", "verify_materialized", "authenticate_index_resource_adapter",
+                 "authenticate_parser_resource_adapter", "run_byte_buffer_observer_controls",
+                 "run_file_observer_controls", "run_i64_observer_controls", "run_integer_width_observer_controls",
+                 "run_integer128_observer_controls", "run_float_observer_controls",
+                 "run_character_observer_controls", "run_vector_observer_controls", "run_record_vector_observer_controls")
+        original = {name: getattr(gate.library, name) for name in names}
+        prepare, authenticate, runner = gate.prepare_current_observer, gate.authenticate_observer_adapter, gate.RETAINED_RUN
+        with gate.bound_registry():
+            self.assertIs(gate.library.run, runner)
+            self.assertIs(gate.prepare_current_observer, prepare)
+            self.assertIs(gate.authenticate_observer_adapter, authenticate)
+            for name, function in original.items():
+                self.assertIs(getattr(gate.library, name), function, name)
+        self.assertIs(gate.library.prepare_current_observer, prepare)
+        self.assertIs(gate.library.authenticate_observer_adapter, authenticate)
+
+    def test_prepare_delegates_once_and_returns_the_real_context_by_identity(self):
+        original, output, captured, adapter, index, parser = (object() for _ in range(6))
+        selected, seam = {"observer": b"real returned observer"}, {"real": "assembly seam"}
+        prepared = (selected, seam)
+        with patch.object(gate, "prepare_current_observer", return_value=prepared) as prepare:
+            with gate.bound_registry() as context:
+                result = gate.library.prepare_current_observer(original, output, captured, adapter, index, parser)
+                self.assertIs(result, prepared)
+                self.assertIs(context["prepared"], prepared)
+                self.assertIs(context["original"], original)
+                self.assertIs(context["output"], output)
+                self.assertIs(context["selected"], selected)
+                self.assertIs(context["seam"], seam)
+                self.assertIs(context["adapter"], adapter)
+                with self.assertRaisesRegex(ValueError, "preparation repeated"):
+                    gate.library.prepare_current_observer(original, output, captured, adapter, index, parser)
+            prepare.assert_called_once_with(original, output, captured, adapter, index, parser)
+
+    def test_prepare_authentication_and_path_bindings_restore_after_failure(self):
+        names = ("PREDECESSOR", "PREDECESSOR_ADDED", "PREDECESSOR_POLICIES", "PINS_PROVISIONAL",
+                 "capture_sources", "current_manifest", "OBSERVER_ADAPTER",
+                 "authenticate_observer_adapter", "prepare_current_observer")
+        before = {name: getattr(gate.library, name) for name in names}
+        with patch.object(gate, "prepare_current_observer", side_effect=RuntimeError("real preparation refused")):
+            with self.assertRaisesRegex(RuntimeError, "real preparation refused"):
+                with gate.bound_registry():
+                    self.assertEqual(gate.library.OBSERVER_ADAPTER, gate.OWNED_VECTOR_OBSERVER_ADAPTER)
+                    self.assertIs(gate.library.authenticate_observer_adapter, gate.authenticate_owned_vector_observer_adapter)
+                    gate.library.prepare_current_observer(*(object() for _ in range(6)))
+        for name, value in before.items():
+            self.assertIs(getattr(gate.library, name), value, name)
+
+    def test_observer_provisional_refuses_before_parent_runner_or_process(self):
+        with tempfile.TemporaryDirectory(prefix="oxid-owned-vector-observer-provisional-") as folder:
+            output = Path(folder) / "output"
+            args = argparse.Namespace(repo=ROOT, output=output, prepare_only=False)
+            with patch.object(gate, "PINS_PROVISIONAL", False), \
+                    patch.object(gate, "OWNED_VECTOR_OBSERVER_PROVISIONAL", True), \
+                    patch.object(gate, "RETAINED_RUN") as inherited, \
+                    patch.object(gate.library.subprocess, "run") as run, \
+                    patch.object(gate.library.subprocess, "Popen") as popen, redirect_stderr(io.StringIO()):
+                self.assertEqual(gate.run(args), 1)
+            inherited.assert_not_called()
+            run.assert_not_called()
+            popen.assert_not_called()
+            failure = json.loads((output / "failure.json").read_text())
+            self.assertIs(failure["semantic_pass"], False)
+            self.assertEqual(failure["compiler_executions"], 0)
+            self.assertIn("observer pins permit prepare-only", failure["error"])
+            self.assertFalse((output / "retained").exists())
+            self.assertFalse((output / "result.json").exists())
 
 
 if __name__ == "__main__":

@@ -256,7 +256,7 @@ TEST_PROBES = [
     ("array-native-observation-has-no-executable-accessor", False, ("E0599",), """
         fn forge(observation: &native::NativeObservation) { let _ = observation.witness(); }
     """),
-    ("array-native-observation-cannot-enter-native", False, ("E0308",), """
+    ("array-native-observation-cannot-enter-native", False, ("E0277",), """
         fn compile(observation: &native::NativeObservation, sources: &SourceMap) {
             let _ = native::native_module(observation, Some(hir::DefId(0)), sources);
         }
@@ -430,7 +430,7 @@ def main():
             else:
                 assert result.returncode != 0 and any(code in actual_codes for code in codes), (
                     name, result.returncode, actual_codes, result.stdout, result.stderr)
-                if name in ('raw-program-cannot-enter-reference', 'raw-program-cannot-enter-native', 'array-reference-observation-cannot-build-plan', 'array-native-observation-cannot-build-plan', 'raw-program-cannot-enter-observed-native'):
+                if name in ('raw-program-cannot-enter-reference', 'raw-program-cannot-enter-native', 'array-reference-observation-cannot-build-plan', 'array-native-observation-cannot-build-plan', 'raw-program-cannot-enter-observed-native', 'array-native-observation-cannot-enter-native'):
                     assert any(error.get("code", {}).get("code") == "E0277"
                                and re.fullmatch(r"the trait bound `[^`]+: (?:[A-Za-z_][A-Za-z_0-9]*::)*PlanWitness` is not satisfied",
                                                 error["message"])

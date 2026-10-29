@@ -2,7 +2,7 @@
 use super::*;
 use crate::frontend::{
     build_config::ExecutionPolicy,
-    declaration_index::{IndexLimits, WorkMeter},
+    declaration_index::{self as index, IndexLimits, Observation, SourceOwner, WorkMeter},
     project::{
         budget::Allocator,
         packages::{PackageDependency, PackageSources, PackageSpec},
@@ -369,4 +369,251 @@ fn owned_vector_public_route_retained_errors_pay_capacity_not_text_length() {
         expanded
     );
     assert!(sealed::owned_route_storage(&errors, 0, &WorkMeter::default(), at).is_err());
+}
+
+#[test]
+fn owned_vector_semantic_observations_failed_candidate_keeps_the_original_transaction() {
+    let fixture =
+        Fixture::new("struct Message{value:i32}struct Message{value:i32}fn main()->i32{return 0;}");
+    let project = fixture.project();
+    let original = WorkMeter::default();
+    original.enable_observation();
+    let expected = index::collect_originals(
+        SourceOwner::project(&project),
+        IndexLimits::default(),
+        &original,
+        &mut Allocator::default(),
+    )
+    .unwrap()
+    .finish(&original, &mut Allocator::default())
+    .unwrap_err();
+    let work = WorkMeter::default();
+    work.enable_observation();
+    let mut allocator = Allocator::default();
+    let errors = check_project_candidate(&project, IndexLimits::default(), &work, &mut allocator)
+        .expect_err("the failed candidate must retain the original diagnostics");
+    assert!(candidate_attempted(&allocator));
+    let diagnostics = |errors: &[Diagnostic]| {
+        errors
+            .iter()
+            .map(|error| error.render_json(project.sources()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(diagnostics(&errors), diagnostics(&expected));
+    let semantic = |meter: &WorkMeter| {
+        meter
+            .observations
+            .borrow()
+            .iter()
+            .filter(|event| !matches!(event, Observation::Route { .. }))
+            .map(|event| format!("{event:?}"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(semantic(&work), semantic(&original));
+    let fills = |meter: &WorkMeter| {
+        meter
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| event.operation == "declaration fill")
+            .count()
+    };
+    assert!(fills(&original) > 0);
+    assert_eq!(fills(&work), 2 * fills(&original));
+    assert!(work.used() > original.used());
+    assert_eq!(work.limit(), original.limit());
+    work.record_error(&errors[0]);
+    assert!(matches!(
+        work.observations.borrow().last(),
+        Some(Observation::Diagnostic {
+            phase: "original-conflicts",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn owned_vector_semantic_observations_success_has_one_selected_declaration_inventory() {
+    let fixture = Fixture::new(&workflow());
+    let project = fixture.project();
+    let work = WorkMeter::default();
+    work.enable_observation();
+    check_project_candidate(
+        &project,
+        IndexLimits::default(),
+        &work,
+        &mut Allocator::default(),
+    )
+    .unwrap();
+    let observations = work.observations.borrow();
+    let originals = observations
+        .iter()
+        .filter_map(|event| match event {
+            Observation::Original { kind, id, .. } => Some((*kind, *id)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(!originals.is_empty());
+    assert_eq!(
+        originals.len(),
+        originals
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+    );
+    assert_eq!(
+        observations
+            .iter()
+            .filter(|event| matches!(event, Observation::Phase("collection")))
+            .count(),
+        1
+    );
+    assert_eq!(
+        observations
+            .iter()
+            .filter(|event| matches!(event, Observation::Frozen { .. }))
+            .count(),
+        1
+    );
+    assert!(!observations
+        .iter()
+        .any(|event| matches!(event, Observation::Diagnostic { .. })));
+    assert!(work
+        .events
+        .borrow()
+        .iter()
+        .any(|event| { event.operation == "owned vector retained diagnostic" }));
+}
+
+#[test]
+fn owned_vector_semantic_observations_selected_allocation_failure_is_not_rolled_back() {
+    let fixture = Fixture::new(&workflow());
+    let project = fixture.project();
+    let mut baseline = Allocator::default();
+    check_project_candidate(
+        &project,
+        IndexLimits::default(),
+        &WorkMeter::default(),
+        &mut baseline,
+    )
+    .unwrap();
+    let ordinals = baseline
+        .trace
+        .iter()
+        .enumerate()
+        .filter_map(|(index, event)| (event.kind == "paid typed bodies").then_some(index + 1))
+        .collect::<Vec<_>>();
+    assert_eq!(ordinals.len(), 1);
+    let ordinal = ordinals[0];
+    assert!(baseline.trace[ordinal - 1].success);
+    let work = WorkMeter::default();
+    work.enable_observation();
+    let mut allocator = Allocator {
+        fail_at: Some(ordinal),
+        ..Default::default()
+    };
+    let errors = check_project_candidate(&project, IndexLimits::default(), &work, &mut allocator)
+        .expect_err(
+            "the selected candidate must preserve its actual typed-body allocation failure",
+        );
+    assert!(candidate_attempted(&allocator));
+    assert_eq!(allocator.attempts, ordinal);
+    assert_eq!(
+        allocator
+            .trace
+            .last()
+            .map(|event| (event.kind, event.success)),
+        Some(("paid typed bodies", false))
+    );
+    assert_eq!(errors.len(), 1);
+    assert_eq!((errors[0].code, errors[0].stage), ("E0400", "resolve"));
+    assert_eq!(errors[0].message, "affected HIR allocation failed");
+    let observations = work.observations.borrow();
+    let observed = observations
+        .iter()
+        .filter_map(|event| match event {
+            Observation::Diagnostic { phase, diagnostic } => {
+                assert_eq!(*phase, "type");
+                Some(diagnostic.render_json(project.sources()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        observed,
+        errors
+            .iter()
+            .map(|error| error.render_json(project.sources()))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        observations
+            .iter()
+            .filter(|event| matches!(event, Observation::Phase("collection")))
+            .count(),
+        1
+    );
+    assert_eq!(
+        observations
+            .iter()
+            .filter(|event| matches!(event, Observation::Frozen { .. }))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn owned_vector_semantic_observations_do_not_change_work_limits_or_allocator_attempts() {
+    for source in [
+        workflow(),
+        "struct Message{value:i32}struct Message{value:i32}fn main()->i32{return 0;}".into(),
+    ] {
+        let fixture = Fixture::new(&source);
+        let project = fixture.project();
+        let observing = WorkMeter::default();
+        observing.enable_observation();
+        let disabled = WorkMeter::default();
+        let mut first = Allocator::default();
+        let mut second = Allocator::default();
+        let observed =
+            check_project_candidate(&project, IndexLimits::default(), &observing, &mut first);
+        let plain =
+            check_project_candidate(&project, IndexLimits::default(), &disabled, &mut second);
+        assert_eq!(observed.is_ok(), plain.is_ok());
+        assert!(observing.used() > 0);
+        assert_eq!(observing.used(), disabled.used());
+        assert_eq!(observing.limit(), disabled.limit());
+        assert!(disabled.observations.borrow().is_empty());
+        assert!(disabled.events.borrow().is_empty());
+        assert_eq!(first.attempts, second.attempts);
+        let allocations = |allocator: &Allocator| {
+            allocator
+                .trace
+                .iter()
+                .map(|event| (event.kind, event.length, event.element_bytes, event.success))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(allocations(&first), allocations(&second));
+        if observed.is_ok() {
+            let exact = WorkMeter::new(observing.used());
+            exact.enable_observation();
+            check_project_candidate(
+                &project,
+                IndexLimits::default(),
+                &exact,
+                &mut Allocator::default(),
+            )
+            .unwrap();
+            assert_eq!(exact.used(), observing.used());
+            let short = WorkMeter::new(observing.used() - 1);
+            short.enable_observation();
+            assert!(check_project_candidate(
+                &project,
+                IndexLimits::default(),
+                &short,
+                &mut Allocator::default(),
+            )
+            .is_err());
+        }
+    }
 }

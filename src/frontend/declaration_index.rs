@@ -45,6 +45,7 @@ use resource::{add, allocate, allocate_exact, compact, compare_bytes, merge_sort
 #[cfg(test)]
 pub(super) use resource::{
     AliasObservation, NominalAliasObservation, Observation, SeenObservation,
+    SemanticObservationTransaction,
 };
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
 pub(super) use sealed::collect_owned_vector_candidate;
