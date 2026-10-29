@@ -46,6 +46,503 @@ pub(crate) struct SourcePlan {
     pub input_paths: Vec<PathBuf>,
 }
 
+/// A detached local graph, not a replacement source for the original lock.
+pub(crate) struct VendorSummary {
+    pub output: PathBuf,
+    pub root: PathBuf,
+    pub sha256: String,
+    pub bytes: u64,
+    pub files: usize,
+}
+
+const VENDOR_PATH_BYTES: usize = 8192;
+const VENDOR_PATH_CAPACITY: usize = 2 * VENDOR_PATH_BYTES;
+// This additional bridge has its own stricter ceiling. Existing collector,
+// archive, staging and compiler ceilings are unchanged.
+const VENDOR_BRIDGE_BYTES: usize = 512 * 1024;
+type VendorPayload = Vec<(String, Vec<u8>)>;
+type VendorPayloadIterator = std::vec::IntoIter<(String, Vec<u8>)>;
+type VendorMembersResult = Result<Vec<archive::Member>, String>;
+type VendorReservation = Result<(), std::collections::TryReserveError>;
+type VendorResult = Result<VendorSummary, String>;
+type VendorBound = Result<usize, &'static str>;
+type VendorAdmissionResult = Result<VendorAdmission, String>;
+type VendorPathResult = Result<PathBuf, String>;
+type VendorInfoResult = Result<archive::Info, String>;
+type VendorWorkspaceResult = Result<Option<crate::runtime::WorkspaceManifest>, String>;
+type VendorLocationResult = Result<bool, String>;
+
+#[repr(C)]
+struct VendorLocationRoles {
+    ancestors: std::iter::Enumerate<std::path::Ancestors<'static>>,
+    next: Option<(usize, &'static Path)>,
+    directory: &'static Path,
+    depth: usize,
+    candidate_return: VendorPathResult,
+    candidate: PathBuf,
+    metadata_return: io::Result<fs::Metadata>,
+    before: fs::Metadata,
+    opened: fs::Metadata,
+    after: fs::Metadata,
+    file_return: io::Result<File>,
+    file: File,
+    options: OpenOptions,
+    raw: Vec<u8>,
+    reservation: VendorReservation,
+    mapped_reservation: Result<(), String>,
+    read_return: io::Result<()>,
+    witness_return: io::Result<usize>,
+    declaration_construction: VendorWorkspaceResult,
+    declaration_return: VendorWorkspaceResult,
+    declaration_caller: VendorWorkspaceResult,
+    declaration: Option<crate::runtime::WorkspaceManifest>,
+    lossy: std::borrow::Cow<'static, str>,
+    pending: Option<(String, String)>,
+    key: String,
+    value: String,
+    decoded: String,
+    arrays: [Vec<String>; 2],
+    location_construction: VendorLocationResult,
+    location_return: VendorLocationResult,
+    location_caller: VendorLocationResult,
+    input: &'static [u8],
+    file_length: usize,
+    scope: usize,
+    saved_admission: usize,
+    checked: Option<usize>,
+    file_length_result: Result<usize, std::num::TryFromIntError>,
+    files: &'static [archive::Member],
+    files_iter: std::slice::Iter<'static, archive::Member>,
+    member: &'static archive::Member,
+    relative: &'static Path,
+    components: std::path::Components<'static>,
+    base_depth: usize,
+    relative_depth: usize,
+}
+
+/// Complete new bridge transports, conservatively summed across its phases.
+/// Existing source collection/re-admission and materialization helpers retain
+/// their inherited baselines. Payload allocations move between owners; they
+/// are governed by the existing 32 MiB ceiling, not copied into this fee.
+#[repr(C)]
+struct VendorBridgeRoles {
+    source_argument: VendorPayload,
+    source_iterator: VendorPayloadIterator,
+    source_next: Option<(String, Vec<u8>)>,
+    source_selected: (String, Vec<u8>),
+    member: archive::Member,
+    members: Vec<archive::Member>,
+    members_construction: VendorMembersResult,
+    members_return: VendorMembersResult,
+    members_caller: VendorMembersResult,
+    reservation: VendorReservation,
+    mapped_reservation: Result<(), String>,
+    plan_return: Result<SourcePlan, String>,
+    retained_plan: SourcePlan,
+    archive: archive::Archive,
+    destination_return: Result<PathBuf, String>,
+    destination: PathBuf,
+    path_construction: VendorPathResult,
+    path_return: VendorPathResult,
+    path_caller: VendorPathResult,
+    stage_return: Result<PrivateDirectory, String>,
+    stage: PrivateDirectory,
+    exported_root: PathBuf,
+    info_return: io::Result<archive::Info>,
+    info_mapped: VendorInfoResult,
+    info: archive::Info,
+    summary: VendorSummary,
+    summary_construction: VendorResult,
+    summary_return: VendorResult,
+    summary_caller: VendorResult,
+    admission: VendorAdmission,
+    admission_construction: VendorAdmissionResult,
+    admission_return: VendorAdmissionResult,
+    admission_caller: VendorAdmissionResult,
+    parent: Option<&'static Path>,
+    check_return: Result<(), String>,
+    requested_slots: usize,
+    requested_bytes: Option<usize>,
+    bound_construction: VendorBound,
+    bound_return: VendorBound,
+    bound_caller: VendorBound,
+    selected_bound: usize,
+    path_input: &'static Path,
+    path_output: PathBuf,
+    path_reservation: VendorReservation,
+    location: VendorLocationRoles,
+    requested_name: Option<&'static std::ffi::OsStr>,
+}
+
+struct VendorAdmission {
+    used: usize,
+    limit: usize,
+}
+
+impl VendorAdmission {
+    fn new(limit: usize) -> VendorAdmissionResult {
+        let mut admission = Self { used: 0, limit };
+        admission.charge(std::mem::size_of::<VendorBridgeRoles>())?;
+        admission.charge(crate::project_vendor::control_bytes())?;
+        // Eight bridge/caller path buffers, including destination temporaries
+        // and the cwd owner. Existing PathBuf helpers can double a buffer while
+        // appending, so prepay twice the admitted path length for each role.
+        // Compiler collector paths keep their inherited baseline.
+        admission.charge(8 * VENDOR_PATH_CAPACITY)?;
+        Ok(admission)
+    }
+
+    fn charge(&mut self, bytes: usize) -> Result<(), String> {
+        let next = self
+            .used
+            .checked_add(bytes)
+            .ok_or("vendor metadata overflow")?;
+        if next > self.limit {
+            return Err("offline export metadata is too large; use a smaller project or a different output parent".into());
+        }
+        self.used = next;
+        Ok(())
+    }
+}
+
+fn vendor_member_slots(capacity: usize, count: usize) -> VendorBound {
+    capacity
+        .checked_add(count)
+        .and_then(|count| count.checked_mul(std::mem::size_of::<archive::Member>()))
+        .ok_or("vendor member metadata overflow")
+}
+
+fn vendor_members(files: VendorPayload, admission: &mut VendorAdmission) -> VendorMembersResult {
+    if files.len() > archive::MAX_FILES {
+        return Err("vendor exceeds the existing 2047 payload-file limit".into());
+    }
+    let slots = vendor_member_slots(files.capacity(), files.len())?;
+    // Both the consumed tuple buffer and destination member buffer exist while
+    // transferring. Strings and payload Vecs themselves retain their allocation.
+    admission.charge(slots)?;
+    let mut members = Vec::new();
+    #[cfg(test)]
+    vendor_test_reservation()?;
+    let reservation: VendorReservation = members.try_reserve_exact(files.len());
+    let mapped: Result<(), String> =
+        reservation.map_err(|_| "cannot reserve vendor members".into());
+    mapped?;
+    if members.capacity() != files.len() {
+        return Err("offline file list needs too much memory; reduce the number of files".into());
+    }
+    let source: VendorPayloadIterator = files.into_iter();
+    for (path, bytes) in source {
+        members.push(archive::Member { path, bytes });
+    }
+    Ok(members)
+}
+
+fn vendor_path(path: &Path) -> Result<(), String> {
+    if path.as_os_str().len() > VENDOR_PATH_BYTES
+        || path.to_str().is_none()
+        || path
+            .as_os_str()
+            .as_encoded_bytes()
+            .iter()
+            .any(|byte| byte.is_ascii_control())
+    {
+        return Err("vendor paths require UTF-8 without controls and at most 8192 bytes".into());
+    }
+    Ok(())
+}
+
+fn vendor_join_length(base: &Path, relative: &str) -> VendorBound {
+    base.as_os_str()
+        .len()
+        .checked_add(relative.len())
+        .and_then(|length| length.checked_add(1))
+        .ok_or("vendor path overflow")
+}
+
+fn vendor_join(base: &Path, relative: &str) -> VendorPathResult {
+    let length = vendor_join_length(base, relative)?;
+    if length > VENDOR_PATH_BYTES {
+        return Err("offline project path exceeds 8192 bytes; choose a shorter output path".into());
+    }
+    let mut path = PathBuf::new();
+    let reservation: VendorReservation = path.try_reserve_exact(length);
+    let mapped: Result<(), String> =
+        reservation.map_err(|_| "cannot reserve exported vendor root".into());
+    mapped?;
+    path.push(base);
+    path.push(relative);
+    if path.capacity() > VENDOR_PATH_BYTES {
+        return Err(
+            "offline project path needs too much memory; choose a shorter output path".into(),
+        );
+    }
+    Ok(path)
+}
+
+fn vendor_workspace_scope(length: usize) -> VendorBound {
+    // The shared discovery parser may retain a lossy UTF-8 copy (3n), pending
+    // text, decoded strings and a temporary key/error. String growth can double
+    // each request. 32n covers those overlapping text roles including this raw
+    // n+1 buffer; the two workspace arrays can each reach 64 String slots before
+    // their 32-member refusal. Fixed parser/I/O carriers are charged above.
+    length
+        .checked_add(1)
+        .and_then(|n| n.checked_mul(32))
+        .and_then(|n| n.checked_add(2 * 64 * std::mem::size_of::<String>() + 4096))
+        .ok_or("vendor destination discovery storage overflow")
+}
+
+fn vendor_workspace_file(
+    path: &Path,
+    before: &fs::Metadata,
+    length: usize,
+) -> VendorLocationResult {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    #[cfg(test)]
+    vendor_test_reservation()?;
+    let reservation: VendorReservation = bytes.try_reserve_exact(length + 1);
+    let mapped: Result<(), String> =
+        reservation.map_err(|_| "cannot reserve vendor destination discovery bytes".into());
+    mapped?;
+    if bytes.capacity() != length + 1 {
+        return Err(
+            "offline output parent needs too much memory to inspect; choose another parent".into(),
+        );
+    }
+    bytes.resize(length + 1, 0);
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|error| format!("cannot inspect vendor destination manifest: {error}"))?;
+    let opened = file.metadata().map_err(|error| error.to_string())?;
+    if !opened.is_file() || !same_file(before, &opened) || opened.len() != length as u64 {
+        return Err("vendor destination manifest changed during admission".into());
+    }
+    file.read_exact(&mut bytes[..length])
+        .map_err(|error| error.to_string())?;
+    if file
+        .read(&mut bytes[length..])
+        .map_err(|error| error.to_string())?
+        != 0
+    {
+        return Err("vendor destination manifest grew during admission".into());
+    }
+    let after = file.metadata().map_err(|error| error.to_string())?;
+    if after.len() != length as u64 || !same_file(before, &after) {
+        return Err("vendor destination manifest changed during admission".into());
+    }
+    bytes.truncate(length);
+    let parsed: VendorWorkspaceResult = crate::runtime::workspace_declaration_bytes(&bytes);
+    let declaration = parsed?;
+    Ok(declaration.is_some())
+}
+
+fn vendor_destination_context(
+    output: &Path,
+    admission: &mut VendorAdmission,
+) -> Result<(), String> {
+    let parent = output.parent().ok_or("vendor output has no parent")?;
+    for (depth, directory) in parent.ancestors().enumerate() {
+        if depth > 64 {
+            return Err("vendor destination exceeds the existing 64-ancestor discovery limit; choose a shallower output parent".into());
+        }
+        let candidate = vendor_join(directory, "oxid.toml")?;
+        let declared = match fs::symlink_metadata(&candidate) {
+            Ok(before) => {
+                if !before.file_type().is_file() || before.len() > 1024 * 1024 {
+                    return Err(
+                        "vendor destination ancestors require ordinary manifests of at most 1 MiB"
+                            .into(),
+                    );
+                }
+                let length = usize::try_from(before.len())
+                    .map_err(|_| "vendor discovery length overflow")?;
+                let saved = admission.used;
+                admission.charge(vendor_workspace_scope(length)?)?;
+                let result = vendor_workspace_file(&candidate, &before, length);
+                admission.used = saved;
+                result?
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            Err(error) => {
+                return Err(format!(
+                    "cannot inspect vendor destination ancestor: {error}"
+                ))
+            }
+        };
+        if declared {
+            return Err(format!("offline checkout destination is inside the workspace at {}; choose an output parent outside that workspace", directory.display()));
+        }
+        // Match ordinary workspace and source-package discovery when a deleted
+        // declaration leaves an authoritative v3/v4 workspace lock behind.
+        let saved = admission.used;
+        admission.charge(1024)?;
+        let marker: VendorLocationResult = crate::project_lock::has_workspace_marker(directory);
+        admission.used = saved;
+        if marker? {
+            return Err(format!("offline checkout destination is beneath a workspace lock at {}; restore its workspace declaration or choose an output parent outside it", directory.display()));
+        }
+    }
+    Ok(())
+}
+
+fn vendor_final_depth(output: &Path, archive: &archive::Archive) -> Result<(), String> {
+    let base = output.ancestors().count();
+    for member in &archive.files {
+        if Path::new(&member.path)
+            .file_name()
+            .is_some_and(|name| name == "oxid.toml")
+        {
+            let nested = Path::new(&member.path).components().count() - 1;
+            if base.checked_add(nested).is_none_or(|count| count > 65) {
+                return Err("exported project roots exceed the existing 64-ancestor discovery limit; choose a shallower output parent".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn vendor_directory(start: &Path, requested: &Path, workspace: bool) -> VendorResult {
+    vendor_directory_with_limit(start, requested, workspace, VENDOR_BRIDGE_BYTES)
+}
+
+fn vendor_directory_with_limit(
+    start: &Path,
+    requested: &Path,
+    workspace: bool,
+    limit: usize,
+) -> VendorResult {
+    if !cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
+        return Err("offline typed checkouts require Linux x86_64 or ARM64".into());
+    }
+    let mut admission = VendorAdmission::new(limit)?;
+    vendor_path(start)?;
+    vendor_path(requested)?;
+    let requested_name = requested.file_name();
+    if requested_name == Some(std::ffi::OsStr::new("oxid.toml")) {
+        return Err(
+            "offline checkout output cannot be named oxid.toml; choose a different directory name"
+                .into(),
+        );
+    }
+    // Do not create parent directories, follow a final symlink, or overwrite a
+    // destination while discovering/validating the complete input graph.
+    let output = destination(requested, false)?;
+    vendor_path(&output)?;
+    if output.capacity() > VENDOR_PATH_BYTES {
+        return Err("offline output path needs too much memory; choose a shorter path".into());
+    }
+    require_absent(&output)?;
+    vendor_destination_context(&output, &mut admission)?;
+    let SourcePlan {
+        owner: _,
+        root,
+        files,
+        input_paths,
+    } = crate::project_cli::package_source_plan(start, None, workspace)?;
+    validate_archive_destination(&output, &input_paths)?;
+    let exported_root = vendor_join(&output, &root)?;
+    let archive = archive::Archive {
+        root,
+        files: vendor_members(files, &mut admission)?,
+    };
+    // Exact same canonical source-package validator/hash as `package`, before
+    // creating staging files. No intermediate archive or payload clone.
+    let formatted: VendorInfoResult = archive::write(&archive, &mut io::sink())
+        .map_err(|error| format!("cannot format offline project: {error}"));
+    let info = formatted?;
+    vendor_final_depth(&output, &archive)?;
+    vendor_destination_context(&output, &mut admission)?;
+    let parent = output.parent().ok_or("vendor output has no parent")?;
+    // PrivateDirectory's generated component is at most 78 bytes (u32 PID,
+    // u128 timestamp and u64 counter). Reserve 128, plus a separator, before
+    // invoking that inherited helper or creating its directory.
+    if parent.as_os_str().len() > VENDOR_PATH_BYTES - 129 {
+        return Err("vendor output parent leaves insufficient private staging path space".into());
+    }
+    let mut stage = PrivateDirectory::create(parent)?;
+    vendor_path(&stage.path)?;
+    if stage.path.capacity() > VENDOR_PATH_CAPACITY {
+        return Err(
+            "offline export needs too much temporary path storage; choose a shorter output path"
+                .into(),
+        );
+    }
+    materialize(&archive, &stage.path)?;
+    validate_materialized(&archive, &stage.path)?;
+    validate_archive_destination(&output, &input_paths)?;
+    sync_directory(&stage.path).map_err(|error| format!("cannot sync offline project: {error}"))?;
+    #[cfg(test)]
+    vendor_test_fault(VendorFault::BeforePublish)?;
+    vendor_destination_context(&output, &mut admission)?;
+    publish_directory(&stage.path, &output)?;
+    stage.published = true;
+    let synced = vendor_sync_parent(parent);
+    if let Err(error) = synced {
+        return Err(format!("offline project was published at {}, but its parent directory could not be synced: {error}", exported_root.display()));
+    }
+    Ok(VendorSummary {
+        output,
+        root: exported_root,
+        sha256: info.sha256,
+        bytes: info.bytes,
+        files: info.file_count,
+    })
+}
+
+fn vendor_sync_parent(parent: &Path) -> io::Result<()> {
+    #[cfg(test)]
+    if vendor_test_fault(VendorFault::ParentSync).is_err() {
+        return Err(io::Error::other("injected vendor parent sync failure"));
+    }
+    sync_directory(parent)
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VendorFault {
+    Reservation,
+    BeforePublish,
+    ParentSync,
+}
+
+#[cfg(test)]
+thread_local! {
+    static VENDOR_FAULT: std::cell::Cell<Option<VendorFault>> = const { std::cell::Cell::new(None) };
+    static VENDOR_RESERVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn vendor_test_fault(point: VendorFault) -> Result<(), String> {
+    if VENDOR_FAULT.with(|fault| fault.get() == Some(point)) {
+        Err("injected vendor failure".into())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+fn vendor_test_reservation() -> Result<(), String> {
+    VENDOR_RESERVATIONS.with(|count| count.set(count.get() + 1));
+    vendor_test_fault(VendorFault::Reservation)
+}
+
+#[cfg(test)]
+#[path = "project_package/vendor_tests.rs"]
+mod vendor_tests;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Operation {
     Create,

@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_owned_text_compatibility.py \
+          python3 -B scripts/verify_offline_vendor_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -538,6 +538,31 @@ jobs:
         with:
           name: owned-record-vector-source-policy-predecessor
           path: ${{ runner.temp }}/owned-vector-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  owned-text-source-policy-predecessor:
+    name: Owned-text source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_owned_text_source_policy.py "$RUNNER_TEMP/owned-text-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 7279208226a3d4185c0b996491332519971e916e
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/owned-text-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/owned-text-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owned-text-source-policy-predecessor
+          path: ${{ runner.temp }}/owned-text-source-policy-replay
           if-no-files-found: error
           retention-days: 14
 
@@ -1190,6 +1215,15 @@ jobs:
             --oxid-debug target/debug/oxid --oxid-release target/release/oxid \
             --output "$RUNNER_TEMP/current-owned-text-native" \
             --llvm-bin "$OXID_LLVM_BIN" --native
+      - name: Verify offline exports rebuild and deploy with both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            cargo test --locked "${profile_flags[@]}" --test typed_vendor -- --ignored --test-threads=1
+          done
       - name: Verify native CPU training, gradients and checkpoint recovery
         run: |
           python3 -B scripts/verify_cpu_training.py target/debug/oxid target/release/oxid \
@@ -1449,6 +1483,15 @@ jobs:
             --oxid-debug target/debug/oxid --oxid-release target/release/oxid \
             --output "$RUNNER_TEMP/linux-arm64-native/owned-text" \
             --llvm-bin "$OXID_LLVM_BIN" --native
+      - name: Verify offline ARM64 exports rebuild and deploy with both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            cargo test --locked "${profile_flags[@]}" --test typed_vendor -- --ignored --test-threads=1
+          done
       - name: Verify local reference lifetimes on ARM64
         shell: bash
         run: |

@@ -133,7 +133,8 @@ def load_tests(loader, tests, pattern):
             "test_copy_record_debug_compatibility", "test_windows_native_compatibility",
             "test_record_field_completion_compatibility", "test_file_seek_compatibility",
             "test_scalar_library_compatibility", "test_arm64_package_compatibility",
-            "test_registry_compatibility", "test_owned_record_vector_compatibility"})
+            "test_registry_compatibility", "test_owned_record_vector_compatibility",
+            "test_owned_text_compatibility"})
         for module, (_, revision, _) in runner.PREDECESSOR_ONLY.items():
             name = module + ".py"
             for source in (FROZEN_SOURCES[name] + PASSING.encode(), None):
@@ -172,6 +173,20 @@ def load_tests(loader, tests, pattern):
         self.assertIn("test_owned_text_compatibility_future.CurrentTest.test_passes", result.stderr)
         self.assertIn("Mandatory predecessor replay: test_owned_record_vector_compatibility.py @ "
                       "0e8f23f7481c7ec4e24cd416ed30607f8eb75daf", result.stderr)
+
+    def test_owned_text_replay_keeps_its_exact_source_and_does_not_hide_vendor_successors(self):
+        self.assertEqual(runner.PREDECESSOR_ONLY["test_owned_text_compatibility"], (
+            "1fe80493856cf720c76525321ca7530f54c782282b95793d29ef47a889946ebc",
+            "7279208226a3d4185c0b996491332519971e916e",
+            "requires the pre-vendor compiler and exact 574-input source authority"))
+        self.assertNotIn("test_owned_text_compatibility", runner.HISTORICAL_ONLY)
+        result = self.execute({"test_owned_text_compatibility_future.py": PASSING,
+                               "test_offline_vendor_future.py": PASSING})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Ran 2 tests", result.stderr)
+        self.assertIn("test_offline_vendor_future.CurrentTest.test_passes", result.stderr)
+        self.assertIn("Mandatory predecessor replay: test_owned_text_compatibility.py @ "
+                      "7279208226a3d4185c0b996491332519971e916e", result.stderr)
 
     def test_empty_or_only_delegated_test_sets_cannot_report_success(self):
         for files in [

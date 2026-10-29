@@ -3120,6 +3120,7 @@ fn help() {
     println!("  oxid package [--frozen] [--output ARCHIVE]  Bundle native-project sources");
     println!("  oxid package --verify ARCHIVE");
     println!("  oxid package --extract ARCHIVE --output NEW_DIRECTORY");
+    println!("  oxid vendor --frozen --output NEW_DIRECTORY  Copy a project for offline use (Linux)");
     println!("  oxid registry init NEW_DIRECTORY          Create a private file registry (Linux)");
     println!("  oxid publish --registry file:///DIRECTORY [--package MEMBER]");
     println!();

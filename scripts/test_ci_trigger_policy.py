@@ -40,6 +40,10 @@ OWNED_VECTOR_REPLAY = 'scripts/verify_owned_record_vector_compatibility.py'
 OWNED_VECTOR_POLICY = (OWNED_VECTOR_REPLAY,
                        (110006, '16c7affd778deda3d61f9a4e4aebd66c9e01d842c6afe3e9c1a20de57caab6e0'))
 OWNED_TEXT_REPLAY = 'scripts/verify_owned_text_compatibility.py'
+OWNED_TEXT_POLICY = (OWNED_TEXT_REPLAY,
+                     (16603, '61bf3bf55b9c1f958fdf48fcc89e747cdf61700109ab979b098851249d9fa109'))
+OFFLINE_VENDOR_REPLAY = 'scripts/verify_offline_vendor_compatibility.py'
+OFFLINE_VENDOR_PARENT = '7279208226a3d4185c0b996491332519971e916e'
 REPLAY_ROUTES = {
     (SCALAR_REPLAY[0],): ('direct', SCALAR_REPLAY),
     (REGISTRY_REPLAY[0],): ('direct', REGISTRY_REPLAY),
@@ -47,6 +51,7 @@ REPLAY_ROUTES = {
     (MSVC_REPLAY, '--source-policy', 'registry'): ('msvc', REGISTRY_REPLAY),
     (OWNED_VECTOR_REPLAY,): ('owned-vector', REGISTRY_REPLAY),
     (OWNED_TEXT_REPLAY,): ('owned-text', OWNED_VECTOR_POLICY),
+    (OFFLINE_VENDOR_REPLAY,): ('offline-vendor', OWNED_TEXT_POLICY),
 }
 
 
@@ -198,6 +203,64 @@ def require_retained_replay_binding(route, read=None):
                                 if isinstance(node, ast.Try)).body,
                            'selected = load_policy(repo, args.source_policy)')
         _retained_delegate(tree, 'selected.bound()', 'selected.original_run(delegated)')
+    elif kind == 'offline-vendor':
+        for name, expected in (
+            ('PREDECESSOR', OFFLINE_VENDOR_PARENT),
+            ('PREDECESSOR_POLICY', OWNED_TEXT_POLICY[0]),
+            ('PREDECESSOR_POLICY_PIN', OWNED_TEXT_POLICY[1]),
+            ('CLI', 'src/cli.rs'), ('MAIN', 'src/main.rs'),
+            ('PACKAGE', 'src/project_package.rs'), ('COMMAND', 'src/project_vendor.rs'),
+            ('TEST', 'src/project_package/vendor_tests.rs'),
+            ('TEXT_RESOURCE_TEST', 'src/frontend/oir/owned/source/owned_text_source_resource_tests.rs'),
+            ('VECTOR_ROUTE_TEST', 'src/frontend/oir/source/owned_vector_route_tests.rs'),
+        ):
+            if _literal(tree.body, name) != expected:
+                raise AssertionError('offline-vendor retained parent/input changed: ' + name)
+        require_retained_replay_binding((OWNED_TEXT_REPLAY,), read)
+        for statement in (
+            'predecessor = load_predecessor(ROOT)', 'library = predecessor.library',
+            'RETAINED_RUN = predecessor.RETAINED_RUN', 'PREDECESSOR_ADDED = predecessor.PARENT_ADDED',
+            'VENDOR_CHANGED = frozenset((CLI, MAIN, PACKAGE, TEXT_RESOURCE_TEST, VECTOR_ROUTE_TEST))',
+            'VENDOR_ADDED = frozenset((COMMAND, TEST))',
+            'PARENT_ADDED = PREDECESSOR_ADDED | VENDOR_ADDED',
+        ):
+            _require_statement(tree.body, statement)
+        captured = _function(tree.body, 'capture_sources').body
+        _require_statement(captured, 'expected_parent = set(baseline) | PREDECESSOR_ADDED')
+        _require_statement(captured, 'expected = expected_parent | VENDOR_ADDED')
+        _require_condition(captured, 'set(parent) == expected_parent and len(parent) == 574')
+        _require_condition(captured,
+                           'VENDOR_CHANGED == {CLI, MAIN, PACKAGE, TEXT_RESOURCE_TEST, VECTOR_ROUTE_TEST} '
+                           'and VENDOR_ADDED == {COMMAND, TEST} '
+                           'and VENDOR_CHANGED <= expected_parent and not VENDOR_ADDED & expected_parent '
+                           'and len(expected) == 576')
+        _require_condition(captured, 'inputs[CLI] == approved_cli(parent[CLI])')
+        _require_condition(captured, 'inputs[MAIN] == approved_main(parent[MAIN])')
+        _require_condition(captured, 'inputs[TEXT_RESOURCE_TEST] == approved_text_resource_test(parent[TEXT_RESOURCE_TEST])')
+        _require_condition(captured, 'inputs[VECTOR_ROUTE_TEST] == approved_vector_route_test(parent[VECTOR_ROUTE_TEST])')
+        _require_statement(captured, 'insertion = unchanged_package(parent[PACKAGE], inputs[PACKAGE])')
+        bound = _function(tree.body, 'bound_predecessor')
+        _retained_bound(bound.body,
+                        "{'PREDECESSOR': PREDECESSOR, 'PREDECESSOR_ADDED': PREDECESSOR_ADDED, "
+                        "'PREDECESSOR_POLICIES': PREDECESSOR_POLICIES, 'PINS_PROVISIONAL': PINS_PROVISIONAL, "
+                        "'capture_sources': capture_sources, 'current_manifest': current_manifest}")
+        scopes = [node for node in bound.body if isinstance(node, ast.With)]
+        expected = ast.parse('with predecessor.bound_predecessor() as context:\n    pass').body[0]
+        if (len(scopes) != 1 or len(scopes[0].items) != 1
+                or ast.dump(scopes[0].items[0]) != ast.dump(expected.items[0])):
+            raise AssertionError('offline-vendor predecessor observer scope changed')
+        _retained_delegate(tree, 'bound_predecessor() as context', 'RETAINED_RUN(delegated)', guard_inside=True)
+        attempt = next(node for node in _function(tree.body, 'run').body if isinstance(node, ast.Try))
+        _require_condition(attempt.body, 'args.prepare_only or not PINS_PROVISIONAL')
+        scope = next(node for node in attempt.body if isinstance(node, ast.With))
+        controls = [node for node in scope.body if isinstance(node, ast.If)
+                    and ast.dump(node.test) == ast.dump(ast.parse('not args.prepare_only', mode='eval').body)]
+        if len(controls) != 1:
+            raise AssertionError('offline-vendor full observer replay changed')
+        _require_statement(controls[0].body,
+                           'report.update(predecessor.predecessor.run_owned_vector_observer_controls('
+                           'repo, delegated.output, context["selected"], context["seam"], '
+                           'context["original"], context["adapter"], retained["test_function_executions"]))')
     elif kind == 'owned-text':
         for name, expected in (
             ('PREDECESSOR', '0e8f23f7481c7ec4e24cd416ed30607f8eb75daf'),
@@ -657,11 +720,45 @@ class RetainedReplayRouteTests(unittest.TestCase):
                     self.command, '          python3 -B ' + ' '.join(route) + ' \\', 1)
                 self.assertEqual(retained_replay_route(changed), route)
 
-    def test_live_text_route_binds_the_pinned_owned_vector_wrapper_and_exact_source_membership(self):
-        self.assertEqual(self.route, (OWNED_TEXT_REPLAY,))
-        self.assertEqual(len(REPLAY_ROUTES), 6)
-        self.assertEqual(REPLAY_ROUTES[self.route], ('owned-text', OWNED_VECTOR_POLICY))
+    def test_text_route_still_binds_the_pinned_owned_vector_wrapper_and_exact_source_membership(self):
+        route = (OWNED_TEXT_REPLAY,)
+        self.assertEqual(len(REPLAY_ROUTES), 7)
+        self.assertEqual(REPLAY_ROUTES[route], ('owned-text', OWNED_VECTOR_POLICY))
+        require_retained_replay_binding(route)
+
+    def test_live_vendor_route_binds_the_pinned_text_wrapper_and_exact_source_membership(self):
+        self.assertEqual(self.route, (OFFLINE_VENDOR_REPLAY,))
+        self.assertEqual(len(REPLAY_ROUTES), 7)
+        self.assertEqual(REPLAY_ROUTES[self.route], ('offline-vendor', OWNED_TEXT_POLICY))
         require_retained_replay_binding(self.route)
+
+    def test_vendor_parent_membership_dispatch_package_scope_and_observer_cannot_drift(self):
+        wrapper = OFFLINE_VENDOR_REPLAY
+        original = (REPO / wrapper).read_bytes()
+        mutations = (
+            (OFFLINE_VENDOR_PARENT.encode(), b'f' * 40),
+            (b'PREDECESSOR_POLICY_PIN = (16603,', b'PREDECESSOR_POLICY_PIN = (16604,'),
+            (b'len(parent) == 574', b'len(parent) == 573'),
+            (b'len(expected) == 576', b'len(expected) == 577'),
+            (b'RETAINED_RUN = predecessor.RETAINED_RUN', b'RETAINED_RUN = library.run'),
+            (b'inputs[CLI] == approved_cli(parent[CLI])', b'True'),
+            (b'inputs[MAIN] == approved_main(parent[MAIN])', b'True'),
+            (b'inputs[TEXT_RESOURCE_TEST] == approved_text_resource_test(parent[TEXT_RESOURCE_TEST])', b'True'),
+            (b'inputs[VECTOR_ROUTE_TEST] == approved_vector_route_test(parent[VECTOR_ROUTE_TEST])', b'True'),
+            (b'VENDOR_CHANGED = frozenset((CLI, MAIN, PACKAGE, TEXT_RESOURCE_TEST, VECTOR_ROUTE_TEST))',
+             b'VENDOR_CHANGED = frozenset((CLI, MAIN, PACKAGE))'),
+            (b'insertion = unchanged_package(parent[PACKAGE], inputs[PACKAGE])', b'insertion = b""'),
+            (b'with predecessor.bound_predecessor() as context:', b'with unreviewed_parent() as context:'),
+            (b'predecessor.predecessor.run_owned_vector_observer_controls(', b'predecessor.unreviewed_controls('),
+            (b'args.prepare_only or not PINS_PROVISIONAL', b'True'),
+        )
+        for before, after in mutations:
+            with self.subTest(before=before):
+                changed = original.replace(before, after, 1)
+                self.assertNotEqual(changed, original, 'mutation must reach the real vendor controller')
+                with self.assertRaises(AssertionError):
+                    require_retained_replay_binding(
+                        (wrapper,), lambda name: changed if name == wrapper else (REPO / name).read_bytes())
 
     def test_text_parent_cardinality_hooks_observer_and_provisional_guard_cannot_drift(self):
         wrapper = OWNED_TEXT_REPLAY
@@ -730,7 +827,8 @@ class RetainedReplayRouteTests(unittest.TestCase):
         original = (REPO / wrapper).read_bytes()
         invocation = ('selected.original_run(delegated)' if kind == 'msvc'
                       else 'RETAINED_RUN(delegated)')
-        parent = (b'0e8f23f7481c7ec4e24cd416ed30607f8eb75daf' if kind == 'owned-text'
+        parent = (OFFLINE_VENDOR_PARENT.encode() if kind == 'offline-vendor'
+                  else b'0e8f23f7481c7ec4e24cd416ed30607f8eb75daf' if kind == 'owned-text'
                   else b'af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7')
         mutations = [
             (parent, b'f' * 40),

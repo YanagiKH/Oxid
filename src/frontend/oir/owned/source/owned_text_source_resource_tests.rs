@@ -1,11 +1,11 @@
-//! Real package source calls under the existing runtime allocation failpoint.
+//! Real project and package source calls under the runtime allocation failpoint.
 use super::super::super::byte_buffer;
 use super::*;
 use crate::frontend::{
     build_config::{ExecutionPolicy, HOSTED_FUEL},
     project::{
         packages::{PackageDependency, PackageSources, PackageSpec},
-        ProjectLimits,
+        ProjectLimits, ProjectSources,
     },
 };
 use std::{
@@ -154,6 +154,8 @@ impl Fixture {
             std::fs::create_dir_all(root.join(name).join("src")).unwrap();
         }
         std::fs::write(root.join("app/src/main.ox"), source).unwrap();
+        std::fs::write(root.join("app/src/flat.ox"), format!("mod text;\n{source}")).unwrap();
+        std::fs::write(root.join("app/src/text.ox"), TEXT_SOURCE).unwrap();
         std::fs::write(root.join("text/src/lib.ox"), TEXT_SOURCE).unwrap();
         Self(root.canonicalize().unwrap())
     }
@@ -187,17 +189,40 @@ impl Drop for Fixture {
 
 fn exercise(body: &str, skip: usize, allocations: u64, peak: u64) {
     let fixture = Fixture::new(&format!("{IMPORTS}{body}"));
-    let specs = fixture.specs();
-    let package = PackageSources::load(&specs, None, ProjectLimits::default()).unwrap();
-    let library = package
-        .project
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let specs = fixture.specs();
+        let package = PackageSources::load(&specs, None, ProjectLimits::default()).unwrap();
+        let library = package
+            .project
+            .sources()
+            .files()
+            .iter()
+            .find(|file| file.path() == specs[1].entry.to_str().unwrap())
+            .unwrap();
+        assert_eq!(library.text().as_bytes(), TEXT_SOURCE.as_bytes());
+        exercise_owner(SourceOwner::packaged(&package), skip, allocations, peak);
+    }
+    // The same literal library is an ordinary declared module on every host,
+    // including the Windows loader. Keep this path live on Linux/macOS too.
+    let project = ProjectSources::load_typed(
+        fixture.0.join("app/src/flat.ox").to_str().unwrap(),
+        ProjectLimits::default(),
+    )
+    .unwrap();
+    let text_path = fixture.0.join("app/src/text.ox").canonicalize().unwrap();
+    let library = project
         .sources()
         .files()
         .iter()
-        .find(|file| file.path() == specs[1].entry.to_str().unwrap())
+        .find(|file| file.path() == text_path.to_str().unwrap())
         .unwrap();
     assert_eq!(library.text().as_bytes(), TEXT_SOURCE.as_bytes());
-    let (program, entry) = check_enum_source(SourceOwner::packaged(&package)).unwrap();
+    exercise_owner(SourceOwner::project(&project), skip, allocations, peak);
+}
+
+fn exercise_owner(owner: SourceOwner<'_>, skip: usize, allocations: u64, peak: u64) {
+    let (program, entry) = check_enum_source(owner).unwrap();
     let expected = byte_buffer::Ledger {
         allocations,
         releases: allocations,
@@ -241,4 +266,28 @@ fn owned_text_source_resource_append_failure_preserves_both_owners_and_retry_suc
 fn owned_text_source_resource_reserve_failure_preserves_owner_and_retry_succeeds() {
     // The retry's 48-byte replacement coexists with the original 40-byte owner.
     exercise(RESERVE_BYTES, 1, 2, 88);
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[test]
+fn owned_text_source_resource_package_policy_refuses_before_loading_or_allocating() {
+    let fixture = Fixture::new(&format!("{IMPORTS}{FROM_UTF8}"));
+    let specs = fixture.specs();
+    let failure = PackageSources::load(&specs, None, ProjectLimits::default()).unwrap_err();
+    assert_eq!(failure.diagnostics.len(), 1);
+    assert_eq!(
+        (failure.diagnostics[0].code, failure.diagnostics[0].stage),
+        ("E0006", "package"),
+    );
+    assert_eq!(
+        failure.diagnostics[0].message,
+        "package source policy is qualified only on Linux or macOS",
+    );
+    assert!(failure.sources.files().is_empty());
+    assert_eq!(
+        failure.usage,
+        crate::frontend::project::SourceUsage::default()
+    );
+    assert_eq!(failure.allocator.attempts, 0);
+    assert!(failure.allocator.trace.is_empty());
 }
