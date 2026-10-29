@@ -118,6 +118,7 @@ struct MacroDef {
 pub(crate) struct ProjectManifest {
     pub(crate) name: Option<String>,
     pub(crate) version: Option<String>,
+    pub(crate) duplicate_version: bool,
     pub(crate) entry: Option<String>,
     pub(crate) kind: Option<String>,
     pub(crate) edition: Option<String>,
@@ -131,6 +132,7 @@ pub(crate) struct ProjectManifest {
     pub(crate) heap_limit: Option<u64>,
     pub(crate) scripts: HashMap<String, String>,
     pub(crate) dependencies: HashMap<String, String>,
+    pub(crate) registry_dependencies: Option<std::rc::Rc<crate::project_registry::Declarations>>,
     pub(crate) features: HashMap<String, bool>,
     pub(crate) tests: HashMap<String, String>,
     pub(crate) configuration_error: Option<String>,
@@ -1554,9 +1556,13 @@ pub(crate) fn read_typed_manifest_bytes(path: &Path, remaining: &mut usize) -> R
 }
 
 pub(crate) fn parse_typed_manifest_bytes(path: &Path, bytes: &[u8]) -> Result<ManifestSnapshot, String> {
+    parse_typed_manifest_bytes_registry(path, bytes, &mut None, false)
+}
+
+pub(crate) fn parse_typed_manifest_bytes_registry(path: &Path, bytes: &[u8], registry: &mut Option<crate::project_registry::Allowance>, prepaid: bool) -> Result<ManifestSnapshot, String> {
     use sha2::{Digest, Sha256};
     let text = std::str::from_utf8(bytes).map_err(|_| format!("typed manifest is not UTF-8: {}", path.display()))?;
-    let manifest = parse_manifest_text_policy(text, path, false, true)?;
+    let manifest = parse_manifest_text_policy_spans_registry(text, path, false, true, None, Some(registry), prepaid)?;
     let digest = format!("{:x}", Sha256::digest(bytes));
     let workspace = parse_workspace_text(text)?;
     Ok(ManifestSnapshot { manifest, digest, workspace })
@@ -1582,10 +1588,19 @@ fn parse_manifest_text_policy(text: &str, path: &Path, edition_only: bool, stric
 /// Rewrite only admitted dependency values in an exported manifest. Other
 /// sections, comments, quoted keys and line endings keep their original bytes.
 pub(crate) fn rewrite_dependency_sources(path: &Path, bytes: &[u8], replacements: &HashMap<String, String>) -> Result<Vec<u8>, String> {
+    rewrite_dependency_values(path, bytes, replacements, false, false)
+}
+
+
+pub(crate) fn rewrite_registry_prepaid(path: &Path, bytes: &[u8], replacements: &HashMap<String, String>, inline: bool) -> Result<Vec<u8>, String> {
+    rewrite_dependency_values(path, bytes, replacements, inline, true)
+}
+
+fn rewrite_dependency_values(path: &Path, bytes: &[u8], replacements: &HashMap<String, String>, inline: bool, prepaid: bool) -> Result<Vec<u8>, String> {
     if bytes.len() > 1024 * 1024 { return Err("exported manifest exceeds the 1 MiB limit".into()); }
     let text = std::str::from_utf8(bytes).map_err(|_| "exported manifest must be UTF-8")?;
     let mut spans = Vec::new();
-    let manifest = parse_manifest_text_policy_spans(text, path, false, true, Some(&mut spans))?;
+    let manifest = parse_manifest_text_policy_spans_registry(text, path, false, true, Some(&mut spans), None, prepaid)?;
     if let Some(error) = &manifest.configuration_error { return Err(error.clone()); }
     for (alias, value) in replacements {
         if !manifest.dependencies.contains_key(alias) || value.len() > 4096 || value.chars().any(char::is_control) {
@@ -1598,7 +1613,8 @@ pub(crate) fn rewrite_dependency_sources(path: &Path, bytes: &[u8], replacements
     for (alias, range) in spans {
         output.extend_from_slice(&bytes[cursor..range.start]);
         if let Some(value) = replacements.get(&alias) {
-            output.extend_from_slice(quote_manifest_string(value).as_bytes());
+            if inline { output.extend_from_slice(value.as_bytes()); }
+            else { output.extend_from_slice(quote_manifest_string(value).as_bytes()); }
             replaced.insert(alias);
         } else {
             output.extend_from_slice(&bytes[range.clone()]);
@@ -1609,14 +1625,18 @@ pub(crate) fn rewrite_dependency_sources(path: &Path, bytes: &[u8], replacements
     if output.len() > 1024 * 1024 || replaced.len() != replacements.len() {
         return Err("exported manifest exceeds its limit or omits a dependency".into());
     }
-    let parsed = parse_typed_manifest_bytes(path, &output)?;
+    let parsed = parse_typed_manifest_bytes_registry(path, &output, &mut None, prepaid)?;
     let mut expected = manifest.dependencies;
     for (alias, value) in replacements { expected.insert(alias.clone(), value.clone()); }
     if parsed.manifest.dependencies != expected { return Err("exported dependencies differ from their retained graph".into()); }
     Ok(output)
 }
 
-fn parse_manifest_text_policy_spans(text: &str, path: &Path, edition_only: bool, strict_execution: bool, mut spans: Option<&mut Vec<(String, std::ops::Range<usize>)>>) -> Result<ProjectManifest, String> {
+fn parse_manifest_text_policy_spans(text: &str, path: &Path, edition_only: bool, strict_execution: bool, spans: Option<&mut Vec<(String, std::ops::Range<usize>)>>) -> Result<ProjectManifest, String> {
+    parse_manifest_text_policy_spans_registry(text, path, edition_only, strict_execution, spans, None, false)
+}
+
+fn parse_manifest_text_policy_spans_registry(text: &str, path: &Path, edition_only: bool, strict_execution: bool, mut spans: Option<&mut Vec<(String, std::ops::Range<usize>)>>, mut registry: Option<&mut Option<crate::project_registry::Allowance>>, prepaid: bool) -> Result<ProjectManifest, String> {
     let mut manifest = ProjectManifest::default();
     let mut section = String::new();
     let mut continuation = ManifestValueContinuation::default();
@@ -1731,7 +1751,9 @@ fn parse_manifest_text_policy_spans(text: &str, path: &Path, edition_only: bool,
                     manifest.configuration_error = Some(format!("duplicate project name in {}", path.display()));
                 }
             }
-            ("project", "version") | ("", "version") => manifest.version = Some(value),
+            ("project", "version") | ("", "version") => {
+                manifest.duplicate_version |= manifest.version.replace(value).is_some();
+            }
             ("project", "kind") => {
                 if manifest.kind.replace(value).is_some() { manifest.configuration_error = Some(format!("duplicate project kind in {}", path.display())); }
             }
@@ -1806,7 +1828,13 @@ fn parse_manifest_text_policy_spans(text: &str, path: &Path, edition_only: bool,
             }
             ("scripts", _) => { manifest.scripts.insert(key, value); }
             ("dependencies", _) => {
-                if !value_raw.trim_start().starts_with(['"', '\'']) {
+                if strict_execution && value_raw.trim_start().starts_with('{') {
+                    if manifest.registry_dependencies.is_none() {
+                        manifest.registry_dependencies = Some(crate::project_registry::Declarations::new(registry.as_deref_mut(), prepaid)?);
+                    }
+                    let entries = std::rc::Rc::get_mut(manifest.registry_dependencies.as_mut().expect("registry declarations")).ok_or("registry declarations unexpectedly shared during parsing")?;
+                    entries.insert(&key, value_raw)?;
+                } else if !value_raw.trim_start().starts_with(['"', '\'']) {
                     manifest.configuration_error = Some(format!("typed-preview dependencies require quoted local paths or pinned Git URLs for `{}`; registry and table specifications are unsupported", key));
                 }
                 if manifest.dependencies.contains_key(&key) {
@@ -3092,6 +3120,8 @@ fn help() {
     println!("  oxid package [--frozen] [--output ARCHIVE]  Bundle native-project sources");
     println!("  oxid package --verify ARCHIVE");
     println!("  oxid package --extract ARCHIVE --output NEW_DIRECTORY");
+    println!("  oxid registry init NEW_DIRECTORY          Create a private file registry (Linux)");
+    println!("  oxid publish --registry file:///DIRECTORY [--package MEMBER]");
     println!();
     println!("More project tools:");
     println!("  oxid init <name>");

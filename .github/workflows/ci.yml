@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_scalar_library_compatibility.py \
+          python3 -B scripts/verify_registry_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -438,6 +438,31 @@ jobs:
         with:
           name: file-seek-source-policy-predecessor
           path: ${{ runner.temp }}/file-seek-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  scalar-library-source-policy-predecessor:
+    name: Scalar library source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_scalar_library_source_policy.py "$RUNNER_TEMP/scalar-library-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 8f2c29eaffabbd90c591bbdc440ae6e23acf1353
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/scalar-library-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/scalar-library-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scalar-library-source-policy-predecessor
+          path: ${{ runner.temp }}/scalar-library-source-policy-replay
           if-no-files-found: error
           retention-days: 14
 
@@ -1185,6 +1210,10 @@ jobs:
             --output "$RUNNER_TEMP/current-workspace-application" --native
           python3 -B scripts/verify_typed_package_bundle.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-bundle-application" --native
+      - name: Verify private registry publication offline builds and deployment
+        run: |
+          python3 -B scripts/verify_typed_registry.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-typed-registry" --native
       - name: Retain native numeric and package evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -1208,6 +1237,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Retain private registry evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-typed-registry
+          path: ${{ runner.temp }}/current-typed-registry
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
   linux-arm64-native:
     name: Current Linux ARM64 native programs
     runs-on: ubuntu-24.04-arm

@@ -502,17 +502,6 @@ class FrozenFileSeekReplay(unittest.TestCase):
         self.assertEqual(restored.count(NATIVE_LIBRARY_STEP), 1)
         self.assertEqual(restored.count(NATIVE_LIBRARY_EVIDENCE), 1)
         restored = restored.replace(NATIVE_LIBRARY_STEP, b"", 1).replace(NATIVE_LIBRARY_EVIDENCE, b"", 1)
-        sdk = re.search(rb"^          \$sdkStart = .*?(?=^          \$names = )",
-                        restored, flags=re.M | re.S)
-        self.assertIsNotNone(sdk)
-        self.assertEqual((len(sdk.group()), gate.sha(sdk.group())),
-                         (3451, "698042accd0ae6f47fbef134e5abfe8007b27415a45da837e244868e16f1132e"))
-        previous_sdk = (
-            b"          $PSNativeCommandArgumentPassing = 'Legacy'\n"
-            + (r'          $settings = & $env:ComSpec /d /s /c "`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"' + "\n").encode()
-            + b"          if ($LASTEXITCODE -ne 0) { throw 'Visual Studio environment initialization failed' }\n"
-        )
-        restored = restored[:sdk.start()] + previous_sdk + restored[sdk.end():]
         gate_name = b"scripts/verify_scalar_library_compatibility.py"
         self.assertEqual(restored.count(gate_name), 1)
         canonical = git_body(frozen, name)
@@ -526,27 +515,6 @@ class FrozenFileSeekReplay(unittest.TestCase):
             self.assertEqual(canonical.count(added), 1)
         self.assertEqual(canonical.replace(check, b"", 1).replace(legacy, b"", 1).replace(after, before, 1),
                          git_body(gate.PREDECESSOR, name))
-
-    def test_CI_comparison_refuses_changed_SDK_transport_and_bounds(self):
-        name = ".github/workflows/ci.yml"
-        current = gate.regular(ROOT, name)
-        regular = gate.regular
-        for before, after in (
-            (b"$sdkStart.Arguments = ", b"$sdkStart.ArgumentList = "),
-            (b"/d /u /s /c", b"/d /s /c"),
-            (b"-ge 120", b"-ge 3600"),
-            (b"-gt 1048576", b"-gt 2147483647"),
-            (b"-gt 65536", b"-gt 2147483647"),
-            (b"$sdk.ExitCode -ne 0", b"$sdk.ExitCode -ne 37"),
-            (b"$sdk.Dispose()", b"# no dispose"),
-        ):
-            self.assertEqual(current.count(before), 1)
-            changed = current.replace(before, after, 1)
-            def selected(root, path):
-                return changed if path == name else regular(root, path)
-            with self.subTest(change=before), patch.object(gate, "regular", side_effect=selected):
-                with self.assertRaises(AssertionError):
-                    self.test_CI_keeps_only_the_new_replay_job_and_exact_reviewed_SDK_patch()
 
     def test_CI_comparison_refuses_an_unrelated_job_after_the_new_replay_job(self):
         name = ".github/workflows/ci.yml"

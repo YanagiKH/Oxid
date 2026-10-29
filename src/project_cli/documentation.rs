@@ -35,12 +35,13 @@ pub(super) fn command(
     if options.words.len() != 1 || options.entry_mode.is_some() || options.project_test.is_some() {
         return Err("typed doc accepts edition, message-format and locking options only".into());
     }
-    let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph_options(
+    let (existing, graph) = project_operation_graph(
         root,
         snapshot,
         options.requires_lock(),
+        options.requires_lock(),
         options.offline || options.frozen,
+        true,
     )?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;

@@ -1,6 +1,33 @@
 //! Retained typed source bundles, with bounded format verification and atomic
 //! publication. This is not a general archive extractor or a build-script hook.
 mod archive;
+pub(crate) use archive::{Archive as LibraryArchive, Info as LibraryInfo, Member as LibraryMember};
+
+pub(crate) fn write_library(
+    archive: &LibraryArchive,
+    output: &mut impl io::Write,
+    budget: &mut crate::project_registry::Budget,
+) -> Result<LibraryInfo, String> {
+    archive::write_library(archive, output, budget)
+        .map_err(|error| format!("invalid library source artifact: {error}"))
+}
+pub(crate) fn read_library(
+    path: &Path,
+    budget: &mut crate::project_registry::Budget,
+) -> Result<(LibraryArchive, LibraryInfo), String> {
+    let (mut file, before) =
+        crate::project_registry::open_regular(path, archive::MAX_ARCHIVE_BYTES as usize)?;
+    let result = archive::read_library(&mut file, budget)
+        .map_err(|error| format!("invalid library source artifact: {error}"))?;
+    crate::project_registry::recheck(path, &file, &before)?;
+    if result.1.bytes != before.len() {
+        return Err("library artifact changed during reading".into());
+    }
+    Ok(result)
+}
+pub(crate) fn library_control_bytes() -> usize {
+    archive::library_control_bytes()
+}
 
 use std::{
     fs::{self, File, OpenOptions},
@@ -330,7 +357,7 @@ fn validate_materialized(archive: &archive::Archive, stage: &Path) -> Result<(),
     Ok(())
 }
 
-fn materialize(archive: &archive::Archive, stage: &Path) -> Result<(), String> {
+pub(crate) fn materialize(archive: &archive::Archive, stage: &Path) -> Result<(), String> {
     // Bound implicit directories too: a tiny file can otherwise carry a large
     // chain of parents without contributing to the payload byte budget.
     let mut directories = std::collections::BTreeSet::new();
@@ -375,7 +402,7 @@ fn materialize(archive: &archive::Archive, stage: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn new_file(path: &Path) -> Result<File, String> {
+pub(crate) fn new_file(path: &Path) -> Result<File, String> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -550,7 +577,7 @@ fn destination(path: &Path, create_parents: bool) -> Result<PathBuf, String> {
     Ok(walked.join(name))
 }
 
-fn require_directory(path: &Path) -> Result<(), String> {
+pub(crate) fn require_directory(path: &Path) -> Result<(), String> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|error| format!("cannot inspect package directory: {error}"))?;
     if metadata.is_dir() {
@@ -603,13 +630,13 @@ fn private_mkdir(path: &Path) -> io::Result<()> {
     }
 }
 
-struct PrivateDirectory {
-    path: PathBuf,
-    published: bool,
+pub(crate) struct PrivateDirectory {
+    pub(crate) path: PathBuf,
+    pub(crate) published: bool,
 }
 
 impl PrivateDirectory {
-    fn create(parent: &Path) -> Result<Self, String> {
+    pub(crate) fn create(parent: &Path) -> Result<Self, String> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -654,7 +681,7 @@ fn require_absent(path: &Path) -> Result<(), String> {
     }
 }
 
-fn publish_directory(source: &Path, destination: &Path) -> Result<(), String> {
+pub(crate) fn publish_directory(source: &Path, destination: &Path) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         use std::{ffi::CString, os::unix::ffi::OsStrExt};

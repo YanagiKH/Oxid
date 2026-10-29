@@ -14,6 +14,7 @@ mod program_arguments;
 mod project_cli;
 mod project_lock;
 mod project_package;
+mod project_registry;
 
 fn main() {
     let mut invocation = match program_arguments::Invocation::parse(std::env::args_os().collect()) {
@@ -29,6 +30,9 @@ fn main() {
         std::process::exit(code);
     }
     if let Some(code) = project_package::dispatch(&args) {
+        std::process::exit(code);
+    }
+    if let Some(code) = project_registry::dispatch(&args) {
         std::process::exit(code);
     }
     if let Some(code) = doctor_cli::dispatch(&args) {

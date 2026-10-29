@@ -254,13 +254,73 @@ fetch it and record its inputs. Later `--locked`, `--offline` and `--frozen`
 commands use cached checkouts without fetching. Different commits can coexist
 under different aliases. Git checkouts with local changes are preserved and
 refused. Workspaces share one cache under the workspace root. Source bundles
-include cached Git libraries as local dependencies; registry dependencies are
-not yet available. See [Git dependencies](../rfcs/0059-typed-git-dependencies.md).
+include cached Git libraries as local dependencies.
+See [Git dependencies](../rfcs/0059-typed-git-dependencies.md).
 
 After changing dependency manifests or source code intentionally, run
 `oxid lock --update`. Normal commands verify an existing lock. `--locked`
 requires one; `--frozen` also requires offline operation. Application and test
 source bodies remain editable.
+
+## Private registry libraries
+
+On Linux, a private file registry can share immutable library versions between
+projects. This is experimental and uses exact versions; version ranges, HTTPS
+registries and publisher authentication are not available yet.
+
+Create a new registry directory:
+
+```sh
+oxid registry init /home/me/oxid-registry
+```
+
+Give the library a name and version in its `oxid.toml`:
+
+```toml
+[project]
+name = "math"
+version = "1.2.0"
+edition = "typed-preview"
+kind = "lib"
+entry = "src/lib.ox"
+```
+
+From the library root, record its inputs and publish:
+
+```sh
+oxid lock
+oxid publish --registry file:///home/me/oxid-registry
+```
+
+Use `--package NAME` to select a workspace library. Publishing checks the full
+author lock and the library's declared tests without running their bodies.
+An existing version cannot be replaced. A published library's dependencies must
+be exact releases in the same registry; path and Git dependencies are refused.
+
+The consumer chooses a dependency alias, package name and exact version:
+
+```toml
+[dependencies]
+math = { registry = "file:///home/me/oxid-registry", package = "math", version = "1.2.0" }
+old_math = { registry = "file:///home/me/oxid-registry", package = "math", version = "1.1.0" }
+```
+
+Use public items through `crate::math` or `crate::old_math`. Run `oxid lock` to
+cache the releases and record their hashes. Ordinary commands verify an existing
+lock. After selecting a different version, run `oxid lock --update`; it cannot
+accept replacement bytes under an already locked name, version and registry.
+Restore the previous manifest and lock to roll back to its cached versions.
+
+`--locked`, `--offline` and `--frozen` never fetch a missing release, even from a
+local registry. Plain `doc`, `doctor` and editor requests also use cached releases
+only. Cached source changes are refused and preserved. Trust the registry
+directory you select: hashes check integrity against the selected inputs, not
+the publisher's identity. Keep `oxid.lock` in version control.
+
+`oxid package --frozen` includes cached registry libraries as local sources.
+The extracted source bundle can be checked and built offline without the
+registry or original cache. See the [private registry contract](../rfcs/0075-typed-private-registry.md)
+for artifact, identity and resource limits.
 
 ## Workspaces
 
@@ -313,8 +373,9 @@ oxid package --extract application.oxpkg.tar --output restored
 A source package includes the project, local dependencies, declared tests and
 matching lock. Extraction requires a new directory. Enter the project root
 printed by extraction, then run `oxid build --frozen` to rebuild offline.
-Cached Git libraries are included as local sources, so the restored project
-does not require Git or the original cache. Creation never fetches dependencies.
+Cached Git and private-registry libraries are included as local sources, so the
+restored project does not require Git, a registry or the original cache.
+Creation never fetches dependencies.
 Use `--sha256 HEX` with verify or extract to compare a separately supplied hash.
 [Package details](../rfcs/0038-typed-source-packages.md).
 

@@ -6,9 +6,12 @@ use crate::{frontend, project_lock, runtime};
 mod documentation;
 mod editor;
 mod package;
+mod registry;
 mod workspace;
 
 pub(crate) use package::package_source_plan;
+pub(crate) use registry::control_bytes as registry_control_bytes;
+pub(crate) use registry::{registry_recheck_release, registry_release_plan};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -591,17 +594,82 @@ fn entry_path(root: &Path, manifest: &runtime::ProjectManifest) -> Result<PathBu
 struct PackageGraph {
     specs: Vec<frontend::PackageSpec>,
     manifests: Vec<runtime::ManifestSnapshot>,
+    registries: Option<Box<crate::project_registry::GraphOrigins>>,
+}
+impl PackageGraph {
+    fn verify_registries(
+        &self,
+        prepared: &frontend::PreparedPackageProject<'_>,
+    ) -> Result<(), String> {
+        if let Some(origins) = &self.registries {
+            for (index, origin) in &origins.entries {
+                origin.manifest(&self.manifests[*index].digest)?;
+            }
+            prepared.visit_package_sources(&self.specs[0], |index, path, bytes| {
+                if let Some((_, origin)) = origins
+                    .entries
+                    .iter()
+                    .find(|(package, _)| *package == index)
+                {
+                    origin.source(path, bytes)?;
+                }
+                Ok(())
+            })?;
+        }
+        Ok(())
+    }
+    fn registry_pins(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &Path,
+            &crate::project_registry::Pin,
+            &crate::project_registry::Allowance,
+        ),
+    > {
+        self.registries.iter().flat_map(|origins| {
+            origins
+                .entries
+                .iter()
+                .map(|(_, origin)| (origin.root.as_path(), &origin.pin, &origins.allowance))
+        })
+    }
 }
 
 /// Existing project reads retain their behavior. Source packages supply a
 /// bounded reader and a portable directory resolver before dependency reads.
 trait ProjectReader {
     fn manifest(&mut self, path: &Path) -> Result<runtime::ManifestSnapshot, String>;
+    fn registry_manifest(&mut self, _snapshot: &runtime::ManifestSnapshot) -> Result<(), String> {
+        Ok(())
+    }
+    fn registry_allowance(&self) -> Option<crate::project_registry::Allowance> {
+        None
+    }
     fn package(&mut self, _edges: usize) -> Result<(), String> {
         Ok(())
     }
     fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
         fs::canonicalize(root.join(source)).map_err(|error| error.to_string())
+    }
+    fn registry_dependency(
+        &mut self,
+        _root: &Path,
+        _dependency: &crate::project_registry::Dependency,
+    ) -> Result<PathBuf, String> {
+        Err("registry dependencies are unavailable inside a portable source boundary".into())
+    }
+    fn registry_origin(
+        &self,
+        _root: &Path,
+    ) -> Option<std::sync::Arc<crate::project_registry::Origin>> {
+        None
+    }
+    fn registry_graph(
+        &mut self,
+        _packages: &[frontend::PackageSpec],
+    ) -> Result<Option<Box<crate::project_registry::GraphOrigins>>, String> {
+        Ok(None)
     }
     fn finish_graph(
         &self,
@@ -616,10 +684,91 @@ struct RegularProjectReader {
     locked: bool,
     offline: bool,
     git_roots: Vec<PathBuf>,
+    registry: Option<Box<crate::project_registry::Session>>,
+    registry_budget: Option<crate::project_registry::Allowance>,
+    registry_no_fetch: bool,
+}
+impl RegularProjectReader {
+    fn new(root: PathBuf, locked: bool, offline: bool) -> Self {
+        Self {
+            root,
+            locked,
+            offline,
+            git_roots: Vec::new(),
+            registry: None,
+            registry_budget: None,
+            registry_no_fetch: false,
+        }
+    }
 }
 impl ProjectReader for RegularProjectReader {
     fn manifest(&mut self, path: &Path) -> Result<runtime::ManifestSnapshot, String> {
-        runtime::load_typed_manifest(path)
+        if let Some(budget) = &self.registry_budget {
+            return crate::project_registry::load_manifest(path, budget);
+        }
+        let raw = runtime::read_typed_regular_file(path, 1024 * 1024, "typed manifest")?;
+        runtime::parse_typed_manifest_bytes_registry(path, &raw, &mut self.registry_budget, false)
+    }
+    fn registry_manifest(&mut self, snapshot: &runtime::ManifestSnapshot) -> Result<(), String> {
+        if let Some(allowance) = snapshot
+            .manifest
+            .registry_dependencies
+            .as_ref()
+            .and_then(|entries| entries.allowance.as_ref())
+        {
+            if let Some(existing) = &self.registry_budget {
+                if !std::rc::Rc::ptr_eq(existing, allowance) {
+                    return Err("registry manifest has a different operation allowance".into());
+                }
+            } else {
+                self.registry_budget = Some(allowance.clone());
+            }
+        }
+        Ok(())
+    }
+    fn registry_allowance(&self) -> Option<crate::project_registry::Allowance> {
+        self.registry_budget.clone()
+    }
+    fn registry_dependency(
+        &mut self,
+        root: &Path,
+        dependency: &crate::project_registry::Dependency,
+    ) -> Result<PathBuf, String> {
+        if self.registry.is_none() {
+            if self.registry_budget.is_none() {
+                self.registry_budget = Some(crate::project_registry::operation_budget()?);
+            }
+            let session = crate::project_registry::Session::with_budget(
+                &self.root,
+                self.locked || self.offline || self.registry_no_fetch,
+                self.registry_budget
+                    .as_ref()
+                    .expect("registry allowance")
+                    .clone(),
+            )?;
+            self.registry = Some(session.boxed()?);
+        }
+        self.registry
+            .as_mut()
+            .expect("registry session")
+            .resolve(root, dependency)
+    }
+    fn registry_origin(
+        &self,
+        root: &Path,
+    ) -> Option<std::sync::Arc<crate::project_registry::Origin>> {
+        self.registry
+            .as_ref()
+            .and_then(|session| session.origin(root))
+    }
+    fn registry_graph(
+        &mut self,
+        packages: &[frontend::PackageSpec],
+    ) -> Result<Option<Box<crate::project_registry::GraphOrigins>>, String> {
+        match self.registry.as_mut() {
+            Some(session) => session.graph(packages),
+            None => Ok(None),
+        }
     }
 
     fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
@@ -660,6 +809,9 @@ impl ProjectReader for RegularProjectReader {
         // the completed canonical graph so traversal order cannot hide a local
         // edge outside a subsequently authenticated Git checkout.
         for (package, manifest) in packages.iter().zip(manifests) {
+            if let Some(origin) = self.registry_origin(&package.root) {
+                origin.manifest(&manifest.digest)?;
+            }
             if let Some(anchor) = self
                 .git_roots
                 .iter()
@@ -681,6 +833,7 @@ impl ProjectReader for RegularProjectReader {
     }
 }
 
+#[cfg(test)]
 fn package_graph(
     root: &Path,
     snapshot: &runtime::ManifestSnapshot,
@@ -688,6 +841,7 @@ fn package_graph(
     package_graph_options(root, snapshot, true, true)
 }
 
+#[cfg(test)]
 fn package_graph_options(
     root: &Path,
     snapshot: &runtime::ManifestSnapshot,
@@ -704,13 +858,33 @@ fn package_graph_cache_owner(
     offline: bool,
     cache_owner: &Path,
 ) -> Result<PackageGraph, String> {
-    let mut reader = RegularProjectReader {
-        root: fs::canonicalize(cache_owner).map_err(|error| error.to_string())?,
+    let mut reader = RegularProjectReader::new(
+        fs::canonicalize(cache_owner).map_err(|error| error.to_string())?,
         locked,
         offline,
-        git_roots: Vec::new(),
-    };
+    );
     package_graph_with(root, snapshot, &mut reader)
+}
+
+fn project_operation_graph(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    required: bool,
+    locked: bool,
+    offline: bool,
+    registry_no_fetch: bool,
+) -> Result<(Option<project_lock::Existing>, PackageGraph), String> {
+    let mut reader = RegularProjectReader::new(
+        fs::canonicalize(root).map_err(|error| error.to_string())?,
+        locked,
+        offline,
+    );
+    reader.registry_manifest(snapshot)?;
+    reader.registry_no_fetch = registry_no_fetch;
+    let existing =
+        project_lock::read_with_registry(root, required, false, &mut reader.registry_budget)?;
+    let graph = package_graph_with(root, snapshot, &mut reader)?;
+    Ok((existing, graph))
 }
 
 fn package_graph_with(
@@ -718,6 +892,7 @@ fn package_graph_with(
     snapshot: &runtime::ManifestSnapshot,
     reader: &mut dyn ProjectReader,
 ) -> Result<PackageGraph, String> {
+    reader.registry_manifest(snapshot)?;
     struct Graph<'a> {
         reader: &'a mut dyn ProjectReader,
         packages: Vec<frontend::PackageSpec>,
@@ -732,6 +907,7 @@ fn package_graph_with(
             root: PathBuf,
             snapshot: runtime::ManifestSnapshot,
         ) -> Result<usize, String> {
+            self.reader.registry_manifest(&snapshot)?;
             if self.active.contains(&root) {
                 let mut chain: Vec<_> = self
                     .active
@@ -811,18 +987,29 @@ fn package_graph_with(
                 }
             }
             for (alias, source) in dependencies {
+                let descriptor = self.manifests[identity]
+                    .manifest
+                    .registry_dependencies
+                    .as_deref()
+                    .and_then(|entries| {
+                        entries
+                            .iter()
+                            .find(|(name, _)| name == &alias)
+                            .map(|(_, dependency)| dependency)
+                    });
                 if source.is_empty()
                     || source.len() > 4096
                     || source.chars().any(char::is_control)
-                    || source.starts_with(['{', '['])
+                    || descriptor.is_none() && source.starts_with(['{', '['])
                 {
                     return Err(format!("dependencies: invalid source for `{alias}`"));
                 }
-                let target = self
-                    .reader
-                    .dependency(&root, &source)
+                let target = match descriptor {
+                    Some(dependency) => self.reader.registry_dependency(&root, dependency),
+                    None => self.reader.dependency(&root, &source),
+                }
                     .map_err(|error| {
-                        if source.starts_with("git+") || source.starts_with("https://") {
+                        if descriptor.is_some() || source.starts_with("git+") || source.starts_with("https://") {
                             format!("dependencies: cannot resolve `{alias}`: {error}")
                         } else {
                             format!("dependencies: cannot open local path for `{alias}` ({source}): {error}")
@@ -904,9 +1091,11 @@ fn package_graph_with(
     graph
         .reader
         .finish_graph(&graph.packages, &graph.manifests)?;
+    let registries = graph.reader.registry_graph(&graph.packages)?;
     Ok(PackageGraph {
         specs: graph.packages,
         manifests: graph.manifests,
+        registries,
     })
 }
 
@@ -1023,12 +1212,30 @@ fn lock_snapshot(
     graph: &PackageGraph,
     prepared: &frontend::PreparedPackageProject<'_>,
 ) -> Result<project_lock::Snapshot, String> {
+    graph.verify_registries(prepared)?;
+    if let Some(origins) = &graph.registries {
+        let mut budget = origins.allowance.borrow_mut();
+        let mut fingerprints = Vec::new();
+        budget.reserve(&mut fingerprints, prepared.dependency_fingerprints().len())?;
+        for fingerprint in prepared.dependency_fingerprints() {
+            fingerprints.push((fingerprint.package, budget.text(&fingerprint.checksum)?));
+        }
+        let expected = project_lock::expected_registry(
+            &graph.specs,
+            &graph.manifests,
+            &fingerprints,
+            &mut budget,
+        )?;
+        drop(budget);
+        return expected.with_registries(&graph.specs[0].root, graph.registry_pins());
+    }
     let fingerprints = prepared
         .dependency_fingerprints()
         .iter()
         .map(|fingerprint| (fingerprint.package, fingerprint.checksum.clone()))
         .collect::<Vec<_>>();
-    project_lock::expected(&graph.specs, &graph.manifests, &fingerprints)
+    project_lock::expected(&graph.specs, &graph.manifests, &fingerprints)?
+        .with_registries(&graph.specs[0].root, graph.registry_pins())
 }
 
 /// Diagnose only admitted package inputs. No user script, program or test runs,
@@ -1065,8 +1272,7 @@ pub(crate) fn native_doctor_project() -> Result<Option<String>, String> {
     }
     validate_settings(&snapshot.manifest)?;
     let root = path.parent().expect("manifest parent");
-    let existing = project_lock::read(root, false)?;
-    let graph = package_graph(root, &snapshot)?;
+    let (existing, graph) = project_operation_graph(root, &snapshot, false, true, true, true)?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
     if existing.is_some() {
@@ -1095,12 +1301,13 @@ fn execute_project(
             true,
         ));
     }
-    let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph_options(
+    let (existing, graph) = project_operation_graph(
         root,
         snapshot,
         options.requires_lock(),
+        options.requires_lock(),
         options.offline || options.frozen,
+        false,
     )?;
     let entry_override = entry_override
         .map(|entry| local_source(&graph.specs[0].root, entry))
@@ -1113,6 +1320,7 @@ fn execute_project(
         Ok(prepared) => prepared,
         Err(error) => return Ok(error.report(command, options.json(), process && !pure_test)),
     };
+    graph.verify_registries(&prepared)?;
     if existing.is_some() {
         project_lock::verify(&lock_snapshot(&graph, &prepared)?, existing.as_ref())?;
     }
@@ -1146,17 +1354,28 @@ fn lock_project(
             "typed-preview lock accepts edition, message-format and locking options only".into(),
         );
     }
-    let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph_options(
+    let (existing, graph) = project_operation_graph(
         root,
         snapshot,
         options.requires_lock(),
+        options.requires_lock(),
         options.offline || options.frozen,
+        false,
     )?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
     let expected = lock_snapshot(&graph, &prepared)?;
-    let changed = project_lock::publish(root, &expected, existing.as_ref(), options.update)?;
+    let changed = if let Some(origins) = &graph.registries {
+        project_lock::publish_registry(
+            root,
+            &expected,
+            existing.as_ref(),
+            options.update,
+            &mut origins.allowance.borrow_mut(),
+        )?
+    } else {
+        project_lock::publish(root, &expected, existing.as_ref(), options.update)?
+    };
     let message = if options.json() {
         format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"lock-summary\",\"success\":true,\"changed\":{changed}}}\n")
     } else {
@@ -1337,12 +1556,13 @@ fn test(
         .collect::<Result<Vec<_>, _>>()?;
     // Admit every package manifest before starting any declared user test.
     // Each child repeats admission and compiles its own entry in one session.
-    let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph_options(
+    let (existing, graph) = project_operation_graph(
         root,
         snapshot,
         options.requires_lock(),
+        options.requires_lock(),
         options.offline || options.frozen,
+        false,
     )?;
     if existing.is_some() {
         let test_entry = local_source(&graph.specs[0].root, &manifest.tests[entries[0].0])?;

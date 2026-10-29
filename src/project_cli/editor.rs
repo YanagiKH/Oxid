@@ -63,17 +63,12 @@ pub(crate) fn project_graphs(
     let mut graphs = Vec::new();
     if let Some(root) = workspace_root {
         let snapshot = runtime::load_typed_manifest(&root.join("oxid.toml"))?;
-        let mut reader = RegularProjectReader {
-            root: root.clone(),
-            locked: true,
-            offline: true,
-            git_roots: Vec::new(),
-        };
+        let mut reader = RegularProjectReader::new(root.clone(), true, true);
         let workspace = workspace::load_roster(root.clone(), cwd, snapshot, &mut reader)?;
         for (member, snapshot) in workspace.source_members() {
             append(
                 &mut graphs,
-                package_graph_cache_owner(member, snapshot, true, true, &root)?,
+                package_graph_with(member, snapshot, &mut reader)?,
                 &snapshot.manifest,
             )?;
             budget(&graphs)?;
