@@ -4,6 +4,7 @@ These source-contract checks intentionally follow the workflows' block style;
 actionlint remains the YAML and GitHub Actions syntax validator.
 """
 from pathlib import Path
+import ast
 import hashlib
 import re
 import shlex
@@ -28,6 +29,170 @@ def block(source, key, indent=0):
     if len(matches) != 1:
         raise AssertionError(f'expected one {key} block, found {len(matches)}')
     return matches[0].strip()
+
+
+SCALAR_REPLAY = ('scripts/verify_scalar_library_compatibility.py',
+                 (63079, '29c1d76604adfeddf2006213922ceb59947f7a193454ffb542df2ba0f7597119'))
+REGISTRY_REPLAY = ('scripts/verify_registry_compatibility.py',
+                   (35050, 'd6bd23496f38bde3d89e7e97a2d724b73a0f233cfef99a6dc9fad752bdec9766'))
+MSVC_REPLAY = 'scripts/verify_msvc_linker_compatibility.py'
+OWNED_VECTOR_REPLAY = 'scripts/verify_owned_record_vector_compatibility.py'
+REPLAY_ROUTES = {
+    (SCALAR_REPLAY[0],): ('direct', SCALAR_REPLAY),
+    (REGISTRY_REPLAY[0],): ('direct', REGISTRY_REPLAY),
+    (MSVC_REPLAY, '--source-policy', 'scalar-library'): ('msvc', SCALAR_REPLAY),
+    (MSVC_REPLAY, '--source-policy', 'registry'): ('msvc', REGISTRY_REPLAY),
+    (OWNED_VECTOR_REPLAY,): ('owned-vector', REGISTRY_REPLAY),
+}
+
+
+def retained_replay_route(current):
+    """Admit one complete mandatory command, never a filename in a comment."""
+    if re.search(r'(?m)^    if:|continue-on-error:', current):
+        raise AssertionError('retained replay must be mandatory')
+    checkout = ('      - uses: actions/checkout@v4\n'
+                '        with:\n'
+                '          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n'
+                '          fetch-depth: 0\n')
+    if current.count('actions/checkout@') != 1 or checkout not in current:
+        raise AssertionError('retained replay must use the current head and complete history')
+    steps = re.findall(
+        r'^      - name: Run retained semantic and resource assertions on current sources\n'
+        r'(.*?)(?=^      - |\Z)', current, re.MULTILINE | re.DOTALL)
+    if len(steps) != 1:
+        raise AssertionError('expected exactly one retained replay step')
+    prefix = ('        env:\n'
+              '          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}\n'
+              '        run: |\n')
+    if not steps[0].startswith(prefix):
+        raise AssertionError('retained replay step metadata changed')
+    lines = steps[0][len(prefix):].splitlines()
+    tail = ['            --repo . \\',
+            '            --expected-head "$EXPECTED_HEAD" \\',
+            '            --output "$RUNNER_TEMP/current-project-unit2"']
+    if (len(lines) != 4 or lines[1:] != tail
+            or not lines[0].startswith('          python3 -B ')
+            or not lines[0].endswith(' \\')):
+        raise AssertionError('retained replay command or failure propagation changed')
+    try:
+        command = tuple(shlex.split(lines[0][10:-2]))
+    except ValueError as error:
+        raise AssertionError('invalid retained replay command') from error
+    route = command[2:]
+    if command[:2] != ('python3', '-B') or route not in REPLAY_ROUTES:
+        raise AssertionError('unknown retained replay route')
+    return route
+
+
+def _same_statement(node, source):
+    return ast.dump(node) == ast.dump(ast.parse(source).body[0])
+
+
+def _assignment(body, name):
+    rows = [node for node in body if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == name for target in node.targets)]
+    if len(rows) != 1:
+        raise AssertionError('expected one retained binding: ' + name)
+    return rows[0]
+
+
+def _literal(body, name):
+    return ast.literal_eval(_assignment(body, name).value)
+
+
+def _function(body, name):
+    rows = [node for node in body if isinstance(node, ast.FunctionDef) and node.name == name]
+    if len(rows) != 1:
+        raise AssertionError('expected one retained function: ' + name)
+    return rows[0]
+
+
+def _require_statement(body, source):
+    if sum(_same_statement(node, source) for node in body) != 1:
+        raise AssertionError('retained runner binding changed: ' + source)
+
+
+def _retained_delegate(tree, context, invocation):
+    """Require the original call and its immediate failure guard on the live path."""
+    run = _function(tree.body, 'run')
+    attempts = [node for node in run.body if isinstance(node, ast.Try)]
+    if len(attempts) != 1 or run.body[-1] is not attempts[0]:
+        raise AssertionError('retained replay exception boundary changed')
+    attempt = attempts[0]
+    calls = [node for node in attempt.body if isinstance(node, ast.With)]
+    if len(calls) != 1:
+        raise AssertionError('expected one unconditional retained replay call')
+    call = calls[0]
+    expected = ast.parse('with ' + context + ':\n    status = ' + invocation).body[0]
+    if ast.dump(call) != ast.dump(expected):
+        raise AssertionError('retained replay call changed')
+    index = attempt.body.index(call)
+    guard = attempt.body[index + 1] if index + 1 < len(attempt.body) else None
+    if not (isinstance(guard, ast.Expr) and isinstance(guard.value, ast.Call)
+            and isinstance(guard.value.func, ast.Name) and guard.value.func.id == 'require'
+            and guard.value.args
+            and ast.dump(guard.value.args[0]) == ast.dump(ast.parse('status == 0', mode='eval').body)):
+        raise AssertionError('retained replay failure guard changed')
+
+
+def _retained_bound(body, expected):
+    bindings = _assignment(body, 'bindings').value
+    if ast.dump(bindings) != ast.dump(ast.parse(expected, mode='eval').body):
+        raise AssertionError('retained binding scope changed')
+
+
+def require_retained_replay_binding(route, read=None):
+    """Check route ownership against immutable parents without importing controllers."""
+    read = read or (lambda name: (REPO / name).read_bytes())
+    kind, (policy, pin) = REPLAY_ROUTES[route]
+    raw = read(policy)
+    if (len(raw), hashlib.sha256(raw).hexdigest()) != pin:
+        raise AssertionError('immutable retained policy changed: ' + policy)
+    if kind == 'direct':
+        return
+    tree = ast.parse(read(route[0]))
+    if kind == 'msvc':
+        expected = {
+            'scalar-library': {'parent': '260c816fb984391493df84e498511dd9fc013f42',
+                               'controller': SCALAR_REPLAY[0], 'controller_pin': SCALAR_REPLAY[1],
+                               'input_members': 522},
+            'registry': {'parent': 'af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7',
+                         'controller': REGISTRY_REPLAY[0], 'controller_pin': REGISTRY_REPLAY[1],
+                         'input_members': 527},
+        }
+        if _literal(tree.body, 'SOURCE_POLICIES') != expected:
+            raise AssertionError('MSVC retained source-policy delegation changed')
+        classes = [node for node in tree.body if isinstance(node, ast.ClassDef)
+                   and node.name == 'RetainedPolicy']
+        if len(classes) != 1:
+            raise AssertionError('missing retained policy owner')
+        _require_statement(_function(classes[0].body, '__init__').body,
+                           'self.original_run, self.original_manifest = library.run, library.current_manifest')
+        _retained_bound(_function(classes[0].body, 'bound').body,
+                        "{'PREDECESSOR': self.spec['parent'], 'PREDECESSOR_ADDED': self.parent_added, "
+                        "'PREDECESSOR_POLICIES': self.policies, 'PINS_PROVISIONAL': PINS_PROVISIONAL, "
+                        "'capture_sources': self.capture_sources, 'current_manifest': self.current_manifest}")
+        _require_statement(_function(tree.body, 'load_policy').body, 'body = read_policy(repo, spec)')
+        _require_statement(_function(tree.body, 'load_policy').body, 'return RetainedPolicy(name, module)')
+        _require_statement(next(node for node in _function(tree.body, 'run').body
+                                if isinstance(node, ast.Try)).body,
+                           'selected = load_policy(repo, args.source_policy)')
+        _retained_delegate(tree, 'selected.bound()', 'selected.original_run(delegated)')
+    else:
+        for name, expected in (
+            ('PREDECESSOR', 'af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7'),
+            ('PREDECESSOR_POLICY', REGISTRY_REPLAY[0]),
+            ('PREDECESSOR_POLICY_PIN', REGISTRY_REPLAY[1]),
+        ):
+            if _literal(tree.body, name) != expected:
+                raise AssertionError('owned-vector retained parent changed: ' + name)
+        _require_statement(tree.body, 'library = load_predecessor(ROOT)')
+        _require_statement(tree.body, 'RETAINED_RUN = library.run')
+        _retained_bound(_function(tree.body, 'bound_registry').body,
+                        "{'PREDECESSOR': PREDECESSOR, 'PREDECESSOR_ADDED': PREDECESSOR_ADDED, "
+                        "'PREDECESSOR_POLICIES': PREDECESSOR_POLICIES, 'PINS_PROVISIONAL': PINS_PROVISIONAL, "
+                        "'capture_sources': capture_sources, 'current_manifest': current_manifest}")
+        _retained_delegate(tree, 'bound_registry()', 'RETAINED_RUN(delegated)')
 
 
 class CiTriggerPolicyTests(unittest.TestCase):
@@ -81,7 +246,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_discovery_and_historical_replay_are_both_mandatory(self):
         current = block(self.ci, 'quality-and-repository', 2)
         self.assertIn('python3 -B scripts/run_current_script_tests.py', current)
-        self.assertIn('scripts/verify_scalar_library_compatibility.py', current)
+        require_retained_replay_binding(retained_replay_route(current))
         self.assertIn('scripts/verify_floats.py', current)
         self.assertIn('scripts/verify_float_roots.py', current)
         self.assertIn('scripts/verify_characters.py', current)
@@ -333,6 +498,82 @@ exit 0
 
     def test_cross_platform_benchmark_step_propagates_every_failed_command(self):
         self.exercise_cross_platform_exit_propagation('Exercise current benchmark reporting')
+
+
+class RetainedReplayRouteTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.current = block((REPO / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
+                            'quality-and-repository', 2)
+        cls.route = retained_replay_route(cls.current)
+        cls.command = '          python3 -B ' + ' '.join(cls.route) + ' \\'
+
+    def test_all_five_known_routes_keep_the_same_complete_current_head_contract(self):
+        self.assertEqual(self.current.count(self.command), 1)
+        for route in REPLAY_ROUTES:
+            with self.subTest(route=route):
+                changed = self.current.replace(
+                    self.command, '          python3 -B ' + ' '.join(route) + ' \\', 1)
+                self.assertEqual(retained_replay_route(changed), route)
+
+    def test_missing_duplicate_unknown_or_bypassed_replay_commands_are_refused(self):
+        malformed = [
+            self.current.replace(self.command, '          # ' + self.command.strip(), 1),
+            self.current.replace(self.command, self.command + '\n' + self.command, 1),
+            self.current.replace(self.command, self.command.replace(self.route[0],
+                                 'scripts/verify_unreviewed_compatibility.py'), 1),
+            self.current.replace(self.command, self.command[:-2] + ' --prepare-only \\', 1),
+            self.current.replace(self.command, self.command[:-2] + ' --allow-dirty \\', 1),
+            self.current.replace(self.command, self.command[:-2] + ' --source-policy unreviewed \\', 1),
+            self.current.replace(self.command, self.command.replace('python3 -B', 'echo python3 -B'), 1),
+            self.current.replace(self.command, self.command.replace('python3 -B', 'if ! python3 -B'), 1),
+            self.current.replace('--output "$RUNNER_TEMP/current-project-unit2"',
+                                 '--output "$RUNNER_TEMP/current-project-unit2" || true', 1),
+            self.current.replace('--output "$RUNNER_TEMP/current-project-unit2"',
+                                 '--output "$RUNNER_TEMP/current-project-unit2"; exit 0', 1),
+            self.current.replace('            --expected-head "$EXPECTED_HEAD" \\\n', '', 1),
+            self.current.replace('          ref: ${{ github.event.pull_request.head.sha || github.sha }}',
+                                 '          ref: main', 1),
+            self.current.replace('        env:\n          EXPECTED_HEAD:',
+                                 '        if: false\n        env:\n          EXPECTED_HEAD:', 1),
+            self.current + '\n      - run: true\n        continue-on-error: true\n',
+        ]
+        for changed in malformed:
+            with self.subTest(source=changed):
+                self.assertNotEqual(changed, self.current, 'mutation must reach the real workflow')
+                with self.assertRaises(AssertionError):
+                    retained_replay_route(changed)
+
+    def test_selected_immutable_policy_cannot_be_replaced_even_with_the_same_route(self):
+        _, (policy, _) = REPLAY_ROUTES[self.route]
+        original = (REPO / policy).read_bytes()
+        with self.assertRaisesRegex(AssertionError, 'immutable retained policy changed'):
+            require_retained_replay_binding(
+                self.route, lambda name: original + b'\n' if name == policy else (REPO / name).read_bytes())
+
+    def test_wrapper_parent_runner_scope_and_failure_refusal_cannot_drift(self):
+        kind, _ = REPLAY_ROUTES[self.route]
+        if kind == 'direct':
+            # Direct routes already bind the complete immutable original runner.
+            require_retained_replay_binding(self.route)
+            return
+        wrapper = self.route[0]
+        original = (REPO / wrapper).read_bytes()
+        invocation = ('selected.original_run(delegated)' if kind == 'msvc'
+                      else 'RETAINED_RUN(delegated)')
+        mutations = [
+            (b'af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7', b'f' * 40),
+            (invocation.encode(), b'0'),
+            (b'status == 0', b'status == 0 or True'),
+            (b'"capture_sources":', b'"run":'),
+        ]
+        for before, after in mutations:
+            with self.subTest(before=before):
+                changed = original.replace(before, after, 1)
+                self.assertNotEqual(changed, original, 'mutation must reach the real controller')
+                with self.assertRaises(AssertionError):
+                    require_retained_replay_binding(
+                        self.route, lambda name: changed if name == wrapper else (REPO / name).read_bytes())
 
 
 if __name__ == '__main__':
