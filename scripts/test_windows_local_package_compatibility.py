@@ -52,12 +52,12 @@ class WindowsLocalPackageSourceAdmission(unittest.TestCase):
     def capture(self):
         return gate.capture_sources(self.root, self.baseline, self.parent)
 
-    def test_all_594_inputs_and_seven_existing_public_tests_are_retained(self):
+    def test_all_594_inputs_and_nine_existing_public_tests_are_retained(self):
         inputs = self.capture()
-        self.assertEqual((len(self.baseline), len(self.parent), len(inputs)), (376, 594, 601))
+        self.assertEqual((len(self.baseline), len(self.parent), len(inputs)), (376, 594, 603))
         self.assertEqual(set(inputs), set(self.parent) | gate.WINDOWS_ADDED)
-        self.assertEqual(len(gate.WINDOWS_CHANGED), 13)
-        self.assertEqual(len(gate.WINDOWS_ADDED), 7)
+        self.assertEqual(len(gate.WINDOWS_CHANGED), 14)
+        self.assertEqual(len(gate.WINDOWS_ADDED), 9)
         self.assertEqual(sum(name.startswith(("src/", "native/")) for name in inputs), 500)
         self.assertTrue(all(inputs[name] == body for name, body in self.parent.items()
                             if name not in gate.WINDOWS_CHANGED))
@@ -73,8 +73,8 @@ class WindowsLocalPackageSourceAdmission(unittest.TestCase):
                     self.capture()
                 self.put(name, self.current[name])
 
-    def test_all_twenty_reviewed_inputs_require_exact_bytes_and_presence(self):
-        self.assertEqual(len(gate.REVIEWED_INPUTS), 20)
+    def test_all_twenty_three_reviewed_inputs_require_exact_bytes_and_presence(self):
+        self.assertEqual(len(gate.REVIEWED_INPUTS), 23)
         for name in sorted(gate.REVIEWED_INPUTS):
             with self.subTest(mutation=name):
                 body = self.current[name]
@@ -174,10 +174,10 @@ class WindowsLocalPackageSourceAdmission(unittest.TestCase):
             result = gate.current_manifest(self.capture(), self.baseline, {"head": "test"}, self.parent)
         self.assertEqual((len(previous.call_args.kwargs["inputs"]),
                           len(previous.call_args.kwargs["parent"])), (594, 587))
-        self.assertEqual(len(result["files"]), 601)
+        self.assertEqual(len(result["files"]), 603)
         self.assertEqual(result["source_policy_parent"], gate.PREDECESSOR)
         self.assertEqual(result["generic_owned_vector_compiled_assets"], ["inherited marker"])
-        self.assertEqual(len(result["windows_local_package_reviewed_inputs"]), 20)
+        self.assertEqual(len(result["windows_local_package_reviewed_inputs"]), 23)
         rows = result["windows_local_package_directive_inventory"]
         self.assertEqual({row["path"] for row in rows if row["before"] is None}, gate.WINDOWS_ADDED)
         self.assertTrue(all(value is False for name, value in result.items()
@@ -191,7 +191,7 @@ class WindowsLocalPackageSourceAdmission(unittest.TestCase):
 class RetainedWindowsLocalPackageDelegation(unittest.TestCase):
     def test_every_reviewed_input_directive_and_source_anchor_matches_exact_candidate(self):
         self.assertEqual(gate.PREDECESSOR, "1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e")
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "be2d3b1584467ba84eac7ea8667f1161591549ec")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "0d72e4f621534a4eaf6e5495d0719e0400615673")
         self.assertFalse(gate.PINS_PROVISIONAL)
         self.assertFalse(gate.OBSERVER_PINS_PROVISIONAL)
         diff = subprocess.check_output([

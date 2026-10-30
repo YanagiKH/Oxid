@@ -54,7 +54,7 @@ GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility
 GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
 WINDOWS_LOCAL_PACKAGE_REPLAY = 'scripts/verify_windows_local_package_compatibility.py'
 WINDOWS_LOCAL_PACKAGE_PARENT = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
-WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = 'be2d3b1584467ba84eac7ea8667f1161591549ec'
+WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = '0d72e4f621534a4eaf6e5495d0719e0400615673'
 GENERIC_OWNED_VECTOR_POLICY = (GENERIC_OWNED_VECTOR_REPLAY,
     (43357, '8e80cbdb0b42e01dd4e125d36215dc94ff37422a0e10786216ec02ad66831ad0'))
 OWNED_ENUM_VECTOR_POLICY = (OWNED_ENUM_VECTOR_REPLAY,
@@ -344,7 +344,7 @@ def _windows_local_package_replay_binding(tree, read):
     inventories = {}
     for name, expected in (
         ('WINDOWS_CHANGED', {
-            'src/frontend/driver.rs', 'src/frontend/mod.rs',
+            'src/frontend/driver.rs', 'src/frontend/mod.rs', 'src/frontend/native/doctor_windows.rs',
             'src/frontend/oir/owned/source/owned_text_source_resource_tests.rs',
             'src/frontend/oir/source/owned_vector_route_tests.rs',
             'src/frontend/project.rs', 'src/frontend/project/editor_sources.rs',
@@ -352,6 +352,7 @@ def _windows_local_package_replay_binding(tree, read):
             'src/frontend/project/packages.rs', 'src/frontend/project/packages/tests.rs',
             'src/main.rs', 'src/project_cli/workspace.rs', 'src/project_lock.rs'}),
         ('WINDOWS_ADDED', {
+            'tests/hosted_execution.rs', 'tests/owned_enum_payloads.rs',
             'tests/typed_documentation.rs', 'tests/typed_generics.rs',
             'tests/typed_language_server.rs', 'tests/typed_package_lock.rs',
             'tests/typed_path_dependencies.rs', 'tests/typed_windows_modules.rs',
@@ -368,7 +369,7 @@ def _windows_local_package_replay_binding(tree, read):
     expected_inputs = inventories['WINDOWS_CHANGED'] | inventories['WINDOWS_ADDED']
     pins = _literal(tree.body, 'REVIEWED_INPUTS')
     if (inventories['WINDOWS_CHANGED'] & inventories['WINDOWS_ADDED']
-            or set(pins) != expected_inputs or len(pins) != 20
+            or set(pins) != expected_inputs or len(pins) != 23
             or any(not isinstance(pin, tuple) or len(pin) != 2 or type(pin[0]) is not int or pin[0] <= 0
                    or not isinstance(pin[1], str) or re.fullmatch('[a-f0-9]{64}', pin[1]) is None
                    for pin in pins.values())):
@@ -391,9 +392,9 @@ def _windows_local_package_replay_binding(tree, read):
     _require_statement(captured, 'expected_parent = set(baseline) | PREDECESSOR_ADDED')
     _require_statement(captured, 'expected = expected_parent | WINDOWS_ADDED')
     _require_condition(captured, 'set(parent) == expected_parent and len(parent) == 594')
-    _require_condition(captured, 'len(WINDOWS_CHANGED) == 13 and len(WINDOWS_ADDED) == 7 '
+    _require_condition(captured, 'len(WINDOWS_CHANGED) == 14 and len(WINDOWS_ADDED) == 9 '
                        'and WINDOWS_CHANGED <= expected_parent and not WINDOWS_ADDED & expected_parent '
-                       'and len(expected) == 601')
+                       'and len(expected) == 603')
     _require_condition(captured, 'set(REVIEWED_INPUTS) == WINDOWS_CHANGED | WINDOWS_ADDED '
                        'and set(REVIEWED_DIRECTIVES) == set(REVIEWED_INPUTS)')
     _require_condition(captured, 'actual == compiler and len(compiler) == 500')
@@ -428,7 +429,7 @@ def _windows_local_package_replay_binding(tree, read):
     scope = next(node for node in attempt.body if isinstance(node, ast.With))
     _require_condition(scope.body, 'retained.get("status") == ("prepared" if args.prepare_only else "passed") '
                        'and retained.get("semantic_pass") is (not args.prepare_only) '
-                       'and retained.get("current_input_members") == 601 '
+                       'and retained.get("current_input_members") == 603 '
                        'and retained.get("historical_results_apply_to_current") is False '
                        'and retained.get("controller") == identity(owned_policy.PREDECESSOR_POLICY, '
                        'regular(repo, owned_policy.PREDECESSOR_POLICY))')
@@ -462,7 +463,7 @@ def _windows_local_package_replay_binding(tree, read):
               if isinstance(key, ast.Constant)}
     for name, expected in (('semantic_pass', False), ('new_feature_qualification', False),
                            ('platform_qualification', False), ('inherited_input_members', 594),
-                           ('expected_current_input_members', 601)):
+                           ('expected_current_input_members', 603)):
         if (name not in values or not isinstance(values[name], ast.Constant)
                 or type(values[name].value) is not type(expected) or values[name].value != expected):
             raise AssertionError('Windows-package preflight qualification/membership changed: ' + name)
@@ -1536,9 +1537,9 @@ class RetainedReplayRouteTests(unittest.TestCase):
             (b'PINS_PROVISIONAL = False', b'PINS_PROVISIONAL = 1'),
             (b'OBSERVER_PINS_PROVISIONAL = False', b'OBSERVER_PINS_PROVISIONAL = True'),
             (b'len(parent) == 594', b'len(parent) == 593'),
-            (b'len(WINDOWS_CHANGED) == 13', b'len(WINDOWS_CHANGED) == 12'),
-            (b'len(WINDOWS_ADDED) == 7', b'len(WINDOWS_ADDED) == 6'),
-            (b'len(expected) == 601', b'len(expected) == 600'),
+            (b'len(WINDOWS_CHANGED) == 14', b'len(WINDOWS_CHANGED) == 13'),
+            (b'len(WINDOWS_ADDED) == 9', b'len(WINDOWS_ADDED) == 8'),
+            (b'len(expected) == 603', b'len(expected) == 602'),
             (b'len(compiler) == 500', b'len(compiler) == 499'),
             (b'actual == compiler and len(compiler) == 500', b'True'),
             (b'directories == expected_dirs', b'True'),
@@ -1559,7 +1560,7 @@ class RetainedReplayRouteTests(unittest.TestCase):
              b'report.update(enum_policy.unreviewed_controls('),
             (b'context["adapter"], report["test_function_executions"]))',
              b'context["adapter"], retained["test_function_executions"]))'),
-            (b'retained.get("current_input_members") == 601', b'retained.get("current_input_members") == 594'),
+            (b'retained.get("current_input_members") == 603', b'retained.get("current_input_members") == 594'),
             (b'"windows_local_package_semantics_qualified_by_this_gate": False',
              b'"windows_local_package_semantics_qualified_by_this_gate": True'),
             (b'"windows_local_package_ntfs_qualified_by_this_gate": False',
@@ -1570,7 +1571,7 @@ class RetainedReplayRouteTests(unittest.TestCase):
              b'"windows_local_package_platform_qualified_by_this_gate": True'),
             (b'"new_feature_qualification": False', b'"new_feature_qualification": True'),
             (b'"inherited_input_members": 594', b'"inherited_input_members": 587'),
-            (b'"expected_current_input_members": 601', b'"expected_current_input_members": 594'),
+            (b'"expected_current_input_members": 603', b'"expected_current_input_members": 594'),
             (b'args.prepare_only or not PINS_PROVISIONAL', b'True'),
             (b'args.prepare_only or not OBSERVER_PINS_PROVISIONAL', b'True'),
             (b'args.prepare_only or not predecessor.PINS_PROVISIONAL', b'True'),
@@ -1583,10 +1584,10 @@ class RetainedReplayRouteTests(unittest.TestCase):
                     require_retained_replay_binding(
                         (wrapper,), lambda name: changed if name == wrapper else (REPO / name).read_bytes())
 
-    def test_windows_route_rejects_drift_in_all_twenty_compiled_input_pins(self):
+    def test_windows_route_rejects_drift_in_all_twenty_three_compiled_input_pins(self):
         source = ast.parse((REPO / WINDOWS_LOCAL_PACKAGE_REPLAY).read_bytes())
         pins = _literal(source.body, 'REVIEWED_INPUTS')
-        self.assertEqual(len(pins), 20)
+        self.assertEqual(len(pins), 23)
         for member in pins:
             with self.subTest(member=member), self.assertRaisesRegex(AssertionError, 'compiled input differs'):
                 require_retained_replay_binding(

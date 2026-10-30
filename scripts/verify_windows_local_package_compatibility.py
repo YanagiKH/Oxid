@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 PREDECESSOR_POLICY = 'scripts/verify_generic_owned_vector_compatibility.py'
 PREDECESSOR_POLICY_PIN = (43357, '8e80cbdb0b42e01dd4e125d36215dc94ff37422a0e10786216ec02ad66831ad0')
-REVIEWED_SOURCE_HEAD = 'be2d3b1584467ba84eac7ea8667f1161591549ec'
+REVIEWED_SOURCE_HEAD = '0d72e4f621534a4eaf6e5495d0719e0400615673'
 # Reviewed source identity only; Windows runtime qualification remains separate.
 PINS_PROVISIONAL = False
 # The inherited observer and its derived bytes are already frozen unchanged.
@@ -31,6 +31,7 @@ OBSERVER_DERIVED_PIN = (34582, '73b30bca73d10126977744d50fb4cc42f6dc1cb876c5ee82
 
 WINDOWS_CHANGED = frozenset(('src/frontend/driver.rs',
  'src/frontend/mod.rs',
+ 'src/frontend/native/doctor_windows.rs',
  'src/frontend/oir/owned/source/owned_text_source_resource_tests.rs',
  'src/frontend/oir/source/owned_vector_route_tests.rs',
  'src/frontend/project.rs',
@@ -44,7 +45,9 @@ WINDOWS_CHANGED = frozenset(('src/frontend/driver.rs',
  'src/project_lock.rs'))
 
 # These existing Git files are new members of this retained source authority.
-WINDOWS_ADDED = frozenset(('tests/typed_documentation.rs',
+WINDOWS_ADDED = frozenset(('tests/hosted_execution.rs',
+ 'tests/owned_enum_payloads.rs',
+ 'tests/typed_documentation.rs',
  'tests/typed_generics.rs',
  'tests/typed_language_server.rs',
  'tests/typed_package_lock.rs',
@@ -81,7 +84,11 @@ REVIEWED_INPUTS = {'src/frontend/driver.rs': (103954, 'ed53ec43697679153f55ccb8f
                                       '36d29ba7b66045e2fb586d431b076ad3fea5cd95d97cf02008e48c4219b84034'),
  'tests/typed_windows_modules.rs': (25888,
                                     'e0e2ac63e323bd0954e644d5689d9ff364ca4efe265bd9f39cc60bccd88d95e3'),
- 'tests/typed_workspace.rs': (49944, '2cfd7008827704025c535a9294b0b79671092e732661a40ab7d9957f603a900c')}
+ 'tests/typed_workspace.rs': (49944, '2cfd7008827704025c535a9294b0b79671092e732661a40ab7d9957f603a900c'),
+ 'src/frontend/native/doctor_windows.rs': (37408,
+                                           '0744258a20ece447a58be19c94eed8193416fe94ada73a05c83e5af5a201ffb2'),
+ 'tests/hosted_execution.rs': (31926, 'ff2729af21346faaa09d67fb205398fff04b7097cdf6dd2e34dbd3da38c43640'),
+ 'tests/owned_enum_payloads.rs': (14583, 'cf47f46203d8db19c565fb78964a03612e87b3df097d61a382cc89ef0e33dedc')}
 
 REVIEWED_DIRECTIVES = {'src/frontend/driver.rs': {'attributes': ((b'#[derive(Clone, Debug, PartialEq, Eq)]', 1),
                                            (b'#[derive(Debug)]', 2),
@@ -779,7 +786,87 @@ REVIEWED_DIRECTIVES = {'src/frontend/driver.rs': {'attributes': ((b'#[derive(Clo
                                           b'_arch = "x86_64",\n            target_pointer_width = "64",\n '
                                           b'           target_endian = "little"\n        )\n    ))',
                                           1),
-                                         (b'env!("CARGO_BIN_EXE_oxid")', 1))}}
+                                         (b'env!("CARGO_BIN_EXE_oxid")', 1))},
+ 'src/frontend/native/doctor_windows.rs': {'attributes': ((b'#[repr(C)]', 6),
+                                                          (b'#[link(name = "Kernel32")]', 1),
+                                                          (b'#[repr(align(16))]', 1),
+                                                          (b'#[cfg(test)]', 1),
+                                                          (b'#[test]', 5),
+                                                          (b'#[link(name = "Shell32")]', 1),
+                                                          (b'#[link(name = "Kernel32")]', 1)),
+                                           'build_script': None,
+                                           'c_preprocessor': (),
+                                           'legacy': ([], []),
+                                           'macros': ()},
+ 'tests/hosted_execution.rs': {'attributes': ((b'#[cfg(all(\n    target_os = "linux",\n    target_pointer_w'
+                                               b'idth = "64",\n    target_endian = "little",\n    any(targe'
+                                               b't_arch = "x86_64", target_arch = "aarch64")\n))]',
+                                               1),
+                                              (b'#[test]', 5),
+                                              (b'#[cfg(target_os = "linux")]', 1),
+                                              (b'#[test]', 1),
+                                              (b'#[cfg(target_os = "linux")]', 1),
+                                              (b'#[test]', 1),
+                                              (b'#[ignore = "requires native Linux and LLVM 19.1.7"]', 1),
+                                              (b'#[cfg(all(\n    target_os = "linux",\n    target_pointer_w'
+                                               b'idth = "64",\n    target_endian = "little",\n    any(targe'
+                                               b't_arch = "x86_64", target_arch = "aarch64")\n))]',
+                                               1),
+                                              (b'#[test]', 2),
+                                              (b'#[cfg(all(\n    target_os = "linux",\n    target_pointer_w'
+                                               b'idth = "64",\n    target_endian = "little",\n    any(targe'
+                                               b't_arch = "x86_64", target_arch = "aarch64")\n))]',
+                                               1),
+                                              (b'#[test]', 5),
+                                              (b'#[cfg(all(\n    target_os = "linux",\n    target_pointer_w'
+                                               b'idth = "64",\n    target_endian = "little",\n    any(targe'
+                                               b't_arch = "x86_64", target_arch = "aarch64")\n))]',
+                                               1),
+                                              (b'#[test]', 1),
+                                              (b'#[ignore = "requires Linux x86_64 or ARM64 LLVM 19.1.7 in OX'
+                                               b'ID_LLVM_BIN"]',
+                                               1),
+                                              (b'#[cfg(all(\n    target_os = "linux",\n    target_pointer_w'
+                                               b'idth = "64",\n    target_endian = "little",\n    any(targe'
+                                               b't_arch = "x86_64", target_arch = "aarch64")\n))]',
+                                               1),
+                                              (b'#[test]', 1),
+                                              (b'#[ignore = "requires Linux x86_64 or ARM64 LLVM 19.1.7 in OX'
+                                               b'ID_LLVM_BIN"]',
+                                               1),
+                                              (b'#[cfg(all(\n    target_os = "linux",\n    target_pointer_w'
+                                               b'idth = "64",\n    target_endian = "little",\n    any(targe'
+                                               b't_arch = "x86_64", target_arch = "aarch64")\n))]',
+                                               2)),
+                               'build_script': None,
+                               'c_preprocessor': (),
+                               'legacy': ([], []),
+                               'macros': ((b'env!("CARGO_BIN_EXE_oxid")', 4),
+                                          (b'cfg!(any(\n        target_os = "linux",\n        target_os = "'
+                                           b'macos",\n        all(\n            target_os = "windows",\n    '
+                                           b'        target_arch = "x86_64",\n            target_pointer_w'
+                                           b'idth = "64",\n            target_endian = "little"\n        )\n'
+                                           b'    ))',
+                                           1),
+                                          (b'cfg!(all(\n        target_os = "linux",\n        target_pointe'
+                                           b'r_width = "64",\n        target_endian = "little",\n        an'
+                                           b'y(target_arch = "x86_64", target_arch = "aarch64")\n    ))',
+                                           1),
+                                          (b'env!("CARGO_BIN_EXE_oxid")', 2))},
+ 'tests/owned_enum_payloads.rs': {'attributes': ((b'#[test]', 14),
+                                                 (b'#[ignore = "requires an already installed pinned LLVM to'
+                                                  b'olchain; no installation or fallback"]',
+                                                  1)),
+                                  'build_script': None,
+                                  'c_preprocessor': (),
+                                  'legacy': ([], []),
+                                  'macros': ((b'cfg!(any(\n        target_os = "linux",\n        target_os'
+                                              b' = "macos",\n        all(\n            target_os = "window'
+                                              b's",\n            target_arch = "x86_64",\n            targ'
+                                              b'et_pointer_width = "64",\n            target_endian = "little'
+                                              b'"\n        )\n    ))',
+                                              1),
+                                             (b'env!("CARGO_BIN_EXE_oxid")', 1))}}
 
 
 def require(condition, message):
@@ -824,9 +911,9 @@ def capture_sources(repo, baseline, parent):
     expected = expected_parent | WINDOWS_ADDED
     require(set(parent) == expected_parent and len(parent) == 594,
             "wrong pinned Windows local-package parent membership")
-    require(len(WINDOWS_CHANGED) == 13 and len(WINDOWS_ADDED) == 7
+    require(len(WINDOWS_CHANGED) == 14 and len(WINDOWS_ADDED) == 9
             and WINDOWS_CHANGED <= expected_parent and not WINDOWS_ADDED & expected_parent
-            and len(expected) == 601, "wrong finite Windows local-package source membership")
+            and len(expected) == 603, "wrong finite Windows local-package source membership")
     require(set(REVIEWED_INPUTS) == WINDOWS_CHANGED | WINDOWS_ADDED
             and set(REVIEWED_DIRECTIVES) == set(REVIEWED_INPUTS),
             "wrong Windows local-package pin/directive membership")
@@ -925,7 +1012,7 @@ def run(args):
     controller = regular(repo, "scripts/verify_windows_local_package_compatibility.py")
     report = {"schema": "oxid-windows-local-package-retained-wrapper-v1", "status": "running", "semantic_pass": False,
               "compiler_executions": 0, "controller": identity("scripts/verify_windows_local_package_compatibility.py", controller),
-              "source_policy_parent": PREDECESSOR, "inherited_input_members": 594, "expected_current_input_members": 601,
+              "source_policy_parent": PREDECESSOR, "inherited_input_members": 594, "expected_current_input_members": 603,
               "pins_provisional": PINS_PROVISIONAL, "observer_pins_provisional": OBSERVER_PINS_PROVISIONAL,
               "reviewed_source_head": REVIEWED_SOURCE_HEAD, "new_feature_qualification": False,
               "platform_qualification": False, "started_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat()}
@@ -945,7 +1032,7 @@ def run(args):
             retained = json.loads(raw)
             require(retained.get("status") == ("prepared" if args.prepare_only else "passed")
                     and retained.get("semantic_pass") is (not args.prepare_only)
-                    and retained.get("current_input_members") == 601
+                    and retained.get("current_input_members") == 603
                     and retained.get("historical_results_apply_to_current") is False
                     and retained.get("controller") == identity(owned_policy.PREDECESSOR_POLICY,
                                                                regular(repo, owned_policy.PREDECESSOR_POLICY)),
