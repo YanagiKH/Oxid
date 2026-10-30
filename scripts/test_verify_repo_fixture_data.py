@@ -19,6 +19,14 @@ import verify_typed_vector_fixture_data
 
 PYTHON_LIBRARY_ENTRY = 'apps/python-pricing/src/pricing.ox'
 
+GENERIC_OWNED_VECTOR_PROJECTS = {
+    "packages/owned_vec": ("packages/owned_vec/src/lib.ox",),
+    "examples/owned-vector-results": ("examples/owned-vector-results/src/main.ox",),
+}
+GENERIC_OWNED_VECTOR_MEMBERS = {
+    member for members in GENERIC_OWNED_VECTOR_PROJECTS.values() for member in members
+}
+
 ENUM_PROJECTS = {
     "apps/frame-filter": (
         "apps/frame-filter/src/main.ox", "apps/frame-filter/tests/codec.ox",
@@ -367,6 +375,32 @@ def owned_record_vector_predecessor_report(text):
     return text
 
 
+def generic_owned_vector_predecessor_report(text):
+    """Remove the two checked Generic projects and the single application run."""
+    report = list(re.finditer(
+        r"^repository verification passed: (?P<language>\d+) language sources, "
+        r"(?P<checks>\d+) checks, (?P<runs>\d+) runnable programs "
+        r"\(\d+ legacy sources, \d+ legacy runnable programs, "
+        r"(?P<members>\d+) typed source members / (?P<entries>\d+) typed entry runs; "
+        r"\d+ v2 overlay source members / \d+ materialized typed checks in a \d+-module closure; "
+        r"\d+ wide parser overlay members / 2 materialized typed checks; "
+        r"(?P<projects>\d+) manifest projects checked; (?P<project_runs>\d+) run; "
+        r"(?P<project_tests>\d+) tested\)", text, re.M))
+    if len(report) != 1:
+        raise AssertionError("expected one complete repository summary")
+    deltas = {"language": 2, "checks": 2, "runs": 1, "members": 2,
+              "entries": 1, "projects": 2, "project_runs": 1, "project_tests": 0}
+    edits = []
+    for name, delta in deltas.items():
+        value = int(report[0].group(name))
+        if value < delta:
+            raise AssertionError("generic-owned-vector successor exceeds its reported category")
+        edits.append((*report[0].span(name), str(value - delta)))
+    for start, end, value in sorted(edits, reverse=True):
+        text = text[:start] + value + text[end:]
+    return text
+
+
 def owned_record_vector_data_predecessor_report(text):
     """Remove only the twenty DATA sources; language and execution totals stay exact."""
     reports = list(re.finditer(r"^fixture-data validation passed: (?P<data>\d+) source-only files", text, re.M))
@@ -430,7 +464,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(len(owned_text_data), 4)
         self.assertFalse(owned_text_data & (data_sources | byte_data | vector_data | copy_data | owned_vector_data))
         self.assertEqual(len(verify_repo.fixture_data_sources(root)), 569)
-        self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS), 22)
+        self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - GENERIC_OWNED_VECTOR_PROJECTS.keys()), 22)
         self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 9)
         predecessor_fixture_data = verify_repo.fixture_data_sources(root) - owned_vector_data - owned_text_data
         self.assertEqual(predecessor_fixture_data - copy_data, data_sources | byte_data | vector_data)
@@ -439,6 +473,27 @@ class PublishedRegistrationTests(unittest.TestCase):
         check_inventory = [(p.relative_to(root).as_posix(), typed) for p, typed in checks]
         run_inventory = [(p.relative_to(root).as_posix(), False) for p in verify_repo.runnable_sources(root)]
         run_inventory += [(p.relative_to(root).as_posix(), True) for p in typed_entries]
+        # Authenticate both exact Generic roots before projecting their two
+        # members, two checks and one run from every frozen predecessor below.
+        self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+                          if name in GENERIC_OWNED_VECTOR_PROJECTS}, GENERIC_OWNED_VECTOR_PROJECTS)
+        self.assertEqual([name for name in language if name in GENERIC_OWNED_VECTOR_MEMBERS],
+                         sorted(GENERIC_OWNED_VECTOR_MEMBERS))
+        self.assertEqual([row for row in check_inventory if row[0] in GENERIC_OWNED_VECTOR_PROJECTS],
+                         [("examples/owned-vector-results", True), ("packages/owned_vec", True)])
+        self.assertEqual([row for row in run_inventory if row[0] in GENERIC_OWNED_VECTOR_PROJECTS],
+                         [("examples/owned-vector-results", True)])
+        self.assertFalse(any(name in GENERIC_OWNED_VECTOR_MEMBERS for name, _ in check_inventory + run_inventory))
+        self.assertFalse({root / name for name in GENERIC_OWNED_VECTOR_MEMBERS} & verify_repo.fixture_data_sources(root))
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/owned_vec"), 1)
+        self.assertNotIn("examples/owned-vector-results", verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
+        self.assertFalse(set(GENERIC_OWNED_VECTOR_PROJECTS) & set(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS))
+        language = [name for name in language if name not in GENERIC_OWNED_VECTOR_MEMBERS]
+        check_inventory = [row for row in check_inventory if row[0] not in GENERIC_OWNED_VECTOR_PROJECTS]
+        run_inventory = [row for row in run_inventory if row[0] not in GENERIC_OWNED_VECTOR_PROJECTS]
+        typed_members -= len(GENERIC_OWNED_VECTOR_MEMBERS)
+        typed_entries = [entry for entry in typed_entries
+                         if entry.relative_to(root).as_posix() not in GENERIC_OWNED_VECTOR_PROJECTS]
         self.assertEqual([name for name in language if name in OWNED_TEXT_DATA_SOURCES], sorted(OWNED_TEXT_DATA_SOURCES))
         self.assertFalse(any(name in OWNED_TEXT_DATA_SOURCES for name, _ in check_inventory + run_inventory))
         self.assertEqual([name for name in language if name in OWNED_TEXT_MEMBERS], sorted(OWNED_TEXT_MEMBERS))
@@ -484,7 +539,8 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertNotIn("examples/owned-record-vectors", verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
         before_owned_vector_manifest_projects = {
             name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
-            if name not in OWNED_RECORD_VECTOR_PROJECTS and name not in OWNED_TEXT_PROJECTS}
+            if name not in OWNED_RECORD_VECTOR_PROJECTS and name not in OWNED_TEXT_PROJECTS
+            and name not in GENERIC_OWNED_VECTOR_PROJECTS}
         language = [name for name in language if name not in OWNED_RECORD_VECTOR_MEMBERS]
         check_inventory = [row for row in check_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
         run_inventory = [row for row in run_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
@@ -561,7 +617,8 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual({name: members for name, members in predecessor_manifest_projects.items()
                           if name not in COPY_PROJECTS},
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS, **GROWABLE_VECTOR_PROJECTS})
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS,
+        self.assertEqual(tuple(name for name in verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS
+                               if name not in GENERIC_OWNED_VECTOR_PROJECTS),
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
         self.assertEqual(len(CPU_MEMBERS), 33)
         self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
@@ -819,6 +876,15 @@ class PublishedRegistrationTests(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             self.assertEqual(verify_repo.main(), 0)
         formatter.assert_called_once_with(Path(sys.executable).resolve())
+        generic_roots = {verify_repo.ROOT / name for name in GENERIC_OWNED_VECTOR_PROJECTS}
+        for project, expected in (("packages/owned_vec", ("check",)),
+                                  ("examples/owned-vector-results", ("check", "run"))):
+            calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / project]
+            self.assertEqual([call.args[0] for call in calls],
+                             [[str(Path(sys.executable).resolve()), command] for command in expected])
+            self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
+        self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
+                             for name in GENERIC_OWNED_VECTOR_MEMBERS for call in run.call_args_list))
         owned_text_data = verify_repo.owned_text_fixture_data_sources(verify_repo.ROOT)
         self.assertEqual(owned_text_data, {verify_repo.ROOT / name for name in OWNED_TEXT_DATA_SOURCES})
         self.assertFalse(any(str(path) in call.args[0] for path in owned_text_data for call in run.call_args_list))
@@ -840,7 +906,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
                              for name in OWNED_RECORD_VECTOR_MEMBERS for call in run.call_args_list))
         before_owned_vector_calls = [call for call in run.call_args_list
-                                     if call.kwargs.get("cwd") not in (owned_vector_root, owned_text_root)]
+                                     if call.kwargs.get("cwd") not in {owned_vector_root, owned_text_root} | generic_roots]
         copy_root = verify_repo.ROOT / "examples/copy-records"
         copy_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == copy_root]
         self.assertEqual([call.args[0] for call in copy_calls],
@@ -866,7 +932,8 @@ class PublishedRegistrationTests(unittest.TestCase):
                          [[str(Path(sys.executable).resolve()), "check", library, "--edition=typed-preview"]])
         predecessor_calls = [call for call in predecessor_calls if library not in call.args[0]]
         output = io.StringIO(copy_predecessor_report(record_vector_predecessor_report(
-            owned_record_vector_predecessor_report(owned_record_vector_data_predecessor_report(output.getvalue())))))
+            owned_record_vector_predecessor_report(owned_record_vector_data_predecessor_report(
+                generic_owned_vector_predecessor_report(output.getvalue()))))))
         application = verify_repo.ROOT / "apps/byte-count"
         application_calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == application]
         self.assertEqual([call.args[0] for call in application_calls],
@@ -1229,6 +1296,46 @@ class FixtureAdmissionTests(unittest.TestCase):
         self.assertIn((neighbour, False), checks)
         self.assertNotIn(neighbour, entries)
         self.assertFalse(any(path == self.root / name for path, _ in checks for name in COPY_DATA_SOURCES))
+
+    def generic_owned_vector_projects(self):
+        for project, members in GENERIC_OWNED_VECTOR_PROJECTS.items():
+            for name in (project + "/oxid.toml", *members):
+                self.write(name, (verify_repo.ROOT / name).read_bytes())
+
+    def test_generic_library_and_application_add_two_checks_two_members_and_one_run(self):
+        before_checks, before_entries, before_count = verify_repo.source_plan(discover(self.root), self.root)
+        self.generic_owned_vector_projects()
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        roots = {self.root / name for name in GENERIC_OWNED_VECTOR_PROJECTS}
+        self.assertEqual([row for row in checks if row[0] in roots],
+                         [(self.root / "examples/owned-vector-results", True), (self.root / "packages/owned_vec", True)])
+        self.assertEqual([row for row in checks if row[0] not in roots], before_checks)
+        self.assertEqual(entries, before_entries + [self.root / "examples/owned-vector-results"])
+        self.assertEqual(count - before_count, 2)
+        neighbors = [self.write("examples/owned-vector-results/src/unlisted.ox", b"unregistered source\n"),
+                     self.write("packages/owned_vec/src/unlisted.ox", b"unregistered source\n"),
+                     self.write("examples/owned-vector-results-neighbor/main.ox", b"unregistered source\n")]
+        checks, entries, count = verify_repo.source_plan(discover(self.root), self.root)
+        self.assertTrue(all((path, False) in checks and path not in entries for path in neighbors))
+        self.assertEqual(count - before_count, 2)
+        self.assertFalse(any(path == self.root / name for path, _ in checks for name in GENERIC_OWNED_VECTOR_MEMBERS))
+        self.assertFalse({self.root / name for name in GENERIC_OWNED_VECTOR_MEMBERS}
+                         & verify_repo.fixture_data_sources(self.root))
+
+    def test_generic_missing_members_and_manifests_are_not_reclassified_as_legacy(self):
+        self.generic_owned_vector_projects()
+        sources = discover(self.root)
+        for name in GENERIC_OWNED_VECTOR_MEMBERS:
+            with self.subTest(missing=name), self.assertRaisesRegex(RuntimeError, "missing from discovery"):
+                verify_repo.source_plan([path for path in sources if path != self.root / name], self.root)
+        for project in GENERIC_OWNED_VECTOR_PROJECTS:
+            path = self.root / project / "oxid.toml"
+            body = path.read_bytes()
+            with self.subTest(manifest=project):
+                path.unlink()
+                with self.assertRaisesRegex(RuntimeError, "missing from discovery"):
+                    verify_repo.source_plan(sources, self.root)
+                path.write_bytes(body)
 
     def copy_example(self):
         project = "examples/copy-records"

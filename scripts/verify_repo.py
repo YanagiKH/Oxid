@@ -222,6 +222,8 @@ TYPED_MANIFEST_PROJECTS = {
         'apps/streaming-training/tests/seek.ox',
         'apps/streaming-training/reader/src/lib.ox',
     ),
+    "packages/owned_vec": ("packages/owned_vec/src/lib.ox",),
+    "examples/owned-vector-results": ("examples/owned-vector-results/src/main.ox",),
 }
 # Library roots have no executable entry point; their dependent applications
 # exercise the public interface and their own manifest check covers unused code.
@@ -236,6 +238,7 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "apps/cpu-training",
     "apps/minibatch-training",
     "apps/streaming-training",
+    "packages/owned_vec",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix", "examples/typed-vectors")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records", "examples/copy-record-vectors")
