@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 PREDECESSOR_POLICY = 'scripts/verify_generic_owned_vector_compatibility.py'
 PREDECESSOR_POLICY_PIN = (43357, '8e80cbdb0b42e01dd4e125d36215dc94ff37422a0e10786216ec02ad66831ad0')
-REVIEWED_SOURCE_HEAD = 'b88f50eb2eb3cbea9c6a2238d4dd80e56848c092'
+REVIEWED_SOURCE_HEAD = 'be2d3b1584467ba84eac7ea8667f1161591549ec'
 # Reviewed source identity only; Windows runtime qualification remains separate.
 PINS_PROVISIONAL = False
 # The inherited observer and its derived bytes are already frozen unchanged.
@@ -58,7 +58,7 @@ REVIEWED_INPUTS = {'src/frontend/driver.rs': (103954, 'ed53ec43697679153f55ccb8f
                                                                        'ac3699ceb294892a369ffca7c581b2b3558fcfd3f8ec3eadcf01f5e4995259d1'),
  'src/frontend/oir/source/owned_vector_route_tests.rs': (24798,
                                                          '45a9cbf62948bca5e629a956ce3286e9529a65cda1ab3fd589278d6e2e8cc09d'),
- 'src/frontend/project.rs': (180322, '2897c683bd06abcc159c99829659b72024ebfae140065f0167a3581c1e10fd88'),
+ 'src/frontend/project.rs': (180949, 'af7c21f84b879e05f3c92dd7208bf695fc225bcecbb6a21980544a66ac374c09'),
  'src/frontend/project/editor_sources.rs': (8285,
                                             'e250ab94e339ad9a103cdaa3e0095b73d12cf2132258bc46674e44c15a325362'),
  'src/frontend/project/filesystem.rs': (5987,
@@ -67,8 +67,8 @@ REVIEWED_INPUTS = {'src/frontend/driver.rs': (103954, 'ed53ec43697679153f55ccb8f
                                                 '8d6e591c61d49a59684a79086bd4155dfe37cb7b704615e638bb3eb929f0b545'),
  'src/frontend/project/packages.rs': (25792,
                                       'fe8b6af4cd28c3992b133ac9764603cb7ae0bc36ca1d018db0a0d15887c72df3'),
- 'src/frontend/project/packages/tests.rs': (21415,
-                                            '87277387a10c0a2b7f45f4b119a2163232448bf31ef381c64554d402bc802ef6'),
+ 'src/frontend/project/packages/tests.rs': (21668,
+                                            '1fda13e69eff2e219ee63127e493d3c213ec624094ebbf2c7580166ff2f53fcd'),
  'src/main.rs': (164763, '6082ffa6a8cbd740bfecc08eac7702a7bddeeef205273163927999176a10195f'),
  'src/project_cli/workspace.rs': (38868, '21567a17e61d92bc842f61ed604957cb5b7218d686fd52720a220e245bc5fa9e'),
  'src/project_lock.rs': (63499, 'd9024f5add6637504e6e0e3b8d055a467b621ca2d18de3da83d39db9324e52d7'),
@@ -265,7 +265,7 @@ REVIEWED_DIRECTIVES = {'src/frontend/driver.rs': {'attributes': ((b'#[derive(Clo
                                             (b'#[cfg(windows)]', 1),
                                             (b'#[cfg(not(windows))]', 1),
                                             (b'#[cfg(windows)]', 1),
-                                            (b'#[cfg(not(windows))]', 1),
+                                            (b'#[cfg(not(windows))]', 2),
                                             (b'#[cfg(windows)]', 1),
                                             (b'#[cfg(not(windows))]', 1),
                                             (b'#[cfg(windows)]', 1),

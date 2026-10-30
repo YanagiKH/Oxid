@@ -191,7 +191,7 @@ class WindowsLocalPackageSourceAdmission(unittest.TestCase):
 class RetainedWindowsLocalPackageDelegation(unittest.TestCase):
     def test_every_reviewed_input_directive_and_source_anchor_matches_exact_candidate(self):
         self.assertEqual(gate.PREDECESSOR, "1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e")
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "b88f50eb2eb3cbea9c6a2238d4dd80e56848c092")
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "be2d3b1584467ba84eac7ea8667f1161591549ec")
         self.assertFalse(gate.PINS_PROVISIONAL)
         self.assertFalse(gate.OBSERVER_PINS_PROVISIONAL)
         diff = subprocess.check_output([
