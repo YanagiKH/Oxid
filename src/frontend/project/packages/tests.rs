@@ -174,7 +174,14 @@ fn package_session_scopes_crate_roots_and_retains_real_source_ids() {
     assert_eq!(loaded.project.modules().len(), 5);
     for file in loaded.project.sources().files() {
         assert_eq!(file.text().as_bytes(), std::fs::read(file.path()).unwrap());
-        let ast = loaded.project.try_file_ast(file.span(0, 0).file).unwrap();
+        let id = file.span(0, 0).file;
+        let module = &loaded.project.modules()[id.0];
+        assert_eq!(module.file, id);
+        assert_eq!(
+            std::fs::canonicalize(file.path()).unwrap(),
+            *module.canonical_path.as_ref().unwrap()
+        );
+        let ast = loaded.project.try_file_ast(id).unwrap();
         assert!(ast.belongs_to(file));
     }
 }

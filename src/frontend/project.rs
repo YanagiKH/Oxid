@@ -1349,12 +1349,27 @@ impl<S: ModuleSyntax> SourceSetBuilder<'_, S> {
         if !display_parent.is_empty() && !display_parent.ends_with('/') {
             display.push('/');
         }
-        #[cfg(windows)]
-        if !display_parent.is_empty() && filesystem::separator_units(Path::new(display_parent)) != 0
-        {
-            display.push('/');
-        }
+        #[cfg(not(windows))]
         display.push_str(&relative);
+        #[cfg(windows)]
+        {
+            // Verbatim Win32 paths require native separators even in labels:
+            // editor lookup also resolves these labels back to real files.
+            let verbatim = display_parent.starts_with(r"\\?\");
+            let separator = if verbatim { '\\' } else { '/' };
+            if !display_parent.is_empty()
+                && filesystem::separator_units(Path::new(display_parent)) != 0
+            {
+                display.push(separator);
+            }
+            if verbatim {
+                for character in relative.chars() {
+                    display.push(if character == '/' { '\\' } else { character });
+                }
+            } else {
+                display.push_str(&relative);
+            }
+        }
         // ChildPlan uses exact joining lengths, including an existing root slash.
         if relative.len() != plan.relative_bytes || display.len() != plan.display_bytes {
             return Err(one(Diagnostic::new(
