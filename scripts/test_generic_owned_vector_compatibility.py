@@ -162,8 +162,8 @@ class GenericSourceAdmission(unittest.TestCase):
 class RetainedGenericDelegation(unittest.TestCase):
     def test_every_real_source_asset_directive_and_parent_policy_matches_the_pins(self):
         self.assertEqual(gate.PREDECESSOR, "698043182916dda7276c363e20a98dfbb5b22ed3")
-        self.assertTrue(gate.PINS_PROVISIONAL)
-        self.assertTrue(gate.OBSERVER_PINS_PROVISIONAL)
+        self.assertFalse(gate.PINS_PROVISIONAL)
+        self.assertFalse(gate.OBSERVER_PINS_PROVISIONAL)
         diff = subprocess.check_output([
             "git", "-C", str(ROOT), "diff", "--name-status", gate.PREDECESSOR,
             gate.REVIEWED_SOURCE_HEAD, "--", "src", "native"]).decode().splitlines()
@@ -257,7 +257,7 @@ class RetainedGenericDelegation(unittest.TestCase):
 
     def test_frozen_replay_keeps_all_sixteen_and_rejects_partial_or_skipped_results(self):
         engine = replay.load_engine(ROOT)
-        self.assertTrue(replay.PINS_PROVISIONAL)
+        self.assertFalse(replay.PINS_PROVISIONAL)
         self.assertEqual(engine.REVISION, gate.PREDECESSOR)
         name = "test_owned_enum_vector_compatibility"
         body = gate.regular(ROOT, "scripts/" + name + ".py")

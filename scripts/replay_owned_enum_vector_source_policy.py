@@ -9,7 +9,7 @@ import types
 
 
 REVISION = "698043182916dda7276c363e20a98dfbb5b22ed3"
-PINS_PROVISIONAL = True
+PINS_PROVISIONAL = False
 ENGINE = "run_record_vector_predecessor_tests.py"
 ENGINE_SHA = "6dc9ee36351bdafab40399038133c8547dfb89ac0d0f33076b76b41ef374b75c"
 MODULES = {"test_owned_enum_vector_compatibility": (
