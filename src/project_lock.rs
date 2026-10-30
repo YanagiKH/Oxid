@@ -616,26 +616,34 @@ pub(crate) fn read_with_registry(
         let path = root.join("oxid.lock");
         match fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_LOCK_BYTES as u64 => {
-                let mut options = fs::OpenOptions::new();
-                options.read(true);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::OpenOptionsExt;
-                    options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-                }
-                let mut file = options
-                    .open(&path)
-                    .map_err(|error| format!("cannot inspect typed lock: {error}"))?;
-                if !file
-                    .metadata()
-                    .map_err(|error| error.to_string())?
-                    .is_file()
-                {
-                    return Err("typed lock requires a regular file".into());
-                }
-                if registry_lock_prefix(&mut file)
-                    .map_err(|error| format!("cannot inspect typed lock: {error}"))?
-                {
+                #[cfg(windows)]
+                let registry = frontend::with_windows_regular_file(&path, "typed lock", |file| {
+                    registry_lock_prefix(file)
+                        .map_err(|error| format!("cannot inspect typed lock: {error}"))
+                })?;
+                #[cfg(not(windows))]
+                let registry = {
+                    let mut options = fs::OpenOptions::new();
+                    options.read(true);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::OpenOptionsExt;
+                        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+                    }
+                    let mut file = options
+                        .open(&path)
+                        .map_err(|error| format!("cannot inspect typed lock: {error}"))?;
+                    if !file
+                        .metadata()
+                        .map_err(|error| error.to_string())?
+                        .is_file()
+                    {
+                        return Err("typed lock requires a regular file".into());
+                    }
+                    registry_lock_prefix(&mut file)
+                        .map_err(|error| format!("cannot inspect typed lock: {error}"))?
+                };
+                if registry {
                     *allowance = Some(crate::project_registry::operation_budget()?);
                 }
             }
@@ -1530,27 +1538,36 @@ pub(crate) fn has_workspace_marker(root: &Path) -> Result<bool, String> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(format!("cannot inspect workspace lock ownership: {error}")),
     }
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
-    let file = options
-        .open(path)
-        .map_err(|error| format!("cannot inspect workspace lock ownership: {error}"))?;
-    if !file
-        .metadata()
-        .map_err(|error| error.to_string())?
-        .is_file()
-    {
-        return Ok(false);
-    }
-    let mut prefix = Vec::new();
-    file.take(128)
-        .read_to_end(&mut prefix)
-        .map_err(|error| format!("cannot inspect workspace lock ownership: {error}"))?;
+    let read = |file: &mut fs::File| -> Result<Vec<u8>, String> {
+        let mut prefix = Vec::new();
+        file.take(128)
+            .read_to_end(&mut prefix)
+            .map_err(|error| format!("cannot inspect workspace lock ownership: {error}"))?;
+        Ok(prefix)
+    };
+    #[cfg(windows)]
+    let prefix = frontend::with_windows_regular_file(&path, "workspace lock ownership", read)?;
+    #[cfg(not(windows))]
+    let prefix = {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        }
+        let mut file = options
+            .open(path)
+            .map_err(|error| format!("cannot inspect workspace lock ownership: {error}"))?;
+        if !file
+            .metadata()
+            .map_err(|error| error.to_string())?
+            .is_file()
+        {
+            return Ok(false);
+        }
+        read(&mut file)?
+    };
     let text = String::from_utf8_lossy(&prefix);
     let mut lines = text.lines();
     Ok(matches!(

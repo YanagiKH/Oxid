@@ -190,11 +190,19 @@ fn prepare_package_with_editor<'a>(
             .unwrap_or(&packages[0].entry)
             .to_str()
             .expect("validated UTF-8 entry");
+        #[cfg(not(windows))]
         let project = if let Some(overlay) = overlay {
             ProjectSources::load_typed_editor(entry, limits, overlay)?
         } else {
             ProjectSources::load_typed(entry, limits)?
         };
+        #[cfg(windows)]
+        let project = ProjectSources::load_local_package_entry(
+            &packages[0],
+            Path::new(entry),
+            limits,
+            overlay,
+        )?;
         return Ok(PreparedPackageProject {
             sources: PreparedSources::Single(project),
             dependencies: Vec::new(),
@@ -394,10 +402,12 @@ fn input_fingerprint<'a>(
         sorted[index] = input;
     }
     let entry = sorted[0].path;
-    sorted[..files].sort_unstable_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
+    sorted[..files].sort_unstable_by(|a, b| {
+        fingerprint_path_bytes(a.path).cmp(fingerprint_path_bytes(b.path))
+    });
     if sorted[..files]
         .windows(2)
-        .any(|pair| pair[0].path == pair[1].path)
+        .any(|pair| fingerprint_path_bytes(pair[0].path).eq(fingerprint_path_bytes(pair[1].path)))
     {
         return Err(fingerprint_error());
     }
@@ -405,13 +415,24 @@ fn input_fingerprint<'a>(
         hash.update((bytes.len() as u64).to_le_bytes());
         hash.update(bytes);
     }
+    fn lp_path(hash: &mut Sha256, path: &str) {
+        hash.update((path.len() as u64).to_le_bytes());
+        // Native Windows separators are one byte, so normalization preserves
+        // the existing length framing. No per-file String is allocated.
+        #[cfg(windows)]
+        for byte in fingerprint_path_bytes(path) {
+            hash.update([byte]);
+        }
+        #[cfg(not(windows))]
+        hash.update(path.as_bytes());
+    }
     let mut hash = Sha256::new();
     lp(&mut hash, b"oxid-typed-local-source-v1");
-    lp(&mut hash, entry.as_bytes());
+    lp_path(&mut hash, entry);
     hash.update((files as u64).to_le_bytes());
     for input in &sorted[..files] {
         hash.update(b"F");
-        lp(&mut hash, input.path.as_bytes());
+        lp_path(&mut hash, input.path);
         lp(&mut hash, input.bytes);
     }
     let digest = hash.finalize();
@@ -430,6 +451,16 @@ fn input_fingerprint<'a>(
         checksum,
         files,
         bytes,
+    })
+}
+
+fn fingerprint_path_bytes(path: &str) -> impl Iterator<Item = u8> + '_ {
+    path.bytes().map(|byte| {
+        if cfg!(windows) && byte == b'\\' {
+            b'/'
+        } else {
+            byte
+        }
     })
 }
 
@@ -1729,6 +1760,42 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn source_fingerprint_normalizes_both_path_order_and_framed_bytes() {
+        #[cfg(not(windows))]
+        let paths = ["src/main.ox", "src/a0.ox", "src/a/b.ox"];
+        #[cfg(windows)]
+        let paths = [r"src\main.ox", r"src\a0.ox", r"src\a\b.ox"];
+        let inputs = [
+            LoadedSourceInput {
+                path: paths[0],
+                bytes: b"entry\n",
+            },
+            LoadedSourceInput {
+                path: paths[1],
+                bytes: b"B\r\n",
+            },
+            LoadedSourceInput {
+                path: paths[2],
+                bytes: b"\0A",
+            },
+        ];
+        // Independent wire bytes: lp(domain), lp(src/main.ox), u64(3),
+        // then F+lp(path)+lp(bytes) in a/b.ox, a0.ox, main.ox order.
+        // A native backslash sorts after '0'; the portable slash sorts before it.
+        let actual = input_fingerprint(9, inputs.into_iter().map(Ok)).unwrap();
+        assert_eq!(
+            actual,
+            PackageInputFingerprint {
+                package: 9,
+                checksum: "sha256:adb2dc8d7d1ac6a009c66c91e487301d3497032395d7db269c7f78a0727c7e59"
+                    .into(),
+                files: 3,
+                bytes: 11,
+            }
+        );
+    }
+
     use crate::frontend::project::packages::PackageDependency;
     use std::{
         path::PathBuf,
@@ -1823,7 +1890,16 @@ mod tests {
                     .collect(),
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                windows,
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        ))]
         fn pair(&self, library_entry: &str) -> [PackageSpec; 2] {
             [
                 self.spec("app", "src/main.ox", &[("lib", 1)]),
@@ -1851,7 +1927,27 @@ mod tests {
             prepared.project().syntax_flavor(),
             SyntaxFlavor::OriginalSingleFile
         );
+        #[cfg(not(windows))]
         assert_eq!(prepared.project().usage(), old.usage());
+        #[cfg(windows)]
+        {
+            let observed = prepared.project().usage();
+            let original = old.usage();
+            assert_eq!(observed.source_bytes, original.source_bytes);
+            assert_eq!(observed.non_eof_tokens, original.non_eof_tokens);
+            assert_eq!(observed.syntax_nodes, original.syntax_nodes);
+            assert_eq!(observed.line_starts, original.line_starts);
+            assert_eq!(observed.modules, original.modules);
+            assert_eq!(observed.probes, 2);
+            assert_eq!(observed.directory_entries, 2);
+            assert_eq!(observed.directory_name_units, "src".len() + "main.ox".len());
+            assert_eq!(
+                observed.retained_path_bytes,
+                original.retained_path_bytes
+                    + specs[0].entry.as_os_str().len()
+                    + specs[0].entry.parent().unwrap().as_os_str().len()
+            );
+        }
         assert!(prepared.dependency_fingerprints().is_empty());
         fixture.write("app/src/main.ox", "fn main()->i32{return 99;}");
         let changed = prepare_package_project(&specs, None).unwrap();
@@ -2146,7 +2242,16 @@ mod tests {
         assert!(!stderr.contains(fixture.0.to_str().unwrap()), "{stderr}");
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            windows,
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    ))]
     #[test]
     fn prepared_fingerprint_known_answer_covers_raw_bytes_and_loaded_target_modules() {
         let fixture = PreparedFixture::new();

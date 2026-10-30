@@ -66,12 +66,21 @@ impl Fixture {
         }
     }
     fn qualified(&self) -> bool {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                windows,
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        )) {
             return true;
         }
         failure(
             self.run(&["lock"]),
-            "package source policy is qualified only on Linux",
+            "package source policy is not qualified on this host",
         );
         assert!(!self.0.join("app/oxid.lock").exists());
         false

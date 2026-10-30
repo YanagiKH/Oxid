@@ -55,7 +55,101 @@ fn execute(specs: &[PackageSpec]) -> Result<oir::Scalar, Vec<Diagnostic>> {
     checked.run().map_err(|e| vec![*e])
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(all(
+    windows,
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+))]
+#[test]
+fn windows_zero_child_package_entry_is_retained_once_and_releases_handles() {
+    let f = Fixture::new();
+    let source = "fn main()->i32{return 7;}";
+    f.write("app/src/lib.ox", source);
+    let specs = [f.spec("app", &[])];
+    let loaded = PackageSources::load(
+        &specs,
+        None,
+        ProjectLimits {
+            source_bytes: source.len(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(loaded.project.sources().files().len(), 1);
+    assert_eq!(loaded.project.sources().files()[0].text(), source);
+    assert_eq!(loaded.project.usage.source_bytes, source.len());
+    assert_eq!(loaded.project.usage.modules, 1);
+    assert_eq!(loaded.project.usage.probes, 2);
+    assert_eq!(loaded.project.usage.directory_entries, 2);
+    let failure = PackageSources::load(
+        &specs,
+        None,
+        ProjectLimits {
+            source_bytes: source.len() - 1,
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(failure.diagnostics[0].code, "E0400");
+    assert_eq!(failure.diagnostics[0].primary, None);
+    assert!(failure.sources.files().is_empty());
+    f.write("app/src/lib.ox", "fn main()->i32{return 9;}");
+    assert_eq!(loaded.project.sources().files()[0].text(), source);
+    let moved = f.0.with_extension("moved");
+    std::fs::rename(&f.0, &moved).unwrap();
+    std::fs::rename(moved, &f.0).unwrap();
+}
+
+#[cfg(all(
+    windows,
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+))]
+#[test]
+fn windows_single_editor_query_verifies_the_entry_before_using_its_overlay() {
+    use crate::frontend::project::editor_sources::{QuerySources, SourceOverlay};
+    let f = Fixture::new();
+    f.write("app/src/lib.ox", "invalid disk syntax");
+    let specs = [f.spec("app", &[])];
+    let text = "fn main()->i32{return 7;}";
+    let entries = [(specs[0].entry.as_path(), text)];
+    let overlay = SourceOverlay::new(&entries).unwrap();
+    let loaded = QuerySources::load(&specs, None, &overlay).unwrap();
+    assert!(matches!(loaded, QuerySources::Single(_)));
+    let project = loaded.project();
+    assert_eq!(project.sources().files().len(), 1);
+    assert_eq!(project.sources().files()[0].text(), text);
+    assert_eq!(project.usage.source_bytes, text.len());
+    assert_eq!(project.usage.probes, 2);
+    assert_eq!(project.usage.directory_entries, 2);
+    assert_eq!(
+        project.modules[0].canonical_path.as_ref(),
+        Some(&specs[0].entry)
+    );
+    let moved = f.0.with_extension("moved");
+    std::fs::rename(&f.0, &moved).unwrap();
+    std::fs::rename(moved, &f.0).unwrap();
+    std::fs::remove_file(&specs[0].entry).unwrap();
+    std::os::windows::fs::symlink_file(f.0.join("missing.ox"), &specs[0].entry)
+        .expect("actual Windows file symlinks are required for package qualification");
+    let error = QuerySources::load(&specs, None, &overlay).unwrap_err();
+    assert_eq!(error.diagnostics[0].code, "E0006");
+    assert!(error.sources.files().is_empty());
+    assert_eq!(error.usage, SourceUsage::default());
+}
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn package_session_scopes_crate_roots_and_retains_real_source_ids() {
     let f = Fixture::new();
@@ -80,12 +174,28 @@ fn package_session_scopes_crate_roots_and_retains_real_source_ids() {
     assert_eq!(loaded.project.modules().len(), 5);
     for file in loaded.project.sources().files() {
         assert_eq!(file.text().as_bytes(), std::fs::read(file.path()).unwrap());
-        let ast = loaded.project.try_file_ast(file.span(0, 0).file).unwrap();
+        let id = file.span(0, 0).file;
+        let module = &loaded.project.modules()[id.0];
+        assert_eq!(module.file, id);
+        assert_eq!(
+            std::fs::canonicalize(file.path()).unwrap(),
+            *module.canonical_path.as_ref().unwrap()
+        );
+        let ast = loaded.project.try_file_ast(id).unwrap();
         assert!(ast.belongs_to(file));
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn package_session_diamond_shares_nominal_identity_and_entry_override() {
     let f = Fixture::new();
@@ -122,7 +232,16 @@ fn package_session_diamond_shares_nominal_identity_and_entry_override() {
     assert_eq!(checked.run().unwrap(), oir::Scalar::I32(17));
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn package_session_same_spelling_from_distinct_roots_has_distinct_nominal_identity() {
     let f = Fixture::new();
@@ -144,7 +263,16 @@ fn package_session_same_spelling_from_distinct_roots_has_distinct_nominal_identi
     );
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn package_session_enum_identity_is_shared_only_for_one_canonical_root() {
     let f = Fixture::new();
@@ -175,7 +303,16 @@ fn package_session_enum_identity_is_shared_only_for_one_canonical_root() {
     );
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn package_session_a_later_root_cannot_read_an_earlier_roots_private_items() {
     let f = Fixture::new();
@@ -199,7 +336,16 @@ fn package_session_a_later_root_cannot_read_an_earlier_roots_private_items() {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn package_session_private_items_and_transitive_edges_are_not_exposed() {
     let f = Fixture::new();
@@ -244,7 +390,16 @@ fn package_session_private_items_and_transitive_edges_are_not_exposed() {
         .any(|e| e.code == "E0206"));
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn package_session_dependency_calls_keep_exclusive_borrow_rules() {
     let f = Fixture::new();
@@ -367,7 +522,16 @@ fn package_session_shared_suffix_depth_is_independent_of_dependency_order() {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn package_session_alias_collision_and_aggregate_source_caps_fail_before_execution() {
     let f = Fixture::new();
@@ -396,7 +560,16 @@ fn package_session_alias_collision_and_aggregate_source_caps_fail_before_executi
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn package_session_raised_caller_limit_still_caps_source_identity_at_256_modules() {
     let f = Fixture::new();
