@@ -112,6 +112,269 @@ fn junction(link: &Path, target: &Path) {
     );
 }
 
+fn local_packages() -> Fixture {
+    let fixture = Fixture::new();
+    for path in ["app/src", "math/src"] {
+        fs::create_dir_all(fixture.0.join(path)).unwrap();
+    }
+    fs::write(fixture.0.join("app/oxid.toml"), "[project]\nname=\"app\"\nversion=\"0.1.0\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n[dependencies]\nmath=\"../math\"\n").unwrap();
+    fs::write(fixture.0.join("math/oxid.toml"), "[project]\nname=\"math\"\nversion=\"0.1.0\"\nedition=\"typed-preview\"\nkind=\"lib\"\nentry=\"src/lib.ox\"\n").unwrap();
+    fs::write(
+        fixture.0.join("app/src/main.ox"),
+        "fn main()->i32{return crate::math::value();}\n",
+    )
+    .unwrap();
+    fs::write(fixture.0.join("math/src/lib.ox"), CHILD).unwrap();
+    fixture
+}
+
+fn package_command(fixture: &Fixture, directory: &str, args: &[&str]) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_oxid"));
+    command
+        .current_dir(fixture.0.join(directory))
+        .args(args)
+        .env("OXID_LLVM_BIN", fixture.0.join("no-native-tools"))
+        .env("OXID_CACHE_DIR", fixture.0.join("cache"))
+        .stdin(Stdio::null());
+    command
+}
+
+fn package_output(fixture: &Fixture, directory: &str, args: &[&str]) -> Output {
+    package_command(fixture, directory, args).output().unwrap()
+}
+
+fn package_refusal(output: Output) -> String {
+    assert!(!output.status.success(), "{output:?}");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!text.contains("E0500"), "{text}");
+    assert!(
+        !text.contains("E0100"),
+        "redirected bytes must not reach the parser: {text}"
+    );
+    text
+}
+
+fn no_package_outputs(fixture: &Fixture) {
+    for base in ["", "app", "math"] {
+        for path in [".oxid", "target", "cache", "download-cache"] {
+            assert!(
+                !fixture.0.join(base).join(path).exists(),
+                "unexpected {base}/{path}"
+            );
+        }
+        for entry in fs::read_dir(fixture.0.join(base)).unwrap() {
+            assert!(!entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".oxid-lock-"));
+        }
+    }
+}
+
+#[test]
+fn real_ntfs_local_packages_without_child_modules_lock_run_and_relocate() {
+    let fixture = local_packages();
+    success(package_output(&fixture, "app", &["check"]));
+    assert!(!fixture.0.join("app/oxid.lock").exists());
+    let result = package_output(&fixture, "app", &["run", "--entry-mode=result"]);
+    assert_eq!(result.status.code(), Some(0), "{result:?}");
+    assert_eq!(result.stdout, b"42\n");
+    assert!(result.stderr.is_empty(), "{result:?}");
+    success(package_output(&fixture, "app", &["lock"]));
+    let lock = fs::read(fixture.0.join("app/oxid.lock")).unwrap();
+    success(package_output(&fixture, "app", &["check", "--frozen"]));
+    let moved = fixture.0.with_extension("relocated");
+    fs::rename(&fixture.0, &moved).unwrap();
+    let relocated = Fixture(moved);
+    success(package_output(&relocated, "app", &["lock"]));
+    assert_eq!(fs::read(relocated.0.join("app/oxid.lock")).unwrap(), lock);
+    success(package_output(&relocated, "app", &["check", "--frozen"]));
+    no_package_outputs(&relocated);
+}
+
+#[test]
+fn zero_dependency_package_entries_cannot_bypass_ntfs_verification() {
+    let fixture = local_packages();
+    fs::write(
+        fixture.0.join("app/oxid.toml"),
+        "[project]\nname=\"app\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n",
+    )
+    .unwrap();
+    fs::write(
+        fixture.0.join("app/src/main.ox"),
+        "fn main()->i32{return 42;}\n",
+    )
+    .unwrap();
+    success(package_output(&fixture, "app", &["check"]));
+    fs::rename(fixture.0.join("app/src"), fixture.0.join("app/ordinary")).unwrap();
+    junction(&fixture.0.join("app/src"), &fixture.0.join("app/ordinary"));
+    let text = package_refusal(package_output(&fixture, "app", &["check"]));
+    assert!(
+        text.contains("reparse") || text.contains("symbolic link"),
+        "{text}"
+    );
+    assert!(!fixture.0.join("app/oxid.lock").exists());
+    no_package_outputs(&fixture);
+    fs::remove_dir(fixture.0.join("app/src")).unwrap();
+    fs::rename(fixture.0.join("app/ordinary"), fixture.0.join("app/src")).unwrap();
+    success(package_output(&fixture, "app", &["check"]));
+    no_package_outputs(&fixture);
+}
+
+#[test]
+fn package_entries_reject_actual_inside_and_outside_junctions_without_parsing_targets() {
+    for inside in [true, false] {
+        let fixture = local_packages();
+        let external = Fixture::new();
+        let target = if inside {
+            let path = fixture.0.join("app/ordinary");
+            fs::create_dir(&path).unwrap();
+            path
+        } else {
+            external.0.clone()
+        };
+        fs::write(target.join("main.ox"), "invalid redirected source").unwrap();
+        fs::remove_dir_all(fixture.0.join("app/src")).unwrap();
+        junction(&fixture.0.join("app/src"), &target);
+        let text = package_refusal(package_output(&fixture, "app", &["check"]));
+        assert!(
+            text.contains("reparse") || text.contains("symbolic link"),
+            "{text}"
+        );
+        assert!(!fixture.0.join("app/oxid.lock").exists());
+        no_package_outputs(&fixture);
+        external.no_artifacts();
+        fs::remove_dir(fixture.0.join("app/src")).unwrap();
+        fs::create_dir(fixture.0.join("app/src")).unwrap();
+        fs::write(
+            fixture.0.join("app/src/main.ox"),
+            "fn main()->i32{return crate::math::value();}\n",
+        )
+        .unwrap();
+        success(package_output(&fixture, "app", &["check"]));
+    }
+}
+
+#[test]
+fn declared_package_root_aliases_keep_one_canonical_nominal_identity() {
+    let fixture = local_packages();
+    fs::write(fixture.0.join("app/oxid.toml"), "[project]\nname=\"app\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n[dependencies]\nfirst=\"../math\"\nsecond=\"../alias\"\n").unwrap();
+    fs::write(
+        fixture.0.join("math/src/lib.ox"),
+        "pub struct Token{pub value:i32}pub fn make()->Token{return Token{value:42};}\n",
+    )
+    .unwrap();
+    fs::write(fixture.0.join("app/src/main.ox"), "use crate::first::Token;fn main()->i32{let value:Token=crate::second::make();return value.value;}\n").unwrap();
+    junction(&fixture.0.join("alias"), &fixture.0.join("math"));
+    success(package_output(&fixture, "app", &["check"]));
+    let result = package_output(&fixture, "app", &["run", "--entry-mode=result"]);
+    assert_eq!(result.status.code(), Some(0), "{result:?}");
+    assert_eq!(result.stdout, b"42\n");
+    assert!(result.stderr.is_empty(), "{result:?}");
+    fs::remove_dir(fixture.0.join("alias")).unwrap();
+    no_package_outputs(&fixture);
+}
+
+#[test]
+fn package_entry_and_manifest_symlinks_preserve_targets_and_recover_after_refusal() {
+    let fixture = local_packages();
+    let external = Fixture::new();
+    external.write("invalid.ox", "invalid redirected source");
+    let entry = fixture.0.join("math/src/lib.ox");
+    fs::remove_file(&entry).unwrap();
+    symlink_file(external.0.join("invalid.ox"), &entry)
+        .expect("actual Windows file symlinks are required for package qualification");
+    let text = package_refusal(package_output(&fixture, "app", &["check"]));
+    assert!(
+        text.contains("reparse") || text.contains("symbolic link"),
+        "{text}"
+    );
+    fs::remove_file(&entry).unwrap();
+    fs::write(&entry, CHILD).unwrap();
+    let manifest = fixture.0.join("math/oxid.toml");
+    let original = fs::read(&manifest).unwrap();
+    external.write("manifest.toml", &original);
+    fs::remove_file(&manifest).unwrap();
+    symlink_file(external.0.join("manifest.toml"), &manifest).unwrap();
+    let text = package_refusal(package_output(&fixture, "app", &["check"]));
+    assert!(
+        text.contains("regular file") || text.contains("reparse"),
+        "{text}"
+    );
+    assert_eq!(
+        fs::read(external.0.join("manifest.toml")).unwrap(),
+        original
+    );
+    fs::remove_file(&manifest).unwrap();
+    fs::write(&manifest, &original).unwrap();
+    success(package_output(&fixture, "app", &["check"]));
+    no_package_outputs(&fixture);
+    external.no_artifacts();
+}
+
+#[test]
+fn package_lock_and_manifest_native_read_failures_do_not_hold_handles_or_publish_stages() {
+    let fixture = local_packages();
+    success(package_output(&fixture, "app", &["lock"]));
+    let lock_path = fixture.0.join("app/oxid.lock");
+    let original = fs::read(&lock_path).unwrap();
+    let manifest_path = fixture.0.join("app/oxid.toml");
+    for path in [&lock_path, &manifest_path] {
+        let exclusive = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .unwrap();
+        let text = package_refusal(package_output(&fixture, "app", &["check", "--locked"]));
+        assert!(text.contains("cannot"), "{text}");
+        drop(exclusive);
+        assert_eq!(fs::read(&lock_path).unwrap(), original);
+        success(package_output(&fixture, "app", &["check", "--locked"]));
+        no_package_outputs(&fixture);
+    }
+    let external = Fixture::new();
+    external.write("lock", &original);
+    fs::remove_file(&lock_path).unwrap();
+    symlink_file(external.0.join("lock"), &lock_path).unwrap();
+    package_refusal(package_output(&fixture, "app", &["lock", "--update"]));
+    assert!(fs::symlink_metadata(&lock_path)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(fs::read(external.0.join("lock")).unwrap(), original);
+    fs::remove_file(&lock_path).unwrap();
+    fs::write(&lock_path, &original).unwrap();
+    success(package_output(&fixture, "app", &["check", "--locked"]));
+    no_package_outputs(&fixture);
+}
+
+#[test]
+fn workspace_member_junctions_are_rejected_before_canonical_aliases_hide_them() {
+    let fixture = local_packages();
+    fixture.write(
+        "oxid.toml",
+        "[workspace]\nedition=\"typed-preview\"\nmembers=[\"app\"]\n",
+    );
+    success(package_output(&fixture, "", &["check", "--workspace"]));
+    fs::rename(fixture.0.join("app"), fixture.0.join("ordinary")).unwrap();
+    junction(&fixture.0.join("app"), &fixture.0.join("ordinary"));
+    let text = package_refusal(package_output(&fixture, "", &["check", "--workspace"]));
+    assert!(
+        text.contains("reparse") || text.contains("symbolic link"),
+        "{text}"
+    );
+    assert!(!fixture.0.join("oxid.lock").exists());
+    fs::remove_dir(fixture.0.join("app")).unwrap();
+    fs::rename(fixture.0.join("ordinary"), fixture.0.join("app")).unwrap();
+    success(package_output(&fixture, "", &["check", "--workspace"]));
+    no_package_outputs(&fixture);
+}
+
 #[test]
 fn real_ntfs_module_check_and_result_are_source_only_and_preserve_unicode_roots() {
     let fixture = Fixture::new();

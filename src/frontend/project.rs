@@ -36,6 +36,8 @@ use super::{
     source::{SourceFile, SourceFileId, SourceMap, Span, MAX_SOURCE_BYTES},
 };
 use budget::{Allocator, ReserveFailure};
+#[cfg(windows)]
+pub(crate) use filesystem::{verify_windows_workspace_member, with_windows_regular_file};
 use std::mem::size_of;
 use std::{
     fs::File,
@@ -327,6 +329,7 @@ impl ProjectSources {
             ProjectEnumSyntax::Enabled,
         )
     }
+    #[cfg(not(windows))]
     pub(super) fn load_typed_editor(
         entry: &str,
         limits: ProjectLimits,
@@ -1413,7 +1416,7 @@ impl<S: ModuleSyntax> SourceSetBuilder<'_, S> {
                 &mut verified_child,
                 &canonical,
                 &display,
-                declaration.name,
+                Some(declaration.name),
                 overlay,
             )
             .map_err(one)?;
