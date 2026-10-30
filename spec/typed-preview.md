@@ -314,7 +314,7 @@ O0 and O2.
 ## Growable vectors
 
 `alloc::vec::Vec<T>` owns a growable collection of one scalar, finite checked
-Copy record, or finite non-Copy record element type.
+Copy record, finite non-Copy record, or finite enum element type.
 The type is affine; moving a vector transfers its allocation, and destruction
 releases it. Records and finite enum payloads may contain vectors. `Vec<u8>` is
 a distinct type from `alloc::bytes::ByteBuf`.
@@ -358,9 +358,16 @@ removed records; `take` moves the allocation and leaves the source with zero
 length and capacity. A failed `try_reserve` preserves the existing length,
 capacity, records, and any separate incoming record owned by the caller.
 
-Non-Copy record vectors do not provide indexing, slices, or element references.
-`try_push`, `try_extend`, and `try_resize` do not accept their element type.
-Direct enum elements, nested vectors of non-Copy records, recursive element
+Finite user-defined enums and built-in status enums use the same eight owned
+operations. Enum values move into reserved space and out through `pop_last`.
+Only the active variant's payload is initialized, moved, or released. Payloads
+may own UTF-8 text, byte buffers, and files. Truncation and destruction release
+the active resources exactly once; failed reservation preserves existing values
+and any separate incoming value.
+
+Non-Copy record and enum vectors do not provide indexing, slices, or element
+references. `try_push`, `try_extend`, and `try_resize` do not accept their element
+types. Nested vectors of owned records or enums, recursive element
 types, arrays of records, individual element references, and stored or returned
 references remain unavailable. The vector API and examples are documented in
 [Growable vectors](../docs/VECTORS.md).
