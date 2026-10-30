@@ -52,6 +52,11 @@ OWNED_ENUM_VECTOR_OBSERVER = ('scripts/owned_enum_vector_compatibility_observer.
     (7495, 'ff932fb13ae4db32fe15a389505be7a7ffa2fc0557b15f9b1b153c3602de3fd9'))
 GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility.py'
 GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
+WINDOWS_LOCAL_PACKAGE_REPLAY = 'scripts/verify_windows_local_package_compatibility.py'
+WINDOWS_LOCAL_PACKAGE_PARENT = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
+WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = 'b88f50eb2eb3cbea9c6a2238d4dd80e56848c092'
+GENERIC_OWNED_VECTOR_POLICY = (GENERIC_OWNED_VECTOR_REPLAY,
+    (43357, '8e80cbdb0b42e01dd4e125d36215dc94ff37422a0e10786216ec02ad66831ad0'))
 OWNED_ENUM_VECTOR_POLICY = (OWNED_ENUM_VECTOR_REPLAY,
     (67623, '3505f8238f1d24754916075fb1ad46aa022c740cd71c9f10a5509656b7e9877c'))
 REPLAY_ROUTES = {
@@ -64,6 +69,7 @@ REPLAY_ROUTES = {
     (OFFLINE_VENDOR_REPLAY,): ('offline-vendor', OWNED_TEXT_POLICY),
     (OWNED_ENUM_VECTOR_REPLAY,): ('owned-enum-vector', OFFLINE_VENDOR_POLICY),
     (GENERIC_OWNED_VECTOR_REPLAY,): ('generic-owned-vector', OWNED_ENUM_VECTOR_POLICY),
+    (WINDOWS_LOCAL_PACKAGE_REPLAY,): ('windows-local-package', GENERIC_OWNED_VECTOR_POLICY),
 }
 
 
@@ -312,6 +318,156 @@ def _generic_vector_replay_binding(tree, read):
             raise AssertionError('generic-vector preflight qualification claim changed')
 
 
+def _windows_local_package_replay_binding(tree, read):
+    for name, expected in (
+        ('PREDECESSOR', WINDOWS_LOCAL_PACKAGE_PARENT),
+        ('PREDECESSOR_POLICY', GENERIC_OWNED_VECTOR_POLICY[0]),
+        ('PREDECESSOR_POLICY_PIN', GENERIC_OWNED_VECTOR_POLICY[1]),
+        ('REVIEWED_SOURCE_HEAD', WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD),
+        ('OBSERVER_PINS_PROVISIONAL', False),
+        ('OBSERVER_ADAPTER', OWNED_ENUM_VECTOR_OBSERVER[0]),
+        ('OBSERVER_ADAPTER_PIN', OWNED_ENUM_VECTOR_OBSERVER[1]),
+        ('OBSERVER_DERIVED_PIN', (34582, '73b30bca73d10126977744d50fb4cc42f6dc1cb876c5ee82b7335f3ffc14a3d3')),
+    ):
+        if _literal(tree.body, name) != expected:
+            raise AssertionError('Windows-package retained parent/source/observer changed: ' + name)
+    if type(_literal(tree.body, 'PINS_PROVISIONAL')) is not bool:
+        raise AssertionError('Windows-package preparation status must be explicit')
+    require_retained_replay_binding((GENERIC_OWNED_VECTOR_REPLAY,), read)
+    for statement in (
+        'predecessor = load_predecessor(ROOT)', 'library = predecessor.library',
+        'owned_policy = predecessor.owned_policy', 'enum_policy = predecessor.predecessor',
+        'RETAINED_RUN = predecessor.RETAINED_RUN', 'PREDECESSOR_ADDED = predecessor.PARENT_ADDED',
+        'PARENT_ADDED = PREDECESSOR_ADDED | WINDOWS_ADDED',
+    ):
+        _require_statement(tree.body, statement)
+    inventories = {}
+    for name, expected in (
+        ('WINDOWS_CHANGED', {
+            'src/frontend/driver.rs', 'src/frontend/mod.rs',
+            'src/frontend/oir/owned/source/owned_text_source_resource_tests.rs',
+            'src/frontend/oir/source/owned_vector_route_tests.rs',
+            'src/frontend/project.rs', 'src/frontend/project/editor_sources.rs',
+            'src/frontend/project/filesystem.rs', 'src/frontend/project/filesystem/windows.rs',
+            'src/frontend/project/packages.rs', 'src/frontend/project/packages/tests.rs',
+            'src/main.rs', 'src/project_cli/workspace.rs', 'src/project_lock.rs'}),
+        ('WINDOWS_ADDED', {
+            'tests/typed_documentation.rs', 'tests/typed_generics.rs',
+            'tests/typed_language_server.rs', 'tests/typed_package_lock.rs',
+            'tests/typed_path_dependencies.rs', 'tests/typed_windows_modules.rs',
+            'tests/typed_workspace.rs'}),
+    ):
+        node = _assignment(tree.body, name).value
+        if (not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name)
+                or node.func.id != 'frozenset' or len(node.args) != 1 or node.keywords):
+            raise AssertionError('Windows-package source roster must be literal')
+        values = ast.literal_eval(node.args[0])
+        if not isinstance(values, tuple) or len(values) != len(expected) or set(values) != expected:
+            raise AssertionError('Windows-package finite source roster changed')
+        inventories[name] = set(values)
+    expected_inputs = inventories['WINDOWS_CHANGED'] | inventories['WINDOWS_ADDED']
+    pins = _literal(tree.body, 'REVIEWED_INPUTS')
+    if (inventories['WINDOWS_CHANGED'] & inventories['WINDOWS_ADDED']
+            or set(pins) != expected_inputs or len(pins) != 20
+            or any(not isinstance(pin, tuple) or len(pin) != 2 or type(pin[0]) is not int or pin[0] <= 0
+                   or not isinstance(pin[1], str) or re.fullmatch('[a-f0-9]{64}', pin[1]) is None
+                   for pin in pins.values())):
+        raise AssertionError('Windows-package literal source pins changed')
+    if set(_literal(tree.body, 'REVIEWED_DIRECTIVES')) != expected_inputs:
+        raise AssertionError('Windows-package literal directive membership changed')
+    for name, pin in pins.items():
+        body = read(name)
+        if (len(body), hashlib.sha256(body).hexdigest()) != pin:
+            raise AssertionError('Windows-package compiled input differs from source pin: ' + name)
+    loader = _function(tree.body, 'load_predecessor').body
+    _require_condition(loader, 'not path.is_symlink() and not any(parent.is_symlink() for parent in path.parents)')
+    _require_condition(loader, 'stat.S_ISREG(before.st_mode) and before.st_nlink == 1 '
+                       'and not before.st_mode & 0o111 and before.st_size == PREDECESSOR_POLICY_PIN[0]')
+    _require_condition(loader, 'tuple(getattr(before, name) for name in fields) '
+                       '== tuple(getattr(path.stat(), name) for name in fields) '
+                       'and (len(body), hashlib.sha256(body).hexdigest()) == PREDECESSOR_POLICY_PIN')
+    _require_statement(loader, 'exec(compile(body, str(path), "exec"), module.__dict__)')
+    captured = _function(tree.body, 'capture_sources').body
+    _require_statement(captured, 'expected_parent = set(baseline) | PREDECESSOR_ADDED')
+    _require_statement(captured, 'expected = expected_parent | WINDOWS_ADDED')
+    _require_condition(captured, 'set(parent) == expected_parent and len(parent) == 594')
+    _require_condition(captured, 'len(WINDOWS_CHANGED) == 13 and len(WINDOWS_ADDED) == 7 '
+                       'and WINDOWS_CHANGED <= expected_parent and not WINDOWS_ADDED & expected_parent '
+                       'and len(expected) == 601')
+    _require_condition(captured, 'set(REVIEWED_INPUTS) == WINDOWS_CHANGED | WINDOWS_ADDED '
+                       'and set(REVIEWED_DIRECTIVES) == set(REVIEWED_INPUTS)')
+    _require_condition(captured, 'actual == compiler and len(compiler) == 500')
+    _require_condition(captured, 'directories == expected_dirs')
+    bound = _function(tree.body, 'bound_predecessor')
+    _retained_bound(bound.body,
+                    "{'PREDECESSOR': PREDECESSOR, 'PREDECESSOR_ADDED': PREDECESSOR_ADDED, "
+                    "'PREDECESSOR_POLICIES': PREDECESSOR_POLICIES, 'PINS_PROVISIONAL': PINS_PROVISIONAL, "
+                    "'capture_sources': capture_sources, 'current_manifest': current_manifest}")
+    _require_condition(bound.body, 'library.run is RETAINED_RUN and predecessor.RETAINED_RUN is RETAINED_RUN '
+                       'and owned_policy.RETAINED_RUN is RETAINED_RUN and enum_policy.RETAINED_RUN is RETAINED_RUN')
+    _require_condition(bound.body, 'predecessor.OBSERVER_ADAPTER == OBSERVER_ADAPTER '
+                       'and predecessor.OBSERVER_ADAPTER_PIN == OBSERVER_ADAPTER_PIN')
+    scopes = [node for node in bound.body if isinstance(node, ast.With)]
+    expected = ast.parse('with predecessor.bound_predecessor() as context:\n    pass').body[0]
+    if len(scopes) != 1 or [ast.dump(item) for item in scopes[0].items] != [ast.dump(item) for item in expected.items]:
+        raise AssertionError('Windows-package source/observer delegation scope changed')
+    restores = [node for node in scopes[0].body if isinstance(node, ast.Try)]
+    if len(restores) != 1:
+        raise AssertionError('Windows-package source restoration boundary changed')
+    _require_statement(restores[0].body, 'for name, value in bindings.items():\n    setattr(library, name, value)')
+    _require_condition(restores[0].body, 'context["adapter"].DERIVED_PIN == OBSERVER_DERIVED_PIN')
+    _require_condition(restores[0].body, 'library.run is RETAINED_RUN')
+    _require_statement(restores[0].finalbody, 'for name, value in before.items():\n    setattr(library, name, value)')
+    _retained_delegate(tree, 'bound_predecessor() as context', 'RETAINED_RUN(delegated)', guard_inside=True)
+    run = _function(tree.body, 'run')
+    attempt = next(node for node in run.body if isinstance(node, ast.Try))
+    for condition in ('args.prepare_only or not PINS_PROVISIONAL',
+                      'args.prepare_only or not OBSERVER_PINS_PROVISIONAL',
+                      'args.prepare_only or not predecessor.PINS_PROVISIONAL'):
+        _require_condition(attempt.body, condition)
+    scope = next(node for node in attempt.body if isinstance(node, ast.With))
+    _require_condition(scope.body, 'retained.get("status") == ("prepared" if args.prepare_only else "passed") '
+                       'and retained.get("semantic_pass") is (not args.prepare_only) '
+                       'and retained.get("current_input_members") == 601 '
+                       'and retained.get("historical_results_apply_to_current") is False '
+                       'and retained.get("controller") == identity(owned_policy.PREDECESSOR_POLICY, '
+                       'regular(repo, owned_policy.PREDECESSOR_POLICY))')
+    controls = [node for node in scope.body if isinstance(node, ast.If)
+                and ast.dump(node.test) == ast.dump(ast.parse('not args.prepare_only', mode='eval').body)]
+    pipeline = ast.parse(
+        'report.update(owned_policy.run_owned_vector_observer_controls('
+        'repo, delegated.output, context["selected"], context["seam"], context["original"], '
+        'context["adapter"], retained["test_function_executions"]))\n'
+        'report.update(enum_policy.run_enum_observer_controls('
+        'repo, delegated.output, context["selected"], context["seam"], context["original"], '
+        'context["adapter"], report["test_function_executions"]))').body
+    if len(controls) != 1 or [ast.dump(node) for node in controls[0].body] != [ast.dump(node) for node in pipeline]:
+        raise AssertionError('Windows-package inherited controls pipeline changed')
+    manifest = _function(tree.body, 'current_manifest').body
+    _require_statement(manifest, 'inherited = predecessor.current_manifest(inputs=parent, baseline=baseline, '
+                       'checkout=checkout, parent={name: parent[name] for name in previous_names})')
+    flags = _assignment(manifest, 'result').value
+    false_names = {'windows_local_package_semantics_qualified_by_this_gate',
+                   'windows_local_package_ntfs_qualified_by_this_gate',
+                   'windows_local_package_races_qualified_by_this_gate',
+                   'windows_local_package_platform_qualified_by_this_gate'}
+    found = {key.value: value for key, value in zip(flags.keys, flags.values)
+             if isinstance(key, ast.Constant) and isinstance(key.value, str) and key.value.endswith('qualified_by_this_gate')}
+    if set(found) != false_names or any(not isinstance(value, ast.Constant) or value.value is not False for value in found.values()):
+        raise AssertionError('Windows-package source admission cannot claim new feature qualification')
+    _require_condition(manifest, 'all(value is False for name, value in result.items() '
+                       'if name.endswith("qualified_by_this_gate"))')
+    report = _assignment(run.body, 'report').value
+    values = {key.value: value for key, value in zip(report.keys, report.values)
+              if isinstance(key, ast.Constant)}
+    for name, expected in (('semantic_pass', False), ('new_feature_qualification', False),
+                           ('platform_qualification', False), ('inherited_input_members', 594),
+                           ('expected_current_input_members', 601)):
+        if (name not in values or not isinstance(values[name], ast.Constant)
+                or type(values[name].value) is not type(expected) or values[name].value != expected):
+            raise AssertionError('Windows-package preflight qualification/membership changed: ' + name)
+
+
 def _enum_vector_replay_binding(tree, read):
     for name, expected in (
         ('PREDECESSOR', OWNED_ENUM_VECTOR_PARENT),
@@ -517,6 +673,8 @@ def require_retained_replay_binding(route, read=None):
                                 if isinstance(node, ast.Try)).body,
                            'selected = load_policy(repo, args.source_policy)')
         _retained_delegate(tree, 'selected.bound()', 'selected.original_run(delegated)')
+    elif kind == 'windows-local-package':
+        _windows_local_package_replay_binding(tree, read)
     elif kind == 'generic-owned-vector':
         _generic_vector_replay_binding(tree, read)
     elif kind == 'owned-enum-vector':
@@ -913,6 +1071,44 @@ class CiTriggerPolicyTests(unittest.TestCase):
             ENGINE: ENGINE_SHA,
         }''')
 
+    def test_generic_source_policy_replay_keeps_all_sixteen_frozen_controls_mandatory(self):
+        replay = block(self.ci, 'generic-owned-vector-source-policy-predecessor', 2)
+        self.assertEqual(replay.count('actions/checkout@v4'), 2)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', replay)
+        self.assertIn('ref: ' + WINDOWS_LOCAL_PACKAGE_PARENT, replay)
+        self.assertIn('cp scripts/replay_generic_owned_vector_source_policy.py '
+                      '"$RUNNER_TEMP/generic-owned-vector-source-policy-replay.py"', replay)
+        self.assertIn('fetch-depth: 0', replay)
+        self.assertIn('python3 -B "$RUNNER_TEMP/generic-owned-vector-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/generic-owned-vector-source-policy-replay"', replay)
+        self.assertIn('if: always()', replay)
+        self.assertIn('path: ${{ runner.temp }}/generic-owned-vector-source-policy-replay', replay)
+        self.assertIn('if-no-files-found: error', replay)
+        self.assertIn('retention-days: 14', replay)
+        self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+        source = ast.parse((REPO / 'scripts/replay_generic_owned_vector_source_policy.py').read_bytes())
+        self.assertEqual(_literal(source.body, 'REVISION'), WINDOWS_LOCAL_PACKAGE_PARENT)
+        self.assertFalse(_literal(source.body, 'PINS_PROVISIONAL'))
+        self.assertEqual(_literal(source.body, 'MODULES'), {'test_generic_owned_vector_compatibility': (
+            '916fcbd204b221fabf1286eb48e08149a9b47b2cca40aa10a2d2ee0e69959be2', 16)})
+        self.assertEqual(_literal(source.body, 'ENGINE'), 'run_record_vector_predecessor_tests.py')
+        self.assertEqual(_literal(source.body, 'ENGINE_SHA'),
+                         '6dc9ee36351bdafab40399038133c8547dfb89ac0d0f33076b76b41ef374b75c')
+        _require_statement(source.body, '''POLICIES = {
+            "verify_generic_owned_vector_compatibility.py": "8e80cbdb0b42e01dd4e125d36215dc94ff37422a0e10786216ec02ad66831ad0",
+            "replay_owned_enum_vector_source_policy.py": "11a1d669c636c43b9163ed0e86a73785827628b93a83f4608bebfb262e2abbb1",
+            "verify_owned_enum_vector_compatibility.py": "3505f8238f1d24754916075fb1ad46aa022c740cd71c9f10a5509656b7e9877c",
+            "verify_offline_vendor_compatibility.py": "ee64cc7f63051764594a5866101cff9987ca7ddf20b764e7e1aa88f975c9b7a1",
+            "verify_owned_text_compatibility.py": "61bf3bf55b9c1f958fdf48fcc89e747cdf61700109ab979b098851249d9fa109",
+            "verify_owned_record_vector_compatibility.py": "16c7affd778deda3d61f9a4e4aebd66c9e01d842c6afe3e9c1a20de57caab6e0",
+            "replay_owned_text_source_policy.py": "341673ed92fdc3b2f3269ad0396411a061397110b663d067cc7d92def65b01b6",
+            ENGINE: ENGINE_SHA,
+        }''')
+        # No steps or predicates from the Enum replay are replaced by this job.
+        enum = block(self.ci, 'owned-enum-vector-source-policy-predecessor', 2)
+        self.assertIn('ref: ' + GENERIC_OWNED_VECTOR_PARENT, enum)
+        self.assertIn('cp scripts/replay_owned_enum_vector_source_policy.py ', enum)
+
     def test_generic_native_packages_execute_both_real_compiler_profiles_on_all_posix_runners(self):
         command = ('            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \\\n'
                    '              --test typed_owned_vector_wrappers -- --ignored --test-threads=1\n')
@@ -1303,27 +1499,99 @@ class RetainedReplayRouteTests(unittest.TestCase):
 
     def test_text_route_still_binds_the_pinned_owned_vector_wrapper_and_exact_source_membership(self):
         route = (OWNED_TEXT_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 9)
+        self.assertEqual(len(REPLAY_ROUTES), 10)
         self.assertEqual(REPLAY_ROUTES[route], ('owned-text', OWNED_VECTOR_POLICY))
         require_retained_replay_binding(route)
 
     def test_vendor_route_still_binds_the_pinned_text_wrapper_and_exact_source_membership(self):
         route = (OFFLINE_VENDOR_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 9)
+        self.assertEqual(len(REPLAY_ROUTES), 10)
         self.assertEqual(REPLAY_ROUTES[route], ('offline-vendor', OWNED_TEXT_POLICY))
         require_retained_replay_binding(route)
 
     def test_live_enum_route_binds_the_public_vendor_policy_and_full_source_and_observer_pipeline(self):
         route = (OWNED_ENUM_VECTOR_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 9)
+        self.assertEqual(len(REPLAY_ROUTES), 10)
         self.assertEqual(REPLAY_ROUTES[route], ('owned-enum-vector', OFFLINE_VENDOR_POLICY))
         require_retained_replay_binding(route)
 
-    def test_live_generic_route_keeps_the_complete_enum_controller_and_original_observer(self):
-        self.assertEqual(self.route, (GENERIC_OWNED_VECTOR_REPLAY,))
-        self.assertEqual(len(REPLAY_ROUTES), 9)
-        self.assertEqual(REPLAY_ROUTES[self.route], ('generic-owned-vector', OWNED_ENUM_VECTOR_POLICY))
+    def test_generic_route_keeps_the_complete_enum_controller_and_original_observer(self):
+        route = (GENERIC_OWNED_VECTOR_REPLAY,)
+        self.assertEqual(len(REPLAY_ROUTES), 10)
+        self.assertEqual(REPLAY_ROUTES[route], ('generic-owned-vector', OWNED_ENUM_VECTOR_POLICY))
+        require_retained_replay_binding(route)
+
+    def test_live_windows_route_keeps_the_complete_generic_and_original_observer_pipeline(self):
+        self.assertEqual(self.route, (WINDOWS_LOCAL_PACKAGE_REPLAY,))
+        self.assertEqual(REPLAY_ROUTES[self.route], ('windows-local-package', GENERIC_OWNED_VECTOR_POLICY))
         require_retained_replay_binding(self.route)
+
+    def test_windows_source_roster_loader_observer_pipeline_and_refusals_cannot_drift(self):
+        wrapper = WINDOWS_LOCAL_PACKAGE_REPLAY
+        original = (REPO / wrapper).read_bytes()
+        mutations = (
+            (WINDOWS_LOCAL_PACKAGE_PARENT.encode(), b'f' * 40),
+            (WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD.encode(), b'e' * 40),
+            (b'PREDECESSOR_POLICY_PIN = (43357,', b'PREDECESSOR_POLICY_PIN = (43358,'),
+            (b'PINS_PROVISIONAL = False', b'PINS_PROVISIONAL = 1'),
+            (b'OBSERVER_PINS_PROVISIONAL = False', b'OBSERVER_PINS_PROVISIONAL = True'),
+            (b'len(parent) == 594', b'len(parent) == 593'),
+            (b'len(WINDOWS_CHANGED) == 13', b'len(WINDOWS_CHANGED) == 12'),
+            (b'len(WINDOWS_ADDED) == 7', b'len(WINDOWS_ADDED) == 6'),
+            (b'len(expected) == 601', b'len(expected) == 600'),
+            (b'len(compiler) == 500', b'len(compiler) == 499'),
+            (b'actual == compiler and len(compiler) == 500', b'True'),
+            (b'directories == expected_dirs', b'True'),
+            (b"'tests/typed_windows_modules.rs'", b"'tests/unreviewed.rs'"),
+            (b'not path.is_symlink() and not any(parent.is_symlink() for parent in path.parents)', b'True'),
+            (b'before.st_nlink == 1', b'before.st_nlink >= 1'),
+            (b'(len(body), hashlib.sha256(body).hexdigest()) == PREDECESSOR_POLICY_PIN', b'True'),
+            (b'RETAINED_RUN = predecessor.RETAINED_RUN', b'RETAINED_RUN = library.run'),
+            (b'owned_policy = predecessor.owned_policy', b'owned_policy = predecessor'),
+            (b'enum_policy = predecessor.predecessor', b'enum_policy = predecessor'),
+            (b'"capture_sources":', b'"run":'),
+            (b'with predecessor.bound_predecessor() as context:', b'with unreviewed_parent() as context:'),
+            (b'context["adapter"].DERIVED_PIN == OBSERVER_DERIVED_PIN', b'True'),
+            (b'setattr(library, name, value)', b'setattr(predecessor, name, value)'),
+            (b'report.update(owned_policy.run_owned_vector_observer_controls(',
+             b'report.update(owned_policy.unreviewed_controls('),
+            (b'report.update(enum_policy.run_enum_observer_controls(',
+             b'report.update(enum_policy.unreviewed_controls('),
+            (b'context["adapter"], report["test_function_executions"]))',
+             b'context["adapter"], retained["test_function_executions"]))'),
+            (b'retained.get("current_input_members") == 601', b'retained.get("current_input_members") == 594'),
+            (b'"windows_local_package_semantics_qualified_by_this_gate": False',
+             b'"windows_local_package_semantics_qualified_by_this_gate": True'),
+            (b'"windows_local_package_ntfs_qualified_by_this_gate": False',
+             b'"windows_local_package_ntfs_qualified_by_this_gate": True'),
+            (b'"windows_local_package_races_qualified_by_this_gate": False',
+             b'"windows_local_package_races_qualified_by_this_gate": True'),
+            (b'"windows_local_package_platform_qualified_by_this_gate": False',
+             b'"windows_local_package_platform_qualified_by_this_gate": True'),
+            (b'"new_feature_qualification": False', b'"new_feature_qualification": True'),
+            (b'"inherited_input_members": 594', b'"inherited_input_members": 587'),
+            (b'"expected_current_input_members": 601', b'"expected_current_input_members": 594'),
+            (b'args.prepare_only or not PINS_PROVISIONAL', b'True'),
+            (b'args.prepare_only or not OBSERVER_PINS_PROVISIONAL', b'True'),
+            (b'args.prepare_only or not predecessor.PINS_PROVISIONAL', b'True'),
+        )
+        for before, after in mutations:
+            with self.subTest(before=before):
+                changed = original.replace(before, after, 1)
+                self.assertNotEqual(changed, original, 'mutation must reach the real Windows-package controller')
+                with self.assertRaises(AssertionError):
+                    require_retained_replay_binding(
+                        (wrapper,), lambda name: changed if name == wrapper else (REPO / name).read_bytes())
+
+    def test_windows_route_rejects_drift_in_all_twenty_compiled_input_pins(self):
+        source = ast.parse((REPO / WINDOWS_LOCAL_PACKAGE_REPLAY).read_bytes())
+        pins = _literal(source.body, 'REVIEWED_INPUTS')
+        self.assertEqual(len(pins), 20)
+        for member in pins:
+            with self.subTest(member=member), self.assertRaisesRegex(AssertionError, 'compiled input differs'):
+                require_retained_replay_binding(
+                    (WINDOWS_LOCAL_PACKAGE_REPLAY,),
+                    lambda name: (REPO / name).read_bytes() + (b'\n' if name == member else b''))
 
     def test_generic_inventory_assets_observer_pipeline_and_source_refusals_cannot_drift(self):
         wrapper = GENERIC_OWNED_VECTOR_REPLAY
@@ -1512,7 +1780,8 @@ class RetainedReplayRouteTests(unittest.TestCase):
         original = (REPO / wrapper).read_bytes()
         invocation = ('selected.original_run(delegated)' if kind == 'msvc'
                       else 'RETAINED_RUN(delegated)')
-        parent = (GENERIC_OWNED_VECTOR_PARENT.encode() if kind == 'generic-owned-vector'
+        parent = (WINDOWS_LOCAL_PACKAGE_PARENT.encode() if kind == 'windows-local-package'
+                  else GENERIC_OWNED_VECTOR_PARENT.encode() if kind == 'generic-owned-vector'
                   else OWNED_ENUM_VECTOR_PARENT.encode() if kind == 'owned-enum-vector'
                   else OFFLINE_VENDOR_PARENT.encode() if kind == 'offline-vendor'
                   else b'0e8f23f7481c7ec4e24cd416ed30607f8eb75daf' if kind == 'owned-text'
