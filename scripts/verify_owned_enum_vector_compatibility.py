@@ -2,7 +2,7 @@
 """Bind finite enum-vector inputs and explicit exclusions to the full replay.
 
 The unchanged retained controller owns all semantic/resource predicates and both
-build profiles. Source and observer qualification remain explicitly provisional.
+build profiles. Source and observer inputs are bound to exact reviewed bytes.
 """
 import argparse
 from contextlib import contextmanager
@@ -20,9 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "5917f581e69c0a0c69e4b5b059bb97dced55331d"
 PREDECESSOR_POLICY = "scripts/verify_offline_vendor_compatibility.py"
 PREDECESSOR_POLICY_PIN = (27286, "ee64cc7f63051764594a5866101cff9987ca7ddf20b764e7e1aa88f975c9b7a1")
-REVIEWED_SOURCE_HEAD = "a54fc93c3d2ee47f098de59cf1d220f35a1fd86b"
-PINS_PROVISIONAL = True
-OBSERVER_PINS_PROVISIONAL = True
+REVIEWED_SOURCE_HEAD = "a88ae9c1bef4697a029f3a13d083b804d4f158d1"
+PINS_PROVISIONAL = False
+OBSERVER_PINS_PROVISIONAL = False
 OBSERVER_ADAPTER = "scripts/owned_enum_vector_compatibility_observer.py"
 OBSERVER_ADAPTER_PIN = (7495, "ff932fb13ae4db32fe15a389505be7a7ffa2fc0557b15f9b1b153c3602de3fd9")
 V13_ADAPTER = "scripts/owned_record_vector_compatibility_observer.py"
@@ -94,7 +94,7 @@ REVIEWED_INPUTS = {
     "native/experimental_owned_record.h": (1602, "56f02ed4ed9cb5ea9c7ee8f453320265c2f5a05763cbfa9ee83dce2bb4bf03a4"),
     "src/frontend/declaration_index/generics.rs": (136792, "9b537bf78f18c932ea7c88b09570b5784726c4cdc407da89ff53045ccbd77f9c"),
     "src/frontend/declaration_index/generics/nominal.rs": (34232, "88f16fc1ad280b731edfb3be4fa35cf7e169b202288739d974f422a633beeb8f"),
-    "src/frontend/declaration_index/generics/owned_builtin_enum_key_tests.rs": (27015, "22b36722409738ac56f9ebc8ed24f01c34015fcd2ebf912e12b057f333ba1253"),
+    "src/frontend/declaration_index/generics/owned_builtin_enum_key_tests.rs": (26919, "b8a53bc7fa6fce9d16a809bafadfc76c20a90f760dc9a26e9542397502278801"),
     "src/frontend/declaration_index/generics/owned_builtin_enum_keys.rs": (11020, "e68a64b53c9ad816bcdf2a091285100a4edfab34ca92479c03b1d10dd9178dc0"),
     "src/frontend/declaration_index/generics/owned_candidate.rs": (82984, "d35ce98b67b94d20fcc9b7c2bc5899904e6767ccc14b3145da3485bbdc44afb0"),
     "src/frontend/declaration_index/sealed.rs": (121094, "9fc2034f0a55e5a5f02796cdda2e5d233405bcd74137ce4fe6723c91e62ec949"),
@@ -130,7 +130,7 @@ REVIEWED_INPUTS = {
     "src/frontend/oir/owned/source/diagnostic.rs": (9236, "751750583651a2effb6e8d824667fcff9cfa85767602553ccbca0cc5c695ee53"),
     "src/frontend/oir/owned/source/owned_enum_vector_boundary_tests.rs": (13381, "e22a93fbe6cd606620807befb0f822a75427a28cd3f1bf0a60b6f8d132335c8f"),
     "src/frontend/oir/owned/source/owned_enum_vector_cases.rs": (7383, "439e6f19d00196e62a2a04135e5d3d3abb30067b5c3881202c85dc16730f7907"),
-    "src/frontend/oir/owned/source/owned_enum_vector_source_tests.rs": (11969, "0b7dcb97e3ba0acbb96c123521fea0f2d5e9a3311dd2b1fac3b43f3254ac413b"),
+    "src/frontend/oir/owned/source/owned_enum_vector_source_tests.rs": (11977, "51f243bd9b67cc6b89d4f30ef2b44ae8d081159f02258be156a7c1d9fb2b0fc4"),
     "src/frontend/oir/owned/source/owned_vector_source.rs": (6076, "bc11e0a8f9b6d72182135c3fc353b5e63fd1fca8642280c2af390558cac4a30a"),
     "src/frontend/oir/owned/source/program.rs": (51302, "bcb497aa0a5906d2f5e9537c877a2c746099e95afa0a4057c6a02773a7eb01d1"),
     "src/frontend/oir/owned/source/record_enum_layouts.rs": (13764, "5170681eae700b762d986ff61ffa068d1adc75fcf5a260c2d03fc09d4b20041e"),
@@ -145,7 +145,7 @@ REVIEWED_INPUTS = {
     "src/frontend/oir/owned_types/owned_vector.rs": (16960, "6d9cf7f444058dccd46cb92bc8e78dce822af0104797bc93c79eb85e4f401e82"),
     "src/frontend/oir/owned_types/resources.rs": (33933, "0062c522375d3aba7e4895bad8fe56643b086b3683bf0d867de73ecc8ae967c5"),
     "src/frontend/owned_enum_vector_catalog_tests.rs": (3139, "f69d5e984738359da0c83ee516fd14ac170039b1af64d673ab3af58a64da6c59"),
-    "src/frontend/owned_vector_builtins.rs": (12319, "44d4c153da66b1f0fc7b5180fdaf406e5c5de66c146b0b3f678846bcb324a2ff"),
+    "src/frontend/owned_vector_builtins.rs": (12425, "dc49d401871dfe2200de9fb20156e8d7e425b1cd2c6e9a5add1f03117f2536a7"),
 }
 
 # Independent literal selector/asset inventory; repinning a source never admits
@@ -180,8 +180,8 @@ REVIEWED_DIRECTIVES = {
         "build_script": None,
     },
     "src/frontend/declaration_index/generics/owned_builtin_enum_key_tests.rs": {
-        "legacy": ([], [b'#[path = "../../oir/owned/source/owned_enum_vector_cases.rs"]']),
-        "attributes": ((b'#[path = "../../oir/owned/source/owned_enum_vector_cases.rs"]', 1), (b'#[allow(dead_code)]', 1), (b'#[test]', 1), (b'#[cfg(target_pointer_width = "64")]', 1), (b'#[test]', 4), (b'#[cfg(target_pointer_width = "64")]', 1), (b'#[test]', 1), (b'#[allow(dead_code)]', 6)),
+        "legacy": ([], []),
+        "attributes": ((b'#[test]', 1), (b'#[cfg(target_pointer_width = "64")]', 1), (b'#[test]', 4), (b'#[cfg(target_pointer_width = "64")]', 1), (b'#[test]', 1), (b'#[allow(dead_code)]', 6)),
         "macros": (),
         "c_preprocessor": (),
         "build_script": None,
@@ -432,8 +432,8 @@ REVIEWED_DIRECTIVES = {
         "build_script": None,
     },
     "src/frontend/oir/owned/source/owned_enum_vector_source_tests.rs": {
-        "legacy": ([], [b'#[path = "owned_enum_vector_boundary_tests.rs"]', b'#[path = "owned_enum_vector_cases.rs"]']),
-        "attributes": ((b'#[path = "owned_enum_vector_boundary_tests.rs"]', 1), (b'#[path = "owned_enum_vector_cases.rs"]', 1), (b'#[test]', 3)),
+        "legacy": ([], [b'#[path = "owned_enum_vector_boundary_tests.rs"]']),
+        "attributes": ((b'#[path = "owned_enum_vector_boundary_tests.rs"]', 1), (b'#[test]', 3)),
         "macros": (),
         "c_preprocessor": (),
         "build_script": None,
@@ -537,8 +537,8 @@ REVIEWED_DIRECTIVES = {
         "build_script": None,
     },
     "src/frontend/owned_vector_builtins.rs": {
-        "legacy": ([], [b'#[path = "owned_enum_vector_catalog_tests.rs"]']),
-        "attributes": ((b'#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]', 1), (b'#[repr(u8)]', 1), (b'#[cfg(test)]', 1), (b'#[path = "owned_enum_vector_catalog_tests.rs"]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[repr(u8)]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 3), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[cfg(test)]', 1), (b'#[test]', 3)),
+        "legacy": ([], [b'#[path = "oir/owned/source/owned_enum_vector_cases.rs"]', b'#[path = "owned_enum_vector_catalog_tests.rs"]']),
+        "attributes": ((b'#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]', 1), (b'#[repr(u8)]', 1), (b'#[cfg(test)]', 1), (b'#[path = "oir/owned/source/owned_enum_vector_cases.rs"]', 1), (b'#[cfg(test)]', 1), (b'#[path = "owned_enum_vector_catalog_tests.rs"]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[repr(u8)]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 3), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]', 1), (b'#[derive(Clone, Copy, Debug, PartialEq, Eq)]', 1), (b'#[cfg(test)]', 1), (b'#[test]', 3)),
         "macros": (),
         "c_preprocessor": (),
         "build_script": None,

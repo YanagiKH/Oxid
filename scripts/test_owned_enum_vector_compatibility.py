@@ -163,9 +163,9 @@ class EnumSourceAdmission(unittest.TestCase):
 class RetainedEnumDelegation(unittest.TestCase):
     def test_every_real_source_matches_exact_pins_and_literal_directive_inventory(self):
         self.assertEqual(gate.PREDECESSOR, "5917f581e69c0a0c69e4b5b059bb97dced55331d")
-        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "a54fc93c3d2ee47f098de59cf1d220f35a1fd86b")
-        self.assertTrue(gate.PINS_PROVISIONAL)
-        self.assertTrue(gate.OBSERVER_PINS_PROVISIONAL)
+        self.assertEqual(gate.REVIEWED_SOURCE_HEAD, "a88ae9c1bef4697a029f3a13d083b804d4f158d1")
+        self.assertFalse(gate.PINS_PROVISIONAL)
+        self.assertFalse(gate.OBSERVER_PINS_PROVISIONAL)
         self.assertEqual((len(gate.ENUM_CHANGED), len(gate.ENUM_ADDED)), (45, 11))
         self.assertEqual(len(gate.REVIEWED_INPUTS), 56)
         new_paths = {
