@@ -189,7 +189,16 @@ impl Drop for Fixture {
 
 fn exercise(body: &str, skip: usize, allocations: u64, peak: u64) {
     let fixture = Fixture::new(&format!("{IMPORTS}{body}"));
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            windows,
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    ))]
     {
         let specs = fixture.specs();
         let package = PackageSources::load(&specs, None, ProjectLimits::default()).unwrap();
@@ -272,7 +281,16 @@ fn owned_text_source_resource_reserve_failure_preserves_owner_and_retry_succeeds
     exercise(RESERVE_BYTES, 1, 2, 88);
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn owned_text_source_resource_package_policy_refuses_before_loading_or_allocating() {
     let fixture = Fixture::new(&format!("{IMPORTS}{FROM_UTF8}"));
@@ -285,7 +303,7 @@ fn owned_text_source_resource_package_policy_refuses_before_loading_or_allocatin
     );
     assert_eq!(
         failure.diagnostics[0].message,
-        "package source policy is qualified only on Linux or macOS",
+        "package source policy is not qualified on this host",
     );
     assert!(failure.sources.files().is_empty());
     assert_eq!(

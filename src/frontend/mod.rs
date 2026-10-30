@@ -35,6 +35,8 @@ pub(crate) use driver::{
 pub(crate) use driver::{process_package_project, PackageCommand};
 pub(crate) use native::doctor::{run as native_doctor, Report as NativeDoctorReport};
 pub(crate) use project::packages::{PackageDependency, PackageSpec};
+#[cfg(windows)]
+pub(crate) use project::{verify_windows_workspace_member, with_windows_regular_file};
 #[cfg(test)]
 mod owned_syntax_tests;
 
