@@ -6,7 +6,8 @@
 use crate::frontend::{
     hir,
     oir::owned_types::{
-        AggregateTy, BorrowKind, BorrowedTy, EnumId, ParameterTy, RecordId, ValueTy,
+        AggregateTy, BorrowKind, BorrowedTy, EnumId, OwnedVectorRoot, ParameterTy, RecordId,
+        ValueTy,
     },
 };
 
@@ -22,6 +23,13 @@ pub(in crate::frontend) enum Operation {
     Truncate = 6,
     Take = 7,
 }
+
+#[cfg(test)]
+#[path = "oir/owned/source/owned_enum_vector_cases.rs"]
+pub(in crate::frontend) mod cases;
+#[cfg(test)]
+#[path = "owned_enum_vector_catalog_tests.rs"]
+mod enum_tests;
 impl Operation {
     pub const ALL: [Self; 8] = [
         Self::New,
@@ -159,11 +167,45 @@ impl Function {
             ((record.0 as u16) * OPERATIONS + operation as u16).to_le_bytes(),
         ))
     }
+    pub const fn enumeration(operation: Operation, enumeration: EnumId) -> Option<Self> {
+        if enumeration.0 >= RECORDS {
+            return None;
+        }
+        Some(Self(
+            (0x8000 | ((enumeration.0 as u16) * OPERATIONS + operation as u16)).to_le_bytes(),
+        ))
+    }
+    /// Inert exact-domain round trip, never proof of an admitted declaration.
+    pub const fn from_raw(value: u32) -> Option<Self> {
+        if value > u16::MAX as u32 {
+            return None;
+        }
+        let candidate = Self((value as u16).to_le_bytes());
+        match candidate.element() {
+            OwnedVectorRoot::Record(id) => Self::record(candidate.operation(), id),
+            OwnedVectorRoot::Enum(id) => Self::enumeration(candidate.operation(), id),
+        }
+    }
+    pub const fn raw(self) -> u16 {
+        u16::from_le_bytes(self.0)
+    }
+    pub const fn element(self) -> OwnedVectorRoot {
+        let value = u16::from_le_bytes(self.0);
+        let ordinal = ((value & 0x7fff) / OPERATIONS) as usize;
+        if value & 0x8000 != 0 {
+            OwnedVectorRoot::Enum(EnumId(ordinal))
+        } else {
+            OwnedVectorRoot::Record(RecordId(ordinal))
+        }
+    }
     pub const fn operation(self) -> Operation {
         Operation::ALL[(u16::from_le_bytes(self.0) % OPERATIONS) as usize]
     }
     pub const fn record_id(self) -> RecordId {
-        RecordId((u16::from_le_bytes(self.0) / OPERATIONS) as usize)
+        match self.element() {
+            OwnedVectorRoot::Record(id) => id,
+            OwnedVectorRoot::Enum(_) => panic!("enum vector keys have no record ID"),
+        }
     }
     pub const fn name(self) -> &'static str {
         self.operation().name()
@@ -179,7 +221,7 @@ impl Function {
     /// record, import, status and canonical function identity before use.
     pub const fn concrete_signature(self, grow: EnumId) -> Signature {
         let unit = ParameterTy::Value(ValueTy::Scalar(hir::Ty::Unit));
-        let vector = AggregateTy::OwnedRecordVector(self.record_id());
+        let vector = self.element().vector();
         let shared = ParameterTy::Reference {
             referent: BorrowedTy::Exact(vector),
             kind: BorrowKind::Shared,
@@ -189,7 +231,7 @@ impl Function {
             kind: BorrowKind::Exclusive,
         };
         let count = ParameterTy::Value(ValueTy::Scalar(hir::Ty::I32));
-        let element = ParameterTy::Value(ValueTy::Owned(AggregateTy::Record(self.record_id())));
+        let element = ParameterTy::Value(ValueTy::Owned(self.element().aggregate()));
         let (parameters, count, result) = match self.operation() {
             Operation::New => ([unit; 2], 0, ValueTy::Owned(vector)),
             Operation::Len | Operation::Capacity => {
@@ -204,7 +246,7 @@ impl Function {
             Operation::PopLast => (
                 [exclusive, unit],
                 1,
-                ValueTy::Owned(AggregateTy::Record(self.record_id())),
+                ValueTy::Owned(self.element().aggregate()),
             ),
             Operation::Truncate => ([exclusive, count], 2, ValueTy::Scalar(hir::Ty::Unit)),
             Operation::Take => ([exclusive, unit], 1, ValueTy::Owned(vector)),

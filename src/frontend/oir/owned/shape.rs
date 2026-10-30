@@ -117,6 +117,7 @@ fn record(aggregate: AggregateTy, s: Span) -> Result<RecordId, OwnedFailure> {
         | AggregateTy::Vector(_)
         | AggregateTy::RecordVector(_)
         | AggregateTy::OwnedRecordVector(_)
+        | AggregateTy::OwnedEnumVector(_)
         | AggregateTy::File => Err(bad(Malformed::Type, s)),
     }
 }
@@ -129,6 +130,7 @@ fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> 
         | AggregateTy::Vector(_)
         | AggregateTy::RecordVector(_)
         | AggregateTy::OwnedRecordVector(_)
+        | AggregateTy::OwnedEnumVector(_)
         | AggregateTy::File => Err(bad(Malformed::Type, s)),
     }
 }
@@ -270,7 +272,9 @@ pub(super) fn signatures_with_queries<Q: SignatureDeclarationQueries>(
         .contains_vector(crate::frontend::builtin_catalog::vector::Item::Vec);
     let owned_vector_authority = vector_authority && d.permits_owned_vectors();
     let permitted = |value| match value {
-        ValueTy::Owned(AggregateTy::OwnedRecordVector(_)) => owned_vector_authority,
+        ValueTy::Owned(AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)) => {
+            owned_vector_authority
+        }
         ValueTy::Owned(AggregateTy::ByteBuf) => resource_authority,
         ValueTy::Owned(AggregateTy::File) => file_authority,
         ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_)) => vector_authority,
@@ -602,9 +606,9 @@ pub(super) fn check_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
                 ValueTy::Owned(AggregateTy::RecordVector(record)) => {
                     BorrowedTy::Exact(AggregateTy::RecordVector(record))
                 }
-                ValueTy::Owned(vector @ AggregateTy::OwnedRecordVector(_)) => {
-                    BorrowedTy::Exact(vector)
-                }
+                ValueTy::Owned(
+                    vector @ (AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)),
+                ) => BorrowedTy::Exact(vector),
                 ValueTy::Owned(AggregateTy::ByteBuf) => BorrowedTy::Exact(AggregateTy::ByteBuf),
                 ValueTy::Owned(AggregateTy::File) => BorrowedTy::Exact(AggregateTy::File),
                 ValueTy::Owned(record @ AggregateTy::Record(_)) => BorrowedTy::Exact(record),

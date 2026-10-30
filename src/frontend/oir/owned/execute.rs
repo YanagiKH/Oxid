@@ -766,7 +766,8 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
             | AggregateTy::File
             | AggregateTy::Vector(_)
             | AggregateTy::RecordVector(_)
-            | AggregateTy::OwnedRecordVector(_) => Err(bad("array aggregate type", span)),
+            | AggregateTy::OwnedRecordVector(_)
+            | AggregateTy::OwnedEnumVector(_) => Err(bad("array aggregate type", span)),
         }
     }
     fn whole_view(&self, key: OwnerKey, span: Span) -> Result<BorrowView> {
@@ -799,6 +800,7 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
             AggregateTy::Vector(_)
                 | AggregateTy::RecordVector(_)
                 | AggregateTy::OwnedRecordVector(_)
+                | AggregateTy::OwnedEnumVector(_)
         ) && (view.offset != 0 || root_type != aggregate)
         {
             // Dynamic scalar slices take their checked packed-range path in
@@ -868,7 +870,8 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                         | AggregateTy::File
                         | AggregateTy::Vector(_)
                         | AggregateTy::RecordVector(_)
-                        | AggregateTy::OwnedRecordVector(_)),
+                        | AggregateTy::OwnedRecordVector(_)
+                        | AggregateTy::OwnedEnumVector(_)),
                     ),
                     relative,
                 ) = self
@@ -4053,7 +4056,8 @@ impl<V: StoredValue> Iterator for ValueCells<'_, V> {
                 | AggregateTy::File
                 | AggregateTy::Vector(_)
                 | AggregateTy::RecordVector(_)
-                | AggregateTy::OwnedRecordVector(_),
+                | AggregateTy::OwnedRecordVector(_)
+                | AggregateTy::OwnedEnumVector(_),
             ) => None,
             ValueTy::Owned(AggregateTy::Enum(enumeration)) => {
                 let result = (|| {
@@ -4136,7 +4140,7 @@ fn copy_active_bytes_for<'a, V: StoredValue, Q: resources::ResourceQueries<'a>>(
     span: Span,
 ) -> Result<()> {
     let declarations = queries.declarations();
-    if !matches!(aggregate, AggregateTy::OwnedRecordVector(_))
+    if OwnedVectorRoot::from_vector(aggregate).is_none()
         && declarations
             .has_enum_record_nesting(aggregate)
             .map_err(|_| bad("composed aggregate identity", span))?
@@ -4965,7 +4969,8 @@ fn record_type(aggregate: AggregateTy, span: Span) -> Result<RecordId> {
         | AggregateTy::File
         | AggregateTy::Vector(_)
         | AggregateTy::RecordVector(_)
-        | AggregateTy::OwnedRecordVector(_) => Err(bad("unsupported aggregate carrier", span)),
+        | AggregateTy::OwnedRecordVector(_)
+        | AggregateTy::OwnedEnumVector(_) => Err(bad("unsupported aggregate carrier", span)),
     }
 }
 

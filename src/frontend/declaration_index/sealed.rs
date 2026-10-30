@@ -2493,8 +2493,17 @@ impl<'s> DeclarationIndex<'s> {
         work: &WorkMeter,
     ) -> Result<owned_vector::Signature, Box<Diagnostic>> {
         self.owned_vector_function_id(key, work)?;
-        if self.record_is_copy(key.record_id())? {
-            return Err(bad(self.sources().eof()));
+        match key.element() {
+            crate::frontend::oir::owned_types::OwnedVectorRoot::Record(record) => {
+                if self.record_is_copy(record)? {
+                    return Err(bad(self.sources().eof()));
+                }
+            }
+            crate::frontend::oir::owned_types::OwnedVectorRoot::Enum(enumeration) => {
+                // Candidate-only builtin keys were rebound before the frozen
+                // plan was published. Authenticate this final source/catalog ID.
+                self.enum_origin(enumeration)?;
+            }
         }
         let grow = if key.operation().requires_grow_status() {
             self.experimental_enum_id(experimental::Enumeration::Grow)?

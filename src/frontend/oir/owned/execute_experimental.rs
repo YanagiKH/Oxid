@@ -250,7 +250,10 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 let generation = epoch(key.generation, span)?;
                 match f.result {
                     ValueTy::Owned(
-                        aggregate @ (AggregateTy::OwnedRecordVector(_) | AggregateTy::Record(_)),
+                        aggregate @ (AggregateTy::OwnedRecordVector(_)
+                        | AggregateTy::OwnedEnumVector(_)
+                        | AggregateTy::Record(_)
+                        | AggregateTy::Enum(_)),
                     ) if f.owners[owner.0].aggregate() == aggregate
                         && self.owned_vector_result_extent(f.id, aggregate)
                             == Some(bytes.len()) => {}

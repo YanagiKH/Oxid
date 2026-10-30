@@ -212,7 +212,7 @@ impl Heap {
                 let vector = unsafe { node.cast::<OwnedVectorHeader>().as_ref() };
                 let layout =
                     allocation_layout(element, value.capacity).ok_or(Failure::Descriptor)?;
-                return if vector.record == element.record().0 as u32
+                return if vector.record == element.storage_key()
                     && vector.stride == element.size() as u64
                     && vector.capacity == value.capacity as u32
                     && header.initialized == value.length as u32
@@ -506,7 +506,7 @@ impl Heap {
                         initialized: 0,
                     },
                     capacity: capacity as u32,
-                    record: element.record().0 as u32,
+                    record: element.storage_key(),
                     stride: element.size() as u64,
                     allocation_bytes: layout.size() as u64,
                     identity_offset: layout.identity_offset as u64,
@@ -820,3 +820,7 @@ impl Heap {
 #[cfg(test)]
 #[path = "owned_vector_resource_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "owned_enum_vector_resource_tests.rs"]
+mod enum_tests;

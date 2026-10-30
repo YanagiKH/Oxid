@@ -8,6 +8,7 @@ use crate::frontend::{
     declaration_index::{Access, NominalId, PreparedTypeName},
     diagnostic::Diagnostic,
     lexer::Token,
+    oir::owned_types::EnumId,
     owned_diagnostic,
     parser::MAX_DIAGNOSTICS,
     project::budget::Allocator,
@@ -365,6 +366,23 @@ fn type_name<'a>(
         ValueTy::Owned(AggregateTy::OwnedRecordVector(_)) => Err(error(
             "E0300",
             "vectors of owned records are not yet supported",
+            span,
+        )),
+        ValueTy::Owned(AggregateTy::OwnedEnumVector(enumeration))
+            if program.admission() == SourceAdmission::OwnedVectorPipeline
+                && program.index().is_owned_vector_candidate_pipeline() =>
+        {
+            program
+                .query()
+                .prepare_nominal_type_name(
+                    NominalId::Enum(program.index().template_enum_for_instance(enumeration)?),
+                    span,
+                )
+                .map(TypeName::RecordVector)
+        }
+        ValueTy::Owned(AggregateTy::OwnedEnumVector(_)) => Err(error(
+            "E0300",
+            "vectors of owned enums require the owned vector pipeline",
             span,
         )),
         ValueTy::Scalar(ty) => Ok(TypeName::Scalar(ty)),
@@ -5560,6 +5578,8 @@ struct OwnedVectorFormatterCarriers {
     index: &'static crate::frontend::declaration_index::DeclarationIndex<'static>,
     origin: bool,
     record: RecordId,
+    enumeration: EnumId,
+    enum_template: Result<EnumId, Box<Diagnostic>>,
     span: Span,
     prepared:
         Result<crate::frontend::declaration_index::PreparedTypeName<'static>, Box<Diagnostic>>,

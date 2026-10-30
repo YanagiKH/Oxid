@@ -4,8 +4,9 @@ use crate::frontend::{
     declaration_index::{DeclarationIndex, WorkMeter},
     diagnostic::Diagnostic,
     oir::owned_types::{
-        admit_declaration_counts, admit_enum_counts, admit_joint_value_layouts, DeclarationError,
-        DeclarationUsage, EnumId, RawEnumDecl, RawFieldDecl, RawRecordDecl, RawVariantDecl,
+        admit_declaration_counts, admit_enum_counts, admit_joint_value_layouts,
+        admit_joint_value_layouts_domain, DeclarationError, DeclarationUsage, EnumId, RawEnumDecl,
+        RawFieldDecl, RawRecordDecl, RawVariantDecl,
     },
     owned_diagnostic,
     project::budget::Allocator,
@@ -202,8 +203,12 @@ fn inventory_with_limit(
             variants,
         });
     }
-    admit_joint_value_layouts(&raw_records, &raw_enums, allocator)
-        .map_err(|error| declaration_error(error, records, at))
+    let layouts = if index.is_owned_vector_candidate_pipeline() {
+        admit_joint_value_layouts_domain::<true>(&raw_records, &raw_enums, allocator)
+    } else {
+        admit_joint_value_layouts(&raw_records, &raw_enums, allocator)
+    };
+    layouts.map_err(|error| declaration_error(error, records, at))
 }
 
 #[cfg(test)]

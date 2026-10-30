@@ -1185,7 +1185,7 @@ mod candidate_native;
 
 fn record_id(aggregate: AggregateTy) -> Option<RecordId> {
     match aggregate {
-        AggregateTy::OwnedRecordVector(_) => None,
+        AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => None,
         AggregateTy::Record(record) => Some(record),
         AggregateTy::FixedArray(_)
         | AggregateTy::Enum(_)

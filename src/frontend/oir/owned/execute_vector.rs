@@ -63,6 +63,9 @@ pub(super) enum Returned {
 pub(super) trait VectorPrimitive: Copy {
     fn authenticates<W: PlanWitness>(self, witness: &W, function: hir::DefId) -> bool;
     fn input_record(self) -> Option<RecordId>;
+    fn input_aggregate(self) -> Option<AggregateTy> {
+        self.input_record().map(AggregateTy::Record)
+    }
     fn input_access(self) -> Access;
 }
 impl VectorPrimitive for Function {
@@ -1087,6 +1090,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         caller: usize,
         destination: CallResult,
         expected: ValueTy,
+        callee: hir::DefId,
         span: Span,
     ) -> Result<ResultPlace> {
         let function = self.function(self.frames[caller].function);
@@ -1114,15 +1118,21 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 let generation = epoch(key.generation, span)?;
                 let bytes = self.owner_extent(key, span)?;
                 match aggregate {
+                    aggregate
+                        if self.owned_vector_result_extent(callee, aggregate)
+                            == Some(bytes.len()) => {}
                     AggregateTy::Vector(_) | AggregateTy::RecordVector(_) if bytes.len() == 16 => {}
-                    AggregateTy::OwnedRecordVector(record)
+                    aggregate @ (AggregateTy::OwnedRecordVector(_)
+                    | AggregateTy::OwnedEnumVector(_))
                         if self.plan.uses_owned_vectors() && bytes.len() == 16 =>
                     {
                         self.plan
                             .witness()
                             .elements()
                             .ok_or_else(|| bad("owned vector caller bounds", span))?
-                            .element(record)
+                            .element_root(
+                                OwnedVectorRoot::from_vector(aggregate).expect("matched vector"),
+                            )
                             .map_err(|_| bad("owned vector caller type", span))?;
                     }
                     AggregateTy::Record(record) if self.plan.uses_owned_vectors() => {
@@ -1211,10 +1221,10 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             .count();
         for parameter in &function.parameters {
             if let ParameterBinding::Owned(owner) = parameter {
-                let record = key
-                    .input_record()
+                let aggregate = key
+                    .input_aggregate()
                     .ok_or_else(|| bad("scalar vector owned input", span))?;
-                if function.owners[owner.0].aggregate() != AggregateTy::Record(record) {
+                if function.owners[owner.0].aggregate() != aggregate {
                     return Err(bad("record vector input identity", span));
                 }
                 self.base(frame, AccessBase::Owner(*owner), key.input_access(), span)?;
@@ -1262,7 +1272,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             return Err(bad("vector caller call state", span));
         }
         let caller_result =
-            self.vector_caller_result(caller, call.result, function.result, span)?;
+            self.vector_caller_result(caller, call.result, function.result, function.id, span)?;
         let to = match &caller_result {
             ResultPlace::Owner {
                 owner, generation, ..

@@ -97,6 +97,101 @@ impl<'a> OwnedRecordVectorType<'a> {
     }
 }
 
+/// Borrowed nominal query for both disjoint owned-vector root domains. The
+/// compact root slot preserves the legacy query carrier's qualified width.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::frontend::oir) struct OwnedVectorType<'a> {
+    declarations: &'a Declarations,
+    root: OwnedVectorRootSlot,
+}
+
+struct NominalQueryCarriers {
+    declarations: [&'static Declarations; 2],
+    roots: [OwnedVectorRoot; 3],
+    slots: [OwnedVectorRootSlot; 2],
+    slot_return: Option<OwnedVectorRootSlot>,
+    selected_record: &'static RecordDecl,
+    record_return: Result<&'static RecordDecl, DeclarationError>,
+    selected_enum: &'static EnumDecl,
+    enum_return: Result<&'static EnumDecl, EnumDeclarationError>,
+    mapped_enum_return: Result<&'static EnumDecl, DeclarationError>,
+    layouts: [Layout; 2],
+    constructed: OwnedVectorType<'static>,
+    result: Result<OwnedVectorType<'static>, DeclarationError>,
+    caller_result: Result<OwnedVectorType<'static>, DeclarationError>,
+    metadata_limit: usize,
+    query_request: usize,
+    work: &'static mut usize,
+    remaining: Option<usize>,
+    selected_work: usize,
+    copy_exclusion: bool,
+}
+
+impl<'a> OwnedVectorType<'a> {
+    pub(in crate::frontend::oir) const fn requested_query_bytes() -> usize {
+        size_of::<NominalQueryCarriers>()
+    }
+    pub(in crate::frontend::oir) fn check(
+        declarations: &'a Declarations,
+        root: OwnedVectorRoot,
+        metadata_limit: usize,
+        work: &mut usize,
+    ) -> Result<Self, DeclarationError> {
+        if Self::requested_query_bytes() > metadata_limit.min(Limits::DEFAULT.table_bytes) {
+            return Err(DeclarationError::ResourceLimit(
+                "owned nominal vector query bytes",
+            ));
+        }
+        let remaining = work.checked_sub(3).ok_or(DeclarationError::ResourceLimit(
+            "owned nominal vector query work",
+        ))?;
+        let slot = OwnedVectorRootSlot::check(root).ok_or(DeclarationError::TypeMismatch)?;
+        let layout = match root {
+            OwnedVectorRoot::Record(id) => {
+                let selected = declarations.record(id)?;
+                if selected.is_copy() {
+                    return Err(DeclarationError::TypeMismatch);
+                }
+                selected.layout()
+            }
+            OwnedVectorRoot::Enum(id) => declarations
+                .enums()
+                .enumeration(id)
+                .map_err(DeclarationError::from)?
+                .layout(),
+        };
+        if layout.size() == 0 {
+            return Err(DeclarationError::TypeMismatch);
+        }
+        *work = remaining;
+        Ok(Self {
+            declarations,
+            root: slot,
+        })
+    }
+    pub(in crate::frontend::oir) const fn root(self) -> OwnedVectorRoot {
+        self.root.root()
+    }
+    pub(in crate::frontend::oir) const fn aggregate(self) -> AggregateTy {
+        self.root().vector()
+    }
+    pub(in crate::frontend::oir) const fn descriptor_layout(self) -> Layout {
+        Self::storage_layout()
+    }
+    pub(in crate::frontend::oir) const fn descriptor_width(self) -> usize {
+        Self::storage_width()
+    }
+    pub(in crate::frontend::oir) const fn storage_layout() -> Layout {
+        OwnedRecordVectorType::storage_layout()
+    }
+    pub(in crate::frontend::oir) const fn storage_width() -> usize {
+        OwnedRecordVectorType::storage_width()
+    }
+    pub(in crate::frontend::oir) fn belongs_to(self, declarations: &Declarations) -> bool {
+        std::ptr::eq(self.declarations, declarations)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

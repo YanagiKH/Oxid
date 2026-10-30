@@ -189,6 +189,11 @@ fn present(
         .filter(|span| sources.is_valid_span(*span));
     let (code, stage, message) = match failure.kind {
         OwnedFailureKind::Resource(_) => ("E0400", internal_stage, "owned resource limit exceeded"),
+        OwnedFailureKind::UnsupportedOwnedVectorElement => (
+            "E0300",
+            "type",
+            "owned vector elements cannot contain owned vectors",
+        ),
         _ => match source_code {
             Some("E0310") => (
                 "E0310",

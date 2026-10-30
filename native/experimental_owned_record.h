@@ -28,4 +28,10 @@ extern const oxid_owned_type __oxid_owned_types[];
 extern const oxid_owned_field __oxid_owned_fields[], __oxid_owned_variants[];
 extern const oxid_owned_record_schema __oxid_owned_records[];
 #endif
+/* Separate authenticated enum-root domain; legacy record-only C clients do
+ * not acquire new link dependencies or reinterpret their table ordinals. */
+#ifdef OXID_OWNED_ENUM_VECTOR_SCHEMAS
+extern const uint32_t __oxid_owned_enum_count;
+extern const oxid_owned_record_schema __oxid_owned_enums[];
+#endif
 #endif

@@ -2157,11 +2157,11 @@
         "scripts/test_native_copy_record_vectors.py"
       ],
       "evidence": [],
-      "limitations": "Lengths and capacities use i32. Growth is fallible and shares configured heap and work limits with byte buffers and files. Record elements require finite checked Copy fields. Non-Copy, resource and enum elements, nested vectors, arrays of records, individual element references, stored or returned references, partial moves and user destructors are unavailable. Vec<u8> and ByteBuf are distinct owned types."
+      "limitations": "Lengths and capacities use i32. Growth is fallible and shares configured heap and work limits with byte buffers and files. Copy record elements require finite checked Copy fields. try_push, try_extend, try_resize and element slices require scalar or checked Copy elements; finite non-Copy records and enums use the owned-vector operations. Nested vectors, arrays of records, individual element references, stored or returned references, partial moves and user destructors are unavailable. Vec<u8> and ByteBuf are distinct owned types."
     },
     {
       "id": "owned-record-vectors",
-      "summary": "Growable vectors of finite non-Copy records owning buffers, files, and active enum payloads, with explicit reserved insertion and ownership transfer.",
+      "summary": "Growable vectors of finite non-Copy records and enums, with resource cleanup, reserved insertion and ownership transfer.",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -2181,7 +2181,10 @@
         "src/frontend/oir/owned/owned_vector_resources.rs",
         "src/frontend/oir/owned/execute_owned_vector.rs",
         "src/frontend/oir/owned/native_owned_vector.rs",
-        "native/experimental_vector.c"
+        "native/experimental_vector.c",
+        "src/frontend/declaration_index/generics/owned_builtin_enum_keys.rs",
+        "src/frontend/oir/owned/native_owned_vector_schemas.rs",
+        "native/experimental_owned_record.c"
       ],
       "tests": [
         "src/frontend/oir/source/owned_vector_route_tests.rs",
@@ -2191,10 +2194,15 @@
         "src/frontend/oir/owned/native_owned_vector_tests.rs",
         "scripts/verify_owned_record_vectors.py",
         "scripts/test_owned_record_vector_verifier.py",
-        "examples/owned-record-vectors/tests/messages.ox"
+        "examples/owned-record-vectors/tests/messages.ox",
+        "tests/typed_owned_enum_vectors.rs",
+        "src/frontend/oir/owned/source/owned_enum_vector_source_tests.rs",
+        "src/frontend/declaration_index/generics/owned_builtin_enum_key_tests.rs",
+        "scripts/verify_native_owned_enum_vectors.py",
+        "scripts/test_native_owned_enum_vectors.py"
       ],
       "evidence": [],
-      "limitations": "Eight operations: new, len, capacity, try_reserve, push_reserved, pop_last, truncate and take. Elements are finite non-Copy records; they may contain buffers, files, scalar or Copy vectors, and finite enum payloads. Insertion consumes an element and requires spare reserved capacity; removal requires a nonempty vector. Lengths and capacities use i32, and allocation shares the execution policy heap limit. Element indexing, slices, element references, direct enum elements, recursive elements, nested vectors of owned records, stored or returned references, partial moves and user destructors are unavailable. This does not complete the general safety-core release gate."
+      "limitations": "Eight operations: new, len, capacity, try_reserve, push_reserved, pop_last, truncate and take. Elements are finite non-Copy records or user-defined and built-in enums; active payloads may own text, buffers and files. Insertion consumes an element and requires spare reserved capacity; removal requires a nonempty vector. Lengths and capacities use i32, and allocation shares the execution policy heap limit. Element indexing, slices, element references, recursive elements, nested vectors of owned records or enums, stored or returned references, partial moves and user destructors are unavailable."
     },
     {
       "id": "checked-copy-records",

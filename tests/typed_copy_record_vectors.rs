@@ -390,7 +390,7 @@ fn rejects(body: &str, code: &str, markers: &[&str]) {
 fn copy_vector_operations_and_unsupported_element_types_remain_rejected() {
     for (body, code, markers) in [
         ("struct Affine { x:i32 } fn main()->i32 { let mut v=new::<Affine>(); try_push(&mut v,Affine{x:1}); return 0; }", "E0300", &["copy", "element"][..]),
-        ("enum E { Value(i32) } fn main()->i32 { let v=new::<E>(); return 0; }", "E0300", &["copy", "element"][..]),
+        ("enum E { Value(i32) } fn main()->i32 { let mut v=new::<E>(); try_push(&mut v,E::Value(1)); return 0; }", "E0300", &["copy", "element"][..]),
         ("fn main()->i32 { let v=new::<Vec<P>>(); return 0; }", "E0300", &["copy", "element"][..]),
         ("fn main()->i32 { let v=new::<[P;2]>(); return 0; }", "E0101", &["unsupported typed-preview construct `P`"][..]),
         ("use alloc::bytes::ByteBuf; fn main()->i32 { let v=new::<ByteBuf>(); return 0; }", "E0300", &["copy", "element"][..]),

@@ -26,7 +26,7 @@ pub(in crate::frontend::oir::owned) trait PlanWitness:
     fn elements(&self) -> Option<CheckedElementView<'_>>;
     fn contains_resources(&self, aggregate: AggregateTy) -> Result<bool, DeclarationError>;
     fn has_enum_record_nesting(&self, aggregate: AggregateTy) -> Result<bool, DeclarationError> {
-        if self.uses_owned_vectors() && matches!(aggregate, AggregateTy::OwnedRecordVector(_)) {
+        if self.uses_owned_vectors() && OwnedVectorRoot::from_vector(aggregate).is_some() {
             self.aggregate_layout(aggregate)?;
             Ok(false)
         } else {
@@ -59,7 +59,10 @@ pub(in crate::frontend::oir::owned) trait PlanWitness:
         }
         for borrowed in [authority, target] {
             match borrowed {
-                BorrowedTy::Exact(aggregate @ AggregateTy::OwnedRecordVector(_)) => {
+                BorrowedTy::Exact(
+                    aggregate @ (AggregateTy::OwnedRecordVector(_)
+                    | AggregateTy::OwnedEnumVector(_)),
+                ) => {
                     self.aggregate_layout(aggregate)?;
                 }
                 _ => self.declarations().check_borrowed_type(borrowed)?,
@@ -219,7 +222,7 @@ impl PlanWitness for VerifiedOwnedVectorProgram {
         Some(Self::elements(self))
     }
     fn contains_resources(&self, aggregate: AggregateTy) -> Result<bool, DeclarationError> {
-        if matches!(aggregate, AggregateTy::OwnedRecordVector(_)) {
+        if OwnedVectorRoot::from_vector(aggregate).is_some() {
             self.aggregate_layout(aggregate)?;
             Ok(true)
         } else {

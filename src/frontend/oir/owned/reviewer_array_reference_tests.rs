@@ -1334,7 +1334,7 @@ fn reference_fixture(
     let base = raw.functions[0].span;
     let a = array(ty, n);
     let (other_ty, other_n) = match other {
-        AggregateTy::OwnedRecordVector(_) => return None,
+        AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => return None,
         AggregateTy::FixedArray(t) => (t.element(), t.length()),
         AggregateTy::Record(_) => (hir::Ty::I32, 1),
         AggregateTy::Enum(_)
@@ -1363,7 +1363,7 @@ fn reference_fixture(
         s(base, 3),
     );
     let other_constructor = match other {
-        AggregateTy::OwnedRecordVector(_) => return None,
+        AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => return None,
         AggregateTy::Enum(_)
         | AggregateTy::ByteBuf
         | AggregateTy::File

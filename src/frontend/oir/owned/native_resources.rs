@@ -81,7 +81,8 @@ pub(super) fn leaves<W: PlanWitness>(
             ResourceKind::ByteBuf
             | ResourceKind::Vector(_)
             | ResourceKind::RecordVector(_)
-            | ResourceKind::OwnedRecordVector(_) => 3,
+            | ResourceKind::OwnedRecordVector(_)
+            | ResourceKind::OwnedEnumVector(_) => 3,
             ResourceKind::File => 2,
         };
         for _ in 0..descriptor_cells {
@@ -92,7 +93,10 @@ pub(super) fn leaves<W: PlanWitness>(
         let cell = format!("{name}_resource{index}");
         let input = field_pointer(out, &cell, source, leaf.offset);
         match leaf.kind {
-            ResourceKind::OwnedRecordVector(record) => {
+            ResourceKind::OwnedRecordVector(_) | ResourceKind::OwnedEnumVector(_) => {
+                let record = OwnedVectorRootSlot::check(leaf.kind.owned_vector_root().unwrap())
+                    .expect("verified owned vector root")
+                    .raw();
                 if matches!(action, Action::MovePrevalidated(_)) {
                     continue;
                 }
@@ -146,7 +150,10 @@ pub(super) fn leaves<W: PlanWitness>(
         let input = format!("%{cell}_ptr");
         match action {
             Action::Release => match leaf.kind {
-                ResourceKind::OwnedRecordVector(record) => {
+                ResourceKind::OwnedRecordVector(_) | ResourceKind::OwnedEnumVector(_) => {
+                    let record = OwnedVectorRootSlot::check(leaf.kind.owned_vector_root().unwrap())
+                        .expect("verified owned vector root")
+                        .raw();
                     writeln!(out, "  %{cell}_drop_heap = call ptr @__oxid_owned_vector_heap()\n  %{cell}_drop_status = call i32 @oxid_owned_vector_release(ptr %{cell}_drop_heap, ptr {input}, i32 {record})").unwrap();
                 }
                 ResourceKind::ByteBuf => {
@@ -177,7 +184,8 @@ pub(super) fn leaves<W: PlanWitness>(
                     ResourceKind::ByteBuf
                     | ResourceKind::Vector(_)
                     | ResourceKind::RecordVector(_)
-                    | ResourceKind::OwnedRecordVector(_) => "{ i64, i32, i32 }",
+                    | ResourceKind::OwnedRecordVector(_)
+                    | ResourceKind::OwnedEnumVector(_) => "{ i64, i32, i32 }",
                     ResourceKind::File => "{ i64, i64 }",
                 };
                 writeln!(out, "  %{cell}_descriptor = load {carrier}, ptr {input}, align 8\n  store {carrier} %{cell}_descriptor, ptr {output}, align 8\n  store {carrier} zeroinitializer, ptr {input}, align 8").unwrap();

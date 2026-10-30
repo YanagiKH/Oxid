@@ -227,12 +227,17 @@ pub(super) fn preflight(
             })
         }))?
     } else {
-        admit_value_layouts(
-            typed
-                .records()
-                .iter()
-                .map(|r| r.fields.iter().map(|f| f.ty)),
-        )?
+        let fields = typed
+            .records()
+            .iter()
+            .map(|r| r.fields.iter().map(|f| f.ty));
+        if typed.admission() == super::resolve::SourceAdmission::OwnedVectorPipeline
+            && typed.index().is_owned_vector_candidate_pipeline()
+        {
+            crate::frontend::oir::owned_types::admit_value_layouts_domain::<true, _, _>(fields)?
+        } else {
+            admit_value_layouts(fields)?
+        }
     };
     // Both aggregate counts and the actual padded record layout sum participate
     // in the shared record/enum gate, including unused enum declarations.

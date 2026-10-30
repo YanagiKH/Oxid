@@ -45,9 +45,10 @@ releases its storage. A vector is not `Copy`, including when `T` is `Copy`.
 Vectors can be fields and enum payloads. A finite record declared with
 `#[derive(Copy)]` can also be an element. Its fields must be scalar values or
 other checked Copy records. Finite non-Copy records can contain buffers, files,
-scalar or Copy vectors, and finite enum payloads; use the owned-record operations
-below. Direct enum elements, nested vectors of owned records, and stored or
-returned references are unavailable.
+scalar or Copy vectors, and finite enum payloads; use the owned operations below.
+Finite user-defined enums and built-in status enums use these operations too.
+Nested vectors of owned records or enums, and stored or returned references,
+are unavailable.
 
 ## Store records
 
@@ -83,23 +84,24 @@ all nine operations and generic slice helpers.
 
 ## Store messages with owned resources
 
-Use a non-Copy record when each element owns a buffer or file. Reserve space
+Use a non-Copy record or finite enum for values that move into and out of the
+collection, including values that own buffers or files. Reserve space
 with `try_reserve`, check for `GrowStatus::Ok`, then move a record into the
 vector with `push_reserved(&mut values, message)`. This insertion does not
 allocate and returns `()`; inserting without spare capacity stops execution.
 The moved message is no longer available to the caller.
 
 Check `len(&values)` before calling `pop_last(&mut values)`. It removes and
-returns the last record, transferring ownership to the caller. Pop the record
-before accessing its fields: indexing, slices, and references to individual
-owned-record elements are unavailable.
+returns the last value, transferring ownership to the caller. Pop a record before
+accessing its fields; match a popped enum to access its active payload. Indexing,
+slices, and references to individual owned-record or enum elements are unavailable.
 
 These vectors provide eight functions: `new`, `len`, `capacity`, `try_reserve`,
 `push_reserved`, `pop_last`, `truncate`, and `take`. `truncate` releases removed
-records and their active resources. `take` transfers the allocation and leaves
+values and their active resources. `take` transfers the allocation and leaves
 the source with zero length and capacity. Leaving scope releases the remaining
-records and storage. `try_push`, `try_extend`, and `try_resize` require Copy
-elements and do not accept these records.
+values and storage. `try_push`, `try_extend`, and `try_resize` require Copy
+elements and do not accept these records or enums.
 
 The [message example](../examples/owned-record-vectors) checks allocation
 results, transfers a batch, and removes its message:

@@ -88,10 +88,13 @@ impl<'a, W: PlanWitness> RuntimeResourceScope<'a, W> {
         }
     }
     fn element(&self, record: u32, span: Span) -> Result<Element<'a>> {
+        let root = OwnedVectorRootSlot::from_raw(record)
+            .ok_or_else(|| bad("owned vector resource domain", span))?
+            .root();
         self.witness
             .elements()
             .ok_or_else(|| bad("owned vector resource witness", span))?
-            .element(RecordId(record as usize))
+            .element_root(root)
             .map_err(|_| bad("owned vector resource element", span))
     }
 }
@@ -168,7 +171,9 @@ struct OwnedResourceCarriers<'a, W: PlanWitness> {
     maintenance_descriptor_return:
         std::result::Result<byte_buffer::OwnedVectorDescriptor, byte_buffer::Failure>,
     selected_failure: byte_buffer::Failure,
-    selected_record: RecordId,
+    selected_root: OwnedVectorRoot,
+    selected_slot: OwnedVectorRootSlot,
+    slot_return: Option<OwnedVectorRootSlot>,
     bytes: [&'a [u8]; 2],
     declaration_return: &'a Declarations,
     hosted: bool,
@@ -177,6 +182,7 @@ struct OwnedResourceCarriers<'a, W: PlanWitness> {
 }
 pub(super) fn owned_control_bytes<W: PlanWitness>() -> usize {
     size_of::<OwnedResourceCarriers<'_, W>>()
+        + super::super::owned_record_codec::bounds::element_control_bytes()
 }
 
 fn vector_type_error_mapper(
@@ -311,7 +317,10 @@ fn preflight_impl<'a, Q: ResourceQueries<'a>>(
         let source_extent = extent(leaf.offset, source.len(), span)?;
         extent(leaf.offset, destination_length, span)?;
         match leaf.kind {
-            ResourceKind::OwnedRecordVector(record) => {
+            ResourceKind::OwnedRecordVector(_) | ResourceKind::OwnedEnumVector(_) => {
+                let record = OwnedVectorRootSlot::check(leaf.kind.owned_vector_root().unwrap())
+                    .ok_or_else(|| bad("owned vector resource domain", span))?
+                    .raw();
                 queries.validate_owned(heap, record, &source[source_extent], span)?;
             }
             ResourceKind::ByteBuf => {
@@ -383,7 +392,10 @@ pub(super) fn release<'a, Q: ResourceQueries<'a>>(
         let leaf = leaf.map_err(|_| bad("resource active alternative", span))?;
         let range = extent(leaf.offset, bytes.len(), span)?;
         match leaf.kind {
-            ResourceKind::OwnedRecordVector(record) => {
+            ResourceKind::OwnedRecordVector(_) | ResourceKind::OwnedEnumVector(_) => {
+                let record = OwnedVectorRootSlot::check(leaf.kind.owned_vector_root().unwrap())
+                    .ok_or_else(|| bad("owned vector resource domain", span))?
+                    .raw();
                 queries.release_owned(heap, record, &bytes[range], span)?;
             }
             ResourceKind::ByteBuf => {

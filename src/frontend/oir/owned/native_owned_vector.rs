@@ -16,9 +16,18 @@ struct EmitterCarriers {
     destinations: [CallResult; 2],
     formatting: [FormatCallsiteBacking<8>; 4],
     writes: [std::fmt::Result; 4],
+    // Shared resource/composition calls select only these authenticated roots.
+    roots: [OwnedVectorRoot; 2],
+    selected_roots: [Option<OwnedVectorRoot>; 2],
+    slots: [OwnedVectorRootSlot; 2],
+    selected_slots: [Option<OwnedVectorRootSlot>; 2],
+    storage_keys: [u32; 2],
 }
 pub(super) const fn control_bytes() -> usize {
-    size_of::<EmitterCarriers>() + 12 * NAME_BYTES + owned_vector_schemas::control_bytes()
+    size_of::<EmitterCarriers>()
+        + 12 * NAME_BYTES
+        + owned_vector_schemas::control_bytes()
+        + owned_record_codec::bounds::element_control_bytes()
 }
 
 // Logical payload of the synchronous C control bank. These named roles cover
@@ -49,6 +58,7 @@ struct RuntimeControls {
     source_and_output: [*mut (); 4],
     schema_and_type: [*const (); 4],
     record_and_status: [u32; 8],
+    selected_enum_ordinal_and_kind: [u32; 2],
     work_and_sizes: [u64; 24],
     identity_heap_sort: [usize; 12],
     descriptor_copies: [[u64; 2]; 3],
@@ -104,7 +114,7 @@ pub(super) fn operation<W: PlanWitness>(
         .elements()
         .expect("sealed owned vector bounds");
     let element = view
-        .element(key.record_id())
+        .element_root(key.element())
         .expect("sealed finite record element");
     let cost = plan
         .owned_vector_delivery_cost(f.id, key)
@@ -141,7 +151,7 @@ pub(super) fn operation<W: PlanWitness>(
     } else {
         "0".to_owned()
     };
-    let record = key.record_id().0;
+    let record = element.storage_key();
     let stride = element.size();
     match key.operation() {
         Operation::New => writeln!(out, "  %{name}_status = call i32 @oxid_owned_vector_new(i32 {record}, ptr {result})").unwrap(),

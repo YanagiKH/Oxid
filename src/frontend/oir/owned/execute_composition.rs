@@ -63,7 +63,8 @@ impl<'a, V: StoredValue> Cells<'a, V> {
                     | AggregateTy::File
                     | AggregateTy::Vector(_)
                     | AggregateTy::RecordVector(_)
-                    | AggregateTy::OwnedRecordVector(_),
+                    | AggregateTy::OwnedRecordVector(_)
+                    | AggregateTy::OwnedEnumVector(_),
                 ) => self.length -= 1,
                 ValueTy::Owned(AggregateTy::FixedArray(array)) => {
                     if next < array.length().max(1) {

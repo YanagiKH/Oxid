@@ -9,6 +9,16 @@ pub(in crate::frontend::oir) enum ResourceKind {
     Vector(hir::Ty),
     RecordVector(u32),
     OwnedRecordVector(u32),
+    OwnedEnumVector(u32),
+}
+impl ResourceKind {
+    pub(in crate::frontend::oir) const fn owned_vector_root(self) -> Option<OwnedVectorRoot> {
+        match self {
+            Self::OwnedRecordVector(id) => Some(OwnedVectorRoot::Record(RecordId(id as usize))),
+            Self::OwnedEnumVector(id) => Some(OwnedVectorRoot::Enum(EnumId(id as usize))),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -219,6 +229,7 @@ pub(super) fn summaries(
                                 | AggregateTy::Vector(_)
                                 | AggregateTy::RecordVector(_)
                                 | AggregateTy::OwnedRecordVector(_)
+                                | AggregateTy::OwnedEnumVector(_)
                         )
                     );
                     top.next += 1;
@@ -237,7 +248,9 @@ impl Declarations {
     ) -> Result<bool, DeclarationError> {
         self.check_aggregate_type(aggregate)?;
         match aggregate {
-            AggregateTy::OwnedRecordVector(_) => return Err(DeclarationError::TypeMismatch),
+            AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => {
+                return Err(DeclarationError::TypeMismatch)
+            }
             AggregateTy::ByteBuf
             | AggregateTy::File
             | AggregateTy::Vector(_)
@@ -361,6 +374,16 @@ where
                         offset,
                         kind: ResourceKind::OwnedRecordVector(
                             u32::try_from(record.0)
+                                .map_err(|_| DeclarationError::LayoutOverflow)?,
+                        ),
+                    }));
+                }
+                ValueTy::Owned(AggregateTy::OwnedEnumVector(enumeration)) => {
+                    self.length -= 1;
+                    return Ok(Some(ResourceLeaf {
+                        offset,
+                        kind: ResourceKind::OwnedEnumVector(
+                            u32::try_from(enumeration.0)
                                 .map_err(|_| DeclarationError::LayoutOverflow)?,
                         ),
                     }));

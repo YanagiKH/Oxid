@@ -482,6 +482,7 @@ enum OwnedFailureKind {
     Malformed(Malformed),
     Ownership(Violation),
     Resource(&'static str),
+    UnsupportedOwnedVectorElement,
 }
 /// Compact optional origin. The sentinel cannot be a valid SourceMap identity;
 /// no failure path needs a heap allocation merely to retain diagnostics.
@@ -509,6 +510,15 @@ struct OwnedFailure {
     context: Option<flow::DenialContext>,
 }
 impl OwnedFailure {
+    fn unsupported_owned_vector_element() -> Self {
+        Self {
+            kind: OwnedFailureKind::UnsupportedOwnedVectorElement,
+            primary: Origin::NONE,
+            related: Origin::NONE,
+            declaration: Origin::NONE,
+            context: None,
+        }
+    }
     fn malformed(kind: Malformed, span: Span) -> Self {
         Self {
             kind: OwnedFailureKind::Malformed(kind),

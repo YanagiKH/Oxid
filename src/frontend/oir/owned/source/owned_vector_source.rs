@@ -5,6 +5,7 @@ use crate::frontend::{
     builtin_catalog::owned_vector,
     declaration_index::{DeclarationIndex, WorkMeter},
     diagnostic::Diagnostic,
+    oir::owned_types::EnumId,
     project::budget::Allocator,
     source::Span,
 };
@@ -72,6 +73,20 @@ struct SignatureRoles {
     returned: Result<SelectedSignature, Box<Diagnostic>>,
     signature: owned_vector::Signature,
     signature_return: Result<owned_vector::Signature, Box<Diagnostic>>,
+    root: crate::frontend::oir::owned_types::OwnedVectorRoot,
+    record_copy: Result<bool, Box<Diagnostic>>,
+    source_enumeration: Result<
+        (
+            crate::frontend::project::EnumAstKey,
+            crate::frontend::project::ModuleId,
+        ),
+        Box<Diagnostic>,
+    >,
+    source_enum_limit: usize,
+    enum_template: Result<EnumId, Box<Diagnostic>>,
+    selected_enumeration: EnumId,
+    enumeration_origin:
+        Result<crate::frontend::builtin_catalog::DeclarationOrigin, Box<Diagnostic>>,
     id: DefId,
     id_return: Result<DefId, Box<Diagnostic>>,
     anchor: Span,

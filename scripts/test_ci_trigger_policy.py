@@ -44,6 +44,12 @@ OWNED_TEXT_POLICY = (OWNED_TEXT_REPLAY,
                      (16603, '61bf3bf55b9c1f958fdf48fcc89e747cdf61700109ab979b098851249d9fa109'))
 OFFLINE_VENDOR_REPLAY = 'scripts/verify_offline_vendor_compatibility.py'
 OFFLINE_VENDOR_PARENT = '7279208226a3d4185c0b996491332519971e916e'
+OFFLINE_VENDOR_POLICY = (OFFLINE_VENDOR_REPLAY,
+                         (27286, 'ee64cc7f63051764594a5866101cff9987ca7ddf20b764e7e1aa88f975c9b7a1'))
+OWNED_ENUM_VECTOR_REPLAY = 'scripts/verify_owned_enum_vector_compatibility.py'
+OWNED_ENUM_VECTOR_PARENT = '5917f581e69c0a0c69e4b5b059bb97dced55331d'
+OWNED_ENUM_VECTOR_OBSERVER = ('scripts/owned_enum_vector_compatibility_observer.py',
+    (7495, 'ff932fb13ae4db32fe15a389505be7a7ffa2fc0557b15f9b1b153c3602de3fd9'))
 REPLAY_ROUTES = {
     (SCALAR_REPLAY[0],): ('direct', SCALAR_REPLAY),
     (REGISTRY_REPLAY[0],): ('direct', REGISTRY_REPLAY),
@@ -52,6 +58,7 @@ REPLAY_ROUTES = {
     (OWNED_VECTOR_REPLAY,): ('owned-vector', REGISTRY_REPLAY),
     (OWNED_TEXT_REPLAY,): ('owned-text', OWNED_VECTOR_POLICY),
     (OFFLINE_VENDOR_REPLAY,): ('offline-vendor', OWNED_TEXT_POLICY),
+    (OWNED_ENUM_VECTOR_REPLAY,): ('owned-enum-vector', OFFLINE_VENDOR_POLICY),
 }
 
 
@@ -166,6 +173,174 @@ def _require_condition(body, condition):
         raise AssertionError('owned-text retained admission condition changed: ' + condition)
 
 
+def _enum_vector_replay_binding(tree, read):
+    for name, expected in (
+        ('PREDECESSOR', OWNED_ENUM_VECTOR_PARENT),
+        ('PREDECESSOR_POLICY', OFFLINE_VENDOR_POLICY[0]),
+        ('PREDECESSOR_POLICY_PIN', OFFLINE_VENDOR_POLICY[1]),
+        ('OBSERVER_ADAPTER', OWNED_ENUM_VECTOR_OBSERVER[0]),
+        ('OBSERVER_ADAPTER_PIN', OWNED_ENUM_VECTOR_OBSERVER[1]),
+        ('V13_ADAPTER', 'scripts/owned_record_vector_compatibility_observer.py'),
+        ('V13_ADAPTER_PIN', (7268, 'ac49c38f23b0d3a5929fe3d52edae1cb85341c72b16249522e30dc155e1fa8f3')),
+        ('V13_DERIVED_PIN', (32684, '8e65804b8486ec2fda4bca21875c3c296f0b722bd6c40041ee1144b4c44e6042')),
+    ):
+        if _literal(tree.body, name) != expected:
+            raise AssertionError('enum-vector retained parent/observer changed: ' + name)
+    require_retained_replay_binding((OFFLINE_VENDOR_REPLAY,), read)
+    observer = read(OWNED_ENUM_VECTOR_OBSERVER[0])
+    if (len(observer), hashlib.sha256(observer).hexdigest()) != OWNED_ENUM_VECTOR_OBSERVER[1]:
+        raise AssertionError('immutable enum-vector observer adapter changed')
+    for statement in (
+        'predecessor = load_predecessor(ROOT)', 'library = predecessor.library',
+        'owned_policy = predecessor.predecessor.predecessor',
+        'RETAINED_RUN = predecessor.RETAINED_RUN', 'PREDECESSOR_ADDED = predecessor.PARENT_ADDED',
+        'PARENT_ADDED = PREDECESSOR_ADDED | ENUM_ADDED',
+    ):
+        _require_statement(tree.body, statement)
+    inventories = {}
+    for name, count in (('ENUM_CHANGED', 45), ('ENUM_ADDED', 11)):
+        node = _assignment(tree.body, name).value
+        if (not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name)
+                or node.func.id != 'frozenset' or len(node.args) != 1 or node.keywords):
+            raise AssertionError('enum-vector source roster must be literal')
+        values = ast.literal_eval(node.args[0])
+        if (not isinstance(values, tuple) or len(values) != count or len(set(values)) != count
+                or any(not isinstance(value, str) or not value.startswith(('src/', 'native/')) for value in values)):
+            raise AssertionError('enum-vector finite source roster changed')
+        inventories[name] = set(values)
+    pins = _literal(tree.body, 'REVIEWED_INPUTS')
+    expected_inputs = inventories['ENUM_CHANGED'] | inventories['ENUM_ADDED']
+    if (inventories['ENUM_CHANGED'] & inventories['ENUM_ADDED'] or len(expected_inputs) != 56
+            or set(pins) != expected_inputs
+            or any(not isinstance(pin, tuple) or len(pin) != 2 or type(pin[0]) is not int or pin[0] <= 0
+                   or not isinstance(pin[1], str) or re.fullmatch('[a-f0-9]{64}', pin[1]) is None
+                   for pin in pins.values())):
+        raise AssertionError('enum-vector56 literal source pins changed')
+    directives = _literal(tree.body, 'REVIEWED_DIRECTIVES')
+    if set(directives) != expected_inputs:
+        raise AssertionError('enum-vector literal directive membership changed')
+    captured = _function(tree.body, 'capture_sources').body
+    _require_statement(captured, 'expected_parent = set(baseline) | PREDECESSOR_ADDED')
+    _require_statement(captured, 'expected = expected_parent | ENUM_ADDED')
+    _require_condition(captured, 'set(parent) == expected_parent and len(parent) == 576')
+    _require_condition(captured, 'len(ENUM_CHANGED) == 45 and len(ENUM_ADDED) == 11 '
+                       'and ENUM_CHANGED <= expected_parent and not ENUM_ADDED & expected_parent '
+                       'and len(expected) == 587')
+    _require_condition(captured, 'set(REVIEWED_INPUTS) == ENUM_CHANGED | ENUM_ADDED '
+                       'and set(REVIEWED_DIRECTIVES) == set(REVIEWED_INPUTS)')
+    bound = _function(tree.body, 'bound_predecessor')
+    _retained_bound(bound.body,
+                    "{'PREDECESSOR': PREDECESSOR, 'PREDECESSOR_ADDED': PREDECESSOR_ADDED, "
+                    "'PREDECESSOR_POLICIES': PREDECESSOR_POLICIES, 'PINS_PROVISIONAL': PINS_PROVISIONAL, "
+                    "'capture_sources': capture_sources, 'current_manifest': current_manifest}")
+    _require_condition(bound.body, 'library.run is RETAINED_RUN and predecessor.RETAINED_RUN is RETAINED_RUN '
+                       'and owned_policy.RETAINED_RUN is RETAINED_RUN')
+    scopes = [node for node in bound.body if isinstance(node, ast.With)]
+    expected = ast.parse('with bound_observer(), predecessor.bound_predecessor() as context:\n    pass').body[0]
+    if (len(scopes) != 1 or [ast.dump(item) for item in scopes[0].items]
+            != [ast.dump(item) for item in expected.items]):
+        raise AssertionError('enum-vector source/observer delegation scope changed')
+    restores = [node for node in scopes[0].body if isinstance(node, ast.Try)]
+    if len(restores) != 1:
+        raise AssertionError('enum-vector source restoration boundary changed')
+    _require_statement(restores[0].body, 'for name, value in bindings.items():\n    setattr(library, name, value)')
+    _require_statement(restores[0].finalbody, 'for name, value in before.items():\n    setattr(library, name, value)')
+    observer_bound = _function(tree.body, 'bound_observer').body
+    if _literal(observer_bound, 'names') != (
+            'OWNED_VECTOR_OBSERVER_ADAPTER', 'OWNED_VECTOR_OBSERVER_ADAPTER_PIN',
+            'authenticate_owned_vector_observer_adapter'):
+        raise AssertionError('enum-vector observer must bind only the three existing G2 globals')
+    _require_statement(observer_bound, 'prior, old_body = before["authenticate_owned_vector_observer_adapter"](ROOT)')
+    _require_statement(observer_bound, 'authenticate_enum_observer(ROOT, prior)')
+    _retained_bound(observer_bound,
+                    "{'OWNED_VECTOR_OBSERVER_ADAPTER': OBSERVER_ADAPTER, "
+                    "'OWNED_VECTOR_OBSERVER_ADAPTER_PIN': OBSERVER_ADAPTER_PIN, "
+                    "'authenticate_owned_vector_observer_adapter': authenticate}")
+    restores = [node for node in observer_bound if isinstance(node, ast.Try)]
+    if len(restores) != 1:
+        raise AssertionError('enum-vector observer restoration boundary changed')
+    _require_statement(restores[0].body, 'for name, value in bindings.items():\n    setattr(owned_policy, name, value)')
+    _require_statement(restores[0].finalbody, 'for name, value in before.items():\n    setattr(owned_policy, name, value)')
+    authenticate = _function(tree.body, 'authenticate_enum_observer').body
+    _require_condition(authenticate, '(len(old_body), sha(old_body)) == V13_ADAPTER_PIN '
+                       'and prior.DERIVED_PIN == V13_DERIVED_PIN')
+    _require_condition(authenticate, '(len(body), sha(body)) == OBSERVER_ADAPTER_PIN')
+    _require_condition(authenticate, 'adapter.PARENT == Path(V13_ADAPTER).name '
+                       'and adapter.PARENT_PIN == V13_ADAPTER_PIN '
+                       'and adapter.predecessor.descriptor() == prior.descriptor() '
+                       'and adapter.PARENT_DERIVED_PIN == prior.DERIVED_PIN')
+    _retained_delegate(tree, 'bound_predecessor() as context', 'RETAINED_RUN(delegated)', guard_inside=True)
+    run = _function(tree.body, 'run')
+    attempt = next(node for node in run.body if isinstance(node, ast.Try))
+    _require_condition(attempt.body, 'args.prepare_only or not PINS_PROVISIONAL')
+    _require_condition(attempt.body, 'args.prepare_only or not OBSERVER_PINS_PROVISIONAL')
+    _require_condition(attempt.body, 'args.prepare_only or not predecessor.PINS_PROVISIONAL')
+    scope = next(node for node in attempt.body if isinstance(node, ast.With))
+    controls = [node for node in scope.body if isinstance(node, ast.If)
+                and ast.dump(node.test) == ast.dump(ast.parse('not args.prepare_only', mode='eval').body)]
+    pipeline = ast.parse(
+        'report.update(owned_policy.run_owned_vector_observer_controls('
+        'repo, delegated.output, context["selected"], context["seam"], context["original"], '
+        'context["adapter"], retained["test_function_executions"]))\n'
+        'report.update(run_enum_observer_controls('
+        'repo, delegated.output, context["selected"], context["seam"], context["original"], '
+        'context["adapter"], report["test_function_executions"]))').body
+    if len(controls) != 1 or [ast.dump(node) for node in controls[0].body] != [ast.dump(node) for node in pipeline]:
+        raise AssertionError('enum-vector inherited/new controls pipeline changed')
+    false_names = {'owned_enum_vector_semantics_qualified_by_this_gate',
+                   'owned_enum_vector_allocator_failures_qualified_by_this_gate',
+                   'owned_enum_vector_platform_qualified_by_this_gate',
+                   'general_heap_collections_qualified_by_this_gate', 'g2_complete_qualified_by_this_gate'}
+    manifest = _function(tree.body, 'current_manifest').body
+    values = _assignment(manifest, 'result').value
+    flags = {key.value: value for key, value in zip(values.keys, values.values)
+             if isinstance(key, ast.Constant) and isinstance(key.value, str) and key.value.endswith('qualified_by_this_gate')}
+    if set(flags) != false_names or any(not isinstance(value, ast.Constant) or value.value is not False for value in flags.values()):
+        raise AssertionError('enum-vector source admission cannot claim new feature qualification')
+    _require_condition(manifest, 'all(value is False for name, value in result.items() '
+                       'if name.endswith("qualified_by_this_gate"))')
+    report = _assignment(run.body, 'report').value
+    for name in ('semantic_pass', 'new_feature_qualification', 'platform_qualification'):
+        values = [value for key, value in zip(report.keys, report.values)
+                  if isinstance(key, ast.Constant) and key.value == name]
+        if len(values) != 1 or not isinstance(values[0], ast.Constant) or values[0].value is not False:
+            raise AssertionError('enum-vector preflight qualification claim changed')
+    control_body = _function(tree.body, 'run_enum_observer_controls').body
+    profiles = [node for node in control_body if isinstance(node, ast.For)]
+    if (len(profiles) != 1 or ast.dump(profiles[0].target) != ast.dump(ast.Name(id='profile', ctx=ast.Store()))
+            or ast.literal_eval(profiles[0].iter) != ('debug', 'release') or profiles[0].orelse):
+        raise AssertionError('enum-vector controls must execute both real Rust profiles')
+    profile = profiles[0].body
+    _require_condition(control_body, 'type(previous_executions) is int and previous_executions > 0')
+    _require_condition(control_body, 'tuple(adapter.OWNED_ENUM_VECTOR_CONTROL_NAMES) == ('
+                       '"frontend::oir::unit2_observer::current_unit2_owned_enum_vector_adapter_denies_values",'
+                       '"frontend::oir::unit2_observer::current_unit2_owned_enum_vector_adapter_denies_shared_vectors",'
+                       '"frontend::oir::unit2_observer::current_unit2_owned_enum_vector_adapter_denies_exclusive_vectors")')
+    _require_statement(profile, 'names = list(adapter.OWNED_ENUM_VECTOR_CONTROL_NAMES)')
+    _require_statement(profile, 'protocol.rust_listing(streams["list"], names)')
+    _require_statement(profile, 'result = protocol.rust_success(streams["run"], names)')
+    _require_statement(control_body, 'original.verify_unit2_result(output, captured, seam, False)')
+    loops = [node for node in profile if isinstance(node, ast.For)]
+    expected = ast.parse(
+        '(("list", ["--list", adapter.OWNED_ENUM_VECTOR_CONTROL_FILTER]), '
+        '("run", [adapter.OWNED_ENUM_VECTOR_CONTROL_FILTER, "--test-threads=1", "--color", "never"]))',
+        mode='eval').body
+    if len(loops) != 1 or ast.dump(loops[0].iter) != ast.dump(expected):
+        raise AssertionError('enum-vector controls must list and execute the three exact controls')
+    commands = [node for node in loops[0].body if isinstance(node, ast.With)]
+    if len(commands) != 1:
+        raise AssertionError('enum-vector raw command scope changed')
+    _require_statement(commands[0].body, 'completed = library.subprocess.run('
+                       'argv, cwd=run / "source", stdout=stdout, stderr=stderr, timeout=60)')
+    _require_condition(loops[0].body, 'completed.returncode == 0 and err.read_bytes() == b""')
+    _require_statement(control_body,
+                       'return {"owned_enum_vector_observer_control_tests_per_profile": 3, '
+                       '"owned_enum_vector_observer_denials_per_profile": 9, '
+                       '"owned_enum_vector_observer_control_receipts": receipts, '
+                       '"inherited_test_function_executions": previous_executions, '
+                       '"test_function_executions": previous_executions + 6}')
+
+
 def require_retained_replay_binding(route, read=None):
     """Check route ownership against immutable parents without importing controllers."""
     read = read or (lambda name: (REPO / name).read_bytes())
@@ -203,6 +378,8 @@ def require_retained_replay_binding(route, read=None):
                                 if isinstance(node, ast.Try)).body,
                            'selected = load_policy(repo, args.source_policy)')
         _retained_delegate(tree, 'selected.bound()', 'selected.original_run(delegated)')
+    elif kind == 'owned-enum-vector':
+        _enum_vector_replay_binding(tree, read)
     elif kind == 'offline-vendor':
         for name, expected in (
             ('PREDECESSOR', OFFLINE_VENDOR_PARENT),
@@ -533,6 +710,36 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('if-no-files-found: error', replay)
         self.assertIn('retention-days: 14', replay)
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+
+    def test_offline_vendor_source_policy_replay_keeps_all_fourteen_frozen_controls_mandatory(self):
+        replay = block(self.ci, 'offline-vendor-source-policy-predecessor', 2)
+        self.assertIn('runs-on: ubuntu-latest', replay)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', replay)
+        self.assertIn('cp scripts/replay_offline_vendor_source_policy.py '
+                      '"$RUNNER_TEMP/offline-vendor-source-policy-replay.py"', replay)
+        self.assertIn('ref: ' + OWNED_ENUM_VECTOR_PARENT, replay)
+        self.assertIn('fetch-depth: 0', replay)
+        self.assertIn('python3 -B "$RUNNER_TEMP/offline-vendor-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/offline-vendor-source-policy-replay"', replay)
+        self.assertIn('if: always()', replay)
+        self.assertIn('path: ${{ runner.temp }}/offline-vendor-source-policy-replay', replay)
+        self.assertIn('if-no-files-found: error', replay)
+        self.assertIn('retention-days: 14', replay)
+        self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+        source = ast.parse((REPO / 'scripts/replay_offline_vendor_source_policy.py').read_bytes())
+        self.assertEqual(_literal(source.body, 'REVISION'), OWNED_ENUM_VECTOR_PARENT)
+        self.assertEqual(_literal(source.body, 'MODULES'), {'test_offline_vendor_compatibility': (
+            '4446e8981ac90152f156fb4231268fa7bbe86b2dc6e4beab88e7aedd45f01bc9', 14)})
+        _require_statement(source.body, '''POLICIES = {
+            "verify_offline_vendor_compatibility.py": "ee64cc7f63051764594a5866101cff9987ca7ddf20b764e7e1aa88f975c9b7a1",
+            "verify_owned_text_compatibility.py": "61bf3bf55b9c1f958fdf48fcc89e747cdf61700109ab979b098851249d9fa109",
+            "verify_owned_record_vector_compatibility.py": "16c7affd778deda3d61f9a4e4aebd66c9e01d842c6afe3e9c1a20de57caab6e0",
+            "replay_owned_text_source_policy.py": "341673ed92fdc3b2f3269ad0396411a061397110b663d067cc7d92def65b01b6",
+            ENGINE: ENGINE_SHA,
+        }''')
+        self.assertEqual(_literal(source.body, 'ENGINE'), 'run_record_vector_predecessor_tests.py')
+        self.assertEqual(_literal(source.body, 'ENGINE_SHA'),
+                         '6dc9ee36351bdafab40399038133c8547dfb89ac0d0f33076b76b41ef374b75c')
 
     def test_arm_owned_text_driver_binds_expected_head_from_the_same_step_environment(self):
         arm = block(self.ci, 'linux-arm64-native', 2)
@@ -865,14 +1072,27 @@ class NativeProjectEvidenceTests(unittest.TestCase):
 
     def test_native_upload_cannot_skip_failures_hidden_inputs_or_missing_evidence(self):
         original = '      - name: Retain current native evidence\n'
+        selected = re.findall(r'^' + re.escape(original)
+                              + r'.*?(?=^      - |\Z)',
+                              self.native, re.MULTILINE | re.DOTALL)
+        self.assertEqual(len(selected), 1)
+        upload = selected[0]
+        self.assertEqual(self.native.count(upload), 1)
         for before, after in [
             (original + '        if: always()\n', original + '        if: success()\n'),
             ('          include-hidden-files: true\n', '          include-hidden-files: false\n'),
             ('          if-no-files-found: error\n', '          if-no-files-found: warn\n'),
             (original, original + '        continue-on-error: true\n'),
         ]:
-            changed = self.native.replace(before, after, 1)
+            self.assertEqual(upload.count(before), 1)
+            changed_upload = upload.replace(before, after, 1)
+            self.assertNotEqual(changed_upload, upload)
+            changed = self.native.replace(upload, changed_upload, 1)
             self.assertNotEqual(changed, self.native)
+            # Earlier uploads may use the same hidden/error settings. Mutate
+            # only the selected current-native step and retain every other byte.
+            self.assertEqual(self.native.replace(upload, '', 1),
+                             changed.replace(changed_upload, '', 1))
             with self.subTest(before=before), self.assertRaises(AssertionError):
                 require_native_project_evidence(changed)
 
@@ -895,15 +1115,76 @@ class RetainedReplayRouteTests(unittest.TestCase):
 
     def test_text_route_still_binds_the_pinned_owned_vector_wrapper_and_exact_source_membership(self):
         route = (OWNED_TEXT_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 7)
+        self.assertEqual(len(REPLAY_ROUTES), 8)
         self.assertEqual(REPLAY_ROUTES[route], ('owned-text', OWNED_VECTOR_POLICY))
         require_retained_replay_binding(route)
 
-    def test_live_vendor_route_binds_the_pinned_text_wrapper_and_exact_source_membership(self):
-        self.assertEqual(self.route, (OFFLINE_VENDOR_REPLAY,))
-        self.assertEqual(len(REPLAY_ROUTES), 7)
-        self.assertEqual(REPLAY_ROUTES[self.route], ('offline-vendor', OWNED_TEXT_POLICY))
+    def test_vendor_route_still_binds_the_pinned_text_wrapper_and_exact_source_membership(self):
+        route = (OFFLINE_VENDOR_REPLAY,)
+        self.assertEqual(len(REPLAY_ROUTES), 8)
+        self.assertEqual(REPLAY_ROUTES[route], ('offline-vendor', OWNED_TEXT_POLICY))
+        require_retained_replay_binding(route)
+
+    def test_live_enum_route_binds_the_public_vendor_policy_and_full_source_and_observer_pipeline(self):
+        self.assertEqual(self.route, (OWNED_ENUM_VECTOR_REPLAY,))
+        self.assertEqual(len(REPLAY_ROUTES), 8)
+        self.assertEqual(REPLAY_ROUTES[self.route], ('owned-enum-vector', OFFLINE_VENDOR_POLICY))
         require_retained_replay_binding(self.route)
+
+    def test_enum_parent_inventory_binding_observer_controls_and_provisional_refusal_cannot_drift(self):
+        wrapper = OWNED_ENUM_VECTOR_REPLAY
+        original = (REPO / wrapper).read_bytes()
+        mutations = (
+            (OWNED_ENUM_VECTOR_PARENT.encode(), b'f' * 40),
+            (b'PREDECESSOR_POLICY_PIN = (27286,', b'PREDECESSOR_POLICY_PIN = (27287,'),
+            (b'len(parent) == 576', b'len(parent) == 575'),
+            (b'len(ENUM_CHANGED) == 45', b'len(ENUM_CHANGED) == 44'),
+            (b'len(ENUM_ADDED) == 11', b'len(ENUM_ADDED) == 12'),
+            (b'len(expected) == 587', b'len(expected) == 588'),
+            (b'"native/experimental_owned_record.c": (11933,', b'"native/unreviewed.c": (11933,'),
+            (b'RETAINED_RUN = predecessor.RETAINED_RUN', b'RETAINED_RUN = library.run'),
+            (b'owned_policy = predecessor.predecessor.predecessor', b'owned_policy = predecessor'),
+            (b'"capture_sources":', b'"run":'),
+            (b'with bound_observer(), predecessor.bound_predecessor() as context:',
+             b'with predecessor.bound_predecessor() as context:'),
+            (b'"OWNED_VECTOR_OBSERVER_ADAPTER_PIN": OBSERVER_ADAPTER_PIN,',
+             b'"OWNED_VECTOR_OBSERVER_ADAPTER_PIN": V13_ADAPTER_PIN,'),
+            (b'setattr(owned_policy, name, value)', b'setattr(library, name, value)'),
+            (b'report.update(owned_policy.run_owned_vector_observer_controls(',
+             b'report.update(owned_policy.unreviewed_controls('),
+            (b'report.update(run_enum_observer_controls(', b'report.update(unreviewed_enum_controls('),
+            (b'context["adapter"], report["test_function_executions"]))',
+             b'context["adapter"], retained["test_function_executions"]))'),
+            (b'for profile in ("debug", "release"):', b'for profile in ("debug",):'),
+            (b'protocol.rust_listing(streams["list"], names)', b'pass'),
+            (b'result = protocol.rust_success(streams["run"], names)', b'result = {"passed": 3}'),
+            (b'"test_function_executions": previous_executions + 6',
+             b'"test_function_executions": previous_executions'),
+            (b'"g2_complete_qualified_by_this_gate": False', b'"g2_complete_qualified_by_this_gate": True'),
+            (b'"new_feature_qualification": False', b'"new_feature_qualification": True'),
+            (b'args.prepare_only or not PINS_PROVISIONAL', b'True'),
+            (b'args.prepare_only or not OBSERVER_PINS_PROVISIONAL', b'True'),
+        )
+        for before, after in mutations:
+            with self.subTest(before=before):
+                changed = original.replace(before, after, 1)
+                self.assertNotEqual(changed, original, 'mutation must reach the real enum-vector controller')
+                with self.assertRaises(AssertionError):
+                    require_retained_replay_binding(
+                        (wrapper,), lambda name: changed if name == wrapper else (REPO / name).read_bytes())
+
+    def test_enum_observer_cannot_replace_the_reversible_pinned_adapter(self):
+        observer = OWNED_ENUM_VECTOR_OBSERVER[0]
+        original = (REPO / observer).read_bytes()
+        for before, after in ((b'def reverse(derived):', b'def unreviewed_reverse(derived):'),
+                              (b'inherited = predecessor.adapt(original)', b'inherited = original'),
+                              (b'return result', b'return derived')):
+            with self.subTest(before=before):
+                changed = original.replace(before, after, 1)
+                self.assertNotEqual(changed, original)
+                with self.assertRaisesRegex(AssertionError, 'immutable enum-vector observer adapter changed'):
+                    require_retained_replay_binding(
+                        self.route, lambda name: changed if name == observer else (REPO / name).read_bytes())
 
     def test_vendor_parent_membership_dispatch_package_scope_and_observer_cannot_drift(self):
         wrapper = OFFLINE_VENDOR_REPLAY
@@ -1000,7 +1281,8 @@ class RetainedReplayRouteTests(unittest.TestCase):
         original = (REPO / wrapper).read_bytes()
         invocation = ('selected.original_run(delegated)' if kind == 'msvc'
                       else 'RETAINED_RUN(delegated)')
-        parent = (OFFLINE_VENDOR_PARENT.encode() if kind == 'offline-vendor'
+        parent = (OWNED_ENUM_VECTOR_PARENT.encode() if kind == 'owned-enum-vector'
+                  else OFFLINE_VENDOR_PARENT.encode() if kind == 'offline-vendor'
                   else b'0e8f23f7481c7ec4e24cd416ed30607f8eb75daf' if kind == 'owned-text'
                   else b'af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7')
         mutations = [
