@@ -1,5 +1,6 @@
 """The real package application cannot hide missing or neighboring sources."""
 from pathlib import Path
+import tomllib
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -49,7 +50,8 @@ class ManifestApplications(unittest.TestCase):
                     "examples/projects/owned_enum_payload_acceptance/failed",
                     "examples/projects/owned_enum_payload_acceptance/values",
                     "examples/projects/owned_enum_payload_acceptance/library", "examples/typed-unicode-range",
-                    "packages/float_vector", "examples/typed-float-vector", "examples/typed-vectors", "packages/matrix", "examples/typed-matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training")
+                    "packages/float_vector", "examples/typed-float-vector", "examples/typed-vectors", "packages/matrix", "examples/typed-matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training",
+                    "packages/owned_vec", "examples/owned-vector-results")
         selected = set(self.members)
         entries = [self.root / self.application]
         for project in projects:
@@ -154,6 +156,106 @@ class ManifestApplications(unittest.TestCase):
             verify_repo.manifest_project_members(
                 list(selected | copy_paths | record_vector_paths | owned_vector_paths | text_paths),
                 self.root, required=True)
+
+
+class GenericOwnedVectorApplications(unittest.TestCase):
+    PROJECTS = {
+        "packages/owned_vec": ("packages/owned_vec/src/lib.ox",),
+        "examples/owned-vector-results": ("examples/owned-vector-results/src/main.ox",),
+    }
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        for project, members in self.PROJECTS.items():
+            for name in (project + "/oxid.toml", *members):
+                path = self.root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes((verify_repo.ROOT / name).read_bytes())
+
+    def sources(self):
+        return sorted(self.root.rglob("*.ox"))
+
+    def test_both_exact_projects_keep_their_own_members_and_real_dependency(self):
+        self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
+                          if name in self.PROJECTS}, self.PROJECTS)
+        self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS), 24)
+        for project, members in self.PROJECTS.items():
+            self.assertTrue(all((self.root / name).is_relative_to(self.root / project) for name in members))
+        library = tomllib.loads((self.root / "packages/owned_vec/oxid.toml").read_text())
+        example = tomllib.loads((self.root / "examples/owned-vector-results/oxid.toml").read_text())
+        self.assertEqual((library["project"]["kind"], library["project"]["entry"]), ("lib", "src/lib.ox"))
+        self.assertEqual(example["project"]["entry"], "src/main.ox")
+        self.assertEqual(example["dependencies"], {"owned_vec": "../../packages/owned_vec"})
+        self.assertEqual((self.root / "examples/owned-vector-results" / example["dependencies"]["owned_vec"]).resolve(),
+                         (self.root / "packages/owned_vec").resolve())
+        self.assertEqual((example["build"]["entry-mode"], example["execution"]["policy"]), ("result", "bounded"))
+
+    def test_library_is_check_only_and_application_runs_without_a_zero_test_registration(self):
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/owned_vec"), 1)
+        self.assertNotIn("examples/owned-vector-results", verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
+        self.assertFalse(self.PROJECTS.keys() & set(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS))
+        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 9)
+        selected, roots = verify_repo.manifest_project_members(self.sources(), self.root)
+        self.assertEqual(selected, set(self.sources()))
+        self.assertEqual(roots, [self.root / project for project in self.PROJECTS])
+
+    def test_missing_source_and_manifest_fail_for_each_project(self):
+        for project, members in self.PROJECTS.items():
+            for name in (project + "/oxid.toml", *members):
+                path = self.root / name
+                body = path.read_bytes()
+                with self.subTest(missing=name):
+                    path.unlink()
+                    with self.assertRaisesRegex(RuntimeError, "missing"):
+                        verify_repo.manifest_project_members(self.sources(), self.root)
+                    path.write_bytes(body)
+
+    def test_required_generic_projects_cannot_disappear_completely(self):
+        for project, members in self.PROJECTS.items():
+            paths = [self.root / name for name in (project + "/oxid.toml", *members)]
+            bodies = [path.read_bytes() for path in paths]
+            with self.subTest(project=project):
+                for path in paths:
+                    path.unlink()
+                with patch.dict(verify_repo.TYPED_MANIFEST_PROJECTS, self.PROJECTS, clear=True):
+                    with self.assertRaisesRegex(RuntimeError, "missing"):
+                        verify_repo.manifest_project_members(self.sources(), self.root, required=True)
+                for path, body in zip(paths, bodies, strict=True):
+                    path.write_bytes(body)
+
+    def test_unknown_neighbors_are_not_admitted_as_project_members(self):
+        expected = set(self.sources())
+        neighbors = [self.root / "packages/owned_vec/src/unlisted.ox",
+                     self.root / "examples/owned-vector-results/src/unlisted.ox",
+                     self.root / "examples/owned-vector-results-neighbor/main.ox"]
+        for path in neighbors:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("unregistered legacy source\n")
+        selected, roots = verify_repo.manifest_project_members(self.sources(), self.root)
+        self.assertEqual(selected, expected)
+        self.assertEqual(roots, [self.root / project for project in self.PROJECTS])
+        self.assertFalse(selected & set(neighbors))
+
+    def test_inventory_cannot_move_library_members_below_the_application_or_duplicate_them(self):
+        for project, members in self.PROJECTS.items():
+            other = next(values[0] for name, values in self.PROJECTS.items() if name != project)
+            for wrong in ((other,), members + members, (project + "/../unlisted.ox",), ()):
+                with self.subTest(project=project, members=wrong), \
+                        patch.dict(verify_repo.TYPED_MANIFEST_PROJECTS, {project: wrong}, clear=True), \
+                        self.assertRaisesRegex(RuntimeError, "invalid"):
+                    verify_repo.manifest_project_members(self.sources(), self.root)
+
+    def test_root_legacy_exclusion_is_one_exact_example_path(self):
+        document = tomllib.loads((verify_repo.ROOT / "oxid.toml").read_text())
+        configured = document["test-fixtures"]
+        self.assertIs(configured["examples/owned-vector-results/src/main.ox"], True)
+        self.assertEqual({name for name in configured if name.startswith("examples/owned-vector-results")},
+                         {"examples/owned-vector-results/src/main.ox"})
+        self.assertFalse(any(name.startswith("packages/owned_vec") for name in configured))
+        self.assertNotIn("examples/owned-vector-results/src/unlisted.ox", configured)
+        self.assertNotIn("examples/owned-vector-results-neighbor/main.ox", configured)
 
 
 if __name__ == "__main__":

@@ -387,6 +387,10 @@ OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES = (
 OWNED_TEXT_COMPILE_TIME_FIXTURES = (
     'packages/utf8_text/src/lib.ox',
 )
+OWNED_PARAMETER_COMPILE_TIME_FIXTURES = (
+    'packages/owned_vec/src/lib.ox',
+    'examples/owned-vector-results/src/main.ox',
+)
 
 
 def materialize_checkout(root, checkout):
@@ -396,7 +400,7 @@ def materialize_checkout(root, checkout):
     for name in ["src", "native", "compiler", "stdlib", "rfcs", "fixtures"]:
         shutil.copytree(root / name, checkout / name)
     for name in (*COMPILE_TIME_FIXTURES, *OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES,
-                 *OWNED_TEXT_COMPILE_TIME_FIXTURES):
+                 *OWNED_TEXT_COMPILE_TIME_FIXTURES, *OWNED_PARAMETER_COMPILE_TIME_FIXTURES):
         destination = checkout / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / name, destination)

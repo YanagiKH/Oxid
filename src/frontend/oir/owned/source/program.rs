@@ -20,6 +20,9 @@ mod i64_source_tests;
 #[path = "owned_enum_vector_source_tests.rs"]
 mod owned_enum_vector_source_tests;
 #[cfg(test)]
+#[path = "owned_parameter_source_tests.rs"]
+mod owned_parameter_source_tests;
+#[cfg(test)]
 #[path = "owned_text_source_resource_tests.rs"]
 mod owned_text_source_resource_tests;
 #[cfg(test)]

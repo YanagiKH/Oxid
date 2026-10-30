@@ -391,6 +391,32 @@ fn builtin_enum_fixup_all_factory_and_frame_transports_have_independent_role_ora
         allocator: &'static mut Allocator,
         source_fact: BeforeSourceFact,
     }
+    // Exact Enum-parent factory field inventory from69804318. Keep its
+    // historical fixup growth separate from the new generic-signature banks.
+    #[allow(dead_code)]
+    struct EnumFactory {
+        state: BuildState,
+        mutex: Mutex<BuildState>,
+        consumed_state: LockResult<BuildState>,
+        mapped_state: Result<BuildState, Box<Diagnostic>>,
+        caller_state: Result<BuildState, Box<Diagnostic>>,
+        construction: BuildOwner,
+        pending: Box<[BuildOwner; 1]>,
+        returned_pending: Result<Box<[BuildOwner; 1]>, ReserveFailure>,
+        index: DeclarationIndex<'static>,
+        facts: DeclarationFacts<'static>,
+        origin: CandidateOrigin,
+        owner: OwnedGenericPlan,
+        owner_result: Result<OwnedGenericPlan, Box<Diagnostic>>,
+        boxed: Box<[OwnedGenericPlan; 1]>,
+        boxed_result: Result<Box<[OwnedGenericPlan; 1]>, ReserveFailure>,
+        returned: Result<DeclarationIndex<'static>, Vec<Diagnostic>>,
+        source: SourceOwner<'static>,
+        limits: IndexLimits,
+        work: &'static WorkMeter,
+        allocator: &'static mut Allocator,
+        source_fact: SourceFactRoles,
+    }
     #[allow(dead_code)]
     struct BeforeFrame {
         operation: owned::Operation,
@@ -552,6 +578,38 @@ fn builtin_enum_fixup_all_factory_and_frame_transports_have_independent_role_ora
         builtin: Result<BuiltinItem, Box<Diagnostic>>, enum_id: EnumId,
         template_enum_count: usize,
     });
+    inventory!(BorrowedElementRoles {
+        index: &'static DeclarationIndex<'static>, value: Value, nominals: &'static Nominals,
+        work: &'static WorkMeter, at: Span, position: usize, eligible: bool,
+        builder: Option<&'static Mutex<BuildState>>, caller_builder: Option<&'static Mutex<BuildState>>,
+        debited: Result<(), Box<Diagnostic>>, marked: Result<(), Box<Diagnostic>>,
+        result: Result<Element, Box<Diagnostic>>, caller_result: Result<Element, Box<Diagnostic>>,
+        caller_element: Element,
+    });
+    inventory!(FunctionValueRoles {
+        builder: Option<&'static Mutex<BuildState>>, nominals: &'static mut Nominals,
+        index: &'static DeclarationIndex<'static>, work: &'static WorkMeter,
+        storage: &'static mut Storage, allocator: &'static mut Allocator, module: ModuleId,
+        declaration: Span, arguments: &'static [Value], syntax: ast::TypeSyntax,
+        application_id: ast::GenericApplicationId, program: &'static ast::Program,
+        application: &'static ast::GenericArguments,
+        program_result: Result<&'static ast::Program, Box<Diagnostic>>,
+        application_option: Option<&'static ast::GenericArguments>,
+        application_result: Result<&'static ast::GenericArguments, Box<Diagnostic>>,
+        path: ItemPathRef, nominal: NominalId, nominal_result: Result<NominalId, Box<Diagnostic>>,
+        argument: ast::TypeSyntax, values: Vec<Value>,
+        argument_iterator: std::slice::Iter<'static, ast::TypeSyntax>,
+        selected_argument: &'static ast::TypeSyntax, record: RecordId, enumeration: EnumId,
+        constructed_value: Value, constructed_result: Result<Value, Box<Diagnostic>>,
+        value: Value, value_result: Result<Value, Box<Diagnostic>>,
+        element_result: Result<Element, Box<Diagnostic>>, result: Result<Type, Box<Diagnostic>>,
+        caller_result: Result<Type, Box<Diagnostic>>, caller_syntax: ast::TypeSyntax,
+        caller_type: Type, caller_types: &'static [(Span, Type)],
+        caller_iterator: std::slice::Iter<'static, (Span, Type)>,
+        caller_selected: &'static (Span, Type), caller_cached: Option<&'static (Span, Type)>,
+        entered: Result<(), Box<Diagnostic>>, left: Result<(), Box<Diagnostic>>,
+        debited: Result<(), Box<Diagnostic>>, rejected: Result<(), Box<Diagnostic>>,
+    });
     let factory_bounds = inventory!(FactoryBank {
         state: BuildState, mutex: Mutex<BuildState>, consumed_state: LockResult<BuildState>,
         mapped_state: Result<BuildState, Box<Diagnostic>>,
@@ -563,17 +621,27 @@ fn builtin_enum_fixup_all_factory_and_frame_transports_have_independent_role_ora
         returned: Result<DeclarationIndex<'static>, Vec<Diagnostic>>, source: SourceOwner<'static>,
         limits: IndexLimits, work: &'static WorkMeter, allocator: &'static mut Allocator,
         source_fact: SourceFactRoles,
+        borrowed_element: BorrowedElementRoles, function_value: FunctionValueRoles,
     });
     let factory_growth = 6 * 512 + (16 + 8 + 8);
     assert_eq!(factory_growth, 3104);
     assert_eq!(
-        size_of::<FactoryBank>() - size_of::<BeforeFactory>(),
+        size_of::<EnumFactory>() - size_of::<BeforeFactory>(),
         factory_growth
     );
-    println!("historical factory={} source_fact={} frame={}; current factory={} source_fact={} frame={}; independent factory growth=3104",
+    let generic_growth = size_of::<BorrowedElementRoles>() + size_of::<FunctionValueRoles>();
+    assert_eq!(
+        size_of::<FactoryBank>() - size_of::<EnumFactory>(),
+        generic_growth
+    );
+    println!("historical factory={} source_fact={} frame={}; enum factory={}; current factory={} source_fact={} frame={}; independent enum factory growth=3104; separate generic factory growth={generic_growth}",
         size_of::<BeforeFactory>(), size_of::<BeforeSourceFact>(), size_of::<BeforeFrame>(),
+        size_of::<EnumFactory>(),
         size_of::<FactoryBank>(), size_of::<SourceFactRoles>(), size_of::<FrameBank>());
-    assert_eq!(factory_bytes() - size_of::<BeforeFactory>(), 3104);
+    assert_eq!(
+        factory_bytes() - size_of::<BeforeFactory>(),
+        3104 + generic_growth
+    );
     assert!((factory_bounds.0..=factory_bounds.1).contains(&factory_bytes()));
 
     let frame_bounds = inventory!(FrameBank {

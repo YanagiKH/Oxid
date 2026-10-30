@@ -30,6 +30,9 @@ pub(in crate::frontend) mod cases;
 #[cfg(test)]
 #[path = "owned_enum_vector_catalog_tests.rs"]
 mod enum_tests;
+#[cfg(test)]
+#[path = "oir/owned/source/owned_parameter_cases.rs"]
+pub(in crate::frontend) mod parameter_cases;
 impl Operation {
     pub const ALL: [Self; 8] = [
         Self::New,

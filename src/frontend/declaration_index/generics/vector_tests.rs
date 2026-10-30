@@ -72,6 +72,40 @@ fn source_plan(
 }
 
 #[test]
+fn ordinary_scalar_and_copy_signatures_do_not_enter_owned_function_helpers() {
+    let text = "use alloc::vec::Vec;use alloc::vec::new;use alloc::vec::try_push;struct Packet<T>{value:T}fn move_vector<T:Copy>(v:Vec<T>)->Vec<T>{return v;}fn move_packet<T>(v:Packet<T>)->Packet<T>{return v;}fn main()->i32{let mut values=new::<i32>();try_push(&mut values,42);let moved=move_vector(values);let packet=move_packet(Packet::<i32>{value:moved[0]});return packet.value;}";
+    let fixture = Fixture::new(text);
+    let project = fixture.project();
+    let owner = SourceOwner::project(&project);
+    let work = WorkMeter::default();
+    work.enable_observation();
+    let before = owned_candidate::function_helper_entries();
+    let facts = collect_originals(
+        owner,
+        IndexLimits::default(),
+        &work,
+        &mut Allocator::default(),
+    )
+    .unwrap();
+    let index = facts.finish(&work, &mut Allocator::default()).unwrap();
+    assert!(index.owned_vector_builder().is_none());
+    assert!(index.owned_vector_plan().is_none());
+    assert!(index.generic_plan().is_some());
+    assert_eq!(owned_candidate::function_helper_entries(), before);
+    let events = work.events.borrow();
+    assert!(events
+        .iter()
+        .any(|event| event.operation == "nominal type substitution"));
+    assert!(events
+        .iter()
+        .any(|event| event.operation == "generic syntax type lookup"));
+    assert!(!events.iter().any(|event| matches!(
+        event.operation,
+        "owned vector function value admission" | "generic signature type lookup"
+    )));
+}
+
+#[test]
 fn scalar_elements_exclude_affine_values_and_unbounded_parameters() {
     let at = origin();
     for ty in [

@@ -115,6 +115,33 @@ oxid build --profile release
 
 `oxid run` prints `42`. Build the compiler from this source tree to use this API.
 
+## Recover a failed insertion
+
+The [owned_vec package](../packages/owned_vec) provides `try_push` and `pop`
+for finite owned-record and enum elements. `try_push` returns
+`PushResult::Pushed` or `PushResult::Failed(PushFailure { value, status })`.
+On failure, the result returns ownership of the incoming value and the vector
+keeps its existing values, length and capacity. `pop` returns `PopResult::Empty`
+or `PopResult::Value(value)`, so an empty collection needs no trap.
+
+Generic functions can borrow `&Vec<T>` or `&mut Vec<T>`, move a `Vec<T>`
+parameter, or return a `Vec<T>`. A moved vector becomes unavailable to its caller.
+The package's `transfer` moves a vector, `detach` transfers its storage while
+leaving the original empty, and `discard` releases it and any remaining elements.
+These ownership helpers also accept existing scalar and Copy-record vectors.
+
+Run the [complete example](../examples/owned-vector-results):
+
+```sh
+cd examples/owned-vector-results
+oxid run
+oxid build --profile release
+```
+
+`oxid run` prints `42`. Generic owned-vector helpers still require concrete
+supported element types at each call. Unconstrained `T` cannot construct
+`new::<T>()`, grant an element slice, or make a nested owned-vector type valid.
+
 ## Add, resize and move values
 
 For scalar and Copy elements, import each function from `alloc::vec`:

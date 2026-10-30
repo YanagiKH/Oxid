@@ -2161,7 +2161,7 @@
     },
     {
       "id": "owned-record-vectors",
-      "summary": "Growable vectors of finite non-Copy records and enums, with resource cleanup, reserved insertion and ownership transfer.",
+      "summary": "Growable vectors of finite non-Copy records and enums, with generic ownership helpers, recoverable insertion and resource cleanup.",
       "status": "experimental",
       "classification": "production-path",
       "edition": "typed-preview",
@@ -2184,7 +2184,8 @@
         "native/experimental_vector.c",
         "src/frontend/declaration_index/generics/owned_builtin_enum_keys.rs",
         "src/frontend/oir/owned/native_owned_vector_schemas.rs",
-        "native/experimental_owned_record.c"
+        "native/experimental_owned_record.c",
+        "packages/owned_vec/src/lib.ox"
       ],
       "tests": [
         "src/frontend/oir/source/owned_vector_route_tests.rs",
@@ -2199,7 +2200,10 @@
         "src/frontend/oir/owned/source/owned_enum_vector_source_tests.rs",
         "src/frontend/declaration_index/generics/owned_builtin_enum_key_tests.rs",
         "scripts/verify_native_owned_enum_vectors.py",
-        "scripts/test_native_owned_enum_vectors.py"
+        "scripts/test_native_owned_enum_vectors.py",
+        "tests/typed_owned_vector_wrappers.rs",
+        "src/frontend/declaration_index/generics/owned_parameter_tests.rs",
+        "src/frontend/oir/owned/source/owned_parameter_source_tests.rs"
       ],
       "evidence": [],
       "limitations": "Eight operations: new, len, capacity, try_reserve, push_reserved, pop_last, truncate and take. Elements are finite non-Copy records or user-defined and built-in enums; active payloads may own text, buffers and files. Insertion consumes an element and requires spare reserved capacity; removal requires a nonempty vector. Lengths and capacities use i32, and allocation shares the execution policy heap limit. Element indexing, slices, element references, recursive elements, nested vectors of owned records or enums, stored or returned references, partial moves and user destructors are unavailable."

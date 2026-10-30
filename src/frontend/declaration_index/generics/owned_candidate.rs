@@ -9,6 +9,10 @@ use std::sync::{LockResult, Mutex, MutexGuard, TryLockResult};
 mod builtin_keys;
 use builtin_keys::{BuiltinFixup, BuiltinFixups};
 
+#[cfg(test)]
+#[path = "owned_parameter_tests.rs"]
+mod owned_parameter_tests;
+
 #[derive(Debug, PartialEq, Eq)]
 #[repr(C)]
 struct OwnedCall {
@@ -105,6 +109,80 @@ struct FactoryBank {
     work: &'static WorkMeter,
     allocator: &'static mut Allocator,
     source_fact: SourceFactRoles,
+    borrowed_element: BorrowedElementRoles,
+    // Fixed per-candidate prepayment: old concrete owned vectors and borrowed
+    // wrappers pay it too, even if they never use opaque owning signatures.
+    function_value: FunctionValueRoles,
+}
+
+/// The function-only opaque value seam has no retained table or new runtime
+/// type. Its nested syntax call and independent caller transports are prepaid
+/// in this factory, including unused definitions with no executable instance.
+#[allow(dead_code)]
+struct FunctionValueRoles {
+    builder: Option<&'static Mutex<BuildState>>,
+    nominals: &'static mut Nominals,
+    index: &'static DeclarationIndex<'static>,
+    work: &'static WorkMeter,
+    storage: &'static mut Storage,
+    allocator: &'static mut Allocator,
+    module: ModuleId,
+    declaration: Span,
+    arguments: &'static [Value],
+    syntax: ast::TypeSyntax,
+    application_id: ast::GenericApplicationId,
+    program: &'static ast::Program,
+    application: &'static ast::GenericArguments,
+    program_result: Result<&'static ast::Program, Box<Diagnostic>>,
+    application_option: Option<&'static ast::GenericArguments>,
+    application_result: Result<&'static ast::GenericArguments, Box<Diagnostic>>,
+    path: ItemPathRef,
+    nominal: NominalId,
+    nominal_result: Result<NominalId, Box<Diagnostic>>,
+    argument: ast::TypeSyntax,
+    values: Vec<Value>,
+    argument_iterator: std::slice::Iter<'static, ast::TypeSyntax>,
+    selected_argument: &'static ast::TypeSyntax,
+    record: RecordId,
+    enumeration: EnumId,
+    constructed_value: Value,
+    constructed_result: Result<Value, Box<Diagnostic>>,
+    value: Value,
+    value_result: Result<Value, Box<Diagnostic>>,
+    element_result: Result<Element, Box<Diagnostic>>,
+    result: Result<Type, Box<Diagnostic>>,
+    caller_result: Result<Type, Box<Diagnostic>>,
+    caller_syntax: ast::TypeSyntax,
+    caller_type: Type,
+    caller_types: &'static [(Span, Type)],
+    caller_iterator: std::slice::Iter<'static, (Span, Type)>,
+    caller_selected: &'static (Span, Type),
+    caller_cached: Option<&'static (Span, Type)>,
+    entered: Result<(), Box<Diagnostic>>,
+    left: Result<(), Box<Diagnostic>>,
+    debited: Result<(), Box<Diagnostic>>,
+    rejected: Result<(), Box<Diagnostic>>,
+}
+
+/// Independent synchronous roles for borrowed opaque admission. This carries
+/// no table, obligation, emitted identity or key; factory_bytes prepays it even
+/// when an unused generic body produces no concrete instance.
+#[allow(dead_code)]
+struct BorrowedElementRoles {
+    index: &'static DeclarationIndex<'static>,
+    value: Value,
+    nominals: &'static Nominals,
+    work: &'static WorkMeter,
+    at: Span,
+    position: usize,
+    eligible: bool,
+    builder: Option<&'static Mutex<BuildState>>,
+    caller_builder: Option<&'static Mutex<BuildState>>,
+    debited: Result<(), Box<Diagnostic>>,
+    marked: Result<(), Box<Diagnostic>>,
+    result: Result<Element, Box<Diagnostic>>,
+    caller_result: Result<Element, Box<Diagnostic>>,
+    caller_element: Element,
 }
 
 /// Marking occurs only after element checking, without recursion while the
@@ -169,6 +247,30 @@ pub(in crate::frontend::declaration_index) const fn factory_bytes() -> usize {
     size_of::<FactoryBank>()
 }
 const FRAME_BYTES: usize = size_of::<FrameBank>() + builtin_keys::control_bytes();
+
+#[cfg(test)]
+std::thread_local! {
+    static FUNCTION_HELPER_ENTRIES: std::cell::Cell<(usize, usize)> = const {
+        std::cell::Cell::new((0, 0))
+    };
+}
+
+#[cfg(test)]
+pub(super) fn record_function_helper(signature: bool) {
+    FUNCTION_HELPER_ENTRIES.with(|entries| {
+        let (signatures, values) = entries.get();
+        entries.set(if signature {
+            (signatures + 1, values)
+        } else {
+            (signatures, values + 1)
+        });
+    });
+}
+
+#[cfg(test)]
+pub(super) fn function_helper_entries() -> (usize, usize) {
+    FUNCTION_HELPER_ENTRIES.with(std::cell::Cell::get)
+}
 
 #[allow(dead_code)]
 struct ReplayBank {
@@ -523,6 +625,28 @@ impl DeclarationIndex<'_> {
             return Err(vec![*bad(at)]);
         }
         Ok(())
+    }
+    /// References and outer function values may defer an unbounded element.
+    /// Concrete specialization still uses candidate_element and its finite-root
+    /// checks; field layouts, slices and explicit new::<T> never enter this seam.
+    pub(super) fn candidate_borrowed_element(
+        &self,
+        value: Value,
+        nominals: &Nominals,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<Element, Box<Diagnostic>> {
+        match value {
+            Value::Parameter {
+                position,
+                copy: false,
+            } if self.owned_vector_builder().is_some() => {
+                work.debit(1, at, "borrowed owned vector parameter admission")?;
+                self.note_owned_vector_source(at)?;
+                Ok(Element::OwnedParameter(position))
+            }
+            _ => self.candidate_element(value, nominals, at),
+        }
     }
     pub(super) fn candidate_element(
         &self,
@@ -1532,8 +1656,31 @@ mod tests {
             let project = fixture.project();
             assert_refused(candidate(&project, MAX_STORAGE, &WorkMeter::default(), &mut Allocator::default()).unwrap_err());
         }
+        // An owning function parameter may now defer its element until a call
+        // supplies an independently checked concrete root. Merely checking an
+        // unused affine definition must not mint an executable vector key.
+        let source = format!(
+            "{IMPORTS}fn unbounded<T>(values:Vec<T>)->(){{return;}}fn main()->i32{{return 0;}}"
+        );
+        let fixture = Fixture::new(&source);
+        let project = fixture.project();
+        let index = candidate(
+            &project,
+            MAX_STORAGE,
+            &WorkMeter::default(),
+            &mut Allocator::default(),
+        )
+        .unwrap();
+        assert!(index.owned_vector_source_needed());
+        assert!(index.owned_vector_functions().is_empty());
+        assert!(index.vector_functions().is_empty());
+        assert_eq!(index.source_function_count(), 1);
+        index
+            .validate_owned_vector_candidate(&WorkMeter::default(), &mut Allocator::default())
+            .unwrap();
+
         for declaration in [
-            "fn unbounded<T>(values:Vec<T>)->(){return;}",
+            "fn unbounded<T>(values:Vec<T>)->(){let moved=values;let duplicate=values;return;}",
             "struct Holder{values:Vec<Entry>}",
             "enum Holder{Values(Vec<Entry>)}",
             "fn borrowed(values:&[Entry])->(){return;}",
