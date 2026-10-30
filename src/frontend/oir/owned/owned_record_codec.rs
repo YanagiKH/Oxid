@@ -8,7 +8,10 @@ use super::{
     byte_buffer::{CheckedVectorElement, Failure, Heap, RecordVectorElement},
     vector_type, AggregateTy, Declarations, RecordId, ValueTy, MAX_CONTAINMENT_DEPTH,
 };
-use crate::frontend::hir;
+use crate::frontend::{
+    hir,
+    oir::owned_types::{OwnedVectorRoot, OwnedVectorRootSlot},
+};
 
 #[path = "owned_record_bounds.rs"]
 pub(super) mod bounds;
@@ -21,7 +24,7 @@ type Stack = [Option<(ValueTy, usize, usize)>; MAX_CONTAINMENT_DEPTH + 1];
 #[derive(Clone, Copy)]
 pub(super) struct Element<'a> {
     declarations: &'a Declarations,
-    record: RecordId,
+    root: OwnedVectorRootSlot,
     bytes: usize,
     visits: usize,
     resources: usize,
@@ -61,7 +64,18 @@ impl<'a> Element<'a> {
     }
 
     pub(super) const fn record(self) -> RecordId {
-        self.record
+        match self.root.root() {
+            OwnedVectorRoot::Record(id) => id,
+            OwnedVectorRoot::Enum(_) => panic!("enum elements have no record ID"),
+        }
+    }
+
+    pub(super) const fn root(self) -> OwnedVectorRoot {
+        self.root.root()
+    }
+
+    pub(super) const fn storage_key(self) -> u32 {
+        self.root.raw()
     }
 
     pub(super) const fn declarations(self) -> &'a Declarations {
@@ -88,7 +102,7 @@ impl<'a> Element<'a> {
             return Err(Failure::Descriptor);
         }
         let mut stack = [None; MAX_CONTAINMENT_DEPTH + 1];
-        stack[0] = Some((ValueTy::Owned(AggregateTy::Record(self.record)), 0, 0));
+        stack[0] = Some((ValueTy::Owned(self.root().aggregate()), 0, 0));
         Ok(Cells {
             element: self,
             bytes,
@@ -266,9 +280,9 @@ impl Cells<'_, '_> {
             let position = self.length - 1;
             let (value, relative, next) = self.stack[position].ok_or(Failure::Descriptor)?;
             match value {
-                ValueTy::Owned(AggregateTy::OwnedRecordVector(_)) => {
-                    return Err(Failure::Descriptor)
-                }
+                ValueTy::Owned(
+                    AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_),
+                ) => return Err(Failure::Descriptor),
                 ValueTy::Scalar(ty) => {
                     self.length -= 1;
                     return self.scalar(relative, ty).map(Some);
@@ -374,4 +388,5 @@ pub(super) const fn control_bytes() -> usize {
         + 16 * std::mem::size_of::<usize>()
         + 2 * std::mem::size_of::<Result<usize>>()
         + std::mem::size_of::<&mut [u64]>()
+        + 2 * std::mem::size_of::<OwnedVectorRoot>()
 }

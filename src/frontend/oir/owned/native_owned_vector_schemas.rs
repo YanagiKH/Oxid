@@ -24,6 +24,9 @@ struct SchemaCarriers {
     type_rows: [TypeRow; 3],
     type_results: [Result<TypeRow, Box<Diagnostic>>; 2],
     values: [ValueTy; 3],
+    roots: [OwnedVectorRoot; 2],
+    slots: [OwnedVectorRootSlot; 2],
+    slot_results: [Option<OwnedVectorRootSlot>; 2],
     identifiers: [Result<u32, Box<Diagnostic>>; 3],
     indices: [usize; 16],
     products: [Option<usize>; 4],
@@ -103,7 +106,10 @@ fn leaf_row(declarations: &Declarations, value: ValueTy) -> Result<TypeRow, Box<
         // Nominal values reference the earlier shared type row. Ineligible
         // nested owned-vector declarations never acquire a resource leaf.
         ValueTy::Owned(
-            AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::OwnedRecordVector(_),
+            AggregateTy::Record(_)
+            | AggregateTy::Enum(_)
+            | AggregateTy::OwnedRecordVector(_)
+            | AggregateTy::OwnedEnumVector(_),
         ) => (0, 0, 0, 0),
     };
     Ok((kind, detail, 0, count, bytes as u64))
@@ -351,5 +357,50 @@ pub(super) fn schemas(
         separator = ", ";
     }
     writeln!(out, "], align 8").unwrap();
+    if counts.enums != 0 {
+        if out.exceeded {
+            return Ok(());
+        }
+        out.ordinary_visits += 1;
+        writeln!(out, "@__oxid_owned_enum_vectors = constant i1 true").unwrap();
+        writeln!(
+            out,
+            "@__oxid_owned_enum_count = constant i32 {}, align 4",
+            counts.enums
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "@__oxid_owned_enums = constant [{} x {{ i32, i32, i64, i64, i64 }}] [",
+            counts.enums
+        )
+        .unwrap();
+        separator = "";
+        for enumeration in declarations.enums().enums() {
+            if out.exceeded {
+                return Ok(());
+            }
+            out.ordinary_visits += 1;
+            let id = OwnedVectorRootSlot::check(OwnedVectorRoot::Enum(enumeration.id()))
+                .ok_or_else(|| declaration_error("enum root ordinal"))?
+                .raw();
+            let (root, stride, visits, resources) =
+                match bounds.element_root(OwnedVectorRoot::Enum(enumeration.id())) {
+                    Ok(element) => (
+                        u32::try_from(add(counts.records, enumeration.id().0)?)
+                            .map_err(declaration_error)?,
+                        element.size(),
+                        element
+                            .traversal_work(1)
+                            .ok_or_else(|| declaration_error("enum visits"))?,
+                        element.identity_capacity(),
+                    ),
+                    Err(_) => (u32::MAX, 0, 0, 0),
+                };
+            writeln!(out, "{separator}{{ i32, i32, i64, i64, i64 }} {{ i32 {id}, i32 {root}, i64 {stride}, i64 {visits}, i64 {resources} }}").unwrap();
+            separator = ", ";
+        }
+        writeln!(out, "], align 8").unwrap();
+    }
     Ok(())
 }

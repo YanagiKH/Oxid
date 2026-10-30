@@ -148,7 +148,12 @@ enum PayloadSlot {
     DoubleAlignedRecordVector(u32),
     OwnedRecordVector(u32),
     DoubleAlignedOwnedRecordVector(u32),
+    OwnedEnumVector(u32),
+    DoubleAlignedOwnedEnumVector(u32),
 }
+#[cfg(test)]
+#[path = "owned_enum_vector_payload_tests.rs"]
+mod owned_enum_vector_payload_tests;
 impl PayloadSlot {
     fn check(ty: ValueTy, alignment: usize) -> Result<Self, DeclarationError> {
         Self::check_domain::<false>(ty, alignment)
@@ -166,6 +171,14 @@ impl PayloadSlot {
                 }
                 Self::OwnedRecordVector(
                     u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+                )
+            }
+            ValueTy::Owned(AggregateTy::OwnedEnumVector(id)) => {
+                if !OWNED {
+                    return Err(DeclarationError::TypeMismatch);
+                }
+                Self::OwnedEnumVector(
+                    u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?,
                 )
             }
             ValueTy::Scalar(ty) => Self::Scalar(ty),
@@ -194,6 +207,7 @@ impl PayloadSlot {
                     | Self::Vector(_)
                     | Self::RecordVector(_)
                     | Self::OwnedRecordVector(_)
+                    | Self::OwnedEnumVector(_)
             ) =>
             {
                 Ok(payload)
@@ -208,6 +222,7 @@ impl PayloadSlot {
                 Self::Vector(element) => Self::Vector(element),
                 Self::RecordVector(id) => Self::RecordVector(id),
                 Self::OwnedRecordVector(id) => Self::OwnedRecordVector(id),
+                Self::OwnedEnumVector(id) => Self::OwnedEnumVector(id),
                 _ => unreachable!("fresh compact payload"),
             }),
             16 => Ok(match payload {
@@ -220,6 +235,7 @@ impl PayloadSlot {
                 Self::Vector(element) => Self::DoubleAlignedVector(element),
                 Self::RecordVector(id) => Self::DoubleAlignedRecordVector(id),
                 Self::OwnedRecordVector(id) => Self::DoubleAlignedOwnedRecordVector(id),
+                Self::OwnedEnumVector(id) => Self::DoubleAlignedOwnedEnumVector(id),
                 _ => unreachable!("fresh compact payload"),
             }),
             _ => Err(DeclarationError::LayoutOverflow),
@@ -248,6 +264,9 @@ impl PayloadSlot {
             Self::OwnedRecordVector(id) | Self::DoubleAlignedOwnedRecordVector(id) => {
                 ValueTy::Owned(AggregateTy::OwnedRecordVector(RecordId(id as usize)))
             }
+            Self::OwnedEnumVector(id) | Self::DoubleAlignedOwnedEnumVector(id) => {
+                ValueTy::Owned(AggregateTy::OwnedEnumVector(EnumId(id as usize)))
+            }
             Self::Vector(element) | Self::DoubleAlignedVector(element) => {
                 ValueTy::Owned(AggregateTy::Vector(element))
             }
@@ -264,7 +283,8 @@ impl PayloadSlot {
             | Self::DoubleAlignedFile
             | Self::DoubleAlignedVector(_)
             | Self::DoubleAlignedRecordVector(_)
-            | Self::DoubleAlignedOwnedRecordVector(_) => 16,
+            | Self::DoubleAlignedOwnedRecordVector(_)
+            | Self::DoubleAlignedOwnedEnumVector(_) => 16,
             _ => 8,
         }
     }
@@ -916,7 +936,9 @@ fn owned_summaries_domain<const OWNED: bool>(
                         width: 3,
                         depth_and_packed: ContainmentSummary::pack(0, 0)?,
                     },
-                    Some(ValueTy::Owned(AggregateTy::OwnedRecordVector(_))) => {
+                    Some(ValueTy::Owned(
+                        AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_),
+                    )) => {
                         if !OWNED {
                             return Err(DeclarationError::TypeMismatch.into());
                         }

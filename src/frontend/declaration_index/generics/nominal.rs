@@ -21,7 +21,7 @@ pub(super) struct EnumApplication {
     concrete: bool,
     depth: usize,
     pub(super) variants: Vec<Option<Value>>,
-    complete: bool,
+    pub(super) complete: bool,
     pub(super) emitted: Option<EnumId>,
 }
 
@@ -503,7 +503,9 @@ impl Nominals {
                     field.ty.span,
                 ));
             }
-            if matches!(value, Value::Vector(element) if element.owned()) {
+            if matches!(value, Value::Vector(element) if element.owned()
+                && !matches!(element, Element::OwnedEnumApplication(_) | Element::OwnedBuiltinEnum(_)))
+            {
                 return Err(error(
                     "owned record vectors cannot be stored in record declarations",
                     field.ty.span,
@@ -796,7 +798,9 @@ impl Nominals {
 
     pub(super) fn value(&self, value: Value, at: Span) -> Result<ValueTy, Box<Diagnostic>> {
         match value {
-            Value::Concrete(ValueTy::Owned(AggregateTy::OwnedRecordVector(_))) => Err(bad(at)),
+            Value::Concrete(ValueTy::Owned(
+                AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_),
+            )) => Err(bad(at)),
             Value::Concrete(ValueTy::Owned(AggregateTy::Enum(id)))
                 if id.0 >= self.template_enum_count =>
             {
@@ -824,6 +828,9 @@ impl Nominals {
                         return Err(bad(at));
                     }
                     Ok(ValueTy::Owned(AggregateTy::OwnedRecordVector(id)))
+                }
+                ValueTy::Owned(AggregateTy::Enum(id)) if element.owned() => {
+                    Ok(ValueTy::Owned(AggregateTy::OwnedEnumVector(id)))
                 }
                 ValueTy::Scalar(ty) => Ok(ValueTy::Owned(AggregateTy::Vector(ty))),
                 ValueTy::Owned(AggregateTy::Record(id)) if self.record_is_copy(id, at)? => {

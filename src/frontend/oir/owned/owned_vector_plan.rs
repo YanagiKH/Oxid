@@ -103,7 +103,13 @@ pub(super) fn requested<W: PlanWitness>(
         return Err(AdmissionFailure::new("owned vector plan work", None));
     }
     Ok(Some(Request {
-        metadata_bytes: add(witness.usage().metadata_bytes, size_of::<PlanControls>())?,
+        metadata_bytes: add(
+            witness.usage().metadata_bytes,
+            add(
+                size_of::<PlanControls>(),
+                super::super::owned_record_codec::bounds::element_control_bytes(),
+            )?,
+        )?,
         work,
     }))
 }

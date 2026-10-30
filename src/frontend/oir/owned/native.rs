@@ -2390,7 +2390,7 @@ fn indexed_base(f: &RawOwnedFunction, base: AccessBase) -> BorrowedTy {
 }
 fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: AccessBase) -> String {
     match indexed_base(f, base) {
-        BorrowedTy::Exact(AggregateTy::OwnedRecordVector(_)) => {
+        BorrowedTy::Exact(AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)) => {
             out.exceeded = true;
             String::new()
         }
@@ -3496,6 +3496,7 @@ fn active_transfer_with_intent<W: PlanWitness>(
             | AggregateTy::Vector(_)
             | AggregateTy::RecordVector(_)
             | AggregateTy::OwnedRecordVector(_)
+            | AggregateTy::OwnedEnumVector(_)
     ) {
         for (index, leaf) in plan
             .witness()
@@ -3627,7 +3628,8 @@ fn transfer<W: PlanWitness>(
         | AggregateTy::File
         | AggregateTy::Vector(_)
         | AggregateTy::RecordVector(_)
-        | AggregateTy::OwnedRecordVector(_) => {
+        | AggregateTy::OwnedRecordVector(_)
+        | AggregateTy::OwnedEnumVector(_) => {
             resources::leaves(
                 out,
                 plan,
@@ -3724,6 +3726,7 @@ fn transfer_leaves<W: PlanWitness>(
             | AggregateTy::Vector(_)
             | AggregateTy::RecordVector(_)
             | AggregateTy::OwnedRecordVector(_)
+            | AggregateTy::OwnedEnumVector(_)
     ) {
         return;
     }
@@ -7223,6 +7226,10 @@ mod record_vector_tests;
 #[cfg(test)]
 #[path = "native_owned_vector_schema_tests.rs"]
 mod owned_vector_schema_tests;
+
+#[cfg(test)]
+#[path = "native_owned_enum_vector_schema_tests.rs"]
+mod owned_enum_vector_schema_tests;
 
 #[cfg(test)]
 #[path = "native_owned_vector_tests.rs"]

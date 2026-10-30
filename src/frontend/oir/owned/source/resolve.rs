@@ -1835,12 +1835,18 @@ fn resolve_index_impl(
             .iter()
             .any(|field| matches!(field.ty, ValueTy::Owned(_)))
     }) {
-        use crate::frontend::oir::owned_types::{admit_value_layouts, DeclarationError};
-        if let Err(failure) = admit_value_layouts(
-            records
-                .iter()
-                .map(|record| record.fields.iter().map(|field| field.ty)),
-        ) {
+        use crate::frontend::oir::owned_types::{
+            admit_value_layouts, admit_value_layouts_domain, DeclarationError,
+        };
+        let fields = records
+            .iter()
+            .map(|record| record.fields.iter().map(|field| field.ty));
+        let layouts = if index.is_owned_vector_candidate_pipeline() {
+            admit_value_layouts_domain::<true, _, _>(fields)
+        } else {
+            admit_value_layouts(fields)
+        };
+        if let Err(failure) = layouts {
             let (code, message, span) = match failure {
                 DeclarationError::ContainmentCycle(record) => (
                     "E0202",

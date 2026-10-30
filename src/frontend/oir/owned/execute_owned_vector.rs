@@ -14,7 +14,10 @@ impl VectorPrimitive for Function {
         witness.owned_vector_operation(function) == Some(self)
     }
     fn input_record(self) -> Option<RecordId> {
-        Some(self.record_id())
+        self.element().record()
+    }
+    fn input_aggregate(self) -> Option<AggregateTy> {
+        Some(self.element().aggregate())
     }
     fn input_access(self) -> Access {
         Access::Consume
@@ -79,6 +82,7 @@ struct ControlCarriers<'a, V, W: PlanWitness> {
 pub(super) const fn control_bytes<V: StoredValue, W: PlanWitness>() -> usize {
     size_of::<ControlCarriers<'_, V, W>>()
         + vector::delivery_control_bytes::<V, Function>()
+        + super::super::owned_record_codec::bounds::element_control_bytes()
         + byte_buffer::owned_vector_control_bytes()
 }
 
@@ -95,17 +99,11 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             .plan
             .witness()
             .elements()?
-            .element(key.record_id())
+            .element_root(key.element())
             .ok()?;
         match key.operation() {
-            Operation::New | Operation::Take
-                if aggregate == AggregateTy::OwnedRecordVector(key.record_id()) =>
-            {
-                Some(16)
-            }
-            Operation::PopLast if aggregate == AggregateTy::Record(key.record_id()) => {
-                Some(element.size())
-            }
+            Operation::New | Operation::Take if aggregate == key.element().vector() => Some(16),
+            Operation::PopLast if aggregate == key.element().aggregate() => Some(element.size()),
             _ => None,
         }
     }
@@ -117,12 +115,8 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         access: Access,
         span: Span,
     ) -> Result<(VectorPlace, byte_buffer::OwnedVectorDescriptor)> {
-        let (root, view) = self.vector_parameter_view(
-            frame,
-            AggregateTy::OwnedRecordVector(key.record_id()),
-            access,
-            span,
-        )?;
+        let (root, view) =
+            self.vector_parameter_view(frame, key.element().vector(), access, span)?;
         let extent = self.owner_extent(root, span)?;
         let start = extent
             .start
@@ -164,7 +158,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             .ok_or_else(|| bad("owned vector input parameter", span))?;
         self.expect_owner(frame, owner, &[AVAILABLE], span)?;
         let root = self.base(frame, AccessBase::Owner(owner), Access::Consume, span)?;
-        if self.aggregate(root, span)? != AggregateTy::Record(key.record_id()) {
+        if self.aggregate(root, span)? != key.element().aggregate() {
             return Err(bad("owned vector input identity", span));
         }
         let bytes = self.owner_extent(root, span)?;
@@ -236,7 +230,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             .witness()
             .elements()
             .ok_or_else(|| bad("owned vector finite bounds", span))?
-            .element(key.record_id())
+            .element_root(key.element())
             .map_err(|_| bad("owned vector finite element", span))?;
         let input = self.owned_vector_input(frame, key, element, span)?;
         let publication = self.owned_vector_record_publication(key, &delivery, element, span)?;

@@ -103,6 +103,7 @@ struct ContextControls {
     function: hir::DefId,
     selected_key: Option<Function>,
     key_result: Result<Function, OwnedFailure>,
+    root_arguments: [OwnedVectorRoot; 4],
     element: Element<'static>,
     element_result: Result<Element<'static>, ShapeFailure>,
     mapped_element_result: Result<Element<'static>, OwnedFailure>,
@@ -150,7 +151,9 @@ struct InventoryControls {
     mentions: [bool; 4],
     result: Result<Inventory, OwnedFailure>,
     caller_result: Result<Inventory, OwnedFailure>,
-    selected_record: Option<RecordId>,
+    selected_record: Option<OwnedVectorRoot>,
+    selected_root: OwnedVectorRoot,
+    root_returns: [Option<OwnedVectorRoot>; 4],
     record_result: Result<(), OwnedFailure>,
     visitor_return: Result<(), OwnedFailure>,
     use_count: Option<usize>,
@@ -177,7 +180,10 @@ struct DomainQueryControls {
 fn control_bytes() -> Result<usize, OwnedFailure> {
     add(
         add(size_of::<ContextControls>(), size_of::<InventoryControls>())?,
-        size_of::<DomainQueryControls>(),
+        add(
+            size_of::<DomainQueryControls>(),
+            super::super::owned_record_codec::bounds::element_control_bytes(),
+        )?,
     )
 }
 
@@ -186,6 +192,7 @@ fn bounds_failure(failure: ShapeFailure) -> OwnedFailure {
         ShapeFailure::MetadataLimit => resource("owned vector context bounds metadata"),
         ShapeFailure::Allocation => resource("owned vector context bounds allocation"),
         ShapeFailure::Type => bad(),
+        ShapeFailure::UnsupportedElement => OwnedFailure::unsupported_owned_vector_element(),
     }
 }
 
@@ -198,25 +205,22 @@ struct Inventory {
     uses: usize,
 }
 
-fn vector_record(ty: AggregateTy) -> Option<RecordId> {
-    match ty {
-        AggregateTy::OwnedRecordVector(record) => Some(record),
-        _ => None,
-    }
+fn vector_record(ty: AggregateTy) -> Option<OwnedVectorRoot> {
+    OwnedVectorRoot::from_vector(ty)
 }
-fn value_record(ty: ValueTy) -> Option<RecordId> {
+fn value_record(ty: ValueTy) -> Option<OwnedVectorRoot> {
     match ty {
         ValueTy::Owned(aggregate) => vector_record(aggregate),
         ValueTy::Scalar(_) => None,
     }
 }
-fn borrowed_record(ty: BorrowedTy) -> Option<RecordId> {
+fn borrowed_record(ty: BorrowedTy) -> Option<OwnedVectorRoot> {
     match ty {
         BorrowedTy::Exact(aggregate) => vector_record(aggregate),
         BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => None,
     }
 }
-fn parameter_record(ty: ParameterTy) -> Option<RecordId> {
+fn parameter_record(ty: ParameterTy) -> Option<OwnedVectorRoot> {
     match ty {
         ParameterTy::Value(value) => value_record(value),
         ParameterTy::Reference { referent, .. } => borrowed_record(referent),
@@ -226,8 +230,8 @@ fn parameter_record(ty: ParameterTy) -> Option<RecordId> {
 impl Inventory {
     fn note(
         &mut self,
-        record: Option<RecordId>,
-        visit: &mut impl FnMut(RecordId) -> Result<(), OwnedFailure>,
+        record: Option<OwnedVectorRoot>,
+        visit: &mut impl FnMut(OwnedVectorRoot) -> Result<(), OwnedFailure>,
     ) -> Result<(), OwnedFailure> {
         if let Some(record) = record {
             self.mentions_extension = true;
@@ -255,7 +259,7 @@ fn inventory(raw: &RawOwnedProgram) -> Result<Inventory, OwnedFailure> {
 
 fn inventory_with(
     raw: &RawOwnedProgram,
-    mut visit: impl FnMut(RecordId) -> Result<(), OwnedFailure>,
+    mut visit: impl FnMut(OwnedVectorRoot) -> Result<(), OwnedFailure>,
 ) -> Result<Inventory, OwnedFailure> {
     let mut inventory = Inventory {
         declarations: add(raw.records.len(), raw.enums.len())?,
@@ -300,7 +304,7 @@ fn inventory_with(
             for statement in &block.statements {
                 inventory.visits = add(inventory.visits, 1)?;
                 if let OwnedInstruction::OwnedVector { operation, .. } = statement.kind {
-                    inventory.note(Some(operation.record_id()), &mut visit)?;
+                    inventory.note(Some(operation.element()), &mut visit)?;
                 }
             }
         }
@@ -440,13 +444,15 @@ impl RawOwnedVectorProgram {
                 return Err(resource("owned vector context retained bounds"));
             }
             for key in &self.claims.functions {
-                let element = elements.element(key.record_id()).map_err(bounds_failure)?;
+                let element = elements
+                    .element_root(key.element())
+                    .map_err(bounds_failure)?;
                 if !std::ptr::eq(element.declarations(), declarations) {
                     return Err(bad());
                 }
             }
             inventory_with(&self.program, |record| {
-                let element = elements.element(record).map_err(bounds_failure)?;
+                let element = elements.element_root(record).map_err(bounds_failure)?;
                 if !std::ptr::eq(element.declarations(), declarations) {
                     return Err(bad());
                 }
@@ -506,7 +512,7 @@ impl<'a> OwnedVectorContext<'a> {
         self.elements
             .as_ref()
             .ok_or_else(bad)?
-            .element(key.record_id())
+            .element_root(key.element())
             .map_err(bounds_failure)
     }
 }

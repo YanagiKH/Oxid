@@ -96,6 +96,11 @@ impl VerifiedOwnedVectorProgram {
             let metadata = remaining
                 .metadata
                 .checked_sub(size_of::<OwningProofControls>())
+                .and_then(|n| {
+                    n.checked_sub(
+                        super::super::super::owned_record_codec::bounds::element_control_bytes(),
+                    )
+                })
                 .and_then(|n| n.checked_sub(size_of::<ProofDispatchControls>()))
                 .and_then(|n| {
                     n.checked_sub(if SOURCE_ASSOCIATED {
@@ -208,11 +213,11 @@ impl VerifiedOwnedVectorProgram {
         &self,
         aggregate: AggregateTy,
     ) -> Result<Layout, DeclarationError> {
-        if let AggregateTy::OwnedRecordVector(record) = aggregate {
+        if let Some(root) = OwnedVectorRoot::from_vector(aggregate) {
             self.elements()
-                .element(record)
+                .element_root(root)
                 .map_err(|_| DeclarationError::TypeMismatch)?;
-            Ok(OwnedRecordVectorType::storage_layout())
+            Ok(OwnedVectorType::storage_layout())
         } else {
             self.declarations().aggregate_layout(aggregate)
         }
@@ -222,11 +227,11 @@ impl VerifiedOwnedVectorProgram {
         &self,
         aggregate: AggregateTy,
     ) -> Result<usize, DeclarationError> {
-        if let AggregateTy::OwnedRecordVector(record) = aggregate {
+        if let Some(root) = OwnedVectorRoot::from_vector(aggregate) {
             self.elements()
-                .element(record)
+                .element_root(root)
                 .map_err(|_| DeclarationError::TypeMismatch)?;
-            Ok(OwnedRecordVectorType::storage_width())
+            Ok(OwnedVectorType::storage_width())
         } else {
             self.declarations().aggregate_width(aggregate)
         }

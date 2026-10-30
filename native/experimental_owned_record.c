@@ -25,12 +25,28 @@ static const oxid_owned_record_schema *owned_record_schema(uint32_t record) {
     (void)record;
     return NULL;
 #else
-    if (record >= __oxid_owned_record_count) return NULL;
-    const oxid_owned_record_schema *schema = &__oxid_owned_records[record];
+    const oxid_owned_record_schema *schema;
+    uint32_t kind;
+    if (record & UINT32_C(0x80000000)) {
+#ifdef OXID_OWNED_ENUM_VECTOR_SCHEMAS
+        uint32_t ordinal = record & UINT32_C(0x7fffffff);
+        if (ordinal >= 4096u || ordinal >= __oxid_owned_enum_count ||
+            __oxid_owned_record_count > UINT32_MAX - ordinal) return NULL;
+        schema = &__oxid_owned_enums[ordinal];
+        if (schema->root_type != __oxid_owned_record_count + ordinal) return NULL;
+        kind = OXID_OWNED_ENUM;
+#else
+        return NULL;
+#endif
+    } else {
+        if (record >= 4096u || record >= __oxid_owned_record_count) return NULL;
+        schema = &__oxid_owned_records[record];
+        kind = OXID_OWNED_RECORD;
+    }
     const oxid_owned_type *root = owned_record_type(schema->root_type);
     if (schema->record != record || !schema->stride || schema->stride > UINT32_MAX ||
         !schema->visits || schema->maximum_resource_leaves > schema->stride / 16u ||
-        !root || root->kind != OXID_OWNED_RECORD || root->bytes != schema->stride)
+        !root || root->kind != kind || root->bytes != schema->stride)
         return NULL;
     return schema;
 #endif

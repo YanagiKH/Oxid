@@ -137,6 +137,8 @@ enum Element {
     ConcreteRecord(RecordId),
     OwnedRecordApplication(usize),
     OwnedConcreteRecord(RecordId),
+    OwnedEnumApplication(usize),
+    OwnedBuiltinEnum(EnumId),
 }
 impl Element {
     fn check(value: Value, at: Span) -> Result<Self, Box<Diagnostic>> {
@@ -167,6 +169,8 @@ impl Element {
             Self::OwnedConcreteRecord(id) => {
                 Value::Concrete(ValueTy::Owned(AggregateTy::Record(id)))
             }
+            Self::OwnedEnumApplication(id) => Value::Enumeration(id),
+            Self::OwnedBuiltinEnum(id) => Value::Concrete(ValueTy::Owned(AggregateTy::Enum(id))),
         }
     }
     fn checked(value: Value, nominals: &Nominals, at: Span) -> Result<Self, Box<Diagnostic>> {
@@ -226,7 +230,10 @@ impl Element {
     fn owned(self) -> bool {
         matches!(
             self,
-            Self::OwnedRecordApplication(_) | Self::OwnedConcreteRecord(_)
+            Self::OwnedRecordApplication(_)
+                | Self::OwnedConcreteRecord(_)
+                | Self::OwnedEnumApplication(_)
+                | Self::OwnedBuiltinEnum(_)
         )
     }
 }
@@ -739,6 +746,7 @@ impl Plan {
             plan.instances[next].matches = checked.matches;
             next += 1;
         }
+        index.freeze_owned_builtin_enum_keys(&nominals, &mut storage, work)?;
         plan.freeze_calls(index, &mut storage, work)?;
         nominals.finish(&mut storage, allocator, work, index.sources().eof())?;
         plan.nominals = nominals;

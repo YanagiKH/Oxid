@@ -2,7 +2,7 @@
 //! Every nominal is evaluated once; shared enum alternatives do not expand a
 //! declaration DAG into an exponential tree. Heap operations allocate nothing.
 use super::{AggregateTy, Declarations, Element, RecordId, ValueTy, MAX_CONTAINMENT_DEPTH};
-use crate::frontend::oir::owned_types::EnumId;
+use crate::frontend::oir::owned_types::{EnumId, OwnedVectorRoot, OwnedVectorRootSlot};
 use crate::frontend::project::budget::{Allocator, ReserveFailure};
 use std::mem::size_of;
 
@@ -17,6 +17,7 @@ pub(in crate::frontend::oir::owned) enum ShapeFailure {
     MetadataLimit,
     Allocation,
     Type,
+    UnsupportedElement,
 }
 type Result<T> = std::result::Result<T, ShapeFailure>;
 
@@ -67,8 +68,36 @@ struct FactoryControls {
     reserve_result: std::result::Result<(), ReserveFailure>,
 }
 
+/// Complete borrowed lookup transports shared by the authenticated root
+/// selector. Callers prepay this bank; no lookup allocates a new table.
+#[repr(C)]
+struct ElementQueryCarriers {
+    declarations: &'static Declarations,
+    bounds: &'static [Bounds],
+    argument: OwnedVectorRoot,
+    caller_root: OwnedVectorRoot,
+    aggregate: AggregateTy,
+    checked_slot: Option<OwnedVectorRootSlot>,
+    slot: OwnedVectorRootSlot,
+    ordinal: usize,
+    ordinal_result: Result<usize>,
+    validation: std::result::Result<(), super::super::DeclarationError>,
+    layout: super::super::Layout,
+    layout_return: std::result::Result<super::super::Layout, super::super::DeclarationError>,
+    selected: &'static Bounds,
+    selected_return: Option<&'static Bounds>,
+    bytes: usize,
+    copy_exclusion: bool,
+    constructed: Element<'static>,
+    returned: Result<Element<'static>>,
+    caller_return: Result<Element<'static>>,
+}
+pub(in crate::frontend::oir::owned) const fn element_control_bytes() -> usize {
+    size_of::<ElementQueryCarriers>()
+}
+
 pub(in crate::frontend::oir::owned) const fn control_bytes() -> usize {
-    size_of::<FactoryControls>()
+    size_of::<FactoryControls>() + element_control_bytes()
 }
 
 fn add(a: usize, b: usize) -> Result<usize> {
@@ -245,6 +274,13 @@ impl<'a> CheckedElements<'a> {
         element(self.declarations, &self.bounds, record)
     }
 
+    pub(in crate::frontend::oir::owned) fn element_root(
+        &self,
+        root: OwnedVectorRoot,
+    ) -> Result<Element<'a>> {
+        element_root(self.declarations, &self.bounds, root)
+    }
+
     pub(in crate::frontend::oir::owned) fn view(&self) -> CheckedElementView<'_> {
         CheckedElementView {
             declarations: self.declarations,
@@ -288,7 +324,9 @@ impl<'a> CheckedElements<'a> {
         Ok(Some(match value {
             // Zero visits is an ineligible element subtree, not a malformed
             // ordinary declaration. Parents propagate it through DAG edges.
-            ValueTy::Owned(AggregateTy::OwnedRecordVector(_)) => Bounds::default(),
+            ValueTy::Owned(AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)) => {
+                Bounds::default()
+            }
             ValueTy::Scalar(_) => Bounds {
                 visits: 1,
                 resources: 0,
@@ -342,6 +380,13 @@ impl<'a> CheckedElementView<'a> {
     pub(in crate::frontend::oir::owned) fn element(self, record: RecordId) -> Result<Element<'a>> {
         element(self.declarations, self.bounds, record)
     }
+
+    pub(in crate::frontend::oir::owned) fn element_root(
+        self,
+        root: OwnedVectorRoot,
+    ) -> Result<Element<'a>> {
+        element_root(self.declarations, self.bounds, root)
+    }
 }
 
 fn element<'a>(
@@ -349,24 +394,40 @@ fn element<'a>(
     bounds: &[Bounds],
     record: RecordId,
 ) -> Result<Element<'a>> {
-    let aggregate = AggregateTy::Record(record);
+    element_root(declarations, bounds, OwnedVectorRoot::Record(record))
+}
+
+fn element_root<'a>(
+    declarations: &'a Declarations,
+    bounds: &[Bounds],
+    root: OwnedVectorRoot,
+) -> Result<Element<'a>> {
+    let aggregate = root.aggregate();
+    let slot = OwnedVectorRootSlot::check(root).ok_or(ShapeFailure::Type)?;
+    let ordinal = match root {
+        OwnedVectorRoot::Record(id) => id.0,
+        OwnedVectorRoot::Enum(id) => add(declarations.records().len(), id.0)?,
+    };
     declarations
         .check_aggregate_type(aggregate)
         .map_err(|_| ShapeFailure::Type)?;
-    if declarations.is_copy(aggregate) || u32::try_from(record.0).is_err() {
+    if declarations.is_copy(aggregate) {
         return Err(ShapeFailure::Type);
     }
     let bytes = declarations
         .aggregate_layout(aggregate)
         .map_err(|_| ShapeFailure::Type)?
         .size();
-    let bound = bounds.get(record.0).ok_or(ShapeFailure::Type)?;
-    if bytes == 0 || bound.visits == 0 || bound.resources > bytes / 16 {
+    let bound = bounds.get(ordinal).ok_or(ShapeFailure::Type)?;
+    if bytes == 0 || bound.resources > bytes / 16 {
         return Err(ShapeFailure::Type);
+    }
+    if bound.visits == 0 {
+        return Err(ShapeFailure::UnsupportedElement);
     }
     Ok(Element {
         declarations,
-        record,
+        root: slot,
         bytes,
         visits: bound.visits,
         resources: bound.resources,
@@ -389,3 +450,7 @@ impl Frame {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "owned_enum_vector_bounds_tests.rs"]
+mod enum_tests;

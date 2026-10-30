@@ -2,14 +2,23 @@
 //! Final data owns no construction mutex, guard, executable witness or raw program.
 use super::*;
 use crate::frontend::builtin_catalog::owned_vector as owned;
+use crate::frontend::oir::owned_types::OwnedVectorRoot;
 use std::sync::{LockResult, Mutex, MutexGuard, TryLockResult};
 
+#[path = "owned_builtin_enum_keys.rs"]
+mod builtin_keys;
+use builtin_keys::{BuiltinFixup, BuiltinFixups};
+
 #[derive(Debug, PartialEq, Eq)]
+#[repr(C)]
 struct OwnedCall {
     caller: DefId,
     expression: ExprId,
     template: DefId,
     key: owned::Function,
+    // Zero is a stable user nominal;1..=8 name a checked builtin catalog rank.
+    // This construction/source-replay fact is never an emitted enum ordinal.
+    builtin: u8,
 }
 
 #[derive(Debug)]
@@ -26,6 +35,9 @@ pub(in crate::frontend::declaration_index) struct BuildState {
     source_needed: bool,
     scopes: IndexLimits,
     reserved: usize,
+    builtin_fixups: BuiltinFixups,
+    builtin_fixups_len: u8,
+    builtin_keys_frozen: bool,
 }
 
 #[derive(Debug)]
@@ -110,6 +122,9 @@ struct SourceFactRoles {
     at: Span,
     owner: Option<&'static OwnedGenericPlan>,
     returned: bool,
+    builtin: Result<BuiltinItem, Box<Diagnostic>>,
+    enum_id: EnumId,
+    template_enum_count: usize,
 }
 
 #[allow(dead_code)]
@@ -132,7 +147,7 @@ struct FrameBank {
     selected_call: Option<&'static OwnedCall>,
     caller: DefId,
     expression: ExprId,
-    record: RecordId,
+    root: OwnedVectorRoot,
     rank: usize,
     capacity: usize,
     checked: [Option<usize>; 6],
@@ -140,12 +155,20 @@ struct FrameBank {
     element: Element,
     origin: Span,
     returned_unit: Result<(), Box<Diagnostic>>,
+    builtin: u8,
+    fixups: [BuiltinFixup; 2],
+    fixup_return: Result<u8, Box<Diagnostic>>,
+    fixup_ordinal: Result<u32, std::num::TryFromIntError>,
+    fixup_rank: usize,
+    builtin_item: Result<BuiltinItem, Box<Diagnostic>>,
+    builtin_ordinal: usize,
+    builtin_tag: Result<u8, std::num::TryFromIntError>,
 }
 
 pub(in crate::frontend::declaration_index) const fn factory_bytes() -> usize {
     size_of::<FactoryBank>()
 }
-const FRAME_BYTES: usize = size_of::<FrameBank>();
+const FRAME_BYTES: usize = size_of::<FrameBank>() + builtin_keys::control_bytes();
 
 #[allow(dead_code)]
 struct ReplayBank {
@@ -203,6 +226,9 @@ impl BuildState {
             source_needed: false,
             scopes,
             reserved: 0,
+            builtin_fixups: [BuiltinFixup::EMPTY; builtin_keys::FIXUP_SLOTS],
+            builtin_fixups_len: 0,
+            builtin_keys_frozen: false,
         })
     }
     pub(in crate::frontend::declaration_index) fn set_collection_request(
@@ -279,6 +305,9 @@ impl OwnedGenericPlan {
         ranges: bool,
     ) -> Result<Self, Box<Diagnostic>> {
         if state.live != 0 {
+            return Err(bad(state.origin));
+        }
+        if state.builtin_fixups_len != 0 && !state.builtin_keys_frozen {
             return Err(bad(state.origin));
         }
         state.admit(0)?;
@@ -523,6 +552,24 @@ impl DeclarationIndex<'_> {
                     self.note_owned_vector_source(at)?;
                     return Ok(Element::OwnedConcreteRecord(id));
                 }
+                Value::Enumeration(id) => {
+                    let enumeration = nominals.enumerations.get(id).ok_or_else(|| bad(at))?;
+                    if !enumeration.complete || !nominals.concrete(value) {
+                        return Err(error(
+                            "owned vector element requires a concrete finite enum",
+                            at,
+                        ));
+                    }
+                    self.note_owned_vector_source(at)?;
+                    return Ok(Element::OwnedEnumApplication(id));
+                }
+                Value::Concrete(ValueTy::Owned(AggregateTy::Enum(id)))
+                    if id.0 >= nominals.template_enum_count =>
+                {
+                    self.template_builtin_enum_item(id)?;
+                    self.note_owned_vector_source(at)?;
+                    return Ok(Element::OwnedBuiltinEnum(id));
+                }
                 _ => (),
             }
         }
@@ -659,20 +706,60 @@ impl DeclarationIndex<'_> {
         work: &WorkMeter,
         at: Span,
     ) -> Result<(), Box<Diagnostic>> {
+        self.register_owned_call_for_builtin(
+            caller, expression, template, key, 0, storage, allocator, work, at,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn register_owned_call_for_builtin(
+        &self,
+        caller: DefId,
+        expression: ExprId,
+        template: DefId,
+        key: owned::Function,
+        builtin: u8,
+        storage: &mut Storage,
+        allocator: &mut Allocator,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<(), Box<Diagnostic>> {
         let cell = self.owned_vector_builder().ok_or_else(|| bad(at))?;
         let mut state = cell.try_lock().map_err(|_| bad(at))?;
+        if state.builtin_keys_frozen {
+            return Err(bad(at));
+        }
+        if builtin != 0 && !BuiltinFixup::valid_pending(key, builtin) {
+            return Err(bad(at));
+        }
         let mut found = false;
-        for candidate in &state.keys {
+        for (rank, candidate) in state.keys.iter().enumerate() {
             work.debit(1, at, "owned vector key lookup")?;
-            found |= *candidate == key;
+            if *candidate == key {
+                found |= state.builtin_at(rank, work, at)? == builtin;
+            }
         }
         // Temporarily move only the vector header, ending the field borrow
         // before the same complete state pays actual capacity growth.
         if !found {
+            // Complete fixed-table/rank admission precedes the fallible key
+            // reservation. Writing this prepaid slot afterwards cannot fail.
+            let fixup = if builtin != 0 {
+                if usize::from(state.builtin_fixups_len) >= builtin_keys::FIXUP_SLOTS {
+                    return Err(exhausted(at));
+                }
+                Some(BuiltinFixup::check(state.keys.len(), key, builtin).ok_or_else(|| bad(at))?)
+            } else {
+                None
+            };
             let mut keys = std::mem::take(&mut state.keys);
             let result = state.push(&mut keys, key, storage, allocator, work, at);
             state.keys = keys;
             result?;
+            if let Some(fixup) = fixup {
+                let rank = usize::from(state.builtin_fixups_len);
+                state.builtin_fixups[rank] = fixup;
+                state.builtin_fixups_len += 1;
+            }
         }
         let mut calls = std::mem::take(&mut state.calls);
         let result = state.push(
@@ -682,6 +769,7 @@ impl DeclarationIndex<'_> {
                 expression,
                 template,
                 key,
+                builtin,
             },
             storage,
             allocator,
@@ -896,7 +984,7 @@ impl<'a, 's> Walker<'a, 's> {
     ) -> Result<Type, Box<Diagnostic>> {
         if !element.owned() || arguments.len() != operation.signature().parameters().len() {
             return Err(error(
-                "operation requires a finite non-Copy record vector",
+                "operation requires a finite owned record or enum vector",
                 at,
             ));
         }
@@ -938,7 +1026,8 @@ impl<'a, 's> Walker<'a, 's> {
             self.expect(actual, parameters[position], at)?;
         }
         if self.plan.is_some() {
-            let record = match element {
+            let mut builtin = 0u8;
+            let root = match element {
                 Element::OwnedRecordApplication(id) => {
                     let selected = self.nominals.records.get(id).ok_or_else(|| bad(at))?;
                     if !selected.complete
@@ -955,17 +1044,53 @@ impl<'a, 's> Walker<'a, 's> {
                     if rank >= 4096 {
                         return Err(exhausted(at));
                     }
-                    RecordId(rank)
+                    OwnedVectorRoot::Record(RecordId(rank))
                 }
-                Element::OwnedConcreteRecord(record) => record,
+                Element::OwnedConcreteRecord(record) => OwnedVectorRoot::Record(record),
+                Element::OwnedEnumApplication(id) => {
+                    let selected = self.nominals.enumerations.get(id).ok_or_else(|| bad(at))?;
+                    if !selected.complete || !self.nominals.concrete(Value::Enumeration(id)) {
+                        return Err(bad(at));
+                    }
+                    let mut rank = 0usize;
+                    for previous in 0..id {
+                        self.work.debit(1, at, "owned vector enum nominal rank")?;
+                        rank += usize::from(self.nominals.concrete(Value::Enumeration(previous)));
+                    }
+                    if rank >= 4096 {
+                        return Err(exhausted(at));
+                    }
+                    OwnedVectorRoot::Enum(EnumId(rank))
+                }
+                Element::OwnedBuiltinEnum(id) => {
+                    self.index.template_builtin_enum_item(id)?;
+                    let ordinal =
+                        id.0.checked_sub(self.nominals.template_enum_count)
+                            .ok_or_else(|| bad(at))?;
+                    builtin = u8::try_from(ordinal.checked_add(1).ok_or_else(|| exhausted(at))?)
+                        .map_err(|_| exhausted(at))?;
+                    if usize::from(builtin) > builtin_keys::BUILTIN_ENUMS {
+                        return Err(bad(at));
+                    }
+                    // Confined builder key, never a source aggregate/layout.
+                    // Element retains the distinct template-domain identity.
+                    OwnedVectorRoot::Enum(EnumId(ordinal))
+                }
                 _ => return Err(bad(at)),
             };
-            let key = owned::Function::record(operation, record).ok_or_else(|| exhausted(at))?;
-            self.index.register_owned_call(
+            let key = match root {
+                OwnedVectorRoot::Record(record) => owned::Function::record(operation, record),
+                OwnedVectorRoot::Enum(enumeration) => {
+                    owned::Function::enumeration(operation, enumeration)
+                }
+            }
+            .ok_or_else(|| exhausted(at))?;
+            self.index.register_owned_call_for_builtin(
                 self.instance.ok_or_else(|| bad(at))?,
                 expression,
                 template,
                 key,
+                builtin,
                 self.storage,
                 self.allocator,
                 self.work,

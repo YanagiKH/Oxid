@@ -33,6 +33,85 @@ pub(super) use enums::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) struct RecordId(pub(in crate::frontend) usize);
 
+/// Inert nominal choice for the finite owned-vector family. A root is never a
+/// cast between the independently numbered record and enum declaration tables.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::frontend) enum OwnedVectorRoot {
+    Record(RecordId),
+    Enum(EnumId),
+}
+
+impl OwnedVectorRoot {
+    pub(in crate::frontend) const fn from_vector(aggregate: AggregateTy) -> Option<Self> {
+        match aggregate {
+            AggregateTy::OwnedRecordVector(id) => Some(Self::Record(id)),
+            AggregateTy::OwnedEnumVector(id) => Some(Self::Enum(id)),
+            _ => None,
+        }
+    }
+    pub(in crate::frontend) const fn aggregate(self) -> AggregateTy {
+        match self {
+            Self::Record(id) => AggregateTy::Record(id),
+            Self::Enum(id) => AggregateTy::Enum(id),
+        }
+    }
+    pub(in crate::frontend) const fn vector(self) -> AggregateTy {
+        match self {
+            Self::Record(id) => AggregateTy::OwnedRecordVector(id),
+            Self::Enum(id) => AggregateTy::OwnedEnumVector(id),
+        }
+    }
+    pub(in crate::frontend) const fn record(self) -> Option<RecordId> {
+        match self {
+            Self::Record(id) => Some(id),
+            Self::Enum(_) => None,
+        }
+    }
+    pub(in crate::frontend) const fn enumeration(self) -> Option<EnumId> {
+        match self {
+            Self::Enum(id) => Some(id),
+            Self::Record(_) => None,
+        }
+    }
+}
+
+/// Closed storage key, not declaration or ownership authority. Legacy record
+/// roots retain their exact u32 value; enum roots have an independent high-bit
+/// domain. Remaining bits and both nominal ranges are checked before narrowing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub(in crate::frontend) struct OwnedVectorRootSlot(u32);
+impl OwnedVectorRootSlot {
+    pub(in crate::frontend) const ENUM: u32 = 0x8000_0000;
+    pub(in crate::frontend) const MAX_ROOTS: usize = 4096;
+    pub(in crate::frontend) const fn check(root: OwnedVectorRoot) -> Option<Self> {
+        let (tag, ordinal) = match root {
+            OwnedVectorRoot::Record(id) => (0, id.0),
+            OwnedVectorRoot::Enum(id) => (Self::ENUM, id.0),
+        };
+        if ordinal >= Self::MAX_ROOTS {
+            return None;
+        }
+        Some(Self(tag | ordinal as u32))
+    }
+    pub(in crate::frontend) const fn from_raw(value: u32) -> Option<Self> {
+        if value & !(Self::ENUM | 4095) != 0 {
+            return None;
+        }
+        Some(Self(value))
+    }
+    pub(in crate::frontend) const fn raw(self) -> u32 {
+        self.0
+    }
+    pub(in crate::frontend) const fn root(self) -> OwnedVectorRoot {
+        if self.0 & Self::ENUM != 0 {
+            OwnedVectorRoot::Enum(EnumId((self.0 & 4095) as usize))
+        } else {
+            OwnedVectorRoot::Record(RecordId(self.0 as usize))
+        }
+    }
+}
+
 /// Structural fixed-array type. The constructor checks before narrowing;
 /// neither a caller-supplied stride/layout nor a nominal ID can create one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,6 +191,7 @@ pub(in crate::frontend) enum AggregateTy {
     Vector(hir::Ty),
     RecordVector(RecordId),
     OwnedRecordVector(RecordId),
+    OwnedEnumVector(EnumId),
 }
 
 fn check_vector_element(element: hir::Ty) -> Result<(), DeclarationError> {
@@ -160,7 +240,8 @@ impl BorrowedTy {
                 | AggregateTy::Enum(_)
                 | AggregateTy::File
                 | AggregateTy::RecordVector(_)
-                | AggregateTy::OwnedRecordVector(_),
+                | AggregateTy::OwnedRecordVector(_)
+                | AggregateTy::OwnedEnumVector(_),
             )
             | Self::RecordSlice(_) => None,
         }
@@ -181,6 +262,7 @@ enum BorrowedSlotRepr {
     RecordVector(u32),
     RecordSlice(u32),
     OwnedRecordVector(u32),
+    OwnedEnumVector(u32),
 }
 impl BorrowedSlot {
     pub(in crate::frontend) fn check(ty: BorrowedTy) -> Result<Self, DeclarationError> {
@@ -194,6 +276,11 @@ impl BorrowedSlot {
             BorrowedTy::Exact(AggregateTy::OwnedRecordVector(id)) => {
                 BorrowedSlotRepr::OwnedRecordVector(
                     u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+                )
+            }
+            BorrowedTy::Exact(AggregateTy::OwnedEnumVector(id)) => {
+                BorrowedSlotRepr::OwnedEnumVector(
+                    u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?,
                 )
             }
             BorrowedTy::RecordSlice(id) => BorrowedSlotRepr::RecordSlice(
@@ -242,6 +329,9 @@ impl BorrowedSlot {
             BorrowedSlotRepr::OwnedRecordVector(id) => {
                 BorrowedTy::Exact(AggregateTy::OwnedRecordVector(RecordId(id as usize)))
             }
+            BorrowedSlotRepr::OwnedEnumVector(id) => {
+                BorrowedTy::Exact(AggregateTy::OwnedEnumVector(EnumId(id as usize)))
+            }
             BorrowedSlotRepr::RecordSlice(id) => BorrowedTy::RecordSlice(RecordId(id as usize)),
             BorrowedSlotRepr::Record(id) => BorrowedTy::Exact(AggregateTy::Record(RecordId(
                 usize::try_from(id).expect("qualified ordinal width"),
@@ -269,6 +359,7 @@ enum AggregateSlotRepr {
     Vector(hir::Ty),
     RecordVector(u32),
     OwnedRecordVector(u32),
+    OwnedEnumVector(u32),
 }
 impl AggregateSlot {
     pub(in crate::frontend) fn try_from_aggregate(
@@ -282,6 +373,9 @@ impl AggregateSlot {
             ),
             AggregateTy::OwnedRecordVector(id) => AggregateSlotRepr::OwnedRecordVector(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
+            AggregateTy::OwnedEnumVector(id) => AggregateSlotRepr::OwnedEnumVector(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?,
             ),
             AggregateTy::Vector(element) => {
                 check_vector_element(element)?;
@@ -307,6 +401,9 @@ impl AggregateSlot {
             AggregateSlotRepr::RecordVector(id) => AggregateTy::RecordVector(RecordId(id as usize)),
             AggregateSlotRepr::OwnedRecordVector(id) => {
                 AggregateTy::OwnedRecordVector(RecordId(id as usize))
+            }
+            AggregateSlotRepr::OwnedEnumVector(id) => {
+                AggregateTy::OwnedEnumVector(EnumId(id as usize))
             }
             // All qualified hosts are 64-bit; no truncation on supported targets.
             AggregateSlotRepr::Record(id) => AggregateTy::Record(RecordId(
@@ -796,6 +893,12 @@ impl Declarations {
                     {
                         check_owned_vector_record(raw, id)?;
                     }
+                    if let Some(ParameterTy::Value(ValueTy::Owned(AggregateTy::OwnedEnumVector(
+                        id,
+                    )))) = variant.payload
+                    {
+                        check_owned_vector_enum(raw_enums, id)?;
+                    }
                     if let Some(ParameterTy::Value(ValueTy::Owned(AggregateTy::RecordVector(id)))) =
                         variant.payload
                     {
@@ -850,6 +953,9 @@ impl Declarations {
                 if let ValueTy::Owned(AggregateTy::OwnedRecordVector(element)) = ty {
                     check_owned_vector_record(raw, element)?;
                 }
+                if let ValueTy::Owned(AggregateTy::OwnedEnumVector(element)) = ty {
+                    check_owned_vector_enum(raw_enums, element)?;
+                }
                 enum_record_fields |= matches!(ty, ValueTy::Owned(AggregateTy::Enum(_)));
                 resource_declarations |= matches!(
                     ty,
@@ -859,6 +965,7 @@ impl Declarations {
                             | AggregateTy::Vector(_)
                             | AggregateTy::RecordVector(_)
                             | AggregateTy::OwnedRecordVector(_)
+                            | AggregateTy::OwnedEnumVector(_)
                     )
                 );
                 if let ValueTy::Owned(AggregateTy::Record(id)) = ty {
@@ -921,6 +1028,7 @@ impl Declarations {
                                 | AggregateTy::Vector(_)
                                 | AggregateTy::RecordVector(_)
                                 | AggregateTy::OwnedRecordVector(_)
+                                | AggregateTy::OwnedEnumVector(_)
                         )))
                     )
                 })
@@ -1035,6 +1143,7 @@ impl Declarations {
                         | AggregateTy::Vector(_)
                         | AggregateTy::RecordVector(_)
                         | AggregateTy::OwnedRecordVector(_)
+                        | AggregateTy::OwnedEnumVector(_)
                 ))
             )
         }) || raw_enums
@@ -1049,6 +1158,7 @@ impl Declarations {
                             | AggregateTy::Vector(_)
                             | AggregateTy::RecordVector(_)
                             | AggregateTy::OwnedRecordVector(_)
+                            | AggregateTy::OwnedEnumVector(_)
                     )))
                 )
             });
@@ -1157,6 +1267,7 @@ impl Declarations {
                 aggregate,
                 AggregateTy::Enum(_)
                     | AggregateTy::OwnedRecordVector(_)
+                    | AggregateTy::OwnedEnumVector(_)
                     | AggregateTy::ByteBuf
                     | AggregateTy::File
                     | AggregateTy::Vector(_)
@@ -1218,7 +1329,9 @@ impl Declarations {
         match ty {
             // Inert identity/layout facts grant no executable declaration
             // authority before the new sidecar and both consumers are ready.
-            AggregateTy::OwnedRecordVector(_) => Err(DeclarationError::TypeMismatch),
+            AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => {
+                Err(DeclarationError::TypeMismatch)
+            }
             AggregateTy::ByteBuf | AggregateTy::File => Ok(()),
             AggregateTy::Vector(element) => check_vector_element(element),
             AggregateTy::RecordVector(id) => {
@@ -1249,7 +1362,9 @@ impl Declarations {
     }
     pub(super) fn aggregate_layout(&self, ty: AggregateTy) -> Result<Layout, DeclarationError> {
         match ty {
-            AggregateTy::OwnedRecordVector(_) => Err(DeclarationError::TypeMismatch),
+            AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => {
+                Err(DeclarationError::TypeMismatch)
+            }
             AggregateTy::ByteBuf | AggregateTy::File => Ok(Layout { size: 16, align: 8 }),
             AggregateTy::Vector(element) => {
                 check_vector_element(element)?;
@@ -1270,7 +1385,9 @@ impl Declarations {
     }
     pub(super) fn aggregate_width(&self, ty: AggregateTy) -> Result<usize, DeclarationError> {
         match ty {
-            AggregateTy::OwnedRecordVector(_) => Err(DeclarationError::TypeMismatch),
+            AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => {
+                Err(DeclarationError::TypeMismatch)
+            }
             AggregateTy::ByteBuf => Ok(3),
             AggregateTy::Vector(element) => {
                 check_vector_element(element)?;
@@ -1434,7 +1551,8 @@ impl Iterator for ScalarLeaves<'_> {
                     | AggregateTy::File
                     | AggregateTy::Vector(_)
                     | AggregateTy::RecordVector(_)
-                    | AggregateTy::OwnedRecordVector(_),
+                    | AggregateTy::OwnedRecordVector(_)
+                    | AggregateTy::OwnedEnumVector(_),
                 ) => {
                     // Resources have their own checked traversal. A descriptor
                     // is never reinterpreted as scalar storage or a pointer leaf.
@@ -1502,6 +1620,13 @@ fn check_owned_vector_record(raw: &[RawRecordDecl], id: RecordId) -> Result<(), 
     }
 }
 
+fn check_owned_vector_enum(raw: &[RawEnumDecl], id: EnumId) -> Result<(), DeclarationError> {
+    raw.get(id.0)
+        .filter(|enumeration| enumeration.id == id)
+        .map(|_| ())
+        .ok_or(DeclarationError::InvalidEnumId(id))
+}
+
 fn value_field(field: &RawFieldDecl) -> Result<ValueTy, DeclarationError> {
     value_field_domain::<false>(field)
 }
@@ -1510,7 +1635,11 @@ fn value_field_domain<const OWNED: bool>(
     field: &RawFieldDecl,
 ) -> Result<ValueTy, DeclarationError> {
     match field.ty {
-        ParameterTy::Value(value @ ValueTy::Owned(AggregateTy::OwnedRecordVector(_))) => {
+        ParameterTy::Value(
+            value @ ValueTy::Owned(
+                AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_),
+            ),
+        ) => {
             if OWNED {
                 Ok(value)
             } else {
@@ -1580,7 +1709,7 @@ fn value_summary_domain<const OWNED: bool>(
     summaries: &[ContainmentSummary],
 ) -> Result<ContainmentSummary, DeclarationError> {
     Ok(match ty {
-        ValueTy::Owned(AggregateTy::OwnedRecordVector(_)) => {
+        ValueTy::Owned(AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)) => {
             if !OWNED {
                 return Err(DeclarationError::TypeMismatch);
             }
@@ -1782,6 +1911,16 @@ where
     R: ExactSizeIterator<Item = F> + Clone,
     F: ExactSizeIterator<Item = ValueTy>,
 {
+    admit_value_layouts_domain::<false, R, F>(records)
+}
+
+pub(super) fn admit_value_layouts_domain<const OWNED: bool, R, F>(
+    records: R,
+) -> Result<usize, DeclarationError>
+where
+    R: ExactSizeIterator<Item = F> + Clone,
+    F: ExactSizeIterator<Item = ValueTy>,
+{
     let limits = Limits::DEFAULT;
     let inventory = preflight_counts(records.clone().map(|fields| fields.len()), limits)?;
     let count = inventory.records;
@@ -1833,12 +1972,21 @@ where
     if visited != count {
         return Err(DeclarationError::ResourceLimit("record declarations"));
     }
-    let summaries = containment_graph(
-        count,
-        |id| starts[id + 1] - starts[id],
-        |id, field| Ok(values[starts[id] + field]),
-        limits,
-    )?;
+    let summaries = if OWNED {
+        containment_graph_domain::<true>(
+            count,
+            |id| starts[id + 1] - starts[id],
+            |id, field| Ok(values[starts[id] + field]),
+            limits,
+        )?
+    } else {
+        containment_graph(
+            count,
+            |id| starts[id + 1] - starts[id],
+            |id, field| Ok(values[starts[id] + field]),
+            limits,
+        )?
+    };
     let mut total = 0;
     for summary in summaries {
         total = limited_add(
@@ -1858,6 +2006,14 @@ pub(super) fn admit_joint_value_layouts(
     enums: &[RawEnumDecl],
     allocator: &mut Allocator,
 ) -> Result<(DeclarationUsage, usize), DeclarationError> {
+    admit_joint_value_layouts_domain::<false>(records, enums, allocator)
+}
+
+pub(super) fn admit_joint_value_layouts_domain<const OWNED: bool>(
+    records: &[RawRecordDecl],
+    enums: &[RawEnumDecl],
+    allocator: &mut Allocator,
+) -> Result<(DeclarationUsage, usize), DeclarationError> {
     let mut usage = preflight(records, Limits::DEFAULT)?;
     let enum_usage = admit_enum_counts(
         enums.iter().map(|enumeration| enumeration.variants.len()),
@@ -1870,7 +2026,17 @@ pub(super) fn admit_joint_value_layouts(
         Limits::DEFAULT.table_bytes,
         "declaration table bytes",
     )?;
-    let layouts = composition::layouts(records, enums, table_bytes, Limits::DEFAULT, allocator)?;
+    let layouts = if OWNED {
+        composition::layouts_domain::<true>(
+            records,
+            enums,
+            table_bytes,
+            Limits::DEFAULT,
+            allocator,
+        )?
+    } else {
+        composition::layouts(records, enums, table_bytes, Limits::DEFAULT, allocator)?
+    };
     usage.layout_bytes = 0;
     for summary in layouts.records() {
         usage.layout_bytes = limited_add(
@@ -2913,3 +3079,6 @@ mod byte_storage_tests;
 
 #[cfg(test)]
 mod copy_tests;
+
+#[cfg(test)]
+mod owned_enum_vector_tests;

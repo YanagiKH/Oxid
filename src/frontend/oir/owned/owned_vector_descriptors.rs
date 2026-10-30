@@ -9,7 +9,7 @@ use crate::frontend::{
     },
     oir::owned_types::{
         checked_declaration_byte_limit, checked_declaration_temporary_request,
-        owned_vector::OwnedRecordVectorType, retained_declaration_control_bytes,
+        owned_vector::OwnedVectorType, retained_declaration_control_bytes,
     },
     project::budget::{Allocator, ReserveFailure},
 };
@@ -134,6 +134,7 @@ fn mul(a: usize, b: usize) -> Result<usize, OwnedFailure> {
 /// The opaque old declaration helper gets its full original allowance before
 /// it runs. This bank is additional to the unchanged core raw accounting.
 struct FactoryControls {
+    root_count: usize,
     program_argument: RawOwnedProgram,
     input: &'static [Function],
     imports: OwnedVectorImportClaims,
@@ -266,8 +267,10 @@ struct CheckControls {
     failure_origin_capture: Span,
     selected_failure: OwnedFailure,
     failure_result: Result<(), OwnedFailure>,
-    nominal: OwnedRecordVectorType<'static>,
-    nominal_results: [Result<OwnedRecordVectorType<'static>, DeclarationError>; 2],
+    nominal: OwnedVectorType<'static>,
+    nominal_results: [Result<OwnedVectorType<'static>, DeclarationError>; 2],
+    selected_root: OwnedVectorRoot,
+    root_count: usize,
     declaration: &'static Declarations,
     query_work: usize,
     function_iteration: std::iter::Enumerate<std::slice::Iter<'static, RawOwnedFunction>>,
@@ -293,7 +296,7 @@ fn control_bytes() -> Result<usize, OwnedFailure> {
             add(size_of::<ImportControls>(), size_of::<DomainControls>())?,
         )?,
         add(
-            OwnedRecordVectorType::requested_query_bytes(),
+            OwnedVectorType::requested_query_bytes(),
             add(
                 retained_declaration_control_bytes(),
                 context::raw_type_usage_control_bytes(),
@@ -308,7 +311,8 @@ fn requested(
     capacity: usize,
     base: OwnershipUsage,
 ) -> Result<CandidateUsage, OwnedFailure> {
-    if raw.records.len() > 4096 || keys > mul(raw.records.len(), 8)? || capacity < keys {
+    let roots = add(raw.records.len(), raw.enums.len())?;
+    if roots > 4096 || keys > mul(roots, 8)? || capacity < keys {
         return Err(bad());
     }
     let domains = FunctionDomains::check(raw, keys)?;
@@ -492,13 +496,13 @@ impl RawOwnedVectorProgram {
             }
             let declarations = self.declarations.as_ref().ok_or_else(bad)?;
             let mut query_work = 3;
-            let nominal = OwnedRecordVectorType::check(
+            let nominal = OwnedVectorType::check(
                 declarations,
-                operation.record_id(),
-                OwnedRecordVectorType::requested_query_bytes(),
+                operation.element(),
+                OwnedVectorType::requested_query_bytes(),
                 &mut query_work,
             )?;
-            if nominal.aggregate() != AggregateTy::OwnedRecordVector(operation.record_id())
+            if nominal.aggregate() != operation.element().vector()
                 || !nominal.belongs_to(declarations)
             {
                 return Err(bad());

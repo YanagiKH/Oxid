@@ -438,6 +438,19 @@ execution policy for native builds. User-defined traits are not available yet.
 
 ## Generic structs and enums
 
+Owned vectors can store finite user-defined enums with scalar or owned payloads,
+including UTF-8 `Text`, byte buffers and files. Use `new`, `len`, `capacity`,
+`try_reserve`, `push_reserved`, `pop_last`, `truncate` and `take` from `alloc::vec`.
+`push_reserved` moves its enum argument into reserved space; `pop_last` moves
+the last value out. Reserve capacity before pushing, and check that the vector
+is nonempty before popping. Truncation releases resources in the removed values.
+Built-in status enums use the same operations. The vector itself always moves
+when passed by value.
+
+Enum vectors do not support indexing, element references, slices, nested owned
+vectors, recursive element layouts or custom destructors. `#[derive(Copy)]` on
+enums remains unsupported.
+
 Give reusable data types their own type parameters:
 
 ```oxid

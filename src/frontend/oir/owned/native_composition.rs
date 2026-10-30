@@ -71,7 +71,7 @@ fn helper(aggregate: AggregateTy, mode: Mode) -> String {
 }
 
 pub(super) fn needed<W: PlanWitness>(plan: &ExecutionPlan<'_, W>, aggregate: AggregateTy) -> bool {
-    if matches!(aggregate, AggregateTy::OwnedRecordVector(_)) {
+    if OwnedVectorRoot::from_vector(aggregate).is_some() {
         plan.witness()
             .aggregate_layout(aggregate)
             .expect("sealed owned vector layout");
@@ -264,17 +264,21 @@ fn resource(
     owned_vectors: bool,
 ) {
     let (family, carrier) = match aggregate {
-        AggregateTy::OwnedRecordVector(record) => {
+        aggregate @ (AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)) => {
             assert!(owned_vectors, "sealed owned vector helper domain");
+            let record =
+                OwnedVectorRootSlot::check(OwnedVectorRoot::from_vector(aggregate).unwrap())
+                    .expect("sealed owned vector root")
+                    .raw();
             let fresh = if out.policy.hosted() {
                 "  store i64 -1, ptr %fuel, align 8\n"
             } else {
                 ""
             };
             match mode {
-                Mode::Validate => writeln!(out, "  %{name}_heap = call ptr @__oxid_owned_vector_heap()\n  br i1 %maintenance, label %{name}_maintenance, label %{name}_paid\n{name}_maintenance:\n  %{name}_maintenance_status = call i32 @oxid_owned_vector_validate_maintenance(ptr %{name}_heap, ptr {source}, i32 {})\n  br label %{name}_checked\n{name}_paid:\n{fresh}  %{name}_paid_status = call i32 @oxid_owned_vector_validate(ptr %{name}_heap, ptr {source}, i32 {}, ptr %fuel)\n  br label %{name}_checked\n{name}_checked:\n  %{name}_status = phi i32 [%{name}_maintenance_status, %{name}_maintenance], [%{name}_paid_status, %{name}_paid]\n  %{name}_valid = icmp eq i32 %{name}_status, 0\n  br i1 %{name}_valid, label %{name}_ok, label %{name}_error\n{name}_error:\n  %{name}_fuel = icmp eq i32 %{name}_status, -2\n  %{name}_failure = select i1 %{name}_fuel, i32 4, i32 3\n  ret i32 %{name}_failure\n{name}_ok:", record.0, record.0).unwrap(),
+                Mode::Validate => writeln!(out, "  %{name}_heap = call ptr @__oxid_owned_vector_heap()\n  br i1 %maintenance, label %{name}_maintenance, label %{name}_paid\n{name}_maintenance:\n  %{name}_maintenance_status = call i32 @oxid_owned_vector_validate_maintenance(ptr %{name}_heap, ptr {source}, i32 {record})\n  br label %{name}_checked\n{name}_paid:\n{fresh}  %{name}_paid_status = call i32 @oxid_owned_vector_validate(ptr %{name}_heap, ptr {source}, i32 {record}, ptr %fuel)\n  br label %{name}_checked\n{name}_checked:\n  %{name}_status = phi i32 [%{name}_maintenance_status, %{name}_maintenance], [%{name}_paid_status, %{name}_paid]\n  %{name}_valid = icmp eq i32 %{name}_status, 0\n  br i1 %{name}_valid, label %{name}_ok, label %{name}_error\n{name}_error:\n  %{name}_fuel = icmp eq i32 %{name}_status, -2\n  %{name}_failure = select i1 %{name}_fuel, i32 4, i32 3\n  ret i32 %{name}_failure\n{name}_ok:").unwrap(),
                 Mode::Move => writeln!(out, "  %{name}_descriptor = load {{ i64, i32, i32 }}, ptr {source}, align 1\n  store {{ i64, i32, i32 }} %{name}_descriptor, ptr {destination}, align 1\n  store {{ i64, i32, i32 }} zeroinitializer, ptr {source}, align 1").unwrap(),
-                Mode::Drop => writeln!(out, "  %{name}_heap = call ptr @__oxid_owned_vector_heap()\n  %{name}_drop_status = call i32 @oxid_owned_vector_release(ptr %{name}_heap, ptr {source}, i32 {})", record.0).unwrap(),
+                Mode::Drop => writeln!(out, "  %{name}_heap = call ptr @__oxid_owned_vector_heap()\n  %{name}_drop_status = call i32 @oxid_owned_vector_release(ptr %{name}_heap, ptr {source}, i32 {record})").unwrap(),
             }
             return;
         }
@@ -332,7 +336,8 @@ fn value(
             | AggregateTy::File
             | AggregateTy::Vector(_)
             | AggregateTy::RecordVector(_)
-            | AggregateTy::OwnedRecordVector(_)),
+            | AggregateTy::OwnedRecordVector(_)
+            | AggregateTy::OwnedEnumVector(_)),
         ) => resource(
             out,
             name,

@@ -179,6 +179,12 @@ fn validate_version_output(
 
 /// Runtime catalog linkage follows an emitted global definition. Printable
 /// source names in debug metadata cannot select a different runtime ABI.
+fn owned_enum_vector_schemas_declared(module: &str) -> bool {
+    module
+        .lines()
+        .any(|line| line == "@__oxid_owned_enum_vectors = constant i1 true")
+}
+
 fn record_vector_schemas_declared(module: &str) -> bool {
     module
         .lines()
@@ -559,7 +565,11 @@ fn compile_inner(
                 OWNED_VECTOR_HEADER,
             )
             .map_err(io)?;
-            "#define OXID_OWNED_VECTOR_RUNTIME 1\n#define OXID_OWNED_VECTOR_SCHEMAS 1\n"
+            if owned_enum_vector_schemas_declared(module) {
+                "#define OXID_OWNED_VECTOR_RUNTIME 1\n#define OXID_OWNED_VECTOR_SCHEMAS 1\n#define OXID_OWNED_ENUM_VECTOR_SCHEMAS 1\n"
+            } else {
+                "#define OXID_OWNED_VECTOR_RUNTIME 1\n#define OXID_OWNED_VECTOR_SCHEMAS 1\n"
+            }
         } else {
             ""
         };
@@ -740,6 +750,25 @@ fn compile_inner(
     )
     .map_err(io)?;
     Ok(outcome)
+}
+
+#[cfg(test)]
+mod owned_enum_schema_selection_tests {
+    use super::owned_enum_vector_schemas_declared;
+    #[test]
+    fn enum_schema_selection_requires_the_exact_generated_full_line() {
+        assert!(owned_enum_vector_schemas_declared(
+            "@__oxid_owned_enum_vectors = constant i1 true\n"
+        ));
+        for text in [
+            "; @__oxid_owned_enum_vectors = constant i1 true",
+            " @__oxid_owned_enum_vectors = constant i1 true",
+            "@__oxid_owned_enum_vectors = constant i1 true, align 1",
+            "@__oxid_owned_enum_vectors = constant i1 false",
+            "!0 = !DIFile(filename: \"@__oxid_owned_enum_vectors = constant i1 true\", directory: \"\")",
+            "@s = private constant [64 x i8] c\"\\0A@__oxid_owned_enum_vectors = constant i1 true\\0A\"",
+        ] { assert!(!owned_enum_vector_schemas_declared(text), "{text}"); }
+    }
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ use super::*;
 pub(in crate::frontend::oir::owned) enum DirectResourceKind {
     Existing(ResourceKind),
     OwnedRecordVector(RecordId),
+    OwnedEnumVector(EnumId),
 }
 
 /// Facts retain the exact context borrow; a nominal spelling cannot substitute
@@ -33,9 +34,11 @@ struct QueryControls {
     bounds: &'static CheckedElements<'static>,
     bounds_option: Option<&'static CheckedElements<'static>>,
     bounds_reference_result: Result<&'static CheckedElements<'static>, OwnedFailure>,
-    nominal: OwnedRecordVectorType<'static>,
-    nominal_result: Result<OwnedRecordVectorType<'static>, DeclarationError>,
-    mapped_nominal_result: Result<OwnedRecordVectorType<'static>, OwnedFailure>,
+    nominal: OwnedVectorType<'static>,
+    nominal_result: Result<OwnedVectorType<'static>, DeclarationError>,
+    mapped_nominal_result: Result<OwnedVectorType<'static>, OwnedFailure>,
+    root: OwnedVectorRoot,
+    root_selection: Option<OwnedVectorRoot>,
     nominal_work: usize,
     element: Element<'static>,
     element_result: Result<Element<'static>, ShapeFailure>,
@@ -75,8 +78,11 @@ impl<'program> OwnedVectorContext<'program> {
         // identity/resource/construction visits cover either concrete path.
         Ok((
             add(
-                size_of::<QueryControls>(),
-                OwnedRecordVectorType::requested_query_bytes(),
+                add(
+                    size_of::<QueryControls>(),
+                    super::super::super::owned_record_codec::bounds::element_control_bytes(),
+                )?,
+                OwnedVectorType::requested_query_bytes(),
             )?,
             12,
         ))
@@ -120,22 +126,25 @@ impl<'program> OwnedVectorContext<'program> {
             AggregateTy::OwnedRecordVector(record) => {
                 Some(DirectResourceKind::OwnedRecordVector(record))
             }
+            AggregateTy::OwnedEnumVector(enumeration) => {
+                Some(DirectResourceKind::OwnedEnumVector(enumeration))
+            }
             AggregateTy::Record(_) | AggregateTy::Enum(_) | AggregateTy::FixedArray(_) => None,
         };
         let (layout, width, copy, contains_resources) =
-            if let Some(DirectResourceKind::OwnedRecordVector(record)) = direct_resource {
+            if let Some(root) = OwnedVectorRoot::from_vector(aggregate) {
                 let mut nominal_work = 3;
-                let nominal = OwnedRecordVectorType::check(
+                let nominal = OwnedVectorType::check(
                     declarations,
-                    record,
-                    OwnedRecordVectorType::requested_query_bytes(),
+                    root,
+                    OwnedVectorType::requested_query_bytes(),
                     &mut nominal_work,
                 )?;
                 let element = self
                     .elements
                     .as_ref()
                     .ok_or_else(bad)?
-                    .element(record)
+                    .element_root(root)
                     .map_err(bounds_failure)?;
                 if nominal.aggregate() != aggregate
                     || !nominal.belongs_to(declarations)

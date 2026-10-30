@@ -73,7 +73,7 @@ struct Aggregate(AggregateTy);
 impl fmt::Display for Aggregate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            AggregateTy::OwnedRecordVector(_) => Err(fmt::Error),
+            AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => Err(fmt::Error),
             AggregateTy::Record(id) => write!(f, "[\"record\",{}]", id.0),
             AggregateTy::Enum(_)
             | AggregateTy::ByteBuf
