@@ -53,6 +53,141 @@ struct RecordVectorKeyControls {
 }
 
 impl Nominals {
+    /// Only the outer value of a function signature may defer a Vec element.
+    /// Field layouts, type arguments, locals and constructors still use syntax.
+    /// The opaque identity is checked abstractly and must be substituted before
+    /// any concrete parameter, result, layout or executable key is produced.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn function_value_syntax(
+        &mut self,
+        index: &DeclarationIndex<'_>,
+        work: &WorkMeter,
+        storage: &mut Storage,
+        allocator: &mut Allocator,
+        module: ModuleId,
+        declaration: Span,
+        arguments: &[Value],
+        syntax: ast::TypeSyntax,
+    ) -> Result<Type, Box<Diagnostic>> {
+        #[cfg(test)]
+        super::owned_candidate::record_function_helper(false);
+        let (Some(_), TypeSyntaxKind::Applied(id)) = (index.owned_vector_builder(), syntax.kind)
+        else {
+            return self.syntax(
+                index,
+                work,
+                storage,
+                allocator,
+                module,
+                declaration,
+                arguments,
+                syntax,
+                0,
+            );
+        };
+        work.debit(1, syntax.span, "owned vector function value admission")?;
+        let program = index.sources().ast(module)?;
+        let application = program
+            .generic_application(id)
+            .ok_or_else(|| bad(syntax.span))?;
+        reject_parameter_base(
+            index,
+            work,
+            module,
+            declaration,
+            application.path,
+            syntax.span,
+        )?;
+        let nominal = index.query(work).nominal_type(
+            module,
+            ItemPathRef {
+                file: syntax.span.file,
+                path: application.path,
+            },
+            TypeContext::Value,
+        )?;
+        if nominal == NominalId::Vector {
+            if application.arguments.len() != 1 {
+                return Err(error(
+                    "Vec requires exactly one element type argument",
+                    syntax.span,
+                ));
+            }
+            storage.enter_vector(syntax.span)?;
+            let result = (|| {
+                let argument = application.arguments[0];
+                let value = self
+                    .syntax(
+                        index,
+                        work,
+                        storage,
+                        allocator,
+                        module,
+                        declaration,
+                        arguments,
+                        argument,
+                        1,
+                    )?
+                    .value(argument.span)?;
+                Ok(Type::Value(Value::Vector(
+                    index.candidate_borrowed_element(value, self, work, argument.span)?,
+                )))
+            })();
+            storage.leave_vector(syntax.span)?;
+            return result;
+        }
+        // Finish this already-resolved application without re-querying its
+        // outer path. Nested arguments and concrete nominal construction keep
+        // their existing checks; no opaque vector permission is passed inward.
+        let mut values = Vec::new();
+        for argument in &application.arguments {
+            let value = self
+                .syntax(
+                    index,
+                    work,
+                    storage,
+                    allocator,
+                    module,
+                    declaration,
+                    arguments,
+                    *argument,
+                    1,
+                )?
+                .value(argument.span)?;
+            storage.push(&mut values, value, allocator, work, argument.span)?;
+        }
+        let value = match nominal {
+            NominalId::Record(record) => self.record(
+                index,
+                work,
+                storage,
+                allocator,
+                record,
+                values,
+                syntax.span,
+                1,
+            )?,
+            NominalId::Enum(enumeration) if enumeration.0 < self.template_enum_count => self
+                .enumeration(
+                    index,
+                    work,
+                    storage,
+                    allocator,
+                    enumeration,
+                    values,
+                    syntax.span,
+                    1,
+                )?,
+            _ => {
+                return Err(error(
+                    "this type does not accept type arguments",
+                    syntax.span,
+                ))
+            }
+        };
+        Ok(Type::Value(value))
+    }
+
     pub(super) fn candidate_payload_bytes(
         &self,
         work: &WorkMeter,
@@ -241,8 +376,14 @@ impl Nominals {
                             depth + 1,
                         )?
                         .value(argument.span)?;
-                    let value =
-                        Value::Vector(index.candidate_element(value, self, argument.span)?);
+                    let value = Value::Vector(match syntax.kind {
+                        TypeSyntaxKind::AppliedReference { .. }
+                            if index.owned_vector_builder().is_some() =>
+                        {
+                            index.candidate_borrowed_element(value, self, work, argument.span)?
+                        }
+                        _ => index.candidate_element(value, self, argument.span)?,
+                    });
                     Ok(match syntax.kind {
                         TypeSyntaxKind::AppliedReference { mutable, .. } => Type::Reference {
                             value,

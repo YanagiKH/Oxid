@@ -365,8 +365,24 @@ may own UTF-8 text, byte buffers, and files. Truncation and destruction release
 the active resources exactly once; failed reservation preserves existing values
 and any separate incoming value.
 
+Generic functions may borrow `&Vec<T>` and `&mut Vec<T>` or use an outer
+`Vec<T>` value as a parameter or result. An unconstrained `T` stays affine while
+checking every definition, including an unused one. Moving an owning vector
+invalidates its old binding; returning `take(&mut *values)` leaves the borrowed
+owner empty. Every call must specialize to an independently checked finite
+scalar, Copy record, non-Copy record, or enum element type before execution.
+Unconstrained elements do not authorize slices, owning-vector fields or nested
+type arguments, local `Vec<T>` annotations, or `new::<T>()` construction.
+
+The `owned_vec` package implements recoverable insertion and removal using
+these operations. Its `try_push` returns the incoming value and `GrowStatus`
+in a `PushFailure<T>` on failed growth without changing the vector. Its `pop`
+returns `PopResult<T>` with `Empty` and `Value(T)` variants. Its `transfer`,
+`detach` and `discard` functions move, detach and release vector owners without
+allocating. They do not change the builtin growth preconditions.
+
 Non-Copy record and enum vectors do not provide indexing, slices, or element
-references. `try_push`, `try_extend`, and `try_resize` do not accept their element
+references. `alloc::vec::try_push`, `try_extend`, and `try_resize` do not accept their element
 types. Nested vectors of owned records or enums, recursive element
 types, arrays of records, individual element references, and stored or returned
 references remain unavailable. The vector API and examples are documented in
@@ -1021,9 +1037,10 @@ arguments. Name resolution stays in the definition's module and package.
 Reference parameters `&T` and `&mut T` infer a supported owned referent; references
 cannot be returned or stored as values. Other trait bounds remain unavailable.
 Function type arguments cannot be applied to enum variants or functions without
-type parameters. Vector builtin operations accept a scalar or finite checked
-Copy record element argument;
-`alloc::vec::new::<T>()` requires it explicitly. Enum type arguments precede the
+type parameters. Vector builtin operations accept the concrete element types
+specified above; the growth operations that copy values require scalar or
+checked Copy elements. `alloc::vec::new::<T>()` requires an explicit supported
+concrete element or an existing `T: Copy` specialization. Enum type arguments precede the
 variant name instead.
 
 A project may create at most 1,024 generic function specializations, with at most

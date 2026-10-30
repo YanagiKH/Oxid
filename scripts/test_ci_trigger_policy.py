@@ -50,6 +50,10 @@ OWNED_ENUM_VECTOR_REPLAY = 'scripts/verify_owned_enum_vector_compatibility.py'
 OWNED_ENUM_VECTOR_PARENT = '5917f581e69c0a0c69e4b5b059bb97dced55331d'
 OWNED_ENUM_VECTOR_OBSERVER = ('scripts/owned_enum_vector_compatibility_observer.py',
     (7495, 'ff932fb13ae4db32fe15a389505be7a7ffa2fc0557b15f9b1b153c3602de3fd9'))
+GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility.py'
+GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
+OWNED_ENUM_VECTOR_POLICY = (OWNED_ENUM_VECTOR_REPLAY,
+    (67623, '3505f8238f1d24754916075fb1ad46aa022c740cd71c9f10a5509656b7e9877c'))
 REPLAY_ROUTES = {
     (SCALAR_REPLAY[0],): ('direct', SCALAR_REPLAY),
     (REGISTRY_REPLAY[0],): ('direct', REGISTRY_REPLAY),
@@ -59,6 +63,7 @@ REPLAY_ROUTES = {
     (OWNED_TEXT_REPLAY,): ('owned-text', OWNED_VECTOR_POLICY),
     (OFFLINE_VENDOR_REPLAY,): ('offline-vendor', OWNED_TEXT_POLICY),
     (OWNED_ENUM_VECTOR_REPLAY,): ('owned-enum-vector', OFFLINE_VENDOR_POLICY),
+    (GENERIC_OWNED_VECTOR_REPLAY,): ('generic-owned-vector', OWNED_ENUM_VECTOR_POLICY),
 }
 
 
@@ -171,6 +176,140 @@ def _require_condition(body, condition):
               and ast.dump(node.value.args[0]) == expected]
     if len(guards) != 1:
         raise AssertionError('owned-text retained admission condition changed: ' + condition)
+
+
+def _generic_vector_replay_binding(tree, read):
+    for name, expected in (
+        ('PREDECESSOR', GENERIC_OWNED_VECTOR_PARENT),
+        ('PREDECESSOR_POLICY', OWNED_ENUM_VECTOR_POLICY[0]),
+        ('PREDECESSOR_POLICY_PIN', OWNED_ENUM_VECTOR_POLICY[1]),
+        ('OBSERVER_ADAPTER', OWNED_ENUM_VECTOR_OBSERVER[0]),
+        ('OBSERVER_ADAPTER_PIN', OWNED_ENUM_VECTOR_OBSERVER[1]),
+        ('OBSERVER_DERIVED_PIN', (34582, '73b30bca73d10126977744d50fb4cc42f6dc1cb876c5ee82b7335f3ffc14a3d3')),
+        ('PUBLIC_TEST', 'tests/typed_owned_vector_wrappers.rs'),
+    ):
+        if _literal(tree.body, name) != expected:
+            raise AssertionError('generic-vector retained parent/observer changed: ' + name)
+    require_retained_replay_binding((OWNED_ENUM_VECTOR_REPLAY,), read)
+    for statement in (
+        'predecessor = load_predecessor(ROOT)', 'library = predecessor.library',
+        'owned_policy = predecessor.owned_policy', 'RETAINED_RUN = predecessor.RETAINED_RUN',
+        'PREDECESSOR_ADDED = predecessor.PARENT_ADDED',
+        'PARENT_ADDED = PREDECESSOR_ADDED | GENERIC_ADDED | frozenset(SOURCE_ASSETS) | {PUBLIC_TEST}',
+    ):
+        _require_statement(tree.body, statement)
+    inventories = {}
+    for name, expected in (
+        ('GENERIC_CHANGED', {
+            'src/frontend/declaration_index/generics.rs',
+            'src/frontend/declaration_index/generics/nominal.rs',
+            'src/frontend/declaration_index/generics/owned_candidate.rs',
+            'src/frontend/declaration_index/generics/owned_builtin_enum_key_tests.rs',
+            'src/frontend/declaration_index/generics/vector_tests.rs',
+            'src/frontend/oir/owned/source/program.rs', 'src/frontend/owned_vector_builtins.rs'}),
+        ('GENERIC_ADDED', {
+            'src/frontend/declaration_index/generics/owned_parameter_tests.rs',
+            'src/frontend/oir/owned/source/owned_parameter_cases.rs',
+            'src/frontend/oir/owned/source/owned_parameter_source_tests.rs'}),
+    ):
+        node = _assignment(tree.body, name).value
+        if (not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name)
+                or node.func.id != 'frozenset' or len(node.args) != 1 or node.keywords):
+            raise AssertionError('generic-vector source roster must be literal')
+        values = ast.literal_eval(node.args[0])
+        if not isinstance(values, tuple) or len(values) != len(expected) or set(values) != expected:
+            raise AssertionError('generic-vector finite source roster changed')
+        inventories[name] = set(values)
+    expected_inputs = inventories['GENERIC_CHANGED'] | inventories['GENERIC_ADDED'] | {
+        'tests/typed_owned_vector_wrappers.rs'}
+    pins = _literal(tree.body, 'REVIEWED_INPUTS')
+    assets = _literal(tree.body, 'SOURCE_ASSETS')
+    if (set(pins) != expected_inputs or len(pins) != 11
+            or set(assets) != {'packages/owned_vec/src/lib.ox', 'packages/owned_vec/oxid.toml',
+                               'examples/owned-vector-results/src/main.ox'}
+            or any(not isinstance(pin, tuple) or len(pin) != 2 or type(pin[0]) is not int or pin[0] <= 0
+                   or not isinstance(pin[1], str) or re.fullmatch('[a-f0-9]{64}', pin[1]) is None
+                   for pin in (*pins.values(), *assets.values()))):
+        raise AssertionError('generic-vector literal source/asset pins changed')
+    if set(_literal(tree.body, 'REVIEWED_DIRECTIVES')) != expected_inputs:
+        raise AssertionError('generic-vector literal directive membership changed')
+    if _literal(tree.body, 'SOURCE_ASSET_INCLUDE_BINDINGS') != {
+        'packages/owned_vec/src/lib.ox': ('src/frontend/oir/owned/source/owned_parameter_cases.rs',
+                                        '../../../../../packages/owned_vec/src/lib.ox', 1),
+        'examples/owned-vector-results/src/main.ox': ('src/frontend/oir/owned/source/owned_parameter_cases.rs',
+                                                   '../../../../../examples/owned-vector-results/src/main.ox', 1),
+        'packages/owned_vec/oxid.toml': ('tests/typed_owned_vector_wrappers.rs', '../packages/owned_vec/oxid.toml', 1),
+    }:
+        raise AssertionError('generic-vector exact include binding changed')
+    captured = _function(tree.body, 'capture_sources').body
+    _require_statement(captured, 'expected_parent = set(baseline) | PREDECESSOR_ADDED')
+    _require_statement(captured, 'expected = expected_parent | GENERIC_ADDED | set(SOURCE_ASSETS) | {PUBLIC_TEST}')
+    _require_condition(captured, 'set(parent) == expected_parent and len(parent) == 587')
+    _require_condition(captured, 'len(GENERIC_CHANGED) == 7 and len(GENERIC_ADDED) == 3 '
+                       'and GENERIC_CHANGED <= expected_parent and not GENERIC_ADDED & expected_parent '
+                       'and not set(SOURCE_ASSETS) & expected_parent and PUBLIC_TEST not in expected_parent '
+                       'and len(expected) == 594')
+    _require_condition(captured, 'set(REVIEWED_INPUTS) == GENERIC_CHANGED | GENERIC_ADDED | {PUBLIC_TEST} '
+                       'and set(REVIEWED_DIRECTIVES) == set(REVIEWED_INPUTS)')
+    _require_statement(captured, 'validate_source_assets(inputs)')
+    bound = _function(tree.body, 'bound_predecessor')
+    _retained_bound(bound.body,
+                    "{'PREDECESSOR': PREDECESSOR, 'PREDECESSOR_ADDED': PREDECESSOR_ADDED, "
+                    "'PREDECESSOR_POLICIES': PREDECESSOR_POLICIES, 'PINS_PROVISIONAL': PINS_PROVISIONAL, "
+                    "'capture_sources': capture_sources, 'current_manifest': current_manifest}")
+    _require_condition(bound.body, 'library.run is RETAINED_RUN and predecessor.RETAINED_RUN is RETAINED_RUN '
+                       'and owned_policy.RETAINED_RUN is RETAINED_RUN')
+    _require_condition(bound.body, 'predecessor.OBSERVER_ADAPTER == OBSERVER_ADAPTER '
+                       'and predecessor.OBSERVER_ADAPTER_PIN == OBSERVER_ADAPTER_PIN')
+    scopes = [node for node in bound.body if isinstance(node, ast.With)]
+    expected = ast.parse('with predecessor.bound_predecessor() as context:\n    pass').body[0]
+    if len(scopes) != 1 or [ast.dump(item) for item in scopes[0].items] != [ast.dump(item) for item in expected.items]:
+        raise AssertionError('generic-vector source/observer delegation scope changed')
+    restores = [node for node in scopes[0].body if isinstance(node, ast.Try)]
+    if len(restores) != 1:
+        raise AssertionError('generic-vector source restoration boundary changed')
+    _require_statement(restores[0].body, 'for name, value in bindings.items():\n    setattr(library, name, value)')
+    _require_condition(restores[0].body, 'context["adapter"].DERIVED_PIN == OBSERVER_DERIVED_PIN')
+    _require_statement(restores[0].finalbody, 'for name, value in before.items():\n    setattr(library, name, value)')
+    _retained_delegate(tree, 'bound_predecessor() as context', 'RETAINED_RUN(delegated)', guard_inside=True)
+    run = _function(tree.body, 'run')
+    attempt = next(node for node in run.body if isinstance(node, ast.Try))
+    for condition in ('args.prepare_only or not PINS_PROVISIONAL',
+                      'args.prepare_only or not OBSERVER_PINS_PROVISIONAL',
+                      'args.prepare_only or not predecessor.PINS_PROVISIONAL'):
+        _require_condition(attempt.body, condition)
+    scope = next(node for node in attempt.body if isinstance(node, ast.With))
+    controls = [node for node in scope.body if isinstance(node, ast.If)
+                and ast.dump(node.test) == ast.dump(ast.parse('not args.prepare_only', mode='eval').body)]
+    pipeline = ast.parse(
+        'report.update(owned_policy.run_owned_vector_observer_controls('
+        'repo, delegated.output, context["selected"], context["seam"], context["original"], '
+        'context["adapter"], retained["test_function_executions"]))\n'
+        'report.update(predecessor.run_enum_observer_controls('
+        'repo, delegated.output, context["selected"], context["seam"], context["original"], '
+        'context["adapter"], report["test_function_executions"]))').body
+    if len(controls) != 1 or [ast.dump(node) for node in controls[0].body] != [ast.dump(node) for node in pipeline]:
+        raise AssertionError('generic-vector inherited controls pipeline changed')
+    manifest = _function(tree.body, 'current_manifest').body
+    _require_statement(manifest, 'inherited = predecessor.current_manifest(inputs=parent, baseline=baseline, '
+                       'checkout=checkout, parent={name: parent[name] for name in previous_names})')
+    flags = _assignment(manifest, 'result').value
+    false_names = {'generic_owned_vector_semantics_qualified_by_this_gate',
+                   'generic_owned_vector_allocator_failures_qualified_by_this_gate',
+                   'generic_owned_vector_platform_qualified_by_this_gate',
+                   'general_heap_collections_qualified_by_this_gate', 'g2_complete_qualified_by_this_gate'}
+    found = {key.value: value for key, value in zip(flags.keys, flags.values)
+             if isinstance(key, ast.Constant) and isinstance(key.value, str) and key.value.endswith('qualified_by_this_gate')}
+    if set(found) != false_names or any(not isinstance(value, ast.Constant) or value.value is not False for value in found.values()):
+        raise AssertionError('generic-vector source admission cannot claim new feature qualification')
+    _require_condition(manifest, 'all(value is False for name, value in result.items() '
+                       'if name.endswith("qualified_by_this_gate"))')
+    report = _assignment(run.body, 'report').value
+    for name in ('semantic_pass', 'new_feature_qualification', 'platform_qualification'):
+        values = [value for key, value in zip(report.keys, report.values)
+                  if isinstance(key, ast.Constant) and key.value == name]
+        if len(values) != 1 or not isinstance(values[0], ast.Constant) or values[0].value is not False:
+            raise AssertionError('generic-vector preflight qualification claim changed')
 
 
 def _enum_vector_replay_binding(tree, read):
@@ -378,6 +517,8 @@ def require_retained_replay_binding(route, read=None):
                                 if isinstance(node, ast.Try)).body,
                            'selected = load_policy(repo, args.source_policy)')
         _retained_delegate(tree, 'selected.bound()', 'selected.original_run(delegated)')
+    elif kind == 'generic-owned-vector':
+        _generic_vector_replay_binding(tree, read)
     elif kind == 'owned-enum-vector':
         _enum_vector_replay_binding(tree, read)
     elif kind == 'offline-vendor':
@@ -740,6 +881,53 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertEqual(_literal(source.body, 'ENGINE'), 'run_record_vector_predecessor_tests.py')
         self.assertEqual(_literal(source.body, 'ENGINE_SHA'),
                          '6dc9ee36351bdafab40399038133c8547dfb89ac0d0f33076b76b41ef374b75c')
+
+    def test_enum_vector_source_policy_replay_keeps_all_sixteen_frozen_controls_mandatory(self):
+        replay = block(self.ci, 'owned-enum-vector-source-policy-predecessor', 2)
+        self.assertEqual(replay.count('actions/checkout@v4'), 2)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', replay)
+        self.assertIn('ref: ' + GENERIC_OWNED_VECTOR_PARENT, replay)
+        self.assertIn('cp scripts/replay_owned_enum_vector_source_policy.py '
+                      '"$RUNNER_TEMP/owned-enum-vector-source-policy-replay.py"', replay)
+        self.assertIn('fetch-depth: 0', replay)
+        self.assertIn('python3 -B "$RUNNER_TEMP/owned-enum-vector-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/owned-enum-vector-source-policy-replay"', replay)
+        self.assertIn('if: always()', replay)
+        self.assertIn('path: ${{ runner.temp }}/owned-enum-vector-source-policy-replay', replay)
+        self.assertIn('if-no-files-found: error', replay)
+        self.assertIn('retention-days: 14', replay)
+        self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
+        source = ast.parse((REPO / 'scripts/replay_owned_enum_vector_source_policy.py').read_bytes())
+        self.assertEqual(_literal(source.body, 'REVISION'), GENERIC_OWNED_VECTOR_PARENT)
+        self.assertEqual(_literal(source.body, 'MODULES'), {'test_owned_enum_vector_compatibility': (
+            '6a4bf9d412a9ae94acb7c01ae29633764bd56f39aeb27e117d55a60ed7374a0f', 16)})
+        self.assertEqual(_literal(source.body, 'ENGINE'), 'run_record_vector_predecessor_tests.py')
+        self.assertEqual(_literal(source.body, 'ENGINE_SHA'),
+                         '6dc9ee36351bdafab40399038133c8547dfb89ac0d0f33076b76b41ef374b75c')
+        _require_statement(source.body, '''POLICIES = {
+            "verify_owned_enum_vector_compatibility.py": "3505f8238f1d24754916075fb1ad46aa022c740cd71c9f10a5509656b7e9877c",
+            "verify_offline_vendor_compatibility.py": "ee64cc7f63051764594a5866101cff9987ca7ddf20b764e7e1aa88f975c9b7a1",
+            "verify_owned_text_compatibility.py": "61bf3bf55b9c1f958fdf48fcc89e747cdf61700109ab979b098851249d9fa109",
+            "verify_owned_record_vector_compatibility.py": "16c7affd778deda3d61f9a4e4aebd66c9e01d842c6afe3e9c1a20de57caab6e0",
+            "replay_owned_text_source_policy.py": "341673ed92fdc3b2f3269ad0396411a061397110b663d067cc7d92def65b01b6",
+            ENGINE: ENGINE_SHA,
+        }''')
+
+    def test_generic_native_packages_execute_both_real_compiler_profiles_on_all_posix_runners(self):
+        command = ('            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \\\n'
+                   '              --test typed_owned_vector_wrappers -- --ignored --test-threads=1\n')
+        step = 'Verify generic vector source-free packages in both compiler profiles'
+        for job in ('native-projects', 'linux-arm64-native', 'macos-native'):
+            with self.subTest(job=job):
+                current = block(self.ci, job, 2)
+                selected = re.findall(r'^      - name: ' + re.escape(step)
+                                      + r'\n(.*?)(?=^      - |\Z)', current, re.M | re.S)
+                self.assertEqual(len(selected), 1)
+                self.assertIn('        shell: bash\n        run: |\n          set -euo pipefail\n', selected[0])
+                self.assertIn('          for profile in debug release; do\n', selected[0])
+                self.assertIn('            if test "$profile" = release; then profile_flags=(--release); fi\n', selected[0])
+                self.assertEqual(selected[0].count(command), 1)
+                self.assertNotRegex(selected[0], r'(?m)^        if:|continue-on-error:|\|\| true|--no-run|--list')
 
     def test_arm_owned_text_driver_binds_expected_head_from_the_same_step_environment(self):
         arm = block(self.ci, 'linux-arm64-native', 2)
@@ -1115,21 +1303,64 @@ class RetainedReplayRouteTests(unittest.TestCase):
 
     def test_text_route_still_binds_the_pinned_owned_vector_wrapper_and_exact_source_membership(self):
         route = (OWNED_TEXT_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 8)
+        self.assertEqual(len(REPLAY_ROUTES), 9)
         self.assertEqual(REPLAY_ROUTES[route], ('owned-text', OWNED_VECTOR_POLICY))
         require_retained_replay_binding(route)
 
     def test_vendor_route_still_binds_the_pinned_text_wrapper_and_exact_source_membership(self):
         route = (OFFLINE_VENDOR_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 8)
+        self.assertEqual(len(REPLAY_ROUTES), 9)
         self.assertEqual(REPLAY_ROUTES[route], ('offline-vendor', OWNED_TEXT_POLICY))
         require_retained_replay_binding(route)
 
     def test_live_enum_route_binds_the_public_vendor_policy_and_full_source_and_observer_pipeline(self):
-        self.assertEqual(self.route, (OWNED_ENUM_VECTOR_REPLAY,))
-        self.assertEqual(len(REPLAY_ROUTES), 8)
-        self.assertEqual(REPLAY_ROUTES[self.route], ('owned-enum-vector', OFFLINE_VENDOR_POLICY))
+        route = (OWNED_ENUM_VECTOR_REPLAY,)
+        self.assertEqual(len(REPLAY_ROUTES), 9)
+        self.assertEqual(REPLAY_ROUTES[route], ('owned-enum-vector', OFFLINE_VENDOR_POLICY))
+        require_retained_replay_binding(route)
+
+    def test_live_generic_route_keeps_the_complete_enum_controller_and_original_observer(self):
+        self.assertEqual(self.route, (GENERIC_OWNED_VECTOR_REPLAY,))
+        self.assertEqual(len(REPLAY_ROUTES), 9)
+        self.assertEqual(REPLAY_ROUTES[self.route], ('generic-owned-vector', OWNED_ENUM_VECTOR_POLICY))
         require_retained_replay_binding(self.route)
+
+    def test_generic_inventory_assets_observer_pipeline_and_source_refusals_cannot_drift(self):
+        wrapper = GENERIC_OWNED_VECTOR_REPLAY
+        original = (REPO / wrapper).read_bytes()
+        mutations = (
+            (GENERIC_OWNED_VECTOR_PARENT.encode(), b'f' * 40),
+            (b"PREDECESSOR_POLICY_PIN = (67623,", b"PREDECESSOR_POLICY_PIN = (67624,"),
+            (b'len(parent) == 587', b'len(parent) == 586'),
+            (b'len(GENERIC_CHANGED) == 7', b'len(GENERIC_CHANGED) == 6'),
+            (b'len(GENERIC_ADDED) == 3', b'len(GENERIC_ADDED) == 4'),
+            (b'len(expected) == 594', b'len(expected) == 595'),
+            (b"PUBLIC_TEST = 'tests/typed_owned_vector_wrappers.rs'", b"PUBLIC_TEST = 'tests/unreviewed.rs'"),
+            (b"'../packages/owned_vec/oxid.toml'", b"'../packages/unreviewed/oxid.toml'"),
+            (b'RETAINED_RUN = predecessor.RETAINED_RUN', b'RETAINED_RUN = library.run'),
+            (b'owned_policy = predecessor.owned_policy', b'owned_policy = predecessor'),
+            (b'"capture_sources":', b'"run":'),
+            (b'with predecessor.bound_predecessor() as context:', b'with unreviewed_parent() as context:'),
+            (b'context["adapter"].DERIVED_PIN == OBSERVER_DERIVED_PIN', b'True'),
+            (b'setattr(library, name, value)', b'setattr(predecessor, name, value)'),
+            (b'report.update(owned_policy.run_owned_vector_observer_controls(',
+             b'report.update(owned_policy.unreviewed_controls('),
+            (b'report.update(predecessor.run_enum_observer_controls(',
+             b'report.update(predecessor.unreviewed_controls('),
+            (b'context["adapter"], report["test_function_executions"]))',
+             b'context["adapter"], retained["test_function_executions"]))'),
+            (b'"g2_complete_qualified_by_this_gate": False', b'"g2_complete_qualified_by_this_gate": True'),
+            (b'"new_feature_qualification": False', b'"new_feature_qualification": True'),
+            (b'args.prepare_only or not PINS_PROVISIONAL', b'True'),
+            (b'args.prepare_only or not OBSERVER_PINS_PROVISIONAL', b'True'),
+        )
+        for before, after in mutations:
+            with self.subTest(before=before):
+                changed = original.replace(before, after, 1)
+                self.assertNotEqual(changed, original, 'mutation must reach the real generic-vector controller')
+                with self.assertRaises(AssertionError):
+                    require_retained_replay_binding(
+                        (wrapper,), lambda name: changed if name == wrapper else (REPO / name).read_bytes())
 
     def test_enum_parent_inventory_binding_observer_controls_and_provisional_refusal_cannot_drift(self):
         wrapper = OWNED_ENUM_VECTOR_REPLAY
@@ -1281,7 +1512,8 @@ class RetainedReplayRouteTests(unittest.TestCase):
         original = (REPO / wrapper).read_bytes()
         invocation = ('selected.original_run(delegated)' if kind == 'msvc'
                       else 'RETAINED_RUN(delegated)')
-        parent = (OWNED_ENUM_VECTOR_PARENT.encode() if kind == 'owned-enum-vector'
+        parent = (GENERIC_OWNED_VECTOR_PARENT.encode() if kind == 'generic-owned-vector'
+                  else OWNED_ENUM_VECTOR_PARENT.encode() if kind == 'owned-enum-vector'
                   else OFFLINE_VENDOR_PARENT.encode() if kind == 'offline-vendor'
                   else b'0e8f23f7481c7ec4e24cd416ed30607f8eb75daf' if kind == 'owned-text'
                   else b'af0fe5e1fbaf4fb49b62e894a53ad4b5ed307ee7')

@@ -133,6 +133,8 @@ enum Value {
 enum Element {
     Concrete(Ty),
     CopyParameter(usize),
+    // Abstract function Vec<T> only. Never an executable element or key.
+    OwnedParameter(usize),
     RecordApplication(usize),
     ConcreteRecord(RecordId),
     OwnedRecordApplication(usize),
@@ -162,6 +164,10 @@ impl Element {
             Self::CopyParameter(position) => Value::Parameter {
                 position,
                 copy: true,
+            },
+            Self::OwnedParameter(position) => Value::Parameter {
+                position,
+                copy: false,
             },
             Self::RecordApplication(id) => Value::Record(id),
             Self::ConcreteRecord(id) => Value::Concrete(ValueTy::Owned(AggregateTy::Record(id))),
@@ -230,7 +236,8 @@ impl Element {
     fn owned(self) -> bool {
         matches!(
             self,
-            Self::OwnedRecordApplication(_)
+            Self::OwnedParameter(_)
+                | Self::OwnedRecordApplication(_)
                 | Self::OwnedConcreteRecord(_)
                 | Self::OwnedEnumApplication(_)
                 | Self::OwnedBuiltinEnum(_)
@@ -1634,11 +1641,19 @@ impl<'a, 's> Walker<'a, 's> {
     }
     fn check(mut self) -> Result<Checked, Box<Diagnostic>> {
         for parameter in &self.function.params {
-            let ty = self.ty(parameter.ty)?;
+            let ty = if self.index.owned_vector_builder().is_some() {
+                self.signature_ty(parameter.ty)?
+            } else {
+                self.ty(parameter.ty)?
+            };
             self.exposure(ty, parameter.ty.span)?;
             self.bind(parameter.name, ty, false)?;
         }
-        let result = self.ty(self.function.result)?;
+        let result = if self.index.owned_vector_builder().is_some() {
+            self.signature_ty(self.function.result)?
+        } else {
+            self.ty(self.function.result)?
+        };
         self.exposure(result, self.function.result.span)?;
         let flow = self.block(self.function.body, 0)?;
         if flow.falls && self.ty(self.function.result)? != Type::scalar(Ty::Unit) {
@@ -1678,6 +1693,41 @@ impl<'a, 's> Walker<'a, 's> {
             &self.arguments,
             syntax,
             0,
+        )?;
+        self.storage.push(
+            &mut self.types,
+            (syntax.span, ty),
+            self.allocator,
+            self.work,
+            syntax.span,
+        )?;
+        Ok(ty)
+    }
+    fn signature_ty(&mut self, syntax: ast::TypeSyntax) -> Result<Type, Box<Diagnostic>> {
+        #[cfg(test)]
+        owned_candidate::record_function_helper(true);
+        if self.index.owned_vector_builder().is_none()
+            || !matches!(syntax.kind, TypeSyntaxKind::Applied(_))
+        {
+            return self.ty(syntax);
+        }
+        self.work.debit(
+            self.types.len() as u64 + 1,
+            syntax.span,
+            "generic signature type lookup",
+        )?;
+        if let Some((_, ty)) = self.types.iter().find(|(span, _)| *span == syntax.span) {
+            return Ok(*ty);
+        }
+        let ty = self.nominals.function_value_syntax(
+            self.index,
+            self.work,
+            self.storage,
+            self.allocator,
+            self.module,
+            self.function.name,
+            &self.arguments,
+            syntax,
         )?;
         self.storage.push(
             &mut self.types,
@@ -3209,17 +3259,30 @@ impl<'a, 's> Walker<'a, 's> {
         }
         for (argument, parameter) in arguments.iter().zip(&function.params) {
             let actual = self.argument(argument)?;
-            let formal = self.nominals.syntax(
-                self.index,
-                self.work,
-                self.storage,
-                self.allocator,
-                module,
-                function.name,
-                &formal_arguments[..type_parameters.len()],
-                parameter.ty,
-                0,
-            )?;
+            let formal = if self.index.owned_vector_builder().is_some() {
+                self.nominals.function_value_syntax(
+                    self.index,
+                    self.work,
+                    self.storage,
+                    self.allocator,
+                    module,
+                    function.name,
+                    &formal_arguments[..type_parameters.len()],
+                    parameter.ty,
+                )?
+            } else {
+                self.nominals.syntax(
+                    self.index,
+                    self.work,
+                    self.storage,
+                    self.allocator,
+                    module,
+                    function.name,
+                    &formal_arguments[..type_parameters.len()],
+                    parameter.ty,
+                    0,
+                )?
+            };
             self.infer(formal, actual, &mut inferred, at)?;
         }
         let mut concrete = Vec::new();
@@ -3238,17 +3301,30 @@ impl<'a, 's> Walker<'a, 's> {
                     .push(&mut concrete, value, self.allocator, self.work, at)?;
             }
         }
-        let result = self.nominals.syntax(
-            self.index,
-            self.work,
-            self.storage,
-            self.allocator,
-            module,
-            function.name,
-            &formal_arguments[..type_parameters.len()],
-            function.result,
-            0,
-        )?;
+        let result = if self.index.owned_vector_builder().is_some() {
+            self.nominals.function_value_syntax(
+                self.index,
+                self.work,
+                self.storage,
+                self.allocator,
+                module,
+                function.name,
+                &formal_arguments[..type_parameters.len()],
+                function.result,
+            )?
+        } else {
+            self.nominals.syntax(
+                self.index,
+                self.work,
+                self.storage,
+                self.allocator,
+                module,
+                function.name,
+                &formal_arguments[..type_parameters.len()],
+                function.result,
+                0,
+            )?
+        };
         if let Some(plan) = self.plan.as_deref_mut() {
             let target = if type_parameters.is_empty() {
                 plan.non_generic(definition).ok_or_else(|| bad(at))?

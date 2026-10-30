@@ -58,6 +58,10 @@ HISTORICAL_ONLY = {
 # These complete source-pinned modules test policies on their exact parent
 # compilers. ci.yml replays them unchanged in separate required jobs.
 PREDECESSOR_ONLY = {
+    "test_owned_enum_vector_compatibility": (
+        '6a4bf9d412a9ae94acb7c01ae29633764bd56f39aeb27e117d55a60ed7374a0f',
+        "698043182916dda7276c363e20a98dfbb5b22ed3",
+        "requires the pre-generic-vector compiler and exact 587-input source authority"),
     "test_offline_vendor_compatibility": (
         "4446e8981ac90152f156fb4231268fa7bbe86b2dc6e4beab88e7aedd45f01bc9",
         "5917f581e69c0a0c69e4b5b059bb97dced55331d",

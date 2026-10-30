@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_owned_enum_vector_compatibility.py \
+          python3 -B scripts/verify_generic_owned_vector_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -591,6 +591,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  owned-enum-vector-source-policy-predecessor:
+    name: Enum-vector source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_owned_enum_vector_source_policy.py "$RUNNER_TEMP/owned-enum-vector-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 698043182916dda7276c363e20a98dfbb5b22ed3
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/owned-enum-vector-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/owned-enum-vector-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owned-enum-vector-source-policy-predecessor
+          path: ${{ runner.temp }}/owned-enum-vector-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   macos-native:
     name: Current macOS native (${{ matrix.os }})
     strategy:
@@ -837,6 +862,16 @@ jobs:
             --output "$RUNNER_TEMP/current-macos-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-macos-native/copy-record-vectors" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify generic vector source-free packages in both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \
+              --test typed_owned_vector_wrappers -- --ignored --test-threads=1
+          done
       - name: Retain native programs and raw transcripts
         if: always()
         uses: actions/upload-artifact@v4
@@ -1254,6 +1289,16 @@ jobs:
             if test "$profile" = release; then profile_flags=(--release); fi
             cargo test --locked "${profile_flags[@]}" --test typed_vendor -- --ignored --test-threads=1
           done
+      - name: Verify generic vector source-free packages in both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \
+              --test typed_owned_vector_wrappers -- --ignored --test-threads=1
+          done
       - name: Verify enum-vector C contracts with real compiler schemas and native CLI cases
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -1539,6 +1584,16 @@ jobs:
             profile_flags=()
             if test "$profile" = release; then profile_flags=(--release); fi
             cargo test --locked "${profile_flags[@]}" --test typed_vendor -- --ignored --test-threads=1
+          done
+      - name: Verify generic vector source-free packages in both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \
+              --test typed_owned_vector_wrappers -- --ignored --test-threads=1
           done
       - name: Verify ARM64 enum-vector C contracts with real compiler schemas and native CLI cases
         env:
