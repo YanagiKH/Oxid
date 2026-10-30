@@ -1,7 +1,7 @@
 //! Local NTFS module admission under the ordinary stable-filesystem contract.
 //! Handles bind inspection to reads; this is not a concurrent-filesystem sandbox.
 use super::{
-    add, io_error, path_units, policy, resource, scan_entries, Allocator, Diagnostic,
+    add, io_error, path_units, resource, scan_entries_at as scan_entries, Allocator, Diagnostic,
     ProjectLimits, SourceUsage, Span,
 };
 use std::{
@@ -133,13 +133,20 @@ impl VerifiedChild {
         &self,
         origin: Span,
     ) -> Result<(), Box<Diagnostic>> {
+        self.validate_at(Some(origin))
+    }
+
+    pub(in crate::frontend::project) fn validate_at(
+        &self,
+        origin: Option<Span>,
+    ) -> Result<(), Box<Diagnostic>> {
         for parent in &self.parents[..self.parents_len] {
             let parent = parent.as_ref().ok_or_else(|| {
                 Diagnostic::new(
                     "E0500",
                     "source-project",
                     "Windows module ancestor ownership invariant failed",
-                    Some(origin),
+                    origin,
                 )
             })?;
             let actual = information(&parent.file, true, origin)?.identity();
@@ -172,16 +179,16 @@ impl Scratch {
         probe_bytes: usize,
         limits: ProjectLimits,
         usage: SourceUsage,
-        origin: Span,
+        origin: Option<Span>,
     ) -> Result<Self, Box<Diagnostic>> {
-        let fixed = fixed_scratch_bytes().ok_or_else(|| super::super::overflow(Some(origin)))?;
-        let held = add(usage.retained_path_bytes, probe_bytes, Some(origin))
-            .and_then(|n| add(n, fixed, Some(origin)))?;
+        let fixed = fixed_scratch_bytes().ok_or_else(|| super::super::overflow(origin))?;
+        let held = add(usage.retained_path_bytes, probe_bytes, origin)
+            .and_then(|n| add(n, fixed, origin))?;
         let available = limits
             .path_bytes
             .min(4 * 1024 * 1024)
             .checked_sub(held)
-            .ok_or_else(|| resource("Windows module path scratch limit exceeded", Some(origin)))?;
+            .ok_or_else(|| resource("Windows module path scratch limit exceeded", origin))?;
         Ok(Self { available })
     }
 
@@ -189,22 +196,22 @@ impl Scratch {
         &self,
         units: usize,
         allocator: &mut Allocator,
-        origin: Span,
+        origin: Option<Span>,
         kind: &'static str,
     ) -> Result<Vec<u16>, Box<Diagnostic>> {
         let bytes = units
             .checked_mul(size_of::<u16>())
-            .ok_or_else(|| super::super::overflow(Some(origin)))?;
+            .ok_or_else(|| super::super::overflow(origin))?;
         if units > MAX_WIDE_PATH || bytes > self.available {
             return Err(resource(
                 "Windows module path scratch limit exceeded",
-                Some(origin),
+                origin,
             ));
         }
         let mut result = Vec::new();
         allocator
             .vector_exact(&mut result, units, kind)
-            .map_err(|error| super::super::reserve_error(error, Some(origin)))?;
+            .map_err(|error| super::super::reserve_error(error, origin))?;
         Ok(result)
     }
 }
@@ -223,6 +230,10 @@ pub(in crate::frontend::project) fn admit_invoked_entry(
     entry: &Path,
     origin: Span,
 ) -> Result<(), Box<Diagnostic>> {
+    admit_invoked_entry_at(entry, Some(origin))
+}
+
+fn admit_invoked_entry_at(entry: &Path, origin: Option<Span>) -> Result<(), Box<Diagnostic>> {
     for component in entry.components() {
         match component {
             Component::Prefix(prefix) => match prefix.kind() {
@@ -247,14 +258,22 @@ pub(in crate::frontend::project) fn admit_invoked_entry(
     Ok(())
 }
 
-fn namespace(origin: Span) -> Box<Diagnostic> {
+pub(in crate::frontend::project) fn admit_package_path(path: &Path) -> Result<(), Box<Diagnostic>> {
+    admit_invoked_entry_at(path, None)
+}
+
+fn policy(message: &'static str, origin: Option<Span>) -> Box<Diagnostic> {
+    super::super::owned_diagnostic::diagnostic("E0005", "source", format_args!("{message}"), origin)
+}
+
+fn namespace(origin: Option<Span>) -> Box<Diagnostic> {
     policy(
         "Windows module source policy requires ordinary local drive paths without device, network or stream aliases",
         origin,
     )
 }
 
-fn admit_root(root: &Path, origin: Span) -> Result<(), Box<Diagnostic>> {
+fn admit_root(root: &Path, origin: Option<Span>) -> Result<(), Box<Diagnostic>> {
     let mut components = root.components();
     if !matches!(
         components.next(),
@@ -271,7 +290,7 @@ fn admit_root(root: &Path, origin: Span) -> Result<(), Box<Diagnostic>> {
 fn information(
     file: &File,
     directory: bool,
-    origin: Span,
+    origin: Option<Span>,
 ) -> Result<FileInformation, Box<Diagnostic>> {
     // SAFETY: These APIs borrow a live, owned file handle. The output has the
     // checked C layout above and stays writable for the complete call.
@@ -282,7 +301,7 @@ fn information(
     if kind == 0 {
         let error = io::Error::last_os_error();
         if error.raw_os_error() != Some(0) {
-            return Err(io_error(error, "", Some(origin)));
+            return Err(io_error(error, "", origin));
         }
     }
     if kind != FILE_TYPE_DISK {
@@ -293,7 +312,7 @@ fn information(
     }
     let mut value = FileInformation::default();
     if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut value) } == 0 {
-        return Err(io_error(io::Error::last_os_error(), "", Some(origin)));
+        return Err(io_error(io::Error::last_os_error(), "", origin));
     }
     if value.attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(policy(
@@ -319,7 +338,7 @@ fn open(
     directory: bool,
     scratch: &Scratch,
     allocator: &mut Allocator,
-    origin: Span,
+    origin: Option<Span>,
 ) -> Result<(File, Identity), Box<Diagnostic>> {
     let count = path
         .as_os_str()
@@ -328,9 +347,9 @@ fn open(
             if unit == 0 {
                 return Err(namespace(origin));
             }
-            add(count, 1, Some(origin))
+            add(count, 1, origin)
         })?;
-    let units = add(count, 1, Some(origin))?;
+    let units = add(count, 1, origin)?;
     let mut wide = scratch.wide(units, allocator, origin, "Windows module open path")?;
     wide.extend(path.as_os_str().encode_wide());
     wide.push(0);
@@ -365,7 +384,7 @@ fn open(
         )
     };
     if raw as isize == -1 || raw.is_null() {
-        return Err(io_error(io::Error::last_os_error(), "", Some(origin)));
+        return Err(io_error(io::Error::last_os_error(), "", origin));
     }
     // SAFETY: CreateFileW returned one valid uniquely owned handle. File closes
     // it on all later errors; no other owner receives the raw value.
@@ -374,7 +393,7 @@ fn open(
     Ok((file, identity))
 }
 
-fn volume(file: &File, identity: Identity, origin: Span) -> Result<(), Box<Diagnostic>> {
+fn volume(file: &File, identity: Identity, origin: Option<Span>) -> Result<(), Box<Diagnostic>> {
     let mut serial = 0;
     let mut maximum_component = 0;
     let mut flags = 0;
@@ -395,7 +414,7 @@ fn volume(file: &File, identity: Identity, origin: Span) -> Result<(), Box<Diagn
         )
     } == 0
     {
-        return Err(io_error(io::Error::last_os_error(), "", Some(origin)));
+        return Err(io_error(io::Error::last_os_error(), "", origin));
     }
     let end = filesystem
         .iter()
@@ -430,14 +449,14 @@ fn qualified_volume(name: &[u16], serial: u32, expected: u32, maximum_component:
         && maximum_component == 255
 }
 
-fn pathname_error(error: io::Error, flags: u32, origin: Span) -> Box<Diagnostic> {
+fn pathname_error(error: io::Error, flags: u32, origin: Option<Span>) -> Box<Diagnostic> {
     if flags == VOLUME_NAME_GUID && matches!(error.raw_os_error(), Some(1 | 3 | 50 | 87)) {
         return policy(
             "Windows module source policy requires an ordinary local NTFS volume identity",
             origin,
         );
     }
-    io_error(error, "", Some(origin))
+    io_error(error, "", origin)
 }
 
 fn query_name(
@@ -445,7 +464,7 @@ fn query_name(
     flags: u32,
     scratch: &Scratch,
     allocator: &mut Allocator,
-    origin: Span,
+    origin: Option<Span>,
     kind: &'static str,
 ) -> Result<Vec<u16>, Box<Diagnostic>> {
     // SAFETY: This first call borrows a live handle and requests only a length.
@@ -454,7 +473,7 @@ fn query_name(
     if required == 0 {
         return Err(pathname_error(io::Error::last_os_error(), flags, origin));
     }
-    let units = usize::try_from(required).map_err(|_| super::super::overflow(Some(origin)))?;
+    let units = usize::try_from(required).map_err(|_| super::super::overflow(origin))?;
     let mut wide = scratch.wide(units, allocator, origin, kind)?;
     wide.resize(units, 0);
     // SAFETY: required was bounded and fallibly reserved; resize initialized
@@ -465,13 +484,17 @@ fn query_name(
     if count == 0 {
         return Err(pathname_error(io::Error::last_os_error(), flags, origin));
     }
-    let count = usize::try_from(count).map_err(|_| super::super::overflow(Some(origin)))?;
+    let count = usize::try_from(count).map_err(|_| super::super::overflow(origin))?;
     validate_name_buffer(&wide, count, origin)?;
     wide.truncate(count);
     Ok(wide)
 }
 
-fn validate_name_buffer(wide: &[u16], count: usize, origin: Span) -> Result<(), Box<Diagnostic>> {
+fn validate_name_buffer(
+    wide: &[u16],
+    count: usize,
+    origin: Option<Span>,
+) -> Result<(), Box<Diagnostic>> {
     if count >= wide.len() || wide[count] != 0 || wide[..count].contains(&0) {
         return Err(policy(
             "module canonical pathname changed during loading",
@@ -492,7 +515,7 @@ fn final_name(
     expected: &Path,
     scratch: &Scratch,
     allocator: &mut Allocator,
-    origin: Span,
+    origin: Option<Span>,
 ) -> Result<(), Box<Diagnostic>> {
     // VOLUME_NAME_DOS | FILE_NAME_NORMALIZED matches std canonicalize. Validate
     // against the ordinary canonical root plus exact scanned components; do not
@@ -521,7 +544,7 @@ fn validate_final_name(
     expected: &Path,
     origin: Span,
 ) -> Result<(), Box<Diagnostic>> {
-    validate_name_buffer(wide, count, origin)?;
+    validate_name_buffer(wide, count, Some(origin))?;
     if !wide[..count]
         .iter()
         .copied()
@@ -529,7 +552,7 @@ fn validate_final_name(
     {
         return Err(policy(
             "module canonical pathname changed during loading",
-            origin,
+            Some(origin),
         ));
     }
     Ok(())
@@ -540,7 +563,7 @@ fn local_volume_name(
     root: &Path,
     scratch: &Scratch,
     allocator: &mut Allocator,
-    origin: Span,
+    origin: Option<Span>,
 ) -> Result<(), Box<Diagnostic>> {
     // Network shares have no volume GUID. A drive-shaped pathname plus the
     // server's reported NTFS name must never be mistaken for local storage.
@@ -555,7 +578,11 @@ fn local_volume_name(
     validate_volume_name(&wide, root, origin)
 }
 
-fn validate_volume_name(wide: &[u16], root: &Path, origin: Span) -> Result<(), Box<Diagnostic>> {
+fn validate_volume_name(
+    wide: &[u16],
+    root: &Path,
+    origin: Option<Span>,
+) -> Result<(), Box<Diagnostic>> {
     let reject = || {
         policy(
             "Windows module source policy requires an ordinary local NTFS volume identity",
@@ -607,14 +634,55 @@ pub(in crate::frontend::project) fn verify(
     allocator: &mut Allocator,
     origin: Span,
 ) -> Result<(PathBuf, VerifiedChild), Box<Diagnostic>> {
+    verify_at(root, relative, limits, usage, allocator, Some(origin))
+}
+
+pub(in crate::frontend::project) fn verify_entry(
+    root: &Path,
+    relative: &str,
+    limits: ProjectLimits,
+    usage: &mut SourceUsage,
+    allocator: &mut Allocator,
+) -> Result<(PathBuf, VerifiedChild), Box<Diagnostic>> {
+    if !cfg!(all(
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )) {
+        return Err(policy(
+            "package source policy is not qualified on this host",
+            None,
+        ));
+    }
+    admit_invoked_entry_at(Path::new(relative), None)?;
+    if relative.is_empty()
+        || relative.len() > 4096
+        || relative.split('/').count() > MAX_ANCESTORS
+        || Path::new(relative)
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_)) || part.as_os_str().len() > 255)
+    {
+        return Err(namespace(None));
+    }
+    verify_at(root, relative, limits, usage, allocator, None)
+}
+
+fn verify_at(
+    root: &Path,
+    relative: &str,
+    limits: ProjectLimits,
+    usage: &mut SourceUsage,
+    allocator: &mut Allocator,
+    origin: Option<Span>,
+) -> Result<(PathBuf, VerifiedChild), Box<Diagnostic>> {
     admit_root(root, origin)?;
-    let joined = add(path_units(root), separator_units(root), Some(origin))
-        .and_then(|n| add(n, relative.len(), Some(origin)))?;
+    let joined = add(path_units(root), separator_units(root), origin)
+        .and_then(|n| add(n, relative.len(), origin))?;
     let scratch = Scratch::new(joined, limits, *usage, origin)?;
     let mut probe = PathBuf::new();
     allocator
         .path(&mut probe, joined, "module probe path")
-        .map_err(|error| super::super::reserve_error(error, Some(origin)))?;
+        .map_err(|error| super::super::reserve_error(error, origin))?;
     probe.push(root);
     let (root_file, root_identity) = open(root, true, &scratch, allocator, origin)?;
     volume(&root_file, root_identity, origin)?;
@@ -628,14 +696,11 @@ pub(in crate::frontend::project) fn verify(
     let mut parents_len = 1;
     let mut components = relative.split('/').peekable();
     while let Some(component) = components.next() {
-        usage.probes = add(usage.probes, 1, Some(origin))?;
+        usage.probes = add(usage.probes, 1, origin)?;
         if usage.probes > limits.probes.min(8448) {
-            return Err(resource(
-                "module directory probe budget exceeded",
-                Some(origin),
-            ));
+            return Err(resource("module directory probe budget exceeded", origin));
         }
-        let entries = std::fs::read_dir(&probe).map_err(|e| io_error(e, "", Some(origin)))?;
+        let entries = std::fs::read_dir(&probe).map_err(|e| io_error(e, "", origin))?;
         let (exact, folded) = scan_entries(
             entries.map(|entry| entry.map(|entry| entry.file_name())),
             component,
@@ -651,7 +716,7 @@ pub(in crate::frontend::project) fn verify(
                     "E0002",
                     "source",
                     format_args!("declared module path component is missing"),
-                    Some(origin),
+                    origin,
                 )
             });
         }
@@ -667,7 +732,7 @@ pub(in crate::frontend::project) fn verify(
         final_name(&file, &probe, &scratch, allocator, origin)?;
         if directory {
             if parents_len == parents.len() {
-                return Err(resource("module depth limit exceeded", Some(origin)));
+                return Err(resource("module depth limit exceeded", origin));
             }
             parents[parents_len] = Some(Ancestor { file, identity });
             parents_len += 1;
@@ -684,11 +749,110 @@ pub(in crate::frontend::project) fn verify(
                 parents,
                 parents_len,
             };
-            child.validate(origin)?;
+            child.validate_at(origin)?;
             return Ok((probe, child));
         }
     }
     Err(policy("module source path is empty", origin))
+}
+
+/// Borrow the inspected file while its ancestor/identity ownership stays live.
+/// Callers retain their existing byte limits and read the same native handle.
+pub(crate) fn with_windows_regular_file<T>(
+    path: &Path,
+    kind: &str,
+    read: impl FnOnce(&mut File) -> Result<T, String>,
+) -> Result<T, String> {
+    let describe = |message| format!("cannot read {kind} {}: {message}", path.display());
+    if path_units(path) > 4096 {
+        return Err(describe("pathname limit exceeded".to_owned()));
+    }
+    admit_invoked_entry_at(path, None).map_err(|error| describe(error.message))?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let root = parent
+        .canonicalize()
+        .map_err(|error| describe(error.to_string()))?;
+    if root.to_str().is_none_or(|text| text.len() > 4096) {
+        return Err(describe(
+            "canonical pathname must be bounded UTF-8".to_owned(),
+        ));
+    }
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| describe("filename must be UTF-8".to_owned()))?;
+    if path_units(&root)
+        .checked_add(separator_units(&root))
+        .and_then(|bytes| bytes.checked_add(name.len()))
+        .is_none_or(|bytes| bytes > 4096)
+    {
+        return Err(describe("canonical pathname limit exceeded".to_owned()));
+    }
+    let mut usage = SourceUsage {
+        retained_path_bytes: path_units(&root),
+        ..Default::default()
+    };
+    let (_, mut child) = verify_entry(
+        &root,
+        name,
+        ProjectLimits::default(),
+        &mut usage,
+        &mut Allocator::default(),
+    )
+    .map_err(|error| describe(error.message))?;
+    child
+        .validate_at(None)
+        .map_err(|error| describe(error.message))?;
+    let result = read(&mut child.file)?;
+    child
+        .validate_at(None)
+        .map_err(|error| describe(error.message))?;
+    Ok(result)
+}
+
+pub(crate) fn verify_windows_workspace_member(
+    root: &Path,
+    member: &str,
+) -> Result<PathBuf, String> {
+    let length = if member == "." {
+        9
+    } else {
+        member
+            .len()
+            .checked_add(10)
+            .ok_or("workspace member pathname overflow")?
+    };
+    if length > 4096 {
+        return Err("workspace member pathname limit exceeded".into());
+    }
+    let mut allocator = Allocator::default();
+    let mut relative = String::new();
+    allocator
+        .string(&mut relative, length, "workspace member relative path")
+        .map_err(|error| super::super::reserve_error(error, None).message)?;
+    if member != "." {
+        relative.push_str(member);
+        relative.push('/');
+    }
+    relative.push_str("oxid.toml");
+    let mut usage = SourceUsage {
+        retained_path_bytes: length,
+        ..Default::default()
+    };
+    let (mut path, child) = verify_entry(
+        root,
+        &relative,
+        ProjectLimits::default(),
+        &mut usage,
+        &mut allocator,
+    )
+    .map_err(|error| error.message)?;
+    drop(child);
+    path.pop();
+    Ok(path)
 }
 
 #[cfg(test)]
@@ -728,6 +892,109 @@ mod tests {
             start: 0,
             end: 1,
         }
+    }
+
+    #[test]
+    fn package_entry_native_failures_keep_no_invented_span_and_release_every_handle() {
+        let fixture = Fixture::new();
+        let mut allocator = Allocator::default();
+        let (_, child) = verify_entry(
+            &fixture.0,
+            "child.ox",
+            ProjectLimits::default(),
+            &mut SourceUsage::default(),
+            &mut allocator,
+        )
+        .unwrap();
+        let attempts = allocator.attempts;
+        assert_eq!(attempts, 6);
+        child.validate_at(None).unwrap();
+        drop(child);
+        fixture.moved();
+        for attempt in 1..=attempts {
+            let mut allocator = Allocator {
+                fail_at: Some(attempt),
+                ..Default::default()
+            };
+            let error = verify_entry(
+                &fixture.0,
+                "child.ox",
+                ProjectLimits::default(),
+                &mut SourceUsage::default(),
+                &mut allocator,
+            )
+            .unwrap_err();
+            assert_eq!((error.code, error.stage), ("E0400", "source-project"));
+            assert_eq!(error.primary, None);
+            assert!(error.secondary.is_empty());
+            assert_eq!(allocator.attempts, attempt);
+            fixture.moved();
+        }
+        for relative in [
+            "../child.ox",
+            r"..\child.ox",
+            "/child.ox",
+            "child.ox:stream",
+            "child.ox.",
+        ] {
+            let mut usage = SourceUsage::default();
+            let mut allocator = Allocator::default();
+            let error = verify_entry(
+                &fixture.0,
+                relative,
+                ProjectLimits::default(),
+                &mut usage,
+                &mut allocator,
+            )
+            .unwrap_err();
+            assert_eq!((error.code, error.primary), ("E0005", None));
+            assert_eq!(usage, SourceUsage::default());
+            assert_eq!(allocator.attempts, 0);
+        }
+    }
+
+    #[test]
+    fn package_entry_identity_validation_checks_actual_replacement_handles() {
+        let fixture = Fixture::new();
+        std::fs::write(fixture.0.join("other.ox"), b"other").unwrap();
+        let (path, mut child) = verify_entry(
+            &fixture.0,
+            "child.ox",
+            ProjectLimits::default(),
+            &mut SourceUsage::default(),
+            &mut Allocator::default(),
+        )
+        .unwrap();
+        assert!(std::fs::OpenOptions::new().write(true).open(&path).is_err());
+        assert!(std::fs::rename(&path, fixture.0.join("moved.ox")).is_err());
+        child.file = File::open(fixture.0.join("other.ox")).unwrap();
+        let error = child.validate_at(None).unwrap_err();
+        assert_eq!((error.code, error.primary), ("E0005", None));
+        assert_eq!(error.message, "module source changed during loading");
+        drop(child);
+        fixture.moved();
+    }
+
+    #[test]
+    fn metadata_reader_borrows_the_inspected_handle_and_releases_it_on_callback_failure() {
+        use std::io::Read;
+        let fixture = Fixture::new();
+        let path = fixture.0.join("child.ox");
+        let bytes = with_windows_regular_file(&path, "manifest", |file| {
+            assert!(std::fs::OpenOptions::new().write(true).open(&path).is_err());
+            assert!(std::fs::rename(&path, fixture.0.join("moved.ox")).is_err());
+            let mut bytes = Vec::new();
+            file.take(9)
+                .read_to_end(&mut bytes)
+                .map_err(|error| error.to_string())?;
+            Ok(bytes)
+        })
+        .unwrap();
+        assert_eq!(bytes, b"retained\0");
+        fixture.moved();
+        let failure = with_windows_regular_file::<()>(&path, "lock", |_| Err("read failed".into()));
+        assert_eq!(failure.unwrap_err(), "read failed");
+        fixture.moved();
     }
 
     #[test]
@@ -824,13 +1091,13 @@ mod tests {
                 ..Default::default()
             },
             SourceUsage::default(),
-            origin(),
+            Some(origin()),
         )
         .unwrap();
         assert_eq!(scratch.available, 2);
         for units in [2, MAX_WIDE_PATH + 1, usize::MAX] {
             let error = scratch
-                .wide(units, &mut allocator, origin(), "test native path")
+                .wide(units, &mut allocator, Some(origin()), "test native path")
                 .unwrap_err();
             assert_eq!((error.code, error.stage), ("E0400", "source-project"));
         }
@@ -852,7 +1119,7 @@ mod tests {
         assert_eq!(allocator.attempts, 0);
         assert_eq!(usage.probes, 0);
         let wide = scratch
-            .wide(1, &mut allocator, origin(), "test native path")
+            .wide(1, &mut allocator, Some(origin()), "test native path")
             .unwrap();
         assert_eq!(wide.len(), 0);
         assert_eq!(allocator.trace[0].length, 1);
@@ -959,7 +1226,7 @@ mod tests {
         let root = Path::new(r"\\?\C:\ordinary\child");
         let text = r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\ordinary\child";
         let good: Vec<_> = text.encode_utf16().collect();
-        validate_volume_name(&good, root, origin()).unwrap();
+        validate_volume_name(&good, root, Some(origin())).unwrap();
         for text in [
             r"\\?\UNC\server\share\ordinary\child",
             r"\\?\C:\ordinary\child",
@@ -969,25 +1236,25 @@ mod tests {
         ] {
             let wide: Vec<_> = text.encode_utf16().collect();
             assert_eq!(
-                validate_volume_name(&wide, root, origin())
+                validate_volume_name(&wide, root, Some(origin()))
                     .unwrap_err()
                     .code,
                 "E0005"
             );
         }
         for count in 0..49 {
-            assert!(validate_volume_name(&good[..count], root, origin()).is_err());
+            assert!(validate_volume_name(&good[..count], root, Some(origin())).is_err());
         }
         for code in [1, 3, 50, 87] {
             let error = pathname_error(
                 io::Error::from_raw_os_error(code),
                 VOLUME_NAME_GUID,
-                origin(),
+                Some(origin()),
             );
             assert_eq!((error.code, error.stage), ("E0005", "source"));
         }
         for (code, flags) in [(5, VOLUME_NAME_GUID), (32, VOLUME_NAME_GUID), (3, 0)] {
-            let error = pathname_error(io::Error::from_raw_os_error(code), flags, origin());
+            let error = pathname_error(io::Error::from_raw_os_error(code), flags, Some(origin()));
             assert_eq!((error.code, error.stage), ("E0002", "source"));
         }
     }
