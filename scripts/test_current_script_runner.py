@@ -134,7 +134,7 @@ def load_tests(loader, tests, pattern):
             "test_record_field_completion_compatibility", "test_file_seek_compatibility",
             "test_scalar_library_compatibility", "test_arm64_package_compatibility",
             "test_registry_compatibility", "test_owned_record_vector_compatibility",
-            "test_owned_text_compatibility"})
+            "test_owned_text_compatibility", "test_offline_vendor_compatibility"})
         for module, (_, revision, _) in runner.PREDECESSOR_ONLY.items():
             name = module + ".py"
             for source in (FROZEN_SOURCES[name] + PASSING.encode(), None):
