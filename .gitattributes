@@ -132,3 +132,17 @@ examples/typed-owned-text/tests/reject/self-append.ox -text
 
 # Embedded UTF-8 library source retains exact bytes on every host.
 packages/utf8_text/src/lib.ox -text
+
+# Scalar compiler subject inputs retain their authenticated bytes on every host.
+compiler/native/tests/cases.json -text
+compiler/native/tests/fixtures/comments.ox -text
+compiler/native/tests/fixtures/control.ox -text
+compiler/native/tests/fixtures/forward.ox -text
+compiler/native/tests/fixtures/late_syntax_error.ox -text
+compiler/native/tests/fixtures/late_type_error.ox -text
+compiler/native/tests/fixtures/minimum.ox -text
+compiler/native/tests/fixtures/negative_division.ox -text
+compiler/native/tests/fixtures/scopes.ox -text
+compiler/native/tests/fixtures/short_circuit.ox -text
+compiler/native/tests/fixtures/unit.ox -text
+compiler/native/tests/fixtures/unreachable_error.ox -text

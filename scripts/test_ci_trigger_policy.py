@@ -1296,9 +1296,41 @@ exit 0
     def test_cross_platform_benchmark_step_propagates_every_failed_command(self):
         self.exercise_cross_platform_exit_propagation('Exercise current benchmark reporting')
 
+    def test_scalar_compiler_is_built_and_verified_with_retained_native_evidence(self):
+        native = block(self.ci, 'native-projects', 2)
+        self.assertIn('    runs-on: ubuntu-latest\n', native)
+        self.assertIn('      OXID_LLVM_BIN: /usr/lib/llvm-19/bin\n', native)
+        selected = re.findall(
+            r'^      - name: Verify the Oxid-authored scalar compiler\n'
+            r'(.*?)(?=^      - |\Z)', native, re.M | re.S)
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0], (
+            '        shell: bash\n'
+            '        run: |\n'
+            '          set -euo pipefail\n'
+            '          python3 -B -m unittest discover -s scripts -p test_native_compiler_registration.py -v\n'
+            '          (\n'
+            '            cd compiler/native\n'
+            '            "$GITHUB_WORKSPACE/target/release/oxid" build --profile=release\n'
+            '          )\n'
+            '          python3 -B compiler/native/tests/verify.py \\\n'
+            '            --compiler compiler/native/.oxid/bin/oxid-scalar-compiler \\\n'
+            '            --clang "$OXID_LLVM_BIN/clang" --reference target/release/oxid \\\n'
+            '            --output "$RUNNER_TEMP/current-scalar-compiler"\n'))
+        upload = re.findall(r'^      - name: Retain current native evidence\n'
+                            r'(.*?)(?=^      - |\Z)', native, re.M | re.S)
+        self.assertEqual(len(upload), 1)
+        for required in ('        if: always()\n',
+                         '        uses: actions/upload-artifact@v4\n',
+                         '            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-scalar-compiler\n',
+                         '          include-hidden-files: true\n',
+                         '          if-no-files-found: error\n'):
+            self.assertIn(required, upload[0])
+        self.assertLess(native.index(selected[0]), native.index(upload[0]))
+
 
 NATIVE_EVIDENCE_DIRECTORIES = (
-    'current-native', 'current-reproducible-native', 'current-native-profiles',
+    'current-native', 'current-scalar-compiler', 'current-reproducible-native', 'current-native-profiles',
     'current-owned-enum-application', 'current-local-references-debug',
     'current-local-references-release', 'current-local-reference-bindings',
     'current-generic-field-borrows', 'current-native-reachability',
@@ -1371,8 +1403,10 @@ class NativeProjectEvidenceTests(unittest.TestCase):
 
     def test_native_checkout_and_complete_explicit_container_evidence_roster(self):
         _, paths = require_native_project_evidence(self.native)
-        self.assertEqual(len(paths), 33)
-        self.assertEqual(len(set(paths)), 33)
+        self.assertEqual(len(paths), 34)
+        self.assertEqual(len(set(paths)), 34)
+        self.assertIn("${{ runner.temp }}/current-scalar-compiler", paths)
+        self.assertEqual(len(set(paths) - {"${{ runner.temp }}/current-scalar-compiler"}), 33)
         self.assertNotIn('${{ runner.temp }}', '\n'.join(paths))
         self.assertFalse(any('*' in path or '..' in path for path in paths))
 

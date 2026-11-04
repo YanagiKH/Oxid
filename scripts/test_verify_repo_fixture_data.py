@@ -414,6 +414,34 @@ def owned_record_vector_data_predecessor_report(text):
     return text[:start] + str(count - len(OWNED_RECORD_VECTOR_DATA_SOURCES)) + text[end:]
 
 
+def native_compiler_predecessor_report(text):
+    """Project only the separately asserted compiler check and 11 data inputs."""
+    data = list(re.finditer(r"^fixture-data validation passed: (?P<data>\d+) source-only files", text, re.M))
+    report = list(re.finditer(
+        r"^repository verification passed: (?P<language>\d+) language sources, "
+        r"(?P<checks>\d+) checks, (?P<runs>\d+) runnable programs "
+        r"\(\d+ legacy sources, \d+ legacy runnable programs, "
+        r"(?P<members>\d+) typed source members / (?P<entries>\d+) typed entry runs; "
+        r"\d+ v2 overlay source members / \d+ materialized typed checks in a \d+-module closure; "
+        r"\d+ wide parser overlay members / 2 materialized typed checks; "
+        r"(?P<projects>\d+) manifest projects checked; (?P<project_runs>\d+) run; "
+        r"(?P<project_tests>\d+) tested\)", text, re.M))
+    if len(data) != 1 or len(report) != 1:
+        raise AssertionError("expected one complete repository summary and DATA summary")
+    changes = ((data[0], {"data": 11}),
+               (report[0], {"language": 7, "checks": 1, "members": 7, "projects": 1}))
+    edits = []
+    for match, deltas in changes:
+        for name, delta in deltas.items():
+            value = int(match.group(name))
+            if value < delta:
+                raise AssertionError("scalar compiler successor exceeds its reported category")
+            edits.append((*match.span(name), str(value - delta)))
+    for start, end, value in sorted(edits, reverse=True):
+        text = text[:start] + value + text[end:]
+    return text
+
+
 class PublishedRegistrationTests(unittest.TestCase):
     def test_full_published_inputs_and_exact_predecessor_inventory(self):
         root = verify_repo.ROOT
@@ -444,6 +472,19 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertTrue(all(path.is_file() for path in registered | u8_registered))
         sources = discover(root)
         checks, typed_entries, typed_members = verify_repo.source_plan(sources, root)
+        compiler_data = verify_repo.native_compiler_fixture_data_sources(root)
+        compiler_members = {root / name for name in verify_repo.TYPED_MANIFEST_PROJECTS["compiler/native"]}
+        self.assertEqual((len(compiler_data), len(compiler_members)), (11, 7))
+        self.assertFalse(compiler_data & compiler_members)
+        self.assertTrue(compiler_data | compiler_members <= set(sources))
+        self.assertEqual([row for row in checks if row[0] == root / "compiler/native"],
+                         [(root / "compiler/native", True)])
+        self.assertNotIn(root / "compiler/native", typed_entries)
+        self.assertFalse(any(path in compiler_data | compiler_members for path, _ in checks))
+        # Retain every earlier count/fingerprint after this exact checked delta.
+        sources = [path for path in sources if path not in compiler_data | compiler_members]
+        checks = [row for row in checks if row[0] != root / "compiler/native"]
+        typed_members -= len(compiler_members)
         byte_data = verify_repo.byte_storage_fixture_data_sources(root)
         self.assertEqual(len(byte_data), 325)
         self.assertFalse(data_sources & byte_data)
@@ -463,10 +504,10 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(owned_text_data, {root / name for name in OWNED_TEXT_DATA_SOURCES})
         self.assertEqual(len(owned_text_data), 4)
         self.assertFalse(owned_text_data & (data_sources | byte_data | vector_data | copy_data | owned_vector_data))
-        self.assertEqual(len(verify_repo.fixture_data_sources(root)), 569)
-        self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - GENERIC_OWNED_VECTOR_PROJECTS.keys()), 22)
+        self.assertEqual(len(verify_repo.fixture_data_sources(root) - compiler_data), 569)
+        self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - GENERIC_OWNED_VECTOR_PROJECTS.keys() - {"compiler/native"}), 22)
         self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 9)
-        predecessor_fixture_data = verify_repo.fixture_data_sources(root) - owned_vector_data - owned_text_data
+        predecessor_fixture_data = verify_repo.fixture_data_sources(root) - owned_vector_data - owned_text_data - compiler_data
         self.assertEqual(predecessor_fixture_data - copy_data, data_sources | byte_data | vector_data)
         self.assertEqual(len(data_sources | byte_data), 188 + 325)
         language = [p.relative_to(root).as_posix() for p in sources if p not in data_sources | byte_data]
@@ -540,7 +581,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         before_owned_vector_manifest_projects = {
             name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
             if name not in OWNED_RECORD_VECTOR_PROJECTS and name not in OWNED_TEXT_PROJECTS
-            and name not in GENERIC_OWNED_VECTOR_PROJECTS}
+            and name not in GENERIC_OWNED_VECTOR_PROJECTS and name != "compiler/native"}
         language = [name for name in language if name not in OWNED_RECORD_VECTOR_MEMBERS]
         check_inventory = [row for row in check_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
         run_inventory = [row for row in run_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
@@ -618,7 +659,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                           if name not in COPY_PROJECTS},
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS, **GROWABLE_VECTOR_PROJECTS})
         self.assertEqual(tuple(name for name in verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS
-                               if name not in GENERIC_OWNED_VECTOR_PROJECTS),
+                               if name not in GENERIC_OWNED_VECTOR_PROJECTS and name != "compiler/native"),
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
         self.assertEqual(len(CPU_MEMBERS), 33)
         self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
@@ -885,6 +926,15 @@ class PublishedRegistrationTests(unittest.TestCase):
             self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
         self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
                              for name in GENERIC_OWNED_VECTOR_MEMBERS for call in run.call_args_list))
+        compiler_root = verify_repo.ROOT / "compiler/native"
+        compiler_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == compiler_root]
+        self.assertEqual([call.args[0] for call in compiler_calls],
+                         [[str(Path(sys.executable).resolve()), "check"]])
+        compiler_paths = verify_repo.native_compiler_fixture_data_sources(verify_repo.ROOT)
+        compiler_paths.update(verify_repo.ROOT / name
+                              for name in verify_repo.TYPED_MANIFEST_PROJECTS["compiler/native"])
+        self.assertFalse(any(str(path) in call.args[0] for path in compiler_paths for call in run.call_args_list))
+        before_compiler_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") != compiler_root]
         owned_text_data = verify_repo.owned_text_fixture_data_sources(verify_repo.ROOT)
         self.assertEqual(owned_text_data, {verify_repo.ROOT / name for name in OWNED_TEXT_DATA_SOURCES})
         self.assertFalse(any(str(path) in call.args[0] for path in owned_text_data for call in run.call_args_list))
@@ -905,7 +955,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertTrue(all(call.kwargs.get("input_text") == "" for call in owned_vector_calls[1:]))
         self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
                              for name in OWNED_RECORD_VECTOR_MEMBERS for call in run.call_args_list))
-        before_owned_vector_calls = [call for call in run.call_args_list
+        before_owned_vector_calls = [call for call in before_compiler_calls
                                      if call.kwargs.get("cwd") not in {owned_vector_root, owned_text_root} | generic_roots]
         copy_root = verify_repo.ROOT / "examples/copy-records"
         copy_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == copy_root]
@@ -933,7 +983,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         predecessor_calls = [call for call in predecessor_calls if library not in call.args[0]]
         output = io.StringIO(copy_predecessor_report(record_vector_predecessor_report(
             owned_record_vector_predecessor_report(owned_record_vector_data_predecessor_report(
-                generic_owned_vector_predecessor_report(output.getvalue()))))))
+                generic_owned_vector_predecessor_report(native_compiler_predecessor_report(output.getvalue())))))))
         application = verify_repo.ROOT / "apps/byte-count"
         application_calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == application]
         self.assertEqual([call.args[0] for call in application_calls],
