@@ -92,13 +92,11 @@ fn success(output: Output) {
 fn workspace_check_success(output: Output) {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert_eq!(
-        output.stdout,
-        b"typed-preview check ok (2 functions; check only)\n",
+        output.stdout, b"typed-preview check ok (2 functions; check only)\n",
         "{output:?}"
     );
     assert_eq!(
-        output.stderr,
-        b"app: ok\nworkspace check: 1 passed; 0 failed\n",
+        output.stderr, b"app: ok\nworkspace check: 1 passed; 0 failed\n",
         "{output:?}"
     );
 }

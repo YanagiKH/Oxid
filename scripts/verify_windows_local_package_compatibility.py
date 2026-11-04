@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 PREDECESSOR_POLICY = 'scripts/verify_generic_owned_vector_compatibility.py'
 PREDECESSOR_POLICY_PIN = (43357, '8e80cbdb0b42e01dd4e125d36215dc94ff37422a0e10786216ec02ad66831ad0')
-REVIEWED_SOURCE_HEAD = '0d72e4f621534a4eaf6e5495d0719e0400615673'
+REVIEWED_SOURCE_HEAD = 'f89b5e5eef3162e7ca56f150f6455eb8f64e3f99'
 # Reviewed source identity only; Windows runtime qualification remains separate.
 PINS_PROVISIONAL = False
 # The inherited observer and its derived bytes are already frozen unchanged.
@@ -82,8 +82,7 @@ REVIEWED_INPUTS = {'src/frontend/driver.rs': (103954, 'ed53ec43697679153f55ccb8f
  'tests/typed_package_lock.rs': (20993, '8b6af5ec384013af6f5ea3dbd0beb39c6eeaab7352e91b5bac82a9bf8fe020da'),
  'tests/typed_path_dependencies.rs': (22937,
                                       '36d29ba7b66045e2fb586d431b076ad3fea5cd95d97cf02008e48c4219b84034'),
- 'tests/typed_windows_modules.rs': (25888,
-                                    'e0e2ac63e323bd0954e644d5689d9ff364ca4efe265bd9f39cc60bccd88d95e3'),
+ 'tests/typed_windows_modules.rs': (26750, 'fe9eceb3fbd8b4326dc9ffe011f3eed9373030a4ffb45d7159c7c4110ae1f363'),
  'tests/typed_workspace.rs': (49944, '2cfd7008827704025c535a9294b0b79671092e732661a40ab7d9957f603a900c'),
  'src/frontend/native/doctor_windows.rs': (37408,
                                            '0744258a20ece447a58be19c94eed8193416fe94ada73a05c83e5af5a201ffb2'),
