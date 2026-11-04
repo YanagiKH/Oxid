@@ -129,7 +129,16 @@ fn owned_vector_public_route_zero_key_types_and_unused_new_imports_choose_real_d
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn owned_vector_public_route_package_owner_keeps_namespaces_and_unused_generic_facts() {
     let fixture = Fixture::new(&workflow());
@@ -184,7 +193,16 @@ fn owned_vector_public_route_package_owner_keeps_namespaces_and_unused_generic_f
     assert_eq!(program.run_test_i32().unwrap(), 3);
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn owned_vector_public_route_package_owner_refuses_unqualified_hosts_before_source_loading() {
     let fixture = Fixture::new(&workflow());
@@ -222,7 +240,7 @@ fn owned_vector_public_route_package_owner_refuses_unqualified_hosts_before_sour
         );
         assert_eq!(
             failure.diagnostics[0].message,
-            "package source policy is qualified only on Linux or macOS",
+            "package source policy is not qualified on this host",
         );
         assert!(failure.sources.files().is_empty());
         assert_eq!(

@@ -939,12 +939,26 @@ mod tests {
 
     #[test]
     fn byte_pipe_capture_remains_nonblocking_in_a_multithreaded_process() {
-        let background = std::thread::spawn(|| std::thread::sleep(Duration::from_millis(500)));
-        let result = powershell(
-            "Start-Sleep -Milliseconds 200; [Console]::OpenStandardOutput().WriteByte(26)",
-            TOOL_TIMEOUT,
-        );
-        background.join().unwrap();
+        let result = std::thread::scope(|scope| {
+            let (ready_sender, ready_receiver) = std::sync::mpsc::sync_channel(0);
+            let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
+            let background = scope.spawn(move || {
+                ready_sender.send(()).unwrap();
+                let _ = release_receiver.recv();
+            });
+            // Keep another thread alive through setup and cold child startup.
+            // Channel drop and scoped joining also release it during unwinding.
+            ready_receiver.recv_timeout(RUN_TIMEOUT).unwrap();
+            assert!(!background.is_finished());
+            let result = powershell(
+                "[Console]::OpenStandardOutput().WriteByte(26)",
+                TOOL_TIMEOUT,
+            );
+            assert!(!background.is_finished());
+            drop(release_sender);
+            background.join().unwrap();
+            result
+        });
         let output = result.unwrap();
         assert_eq!(output.stdout, [26]);
         assert!(output.stderr.is_empty(), "{output:?}");

@@ -1517,28 +1517,41 @@ fn parse_workspace_text(text: &str) -> Result<Option<WorkspaceManifest>, String>
 pub(crate) fn read_typed_regular_file(path: &Path, limit: usize, kind: &str) -> Result<Vec<u8>, String> {
     use std::io::Read;
     let describe = |error| format!("cannot read {} {}: {}", kind, path.display(), error);
-    let metadata = fs::symlink_metadata(path).map_err(describe)?;
-    if !metadata.file_type().is_file() {
-        return Err(format!("{} must be a regular file, not a symbolic link or special file: {}", kind, path.display()));
-    }
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
+    #[cfg(not(windows))]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        let metadata = fs::symlink_metadata(path).map_err(describe)?;
+        if !metadata.file_type().is_file() {
+            return Err(format!("{} must be a regular file, not a symbolic link or special file: {}", kind, path.display()));
+        }
     }
-    let file = options.open(path).map_err(describe)?;
-    let metadata = file.metadata().map_err(describe)?;
-    if !metadata.is_file() || metadata.len() > limit as u64 {
-        return Err(format!("{} must be a regular file of at most {} bytes: {}", kind, limit, path.display()));
+    let read = |file: &mut fs::File| {
+        let metadata = file.metadata().map_err(describe)?;
+        if !metadata.is_file() || metadata.len() > limit as u64 {
+            return Err(format!("{} must be a regular file of at most {} bytes: {}", kind, limit, path.display()));
+        }
+        let mut bytes = Vec::new();
+        file.take(limit as u64 + 1).read_to_end(&mut bytes).map_err(describe)?;
+        if bytes.len() > limit {
+            return Err(format!("{} exceeds the {} byte limit", kind, limit));
+        }
+        Ok(bytes)
+    };
+    #[cfg(windows)]
+    {
+        crate::frontend::with_windows_regular_file(path, kind, read)
     }
-    let mut bytes = Vec::new();
-    file.take(limit as u64 + 1).read_to_end(&mut bytes).map_err(describe)?;
-    if bytes.len() > limit {
-        return Err(format!("{} exceeds the {} byte limit", kind, limit));
+    #[cfg(not(windows))]
+    {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        }
+        let mut file = options.open(path).map_err(describe)?;
+        read(&mut file)
     }
-    Ok(bytes)
 }
 
 pub(crate) fn load_typed_manifest(path: &Path) -> Result<ManifestSnapshot, String> {
