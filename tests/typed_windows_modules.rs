@@ -8,7 +8,7 @@
 
 use std::{
     fs,
-    os::windows::fs::{symlink_file, OpenOptionsExt},
+    os::windows::fs::{symlink_file, MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
@@ -89,6 +89,19 @@ fn success(output: Output) {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
 }
+fn workspace_check_success(output: Output) {
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(
+        output.stdout,
+        b"typed-preview check ok (2 functions; check only)\n",
+        "{output:?}"
+    );
+    assert_eq!(
+        output.stderr,
+        b"app: ok\nworkspace check: 1 passed; 0 failed\n",
+        "{output:?}"
+    );
+}
 fn diagnostic(output: Output, code: &str, message: &str) -> String {
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
@@ -100,15 +113,25 @@ fn diagnostic(output: Output, code: &str, message: &str) -> String {
     text
 }
 fn junction(link: &Path, target: &Path) {
+    // cmd.exe treats forward-slash components as switches, unlike Win32 paths.
+    // Rebuild native separators without resolving either side of the junction.
+    let link: PathBuf = link.components().collect();
+    let target: PathBuf = target.components().collect();
     let output = Command::new("cmd.exe")
         .args(["/D", "/C", "mklink", "/J"])
-        .arg(link)
-        .arg(target)
+        .arg(&link)
+        .arg(&target)
         .output()
         .unwrap();
     assert!(
         output.status.success(),
         "actual Windows junction creation is required for qualification: {output:?}"
+    );
+    assert_ne!(
+        fs::symlink_metadata(&link).unwrap().file_attributes() & 0x400,
+        0,
+        "junction fixture must create an actual reparse point: {}",
+        link.display()
     );
 }
 
@@ -360,7 +383,7 @@ fn workspace_member_junctions_are_rejected_before_canonical_aliases_hide_them() 
         "oxid.toml",
         "[workspace]\nedition=\"typed-preview\"\nmembers=[\"app\"]\n",
     );
-    success(package_output(&fixture, "", &["check", "--workspace"]));
+    workspace_check_success(package_output(&fixture, "", &["check", "--workspace"]));
     fs::rename(fixture.0.join("app"), fixture.0.join("ordinary")).unwrap();
     junction(&fixture.0.join("app"), &fixture.0.join("ordinary"));
     let text = package_refusal(package_output(&fixture, "", &["check", "--workspace"]));
@@ -371,7 +394,7 @@ fn workspace_member_junctions_are_rejected_before_canonical_aliases_hide_them() 
     assert!(!fixture.0.join("oxid.lock").exists());
     fs::remove_dir(fixture.0.join("app")).unwrap();
     fs::rename(fixture.0.join("ordinary"), fixture.0.join("app")).unwrap();
-    success(package_output(&fixture, "", &["check", "--workspace"]));
+    workspace_check_success(package_output(&fixture, "", &["check", "--workspace"]));
     no_package_outputs(&fixture);
 }
 

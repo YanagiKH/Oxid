@@ -1111,7 +1111,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertIn('cp scripts/replay_owned_enum_vector_source_policy.py ', enum)
 
     def test_generic_native_packages_execute_both_real_compiler_profiles_on_all_posix_runners(self):
-        command = ('            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \\\n'
+        command = ('            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \\\n'
                    '              --test typed_owned_vector_wrappers -- --ignored --test-threads=1\n')
         step = 'Verify generic vector source-free packages in both compiler profiles'
         for job in ('native-projects', 'linux-arm64-native', 'macos-native'):
@@ -1122,7 +1122,8 @@ class CiTriggerPolicyTests(unittest.TestCase):
                 self.assertEqual(len(selected), 1)
                 self.assertIn('        shell: bash\n        run: |\n          set -euo pipefail\n', selected[0])
                 self.assertIn('          for profile in debug release; do\n', selected[0])
-                self.assertIn('            if test "$profile" = release; then profile_flags=(--release); fi\n', selected[0])
+                self.assertIn('            set -- --locked\n', selected[0])
+                self.assertIn('            if test "$profile" = release; then set -- "$@" --release; fi\n', selected[0])
                 self.assertEqual(selected[0].count(command), 1)
                 self.assertNotRegex(selected[0], r'(?m)^        if:|continue-on-error:|\|\| true|--no-run|--list')
 

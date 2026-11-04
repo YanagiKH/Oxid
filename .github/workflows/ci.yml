@@ -892,9 +892,9 @@ jobs:
         run: |
           set -euo pipefail
           for profile in debug release; do
-            profile_flags=()
-            if test "$profile" = release; then profile_flags=(--release); fi
-            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \
+            set -- --locked
+            if test "$profile" = release; then set -- "$@" --release; fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
               --test typed_owned_vector_wrappers -- --ignored --test-threads=1
           done
       - name: Retain native programs and raw transcripts
@@ -1319,9 +1319,9 @@ jobs:
         run: |
           set -euo pipefail
           for profile in debug release; do
-            profile_flags=()
-            if test "$profile" = release; then profile_flags=(--release); fi
-            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \
+            set -- --locked
+            if test "$profile" = release; then set -- "$@" --release; fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
               --test typed_owned_vector_wrappers -- --ignored --test-threads=1
           done
       - name: Verify enum-vector C contracts with real compiler schemas and native CLI cases
@@ -1615,9 +1615,9 @@ jobs:
         run: |
           set -euo pipefail
           for profile in debug release; do
-            profile_flags=()
-            if test "$profile" = release; then profile_flags=(--release); fi
-            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \
+            set -- --locked
+            if test "$profile" = release; then set -- "$@" --release; fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
               --test typed_owned_vector_wrappers -- --ignored --test-threads=1
           done
       - name: Verify ARM64 enum-vector C contracts with real compiler schemas and native CLI cases
