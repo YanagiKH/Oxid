@@ -34,11 +34,20 @@ impl Project {
     }
     fn unavailable_packages(&self) -> bool {
         self.unavailable_source_policy(
-            "error[E0006] (package): package source policy is qualified only on Linux or macOS",
+            "error[E0006] (package): package source policy is not qualified on this host",
         )
     }
     fn unavailable_source_policy(&self, expected: &str) -> bool {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                windows,
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        )) {
             return false;
         }
         for command in ["check", "run"] {

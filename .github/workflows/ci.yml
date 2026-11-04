@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_generic_owned_vector_compatibility.py \
+          python3 -B scripts/verify_windows_local_package_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -616,6 +616,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  generic-owned-vector-source-policy-predecessor:
+    name: Generic-vector source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_generic_owned_vector_source_policy.py "$RUNNER_TEMP/generic-owned-vector-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/generic-owned-vector-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/generic-owned-vector-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: generic-owned-vector-source-policy-predecessor
+          path: ${{ runner.temp }}/generic-owned-vector-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   macos-native:
     name: Current macOS native (${{ matrix.os }})
     strategy:
@@ -867,9 +892,9 @@ jobs:
         run: |
           set -euo pipefail
           for profile in debug release; do
-            profile_flags=()
-            if test "$profile" = release; then profile_flags=(--release); fi
-            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \
+            set -- --locked
+            if test "$profile" = release; then set -- "$@" --release; fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
               --test typed_owned_vector_wrappers -- --ignored --test-threads=1
           done
       - name: Retain native programs and raw transcripts
@@ -1294,9 +1319,9 @@ jobs:
         run: |
           set -euo pipefail
           for profile in debug release; do
-            profile_flags=()
-            if test "$profile" = release; then profile_flags=(--release); fi
-            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \
+            set -- --locked
+            if test "$profile" = release; then set -- "$@" --release; fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
               --test typed_owned_vector_wrappers -- --ignored --test-threads=1
           done
       - name: Verify enum-vector C contracts with real compiler schemas and native CLI cases
@@ -1590,9 +1615,9 @@ jobs:
         run: |
           set -euo pipefail
           for profile in debug release; do
-            profile_flags=()
-            if test "$profile" = release; then profile_flags=(--release); fi
-            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked "${profile_flags[@]}" \
+            set -- --locked
+            if test "$profile" = release; then set -- "$@" --release; fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
               --test typed_owned_vector_wrappers -- --ignored --test-threads=1
           done
       - name: Verify ARM64 enum-vector C contracts with real compiler schemas and native CLI cases

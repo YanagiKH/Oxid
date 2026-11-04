@@ -91,12 +91,21 @@ fn value(packages: &Packages, expected: i32) {
     assert!(text.contains(&format!("\"value\":{expected}")), "{text}");
 }
 fn package_host(packages: &Packages) -> bool {
-    if cfg!(any(target_os = "linux", target_os = "macos")) {
+    if cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            windows,
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
         return true;
     }
     let output = failure(
         packages.run(&["check"]),
-        "package source policy is qualified only on Linux",
+        "package source policy is not qualified on this host",
     );
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("E0006"),
@@ -592,10 +601,19 @@ fn invalid_package_build_preserves_the_previous_managed_binary() {
     packages.write("app/.oxid/bin/app", "previous managed binary");
     failure(
         packages.run(&["build"]),
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                windows,
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        )) {
             "E0300"
         } else {
-            "package source policy is qualified only on Linux"
+            "package source policy is not qualified on this host"
         },
     );
     assert_eq!(

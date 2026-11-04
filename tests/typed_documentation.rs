@@ -249,11 +249,20 @@ fn docs_check_dependencies_without_documenting_them_and_enforce_frozen_inputs() 
     p.library("", "application", "[dependencies]\nmath=\"dep\"\n", "use crate::math::dependency_value;\npub fn public_value() -> i32 { return dependency_value(); }\n");
     failure(p.run(&["doc", "--frozen"]));
     p.no_page();
-    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+    if !cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            windows,
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
         for command in ["lock", "doc"] {
             source_policy_failure(
                 p.run(&[command]),
-                "error[E0001] (project): error[E0006] (package): package source policy is qualified only on Linux or macOS",
+                "error[E0001] (project): error[E0006] (package): package source policy is not qualified on this host",
             );
             p.no_page();
         }
