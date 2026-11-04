@@ -1405,8 +1405,8 @@ class NativeProjectEvidenceTests(unittest.TestCase):
         _, paths = require_native_project_evidence(self.native)
         self.assertEqual(len(paths), 34)
         self.assertEqual(len(set(paths)), 34)
-        self.assertIn("${{ runner.temp }}/current-scalar-compiler", paths)
-        self.assertEqual(len(set(paths) - {"${{ runner.temp }}/current-scalar-compiler"}), 33)
+        self.assertIn("${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-scalar-compiler", paths)
+        self.assertEqual(len(set(paths) - {"${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-scalar-compiler"}), 33)
         self.assertNotIn('${{ runner.temp }}', '\n'.join(paths))
         self.assertFalse(any('*' in path or '..' in path for path in paths))
 
