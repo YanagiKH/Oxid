@@ -137,10 +137,14 @@ class CurrentByteFixtureInventory(unittest.TestCase):
             registered = verify_repo.fixture_data_sources(root)
             gate.require(not {root / name for name in text_members} & registered,
                          'portable owned-text members must remain real language sources')
-            gate.require(registered == current | previous | vectors | copies | owned_vectors | text_data,
+            compiler_data = verify_repo.native_compiler_fixture_data_sources(root)
+            gate.require(len(compiler_data) == 11
+                         and not compiler_data & (current | previous | vectors | copies | owned_vectors | text_data),
+                         'portable scalar compiler fixture registration differs')
+            gate.require(registered == current | previous | vectors | copies | owned_vectors | text_data | compiler_data,
                          'portable complete fixture registration differs')
             gate.require(not current & previous
-                         and registered - copies - owned_vectors - text_data == current | previous | vectors,
+                         and registered - copies - owned_vectors - text_data - compiler_data == current | previous | vectors,
                          'portable fixture registration differs')
             verify_repo.verify_test_fixture_registration(root)
             gate.require(not {'resource', 'verify_bounded_stdin_native', 'verify_bounded_u8_native'} & sys.modules.keys(),

@@ -1398,6 +1398,19 @@ jobs:
         run: |
           python3 -B scripts/verify_current_native.py --repo . \
             --output "$RUNNER_TEMP/current-native" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify the Oxid-authored scalar compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s scripts -p test_native_compiler_registration.py -v
+          (
+            cd compiler/native
+            "$GITHUB_WORKSPACE/target/release/oxid" build --profile=release
+          )
+          python3 -B compiler/native/tests/verify.py \
+            --compiler compiler/native/.oxid/bin/oxid-scalar-compiler \
+            --clang "$OXID_LLVM_BIN/clang" --reference target/release/oxid \
+            --output "$RUNNER_TEMP/current-scalar-compiler"
       - name: Retain current native evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -1405,6 +1418,7 @@ jobs:
           name: current-native
           path: |
             ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-scalar-compiler
             ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-reproducible-native
             ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-profiles
             ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-owned-enum-application

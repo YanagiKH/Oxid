@@ -20,6 +20,7 @@ from verify_typed_vector_fixture_data import fixture_data_sources as typed_vecto
 from verify_copy_record_fixture_data import fixture_data_sources as copy_record_fixture_data_sources
 from verify_owned_record_vector_fixture_data import fixture_data_sources as owned_record_vector_fixture_data_sources
 from verify_typed_formatter import verify as verify_typed_formatter
+from verify_native_compiler_fixture_data import fixture_data_sources as native_compiler_fixture_data_sources
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,7 +101,10 @@ def fixture_data_sources(root: Path) -> set[Path]:
     text = owned_text_fixture_data_sources(root)
     if text & (previous | current | vectors | copies | owned_vectors):
         raise RuntimeError("owned-text DATA overlaps predecessor inventory")
-    return previous | current | vectors | copies | owned_vectors | text
+    compiler_inputs = native_compiler_fixture_data_sources(root)
+    if compiler_inputs & (previous | current | vectors | copies | owned_vectors | text):
+        raise RuntimeError("scalar compiler DATA overlaps predecessor inventory")
+    return previous | current | vectors | copies | owned_vectors | text | compiler_inputs
 
 RUNNABLE_GROUPS = ("tests", "examples", "tools", "apps")
 RUNNABLE_PACKAGE_FILES = (
@@ -224,10 +228,21 @@ TYPED_MANIFEST_PROJECTS = {
     ),
     "packages/owned_vec": ("packages/owned_vec/src/lib.ox",),
     "examples/owned-vector-results": ("examples/owned-vector-results/src/main.ox",),
+    "compiler/native": (
+        "compiler/native/src/main.ox",
+        "compiler/native/src/model.ox",
+        "compiler/native/src/lexer.ox",
+        "compiler/native/src/headers.ox",
+        "compiler/native/src/parser.ox",
+        "compiler/native/src/emit.ox",
+        "compiler/native/src/delivery.ox",
+    ),
 }
 # Library roots have no executable entry point; their dependent applications
 # exercise the public interface and their own manifest check covers unused code.
 TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
+    # Requires a source-path argument; its acceptance driver exercises execution.
+    "compiler/native",
     "examples/projects/owned_enum_payload_acceptance/library",
     "apps/byte-reverse",
     "packages/utf8_text",
