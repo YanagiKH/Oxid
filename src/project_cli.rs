@@ -3,10 +3,15 @@
 //! Explicit file editions retain the original pure frontend option boundary.
 //! Projects never reinterpret typed sources using the legacy interpreter.
 use crate::{frontend, project_lock, runtime};
+mod documentation;
+mod editor;
 mod package;
+mod registry;
 mod workspace;
 
 pub(crate) use package::package_source_plan;
+pub(crate) use registry::control_bytes as registry_control_bytes;
+pub(crate) use registry::{registry_recheck_release, registry_release_plan};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -14,6 +19,9 @@ use std::{
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
 };
+
+pub(crate) use editor::project_graphs as editor_project_graphs;
+pub(crate) use editor::source_edition as editor_source_edition;
 
 #[derive(Default)]
 struct Options {
@@ -39,6 +47,7 @@ struct Options {
 struct BuildOptions {
     incremental: bool,
     reproducible: Option<bool>,
+    debug_info: Option<bool>,
     optimization: Option<frontend::NativeOptimization>,
 }
 
@@ -53,7 +62,9 @@ impl BuildOptions {
             self.optimization
                 .or(manifest_optimization)
                 .unwrap_or(frontend::NativeOptimization::O0),
-        ))
+        )
+        .with_execution(execution_policy(manifest)?)
+        .with_debug_info(self.debug_info.or(manifest.debug_info).unwrap_or(false)))
     }
 }
 
@@ -61,6 +72,19 @@ fn parse_profile(profile: &str) -> Result<frontend::NativeOptimization, String> 
     frontend::NativeOptimization::from_profile(profile).ok_or_else(|| {
         format!("unknown build profile `{profile}`; expected bounded, dev or release")
     })
+}
+
+fn execution_policy(
+    manifest: &runtime::ProjectManifest,
+) -> Result<frontend::ExecutionPolicy, String> {
+    let name = manifest.execution_policy.as_deref().unwrap_or("bounded");
+    let policy = frontend::ExecutionPolicy::from_name(name)
+        .ok_or_else(|| format!("unknown execution policy `{name}`; expected bounded or hosted"))?;
+    match manifest.heap_limit {
+        Some(limit) if policy.hosted() => Ok(frontend::ExecutionPolicy::HostedWithHeapLimit(limit)),
+        Some(_) => Err("execution heap-limit requires policy = \"hosted\"".into()),
+        None => Ok(policy),
+    }
 }
 
 /// The doctor integration can admit the complete workspace without routing a
@@ -198,10 +222,13 @@ impl Options {
             return Err("--update is valid only for `oxid lock` and conflicts with --locked, --offline and --frozen".into());
         }
         if self.has_lock_options()
-            && !matches!(self.command(), "lock" | "check" | "run" | "build" | "test")
+            && !matches!(
+                self.command(),
+                "lock" | "check" | "run" | "build" | "test" | "doc"
+            )
         {
             return Err(
-                "locking options require a typed project lock, check, run, build or test command"
+                "locking options require a typed project lock, check, run, build, test or doc command"
                     .into(),
             );
         }
@@ -263,7 +290,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
     }
     let operands = operands(&options.words);
     let explicit = options.edition.is_some();
-    let project_operation = matches!(command, "lock" | "build" | "test" | "new" | "init")
+    let project_operation = matches!(command, "lock" | "build" | "test" | "doc" | "new" | "init")
         || (matches!(command, "check" | "run") && operands.is_empty());
     if explicit && !project_operation {
         return None;
@@ -412,6 +439,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         "lock" => lock_project(root, &snapshot, &options),
         "build" => build(root, &snapshot, &options, process),
         "test" => test(root, &snapshot, &options),
+        "doc" => documentation::command(root, &snapshot, &options),
         "check" | "run" if operands.is_empty() => {
             if options
                 .words
@@ -426,7 +454,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         "check" | "run" | "compile" | "fmt" => {
             if options.has_lock_options() {
                 Err("locking options require a source-less project command".into())
-            } else if !manifest.dependencies.is_empty() {
+            } else if command != "fmt" && !manifest.dependencies.is_empty() {
                 Err("package dependencies require a source-less project command: use `oxid check`, `oxid run`, `oxid build` or `oxid test`".into())
             } else if command == "fmt"
                 && operands
@@ -493,6 +521,7 @@ fn find_manifest(source: Option<&Path>) -> Result<Option<PathBuf>, String> {
 }
 
 fn validate_settings(manifest: &runtime::ProjectManifest) -> Result<(), String> {
+    execution_policy(manifest)?;
     if let Some(error) = &manifest.configuration_error {
         return Err(error.clone());
     }
@@ -501,7 +530,7 @@ fn validate_settings(manifest: &runtime::ProjectManifest) -> Result<(), String> 
         (
             "target",
             manifest.target.as_deref(),
-            "x86_64-unknown-linux-gnu",
+            frontend::NativeBuildSettings::new(false).target_triple(),
         ),
     ] {
         if value.is_some_and(|value| value != supported) {
@@ -565,31 +594,297 @@ fn entry_path(root: &Path, manifest: &runtime::ProjectManifest) -> Result<PathBu
 struct PackageGraph {
     specs: Vec<frontend::PackageSpec>,
     manifests: Vec<runtime::ManifestSnapshot>,
+    registries: Option<Box<crate::project_registry::GraphOrigins>>,
+}
+impl PackageGraph {
+    fn verify_registries(
+        &self,
+        prepared: &frontend::PreparedPackageProject<'_>,
+    ) -> Result<(), String> {
+        if let Some(origins) = &self.registries {
+            for (index, origin) in &origins.entries {
+                origin.manifest(&self.manifests[*index].digest)?;
+            }
+            prepared.visit_package_sources(&self.specs[0], |index, path, bytes| {
+                if let Some((_, origin)) = origins
+                    .entries
+                    .iter()
+                    .find(|(package, _)| *package == index)
+                {
+                    origin.source(path, bytes)?;
+                }
+                Ok(())
+            })?;
+        }
+        Ok(())
+    }
+    fn registry_pins(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &Path,
+            &crate::project_registry::Pin,
+            &crate::project_registry::Allowance,
+        ),
+    > {
+        self.registries.iter().flat_map(|origins| {
+            origins
+                .entries
+                .iter()
+                .map(|(_, origin)| (origin.root.as_path(), &origin.pin, &origins.allowance))
+        })
+    }
 }
 
 /// Existing project reads retain their behavior. Source packages supply a
 /// bounded reader and a portable directory resolver before dependency reads.
 trait ProjectReader {
     fn manifest(&mut self, path: &Path) -> Result<runtime::ManifestSnapshot, String>;
+    fn registry_manifest(&mut self, _snapshot: &runtime::ManifestSnapshot) -> Result<(), String> {
+        Ok(())
+    }
+    fn registry_allowance(&self) -> Option<crate::project_registry::Allowance> {
+        None
+    }
     fn package(&mut self, _edges: usize) -> Result<(), String> {
         Ok(())
     }
     fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
         fs::canonicalize(root.join(source)).map_err(|error| error.to_string())
     }
+    fn registry_dependency(
+        &mut self,
+        _root: &Path,
+        _dependency: &crate::project_registry::Dependency,
+    ) -> Result<PathBuf, String> {
+        Err("registry dependencies are unavailable inside a portable source boundary".into())
+    }
+    fn registry_origin(
+        &self,
+        _root: &Path,
+    ) -> Option<std::sync::Arc<crate::project_registry::Origin>> {
+        None
+    }
+    fn registry_graph(
+        &mut self,
+        _packages: &[frontend::PackageSpec],
+    ) -> Result<Option<Box<crate::project_registry::GraphOrigins>>, String> {
+        Ok(None)
+    }
+    fn finish_graph(
+        &self,
+        _packages: &[frontend::PackageSpec],
+        _manifests: &[runtime::ManifestSnapshot],
+    ) -> Result<(), String> {
+        Ok(())
+    }
 }
-struct RegularProjectReader;
+struct RegularProjectReader {
+    root: PathBuf,
+    locked: bool,
+    offline: bool,
+    git_roots: Vec<PathBuf>,
+    registry: Option<Box<crate::project_registry::Session>>,
+    registry_budget: Option<crate::project_registry::Allowance>,
+    registry_no_fetch: bool,
+}
+impl RegularProjectReader {
+    fn new(root: PathBuf, locked: bool, offline: bool) -> Self {
+        Self {
+            root,
+            locked,
+            offline,
+            git_roots: Vec::new(),
+            registry: None,
+            registry_budget: None,
+            registry_no_fetch: false,
+        }
+    }
+}
 impl ProjectReader for RegularProjectReader {
     fn manifest(&mut self, path: &Path) -> Result<runtime::ManifestSnapshot, String> {
-        runtime::load_typed_manifest(path)
+        if let Some(budget) = &self.registry_budget {
+            return crate::project_registry::load_manifest(path, budget);
+        }
+        let raw = runtime::read_typed_regular_file(path, 1024 * 1024, "typed manifest")?;
+        runtime::parse_typed_manifest_bytes_registry(path, &raw, &mut self.registry_budget, false)
+    }
+    fn registry_manifest(&mut self, snapshot: &runtime::ManifestSnapshot) -> Result<(), String> {
+        if let Some(allowance) = snapshot
+            .manifest
+            .registry_dependencies
+            .as_ref()
+            .and_then(|entries| entries.allowance.as_ref())
+        {
+            if let Some(existing) = &self.registry_budget {
+                if !std::rc::Rc::ptr_eq(existing, allowance) {
+                    return Err("registry manifest has a different operation allowance".into());
+                }
+            } else {
+                self.registry_budget = Some(allowance.clone());
+            }
+        }
+        Ok(())
+    }
+    fn registry_allowance(&self) -> Option<crate::project_registry::Allowance> {
+        self.registry_budget.clone()
+    }
+    fn registry_dependency(
+        &mut self,
+        root: &Path,
+        dependency: &crate::project_registry::Dependency,
+    ) -> Result<PathBuf, String> {
+        if self.registry.is_none() {
+            if self.registry_budget.is_none() {
+                self.registry_budget = Some(crate::project_registry::operation_budget()?);
+            }
+            let session = crate::project_registry::Session::with_budget(
+                &self.root,
+                self.locked || self.offline || self.registry_no_fetch,
+                self.registry_budget
+                    .as_ref()
+                    .expect("registry allowance")
+                    .clone(),
+            )?;
+            self.registry = Some(session.boxed()?);
+        }
+        self.registry
+            .as_mut()
+            .expect("registry session")
+            .resolve(root, dependency)
+    }
+    fn registry_origin(
+        &self,
+        root: &Path,
+    ) -> Option<std::sync::Arc<crate::project_registry::Origin>> {
+        self.registry
+            .as_ref()
+            .and_then(|session| session.origin(root))
+    }
+    fn registry_graph(
+        &mut self,
+        packages: &[frontend::PackageSpec],
+    ) -> Result<Option<Box<crate::project_registry::GraphOrigins>>, String> {
+        match self.registry.as_mut() {
+            Some(session) => session.graph(packages),
+            None => Ok(None),
+        }
+    }
+
+    fn dependency(&mut self, root: &Path, source: &str) -> Result<PathBuf, String> {
+        if source.starts_with("git+") || source.starts_with("https://") {
+            if !cfg!(target_os = "linux") {
+                return Err("typed Git dependencies are currently available only on Linux".into());
+            }
+            let target =
+                runtime::materialize_typed_git(&self.root, source, self.locked, self.offline)?;
+            if !self.git_roots.contains(&target) {
+                self.git_roots.push(target.clone());
+            }
+            return Ok(target);
+        }
+        let path = Path::new(source);
+        if source.contains("://") || (!path.is_absolute() && source.contains(':')) {
+            return Err(
+                "dependencies support local paths or Git URLs pinned to a full commit hash".into(),
+            );
+        }
+        let target = fs::canonicalize(root.join(path)).map_err(|error| error.to_string())?;
+        if self
+            .git_roots
+            .iter()
+            .any(|anchor| root.starts_with(anchor) && !target.starts_with(anchor))
+        {
+            return Err("a Git package's local dependency must remain inside its checkout".into());
+        }
+        Ok(target)
+    }
+
+    fn finish_graph(
+        &self,
+        packages: &[frontend::PackageSpec],
+        manifests: &[runtime::ManifestSnapshot],
+    ) -> Result<(), String> {
+        // A local alias can discover a checkout before its Git edge. Validate
+        // the completed canonical graph so traversal order cannot hide a local
+        // edge outside a subsequently authenticated Git checkout.
+        for (package, manifest) in packages.iter().zip(manifests) {
+            if let Some(origin) = self.registry_origin(&package.root) {
+                origin.manifest(&manifest.digest)?;
+            }
+            if let Some(anchor) = self
+                .git_roots
+                .iter()
+                .find(|root| package.root.starts_with(root.as_path()))
+            {
+                for edge in &package.dependencies {
+                    let source = &manifest.manifest.dependencies[&edge.alias];
+                    let git = source.starts_with("git+") || source.starts_with("https://");
+                    if !git && !packages[edge.package].root.starts_with(anchor) {
+                        return Err(
+                            "a Git package's local dependency must remain inside its checkout"
+                                .into(),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
+#[cfg(test)]
 fn package_graph(
     root: &Path,
     snapshot: &runtime::ManifestSnapshot,
 ) -> Result<PackageGraph, String> {
-    package_graph_with(root, snapshot, &mut RegularProjectReader)
+    package_graph_options(root, snapshot, true, true)
+}
+
+#[cfg(test)]
+fn package_graph_options(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    locked: bool,
+    offline: bool,
+) -> Result<PackageGraph, String> {
+    package_graph_cache_owner(root, snapshot, locked, offline, root)
+}
+
+fn package_graph_cache_owner(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    locked: bool,
+    offline: bool,
+    cache_owner: &Path,
+) -> Result<PackageGraph, String> {
+    let mut reader = RegularProjectReader::new(
+        fs::canonicalize(cache_owner).map_err(|error| error.to_string())?,
+        locked,
+        offline,
+    );
+    package_graph_with(root, snapshot, &mut reader)
+}
+
+fn project_operation_graph(
+    root: &Path,
+    snapshot: &runtime::ManifestSnapshot,
+    required: bool,
+    locked: bool,
+    offline: bool,
+    registry_no_fetch: bool,
+) -> Result<(Option<project_lock::Existing>, PackageGraph), String> {
+    let mut reader = RegularProjectReader::new(
+        fs::canonicalize(root).map_err(|error| error.to_string())?,
+        locked,
+        offline,
+    );
+    reader.registry_manifest(snapshot)?;
+    reader.registry_no_fetch = registry_no_fetch;
+    let existing =
+        project_lock::read_with_registry(root, required, false, &mut reader.registry_budget)?;
+    let graph = package_graph_with(root, snapshot, &mut reader)?;
+    Ok((existing, graph))
 }
 
 fn package_graph_with(
@@ -597,6 +892,7 @@ fn package_graph_with(
     snapshot: &runtime::ManifestSnapshot,
     reader: &mut dyn ProjectReader,
 ) -> Result<PackageGraph, String> {
+    reader.registry_manifest(snapshot)?;
     struct Graph<'a> {
         reader: &'a mut dyn ProjectReader,
         packages: Vec<frontend::PackageSpec>,
@@ -611,6 +907,7 @@ fn package_graph_with(
             root: PathBuf,
             snapshot: runtime::ManifestSnapshot,
         ) -> Result<usize, String> {
+            self.reader.registry_manifest(&snapshot)?;
             if self.active.contains(&root) {
                 let mut chain: Vec<_> = self
                     .active
@@ -690,22 +987,34 @@ fn package_graph_with(
                 }
             }
             for (alias, source) in dependencies {
-                let path = Path::new(&source);
+                let descriptor = self.manifests[identity]
+                    .manifest
+                    .registry_dependencies
+                    .as_deref()
+                    .and_then(|entries| {
+                        entries
+                            .iter()
+                            .find(|(name, _)| name == &alias)
+                            .map(|(_, dependency)| dependency)
+                    });
                 if source.is_empty()
                     || source.len() > 4096
                     || source.chars().any(char::is_control)
-                    || source.starts_with("git+")
-                    || source.contains("://")
-                    || (!path.is_absolute() && source.contains(':'))
-                    || source.starts_with(['{', '['])
+                    || descriptor.is_none() && source.starts_with(['{', '['])
                 {
-                    return Err(format!("dependencies support only local directory paths; unsupported source for `{alias}`"));
+                    return Err(format!("dependencies: invalid source for `{alias}`"));
                 }
-                let target = self.reader.dependency(&root, &source).map_err(|error| {
-                    format!(
-                        "dependencies: cannot open local path for `{alias}` ({source}): {error}"
-                    )
-                })?;
+                let target = match descriptor {
+                    Some(dependency) => self.reader.registry_dependency(&root, dependency),
+                    None => self.reader.dependency(&root, &source),
+                }
+                    .map_err(|error| {
+                        if descriptor.is_some() || source.starts_with("git+") || source.starts_with("https://") {
+                            format!("dependencies: cannot resolve `{alias}`: {error}")
+                        } else {
+                            format!("dependencies: cannot open local path for `{alias}` ({source}): {error}")
+                        }
+                    })?;
                 if !target.is_dir() {
                     return Err(format!(
                         "dependencies: path for `{alias}` must be a package directory"
@@ -779,9 +1088,14 @@ fn package_graph_with(
     if longest_path(0, &graph.packages, &mut vec![None; graph.packages.len()]) > 32 {
         return Err("dependencies exceed the 32-level graph path limit".into());
     }
+    graph
+        .reader
+        .finish_graph(&graph.packages, &graph.manifests)?;
+    let registries = graph.reader.registry_graph(&graph.packages)?;
     Ok(PackageGraph {
         specs: graph.packages,
         manifests: graph.manifests,
+        registries,
     })
 }
 
@@ -898,12 +1212,30 @@ fn lock_snapshot(
     graph: &PackageGraph,
     prepared: &frontend::PreparedPackageProject<'_>,
 ) -> Result<project_lock::Snapshot, String> {
+    graph.verify_registries(prepared)?;
+    if let Some(origins) = &graph.registries {
+        let mut budget = origins.allowance.borrow_mut();
+        let mut fingerprints = Vec::new();
+        budget.reserve(&mut fingerprints, prepared.dependency_fingerprints().len())?;
+        for fingerprint in prepared.dependency_fingerprints() {
+            fingerprints.push((fingerprint.package, budget.text(&fingerprint.checksum)?));
+        }
+        let expected = project_lock::expected_registry(
+            &graph.specs,
+            &graph.manifests,
+            &fingerprints,
+            &mut budget,
+        )?;
+        drop(budget);
+        return expected.with_registries(&graph.specs[0].root, graph.registry_pins());
+    }
     let fingerprints = prepared
         .dependency_fingerprints()
         .iter()
         .map(|fingerprint| (fingerprint.package, fingerprint.checksum.clone()))
         .collect::<Vec<_>>();
-    project_lock::expected(&graph.specs, &graph.manifests, &fingerprints)
+    project_lock::expected(&graph.specs, &graph.manifests, &fingerprints)?
+        .with_registries(&graph.specs[0].root, graph.registry_pins())
 }
 
 /// Diagnose only admitted package inputs. No user script, program or test runs,
@@ -940,8 +1272,7 @@ pub(crate) fn native_doctor_project() -> Result<Option<String>, String> {
     }
     validate_settings(&snapshot.manifest)?;
     let root = path.parent().expect("manifest parent");
-    let existing = project_lock::read(root, false)?;
-    let graph = package_graph(root, &snapshot)?;
+    let (existing, graph) = project_operation_graph(root, &snapshot, false, true, true, true)?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
     if existing.is_some() {
@@ -970,18 +1301,31 @@ fn execute_project(
             true,
         ));
     }
-    let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph(root, snapshot)?;
+    let (existing, graph) = project_operation_graph(
+        root,
+        snapshot,
+        options.requires_lock(),
+        options.requires_lock(),
+        options.offline || options.frozen,
+        false,
+    )?;
     let entry_override = entry_override
         .map(|entry| local_source(&graph.specs[0].root, entry))
         .transpose()?;
+    let pure_test = frontend::NativeBuildSettings::windows_msvc_host()
+        && matches!(command, frontend::PackageCommand::Run)
+        && options.project_test.is_some();
     let prepared = match frontend::prepare_package_project(&graph.specs, entry_override.as_deref())
     {
         Ok(prepared) => prepared,
-        Err(error) => return Ok(error.report(command, options.json(), process)),
+        Err(error) => return Ok(error.report(command, options.json(), process && !pure_test)),
     };
+    graph.verify_registries(&prepared)?;
     if existing.is_some() {
         project_lock::verify(&lock_snapshot(&graph, &prepared)?, existing.as_ref())?;
+    }
+    if pure_test {
+        return Ok(prepared.execute_test(execution_policy(&snapshot.manifest)?));
     }
     Ok(match native_settings {
         Some(settings) => prepared.execute_with_native_settings(
@@ -991,7 +1335,12 @@ fn execute_project(
             settings,
             &graph.specs[0].root,
         ),
-        None => prepared.execute(command, options.json(), process),
+        None => prepared.execute_with_execution(
+            command,
+            options.json(),
+            process,
+            execution_policy(&snapshot.manifest)?,
+        ),
     })
 }
 
@@ -1005,12 +1354,28 @@ fn lock_project(
             "typed-preview lock accepts edition, message-format and locking options only".into(),
         );
     }
-    let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph(root, snapshot)?;
+    let (existing, graph) = project_operation_graph(
+        root,
+        snapshot,
+        options.requires_lock(),
+        options.requires_lock(),
+        options.offline || options.frozen,
+        false,
+    )?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
     let expected = lock_snapshot(&graph, &prepared)?;
-    let changed = project_lock::publish(root, &expected, existing.as_ref(), options.update)?;
+    let changed = if let Some(origins) = &graph.registries {
+        project_lock::publish_registry(
+            root,
+            &expected,
+            existing.as_ref(),
+            options.update,
+            &mut origins.allowance.borrow_mut(),
+        )?
+    } else {
+        project_lock::publish(root, &expected, existing.as_ref(), options.update)?
+    };
     let message = if options.json() {
         format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"lock-summary\",\"success\":true,\"changed\":{changed}}}\n")
     } else {
@@ -1077,7 +1442,9 @@ fn build(
     }
     let name = snapshot.manifest.name.as_deref().unwrap_or("app");
     validate_name(name)?;
-    let output = root.join(".oxid/bin").join(name);
+    let output = root
+        .join(".oxid/bin")
+        .join(frontend::NativeBuildSettings::executable_name(name));
     execute_project(
         root,
         snapshot,
@@ -1108,6 +1475,12 @@ fn validate_build_options(options: &Options) -> Result<BuildOptions, String> {
             result.incremental = true;
             continue;
         }
+        if matches!(word.as_str(), "--debug-info" | "--no-debug-info") {
+            if result.debug_info.replace(word == "--debug-info").is_some() {
+                return Err("select --debug-info or --no-debug-info only once".into());
+            }
+            continue;
+        }
         if matches!(word.as_str(), "--reproducible" | "--no-reproducible") {
             if result
                 .reproducible
@@ -1134,7 +1507,7 @@ fn validate_build_options(options: &Options) -> Result<BuildOptions, String> {
         }
         let supported = match name {
             "--backend" => "llvm",
-            "--target" => "x86_64-unknown-linux-gnu",
+            "--target" => frontend::NativeBuildSettings::new(false).target_triple(),
             _ => {
                 return Err(format!(
                     "unsupported option for typed-preview build: {word}"
@@ -1161,7 +1534,11 @@ fn test(
 ) -> Result<i32, String> {
     let manifest = &snapshot.manifest;
     if options.words.len() != 1 || options.entry_mode.is_some() {
-        return Err("typed-preview test accepts edition, message-format and locking options; test entries always use process mode".into());
+        return Err(if frontend::NativeBuildSettings::windows_msvc_host() {
+            "typed-preview test accepts edition, message-format and locking options; declared tests require fn main() -> i32 with no parameters"
+        } else {
+            "typed-preview test accepts edition, message-format and locking options; test entries always use process mode"
+        }.into());
     }
     if manifest.tests.is_empty() {
         return Err(
@@ -1179,8 +1556,14 @@ fn test(
         .collect::<Result<Vec<_>, _>>()?;
     // Admit every package manifest before starting any declared user test.
     // Each child repeats admission and compiles its own entry in one session.
-    let existing = project_lock::read(root, options.requires_lock())?;
-    let graph = package_graph(root, snapshot)?;
+    let (existing, graph) = project_operation_graph(
+        root,
+        snapshot,
+        options.requires_lock(),
+        options.requires_lock(),
+        options.offline || options.frozen,
+        false,
+    )?;
     if existing.is_some() {
         let test_entry = local_source(&graph.specs[0].root, &manifest.tests[entries[0].0])?;
         let prepared = frontend::prepare_package_project(&graph.specs, Some(&test_entry))
@@ -1243,6 +1626,9 @@ fn test(
 }
 
 fn validate_name(name: &str) -> Result<(), String> {
+    if cfg!(windows) && frontend::NativeBuildSettings::windows_device_name(name) {
+        return Err("project name is reserved by Windows".into());
+    }
     if name.is_empty()
         || !name
             .bytes()
@@ -1282,11 +1668,18 @@ fn scaffold(options: &Options) -> Result<(), String> {
         fs::create_dir(root.join(directory))
             .map_err(|e| format!("cannot create {directory}: {e}"))?;
     }
-    write("oxid.toml", &format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"typed-preview\"\nentry = \"src/main.ox\"\n\n[build]\nbackend = \"llvm\"\nprofile = \"dev\"\nentry-mode = \"process\"\n\n[tests]\nsmoke = \"tests/smoke.ox\"\n"))?;
+    let windows_native = frontend::NativeBuildSettings::windows_msvc_host();
+    let entry_mode = if windows_native { "result" } else { "process" };
+    write("oxid.toml", &format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"typed-preview\"\nentry = \"src/main.ox\"\n\n[build]\nbackend = \"llvm\"\nprofile = \"dev\"\nentry-mode = \"{entry_mode}\"\n\n[tests]\nsmoke = \"tests/smoke.ox\"\n"))?;
     write("src/main.ox", "fn main() -> i32 {\n    return 0;\n}\n")?;
     write("tests/smoke.ox", "fn double(value: i32) -> i32 {\n    return value * 2;\n}\n\nfn main() -> i32 {\n    if double(21) == 42 {\n        return 0;\n    } else {\n        return 1;\n    }\n}\n")?;
     write(".gitignore", ".oxid/\n")?;
-    write("README.md", &format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux x86_64 and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n"))?;
+    let readme = if windows_native {
+        format!("# {name}\n\nA native Oxid project.\n\n```bat\noxid check\noxid run\noxid test\noxid build --profile release\n.oxid\\bin\\{name}.exe\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nUse Windows 10 or later on x64, Visual Studio 2022 C++ tools with the Windows SDK, and the complete LLVM 19.1.7 toolchain containing clang.exe, opt.exe and lld-link.exe.\nOpen the x64 Native Tools Command Prompt and set OXID_LLVM_BIN to the LLVM bin directory before building.\nThis preview supports bounded result-entry bool, i32 and unit functions, conditions and while loops. Declared tests return i32: zero passes and any other value fails. Process I/O, package dependencies and workspace projects are unavailable on this target.\n")
+    } else {
+        format!("# {name}\n\nA native Oxid project.\n\n```sh\noxid check\noxid run\noxid test\noxid build --profile release\n./.oxid/bin/{name}\n```\n\nRun these commands from this directory. A failed build keeps the previous executable.\nThis experimental workflow requires Linux or macOS on x86_64 or ARM64, and LLVM/Clang/LLD 19.1.7.\nPrograms currently have execution and resource limits.\n")
+    };
+    write("README.md", &readme)?;
     if options.json() {
         println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"new-summary\",\"success\":true,\"path\":{}}}", json_string(&root.to_string_lossy()));
     } else {
@@ -1344,6 +1737,56 @@ mod profile_tests {
     }
 
     #[test]
+    fn project_target_selects_the_host_and_refuses_foreign_architectures() {
+        let host = frontend::NativeBuildSettings::new(false).target_triple();
+        let manifest = runtime::ProjectManifest {
+            target: Some(host.into()),
+            ..Default::default()
+        };
+        validate_settings(&manifest).unwrap();
+        let option = format!("--target={host}");
+        validate_build_options(&options(&["build", &option])).unwrap();
+        let foreign = if host == "aarch64-unknown-linux-gnu" {
+            "x86_64-unknown-linux-gnu"
+        } else {
+            "aarch64-unknown-linux-gnu"
+        };
+        let manifest = runtime::ProjectManifest {
+            target: Some(foreign.into()),
+            ..Default::default()
+        };
+        assert!(validate_settings(&manifest).unwrap_err().contains("target"));
+        let option = format!("--target={foreign}");
+        assert!(validate_build_options(&options(&["build", &option])).is_err());
+    }
+
+    #[test]
+    fn debug_info_resolves_per_member_and_cli_overrides_without_changing_optimization() {
+        for inherited in [None, Some(false), Some(true)] {
+            let manifest = runtime::ProjectManifest {
+                debug_info: inherited,
+                profile: Some("release".into()),
+                ..Default::default()
+            };
+            let setting = validate_build_options(&options(&["build"]))
+                .unwrap()
+                .resolve(&manifest)
+                .unwrap();
+            assert_eq!(setting.debug_info(), inherited.unwrap_or(false));
+            assert_eq!(setting.optimization_flag(), "-O2");
+            for (flag, enabled) in [("--debug-info", true), ("--no-debug-info", false)] {
+                let setting = validate_build_options(&options(&["build", flag, "--profile=dev"]))
+                    .unwrap()
+                    .resolve(&manifest)
+                    .unwrap();
+                assert_eq!(setting.debug_info(), enabled);
+                assert_eq!(setting.optimization_flag(), "-O0");
+                assert!(!setting.reproducible());
+            }
+        }
+    }
+
+    #[test]
     fn cli_profile_overrides_member_profile_without_changing_source_policy() {
         for manifest_profile in [None, Some("bounded"), Some("dev"), Some("release")] {
             let manifest = runtime::ProjectManifest {
@@ -1375,7 +1818,10 @@ mod profile_tests {
                     let settings = selected.resolve(&manifest).unwrap();
                     assert_eq!(settings.optimization_flag(), flag);
                     assert!(settings.reproducible());
-                    assert_eq!(settings.target_triple(), "x86_64-unknown-linux-gnu");
+                    assert_eq!(
+                        settings.target_triple(),
+                        frontend::NativeBuildSettings::new(false).target_triple()
+                    );
                 }
             }
             let selected = validate_build_options(&options(&[
@@ -1471,7 +1917,7 @@ mod profile_tests {
         assert!(build.resolve(&invalid).unwrap_err().contains("profile"));
         let invalid = runtime::ProjectManifest {
             profile: Some("release".into()),
-            target: Some("aarch64-unknown-linux-gnu".into()),
+            target: Some("riscv64-unknown-linux-gnu".into()),
             ..Default::default()
         };
         assert!(validate_settings(&invalid).unwrap_err().contains("target"));

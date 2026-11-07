@@ -340,12 +340,8 @@ fn skipped_rhs_resolution_is_eager_and_preserves_phase_priority() {
 fn malformed_tokens_missing_operands_and_comparison_chains_stay_rejected() {
     let prefix = "// 🦀\r\nfn main() -> bool { return ";
     for (expression, marker, code) in [
-        ("true & false", "&", "E0101"),
-        ("true | false", "|", "E0101"),
         ("true & & false", "&", "E0101"),
         ("true | /* 雪 */ | false", "|", "E0101"),
-        ("true ^ false", "^", "E0100"),
-        ("~true", "~", "E0100"),
         ("true ! false", "!", "E0100"),
         ("true && || false", "||", "E0100"),
         ("true || && false", "&&", "E0100"),
@@ -354,8 +350,22 @@ fn malformed_tokens_missing_operands_and_comparison_chains_stay_rejected() {
             &format!("{prefix}{expression}; }}"),
             code,
             "parse",
-            prefix.len() + expression.find(marker).unwrap(),
+            prefix.len()
+                + if expression.contains("& &") || expression.contains("| /*") {
+                    expression.rfind(marker).unwrap()
+                } else {
+                    expression.find(marker).unwrap()
+                },
             marker.len(),
+        );
+    }
+    for expression in ["true & false", "true | false", "true ^ false", "~true"] {
+        reject(
+            &format!("{prefix}{expression}; }}"),
+            "E0300",
+            "type",
+            prefix.len() + expression.find("true").unwrap(),
+            4,
         );
     }
     for expression in ["true &&", "false ||", "!", "true && !"] {

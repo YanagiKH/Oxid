@@ -2,6 +2,12 @@
 //! filesystem operations. Publication, extraction and project admission belong
 //! to the package command; an embedded digest is not publisher authentication.
 
+mod library;
+pub(super) use library::{read_library, write_library};
+pub(super) fn library_control_bytes() -> usize {
+    library::control_bytes()
+}
+
 use sha2::{Digest, Sha256};
 use std::io::{self, Read, Write};
 
@@ -16,20 +22,20 @@ const INVENTORY_PATH: &str = "OXID-PACKAGE.toml";
 const KIND: &str = "typed-source-package-v1";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct Member {
+pub(crate) struct Member {
     pub path: String,
     pub bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct Archive {
+pub(crate) struct Archive {
     /// The project/workspace directory, including the `source` prefix.
     pub root: String,
     pub files: Vec<Member>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct Info {
+pub(crate) struct Info {
     /// Lowercase SHA-256 of every archive byte, including headers and terminator.
     pub sha256: String,
     pub bytes: u64,

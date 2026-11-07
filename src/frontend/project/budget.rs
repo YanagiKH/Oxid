@@ -40,6 +40,24 @@ pub(in crate::frontend) struct ReserveEvent {
 }
 
 impl Allocator {
+    /// One fixed carrier, allocated fallibly through the same observable seam.
+    /// Equal length/capacity makes conversion to the boxed array allocation-free.
+    pub fn boxed_carrier<T>(
+        &mut self,
+        value: T,
+        kind: &'static str,
+    ) -> Result<Box<[T; 1]>, ReserveFailure> {
+        let mut storage = Vec::new();
+        self.vector_exact(&mut storage, 1, kind)?;
+        if storage.capacity() != 1 {
+            return Err(ReserveFailure::Allocation);
+        }
+        storage.push(value);
+        storage
+            .into_boxed_slice()
+            .try_into()
+            .map_err(|_| ReserveFailure::Allocation)
+    }
     /// Qualification-only retention bound; allocation attempts and results are
     /// unchanged. The caller admits this separate trace payload before reserve.
     #[cfg(test)]

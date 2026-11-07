@@ -21,8 +21,12 @@ The native project workflow adds:
 
 - Explicit types and static ownership checks for the supported language subset.
 - Move-only records, fixed scalar arrays and finite nested enum payloads.
+- Byte fields and byte-array fields with checked conversion and borrowing.
+- Growable byte buffers and partial binary input/output on Linux x86_64.
+- An owned UTF-8 text library with validation, scalar appends and safe truncation.
 - Native executables on Linux x86_64 using LLVM/Clang/LLD 19.1.7.
 - Development and optimized release builds with the same runtime checks.
+- A project execution policy for programs that need to keep running.
 - Local package dependencies, workspaces, and shared dependency locks.
 - Project checks, tests, and builds that preserve the previous executable when
   a build fails.
@@ -32,7 +36,8 @@ The native project workflow adds:
   same compiler, toolchain, settings and environment.
 
 These features are experimental and **not included in the published 0.9
-binaries**. Programs currently have limits on execution steps and resource use.
+binaries**. The default policy limits execution work; projects can select
+`hosted` execution without that budget. Resource and compiler limits still apply.
 See the [native project guide](TYPED_PROJECTS.md) and
 [byte-count application](../apps/byte-count/README.md) for a working example.
 

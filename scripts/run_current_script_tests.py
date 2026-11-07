@@ -55,12 +55,98 @@ HISTORICAL_ONLY = {
         "requires the frozen source identity before its predecessor binding mutation suite"),
 }
 
+# These complete source-pinned modules test policies on their exact parent
+# compilers. ci.yml replays them unchanged in separate required jobs.
+PREDECESSOR_ONLY = {
+    "test_generic_owned_vector_compatibility": (
+        "916fcbd204b221fabf1286eb48e08149a9b47b2cca40aa10a2d2ee0e69959be2",
+        "1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e",
+        "requires the pre-Windows-package compiler and exact 594-input source authority"),
+    "test_owned_enum_vector_compatibility": (
+        '6a4bf9d412a9ae94acb7c01ae29633764bd56f39aeb27e117d55a60ed7374a0f',
+        "698043182916dda7276c363e20a98dfbb5b22ed3",
+        "requires the pre-generic-vector compiler and exact 587-input source authority"),
+    "test_offline_vendor_compatibility": (
+        "4446e8981ac90152f156fb4231268fa7bbe86b2dc6e4beab88e7aedd45f01bc9",
+        "5917f581e69c0a0c69e4b5b059bb97dced55331d",
+        "requires the pre-enum-vector compiler and exact 576-input source authority"),
+    "test_owned_text_compatibility": (
+        "1fe80493856cf720c76525321ca7530f54c782282b95793d29ef47a889946ebc",
+        "7279208226a3d4185c0b996491332519971e916e",
+        "requires the pre-vendor compiler and exact 574-input source authority"),
+    "test_owned_record_vector_compatibility": (
+        "0981b5cc24a281f892ee1c8b6d26cbfc3c2a7d0f4a4dfa8c2743714c35723f3b",
+        "0e8f23f7481c7ec4e24cd416ed30607f8eb75daf",
+        "requires the pre-owned-text compiler and exact 572-input source authority"),
+    "test_registry_compatibility": (
+        "f499348d6de5226fb56802b6cb80f7b7d8b58df8bc25e8800792e8c70bb6e02b",
+        "e77402de69911a9d45a55fff5a8a0dd8de61f3e5",
+        "requires the pre-owned-vector compiler and exact registry workflow source authority"),
+    "test_arm64_package_compatibility": (
+        "d59c1bfeb9873c866a521f560a66e20dba3078d4f57139cc7585b5a1b5044ee5",
+        "8f2c29eaffabbd90c591bbdc440ae6e23acf1353",
+        "requires the complete pre-registry package implementation"),
+    "test_scalar_library_compatibility": (
+        "9315dbe8332a349b88f617a7a55cc0b6b0795fbb4952885ad8f3e2fd4f5429fa",
+        "8f2c29eaffabbd90c591bbdc440ae6e23acf1353",
+        "requires the complete pre-registry compiler source authority"),
+    "test_file_seek_compatibility": (
+        "c2e47b8f486180178f22dcb36964803bfcb797866852d0a08c2d00ebadcca022",
+        "104c900222ead9d9177025102a90520b08e761a4",
+        "requires the pre-library compiler source authority"),
+    "test_record_field_completion_compatibility": (
+        "96289f7dfc3a90a00c02aa7e2076f1dde2b550780e4b4757f987ed4f114cbb3f",
+        "b273b71237cc6a1d2db76dfe7c971e073d1d5cb3",
+        "requires the pre-seek compiler and catalog resource admission"),
+    "test_windows_native_compatibility": (
+        "aacdb546d5e7fb7a69551316fd5135eeb08b04944a27e526a660d49217c158f4",
+        "8180b1bbcbcf9ccd4d648ff5ba0ec9ea3d5b971f",
+        "requires the pre-record-field editor source admission"),
+    "test_copy_record_debug_compatibility": (
+        "8fb0a586a790371179f98ffdba89090d5e5d092d0a14dd5a91aa951d0130b549",
+        "9a5ecaaeb5fa50aff2296bf990d63167143cf312",
+        "requires the pre-Windows-native source admission and default-emission scope"),
+    "test_qualified_completion_compatibility": (
+        "b46c1953e8f66816a405d612f36fdedd44737831a5d9b5ef080f4851ab111d3a",
+        "20ea8ba102975d2e8ac0c667b96ce835a1bc6ef9",
+        "requires the pre-debug ordinary type facade identity"),
+    "test_checked_copy_compatibility": (
+        "e16894e15eed4bbe27e32370c9e29bdffb309680b4eb5b94f42aafea8ecb2ae2",
+        "6c3161640dbcc36a484ebdd23eb2594ccde4e16a",
+        "requires the pre-Windows protected dispatch activation"),
+    "test_typed_vector_compatibility": (
+        "87b834d9c64d369716843cd1428aea54d940c94f50f5c4c00033c031a1f0ce1b",
+        "6c3161640dbcc36a484ebdd23eb2594ccde4e16a",
+        "requires the pre-Windows protected dispatch activation"),
+    "test_arm64_host_compatibility": (
+        "91b9cb1ae16da868ee873a36f6efef8ef93745bfed3b8684340c828cf77421a1",
+        "18314e95d6afa3d8a4da7970dbddc828f4f6cbac",
+        "binds the pre-documentation module owners and ARM64 test-only correction scope"),
+    "test_byte_string_compatibility": (
+        'd60fd64d3a8116e191727e84194729063d1068b4da17380a3e3b6ee4952c31d8',
+        "22d04a015a444edcb600a6011cdb0e2c8529cb34",
+        "asserts the complete compiler source identity before native files"),
+    "test_buffer_transfer_compatibility": (
+        "483fa4180a3b409eab07818800f378a96a6eddecaf13b94c0ad5cef214252512",
+        "c45d519127d314f522762c35879c0c485994ea42",
+        "asserts the complete compiler source identity before byte string literals"),
+    "test_byte_buffer_compatibility": (
+        "6b0213e3f6ce75d3ea4fed2566d1b4eae0ece002db2c95cdff7dea4c41da669c",
+        "2e3fe21f76d0027d2b24cb5c7f02ba38ad354809",
+        "asserts the complete pre-hosted compiler source identity"),
+    "test_hosted_execution_compatibility": (
+        "67a0aff2a4a77e0b8a202871492841f09f0c164bf27944bd012b35b1f44adaaf",
+        "559a6e6aa0b2ab2022d8fa37546ac62aeac9954e",
+        "asserts the complete compiler source identity before buffer transfer"),
+}
+
 
 def selected_modules(directory):
     """Select by exact module name; no prefix, failure, or exception filtering."""
     discovered = sorted(Path(directory).glob("test_*.py"))
-    selected = [path for path in discovered if path.stem not in HISTORICAL_ONLY]
-    delegated = [path for path in discovered if path.stem in HISTORICAL_ONLY]
+    pinned = HISTORICAL_ONLY.keys() | PREDECESSOR_ONLY.keys()
+    selected = [path for path in discovered if path.stem not in pinned]
+    delegated = [path for path in discovered if path.stem in pinned]
     return selected, delegated
 
 
@@ -74,7 +160,7 @@ class CurrentTestLoader(unittest.TestLoader):
     def _match_path(self, path, full_path, pattern):
         candidate = Path(full_path)
         if (candidate.parent.resolve() == self.directory
-                and candidate.stem in HISTORICAL_ONLY):
+                and candidate.stem in HISTORICAL_ONLY.keys() | PREDECESSOR_ONLY.keys()):
             return False
         return super()._match_path(path, full_path, pattern)
 
@@ -86,7 +172,8 @@ def main():
     directory = Path(__file__).resolve().parent
     selected, delegated = selected_modules(directory)
     print(f"Current script modules: {len(selected)}", file=sys.stderr)
-    for name, (expected, _) in HISTORICAL_ONLY.items():
+    pinned = {**HISTORICAL_ONLY, **{name: (row[0], row[2]) for name, row in PREDECESSOR_ONLY.items()}}
+    for name, (expected, _) in pinned.items():
         path = directory / (name + ".py")
         try:
             actual = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -100,6 +187,10 @@ def main():
             )
             return 1
     for path in delegated:
+        if path.stem in PREDECESSOR_ONLY:
+            _, revision, reason = PREDECESSOR_ONLY[path.stem]
+            print(f"Mandatory predecessor replay: {path.name} @ {revision}: {reason}", file=sys.stderr)
+            continue
         print(
             f"Mandatory historical replay: {path.name} @ {HISTORICAL_REVISION}: "
             f"{HISTORICAL_ONLY[path.stem][1]}",

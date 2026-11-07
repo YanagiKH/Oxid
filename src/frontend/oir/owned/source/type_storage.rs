@@ -335,13 +335,6 @@ fn add(left: usize, right: usize, at: Span) -> Result<usize, Box<Diagnostic>> {
 fn visit(work: &WorkMeter, at: Span) -> Result<(), Box<Diagnostic>> {
     work.debit(1, at, "typed storage preparation")
 }
-fn contained_value(value: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
-    if matches!(value, ValueTy::Owned(AggregateTy::Enum(_))) {
-        Err(invalid(at))
-    } else {
-        Ok(())
-    }
-}
 fn ordinary_parameter(value: &ParameterTy, at: Span) -> Result<(), Box<Diagnostic>> {
     match value {
         ParameterTy::Value(_) => Ok(()),
@@ -421,7 +414,9 @@ fn body_counts(function: &Function, work: &WorkMeter) -> Result<(usize, usize), 
                 Some(arm) => Some(arm.body),
                 None => None,
             },
-            StmtKind::While { body, .. } if cursor.child == 0 => Some(*body),
+            StmtKind::While { body, .. } | StmtKind::ForRange { body, .. } if cursor.child == 0 => {
+                Some(*body)
+            }
             StmtKind::If {
                 then_block,
                 else_block,
@@ -491,7 +486,10 @@ fn count_function(
                 counts.call_arguments = add(counts.call_arguments, args.len(), expression.span)?;
                 for argument in args {
                     visit(work, expression.span)?;
-                    if matches!(argument, Argument::Borrow { .. }) {
+                    if matches!(
+                        argument,
+                        Argument::Borrow { .. } | Argument::BorrowRange { .. }
+                    ) {
                         counts.borrow_arguments = add(counts.borrow_arguments, 1, expression.span)?;
                     }
                 }
@@ -612,7 +610,8 @@ pub(super) fn prepare<'hir>(
         record_fields = add(record_fields, record.fields.len(), record.span)?;
         for field in &record.fields {
             visit(work, field.span)?;
-            contained_value(&field.ty, field.span)?;
+            // Field rows have the same storage for every owned type. The
+            // source and raw declaration passes validate nominal containment.
         }
     }
     if record_fields > source.counts.record_fields {

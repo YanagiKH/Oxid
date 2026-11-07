@@ -10,6 +10,7 @@ fn field(record: usize, index: usize) -> FieldId {
 }
 fn declaration(id: usize, fields: &[ValueTy], span: Span) -> RawRecordDecl {
     RawRecordDecl {
+        is_copy: false,
         id: RecordId(id),
         span,
         fields: fields
@@ -107,8 +108,10 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram) {
     ];
     main.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(1),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(1),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(7)),
         kind: BorrowKind::Exclusive,
         referent: BorrowedSlot::check(BorrowedTy::Exact(batch)).unwrap(),
@@ -350,6 +353,7 @@ pub(super) fn batch() -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![
@@ -530,6 +534,7 @@ pub(super) fn empty_composition() -> (SourceMap, RawOwnedProgram) {
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![

@@ -140,3 +140,54 @@ rejected; rename ambiguous components before migration. The exclusions `.git`,
 directories are included; permissions and timestamps are not. A concurrently
 changing tree is not an atomic snapshot. See [RFC 0029](../rfcs/0029-package-sha256-integrity.md)
 for the exact representation and bounded trust contract.
+
+## Offline typed checkouts
+
+Typed projects on Linux x86_64 and ARM64 can create an independent checkout with
+all dependencies needed to check, test and build offline:
+
+```sh
+oxid lock
+oxid vendor --frozen --output ../offline-checkout
+```
+
+Change to the **Offline project** directory printed by the command, then run:
+
+```sh
+oxid check --frozen
+oxid test --frozen
+oxid build --frozen
+```
+
+This experimental command includes the complete workspace, every member and
+the loaded source and declared tests of its dependencies. It supports portable
+relative local dependencies, already cached Git commits and exact private
+registry releases. It requires a matching existing typed lock and never fetches,
+even when `--frozen` is omitted. `--locked` and `--offline` are accepted with the
+same requirements. `--workspace` requires an enclosing workspace.
+
+The exported copy uses local dependencies and its own matching local lock. It
+does not redirect dependencies in the original checkout. Original manifests,
+locks and source files stay unchanged; Git, the original registry and their caches
+are unnecessary when using the exported project. The native toolchain is still
+required for `build`. No user program, test body or build script runs during
+export. Only the source files and declared tests needed by the project and its
+dependencies are copied. Unrelated files, Git metadata and credentials are excluded.
+
+The output directory must be new and have an existing ordinary parent. An
+existing file, directory or link is never replaced. Validation failures remove
+private staging data. If publication succeeds but syncing its parent fails, the
+error names the published project so it can be preserved and checked.
+Choose a location outside existing workspaces. A workspace ancestor, a leftover
+workspace lock or an excessive discovery depth would prevent ordinary commands
+from using the exported project, so export refuses those locations before
+publication. Workspace detection uses the same quoted-header and comment rules
+as normal project commands.
+The output directory cannot be named `oxid.toml`.
+
+The reported **Source package SHA-256** identifies the canonical source package
+for that checkout, rather than a hash of arbitrary directory contents. Running
+`oxid package --frozen` from the exported root produces the same archive bytes
+as packaging the original admitted inputs. `--message-format=json` reports the
+actual absolute `root`, output directory, file count and source-package digest.
+Existing source-package and compiler limits still apply.

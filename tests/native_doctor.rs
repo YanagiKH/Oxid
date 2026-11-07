@@ -24,6 +24,10 @@ impl Fixture {
             .current_dir(&self.0)
             .env("TMPDIR", self.0.join("scratch"))
             .env("OXID_LLVM_BIN", self.0.join("missing-tools"));
+        #[cfg(windows)]
+        command
+            .env("TMP", self.0.join("scratch"))
+            .env("TEMP", self.0.join("scratch"));
         command
     }
     fn run(&self, args: &[&str]) -> Output {
@@ -65,7 +69,26 @@ fn status(output: &str, id: &str, expected: &str) {
         "{output}"
     );
 }
-const SUPPORTED: bool = cfg!(all(target_os = "linux", target_arch = "x86_64"));
+const LINKER: &str = if cfg!(target_os = "macos") {
+    "ld64.lld"
+} else {
+    "ld.lld"
+};
+const SUPPORTED: bool = cfg!(all(
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(
+        all(
+            any(target_os = "linux", target_os = "macos"),
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ),
+        all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64"
+        )
+    )
+));
 
 #[test]
 fn native_doctor_reports_real_tool_selection_and_unsupported_hosts_honestly() {
@@ -78,7 +101,22 @@ fn native_doctor_reports_real_tool_selection_and_unsupported_hosts_honestly() {
         "{output}"
     );
     assert_eq!(output.lines().count(), 1);
-    assert!(output.contains("\"target\":\"x86_64-unknown-linux-gnu\""));
+    let triple = if cfg!(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64"
+    )) {
+        "x86_64-pc-windows-msvc"
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "aarch64-apple-darwin"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        "x86_64-apple-darwin"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "aarch64-unknown-linux-gnu"
+    } else {
+        "x86_64-unknown-linux-gnu"
+    };
+    assert!(output.contains(&format!("\"target\":\"{triple}\"")));
     assert!(output.contains("\"llvm_version\":\"19.1.7\""));
     assert!(output.contains("\"toolchain_ready\":false,\"success\":false"));
     status(&output, "host", if SUPPORTED { "passed" } else { "failed" });
@@ -207,7 +245,12 @@ fn invalid_nearest_manifest_is_not_hidden_as_an_absent_project() {
     fixture.clean();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn native_doctor_escapes_tool_paths_in_both_output_formats() {
     let fixture = Fixture::new();
@@ -235,7 +278,12 @@ fn native_doctor_escapes_tool_paths_in_both_output_formats() {
     fixture.clean();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn fake_tools(fixture: &Fixture, clang_mode: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let tools = fixture.0.join("tools");
@@ -243,7 +291,7 @@ fn fake_tools(fixture: &Fixture, clang_mode: &str) -> PathBuf {
     for (name, marker) in [
         ("clang", "clang version"),
         ("opt", "LLVM version"),
-        ("ld.lld", "LLD"),
+        (LINKER, "LLD"),
     ] {
         let action = if name == "clang" { clang_mode } else { "" };
         let script = format!("#!/bin/sh\nif [ \"$1\" = --version ]; then\n{action}\nprintf '%s\\n' '{marker} 19.1.7'\nexit 0\nfi\nprintf 'SDK unavailable\\n' >&2\nexit 9\n");
@@ -256,7 +304,12 @@ fn fake_tools(fixture: &Fixture, clang_mode: &str) -> PathBuf {
     tools
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn version_only_tools_cannot_claim_sdk_or_native_readiness() {
     let fixture = Fixture::new();
@@ -289,7 +342,12 @@ fn version_only_tools_cannot_claim_sdk_or_native_readiness() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn wrong_versions_output_floods_and_hung_tools_are_bounded() {
     for (script, expected) in [
@@ -312,7 +370,12 @@ fn wrong_versions_output_floods_and_hung_tools_are_bounded() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn exited_probe_leader_does_not_leave_a_child_holding_capture_pipes() {
     let fixture = Fixture::new();
@@ -350,7 +413,12 @@ fn exited_probe_leader_does_not_leave_a_child_holding_capture_pipes() {
     fixture.clean();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn inherited_auto_reaping_is_rejected_before_probe_processes() {
     use std::os::unix::process::CommandExt;
@@ -378,7 +446,12 @@ fn inherited_auto_reaping_is_rejected_before_probe_processes() {
     fixture.clean();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn malformed_locks_and_changed_dependency_inputs_fail_package_diagnosis_without_rewrites() {
     let fixture = Fixture::new();
@@ -414,7 +487,12 @@ fn malformed_locks_and_changed_dependency_inputs_fail_package_diagnosis_without_
     assert!(!fixture.0.join(".oxid").exists());
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 tools"]
 fn real_native_doctor_compiles_links_executes_and_preserves_the_project() {
@@ -442,7 +520,12 @@ fn real_native_doctor_compiles_links_executes_and_preserves_the_project() {
         status(&output, id, "passed");
     }
     assert!(output.contains("\"toolchain_ready\":true,\"success\":true"));
-    assert!(output.contains("ELF64 x86_64 PIE"));
+    let format = if cfg!(target_os = "macos") {
+        "Mach-O64"
+    } else {
+        "ELF64"
+    };
+    assert!(output.contains(&format!("{format} {} PIE", std::env::consts::ARCH)));
     fixture.clean();
     // A real compiler with its SDK include search deliberately disabled must
     // fail the SDK check even though all three version checks still succeed.
@@ -453,7 +536,7 @@ fn real_native_doctor_compiles_links_executes_and_preserves_the_project() {
     let quoted = clang.to_string_lossy().replace('\'', "'\\''");
     fs::write(wrapper.join("clang"), format!("#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{quoted}' \"$@\"; fi\nexec '{quoted}' -nostdinc \"$@\"\n")).unwrap();
     fs::set_permissions(wrapper.join("clang"), fs::Permissions::from_mode(0o700)).unwrap();
-    for tool in ["opt", "ld.lld"] {
+    for tool in ["opt", LINKER] {
         std::os::unix::fs::symlink(Path::new(&tools).join(tool), wrapper.join(tool)).unwrap();
     }
     let output = fixture
@@ -472,13 +555,13 @@ fn real_native_doctor_compiles_links_executes_and_preserves_the_project() {
     // can link. Remove only the standard libraries at the actual link step.
     let missing_libraries = fixture.0.join("without-libraries");
     fs::create_dir(&missing_libraries).unwrap();
-    fs::write(missing_libraries.join("clang"), format!("#!/bin/sh\nfor arg do\nif [ \"$arg\" = -pie ]; then exec '{quoted}' -nostdlib \"$@\"; fi\ndone\nexec '{quoted}' \"$@\"\n")).unwrap();
+    fs::write(missing_libraries.join("clang"), format!("#!/bin/sh\nfor arg do\ncase \"$arg\" in -pie|-Wl,-pie) exec '{quoted}' -nostdlib \"$@\";; esac\ndone\nexec '{quoted}' \"$@\"\n")).unwrap();
     fs::set_permissions(
         missing_libraries.join("clang"),
         fs::Permissions::from_mode(0o700),
     )
     .unwrap();
-    for tool in ["opt", "ld.lld"] {
+    for tool in ["opt", LINKER] {
         std::os::unix::fs::symlink(Path::new(&tools).join(tool), missing_libraries.join(tool))
             .unwrap();
     }
@@ -495,39 +578,92 @@ fn real_native_doctor_compiles_links_executes_and_preserves_the_project() {
     assert!(output.contains("undefined symbol"), "{output}");
     status(&output, "execute", "skipped");
     fixture.clean();
-    // A tool flooding inside the real compiler child must be contained even
-    // though the existing native build boundary buffers that tool's output.
-    // This is a constant-output test tool, never a user's program.
-    let nested_flood = fixture.0.join("nested-flood");
-    fs::create_dir(&nested_flood).unwrap();
-    for tool in ["clang", "ld.lld"] {
-        std::os::unix::fs::symlink(Path::new(&tools).join(tool), nested_flood.join(tool)).unwrap();
+    #[cfg(target_os = "linux")]
+    {
+        // A tool flooding inside the real compiler child must be contained even
+        // though the existing native build boundary buffers that tool's output.
+        // This is a constant-output test tool, never a user's program.
+        let nested_flood = fixture.0.join("nested-flood");
+        fs::create_dir(&nested_flood).unwrap();
+        for tool in ["clang", LINKER] {
+            std::os::unix::fs::symlink(Path::new(&tools).join(tool), nested_flood.join(tool))
+                .unwrap();
+        }
+        let opt = Path::new(&tools)
+            .join("opt")
+            .to_string_lossy()
+            .replace('\'', "'\\''");
+        fs::write(nested_flood.join("opt"), format!("#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{opt}' \"$@\"; fi\nexec /usr/bin/yes nested-flood\n")).unwrap();
+        fs::set_permissions(nested_flood.join("opt"), fs::Permissions::from_mode(0o700)).unwrap();
+        let start = std::time::Instant::now();
+        let output = fixture
+            .command()
+            .env("OXID_LLVM_BIN", nested_flood)
+            .args(["doctor", "--native", "--message-format=json"])
+            .output()
+            .unwrap();
+        assert!(
+            start.elapsed().as_secs() < 20,
+            "nested tool did not hit the memory bound"
+        );
+        assert_eq!(output.status.code(), Some(1));
+        let output = text(&output);
+        status(&output, "sdk", "passed");
+        status(&output, "compile-link", "failed");
+        assert!(
+            output.contains("memory allocation") && output.contains("failed"),
+            "{output}"
+        );
+        assert!(!fixture.0.join("core").exists());
+        fixture.clean();
     }
-    let opt = Path::new(&tools)
-        .join("opt")
-        .to_string_lossy()
-        .replace('\'', "'\\''");
-    fs::write(nested_flood.join("opt"), format!("#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{opt}' \"$@\"; fi\nexec /usr/bin/yes nested-flood\n")).unwrap();
-    fs::set_permissions(nested_flood.join("opt"), fs::Permissions::from_mode(0o700)).unwrap();
-    let start = std::time::Instant::now();
-    let output = fixture
-        .command()
-        .env("OXID_LLVM_BIN", nested_flood)
-        .args(["doctor", "--native", "--message-format=json"])
-        .output()
+    #[cfg(target_os = "macos")]
+    {
+        // Darwin retains inherited address-space limits. Use a finite failed
+        // tool to verify diagnostic clipping through the nested compiler probe.
+        let nested_failure = fixture.0.join("nested-finite-failure");
+        fs::create_dir(&nested_failure).unwrap();
+        for tool in ["clang", LINKER] {
+            std::os::unix::fs::symlink(Path::new(&tools).join(tool), nested_failure.join(tool))
+                .unwrap();
+        }
+        let opt = Path::new(&tools)
+            .join("opt")
+            .to_string_lossy()
+            .replace('\'', "'\\''");
+        fs::write(
+            nested_failure.join("opt"),
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{opt}' \"$@\"; fi\n\
+                 printf 'finite-opt-failure\\n' >&2\n\
+                 count=0\nwhile [ \"$count\" -lt 1024 ]; do\n\
+                 printf '%s' 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' >&2\n\
+                 count=$((count + 1))\ndone\n\
+                 printf '\\nfinite-opt-tail-must-be-clipped\\n' >&2\nexit 9\n"
+            ),
+        )
         .unwrap();
-    assert!(
-        start.elapsed().as_secs() < 20,
-        "nested tool did not hit the memory bound"
-    );
-    assert_eq!(output.status.code(), Some(1));
-    let output = text(&output);
-    status(&output, "sdk", "passed");
-    status(&output, "compile-link", "failed");
-    assert!(
-        output.contains("memory allocation") && output.contains("failed"),
-        "{output}"
-    );
-    assert!(!fixture.0.join("core").exists());
-    fixture.clean();
+        fs::set_permissions(
+            nested_failure.join("opt"),
+            fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        let output = fixture
+            .command()
+            .env("OXID_LLVM_BIN", nested_failure)
+            .args(["doctor", "--native", "--message-format=json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let output = text(&output);
+        status(&output, "sdk", "passed");
+        status(&output, "compile-link", "failed");
+        status(&output, "execute", "skipped");
+        assert_eq!(output.lines().count(), 1);
+        assert!(output.len() < 12_000, "{output}");
+        assert!(output.contains("finite-opt-failure"), "{output}");
+        assert!(!output.contains("finite-opt-tail-must-be-clipped"));
+        assert!(!fixture.0.join("core").exists());
+        fixture.clean();
+    }
 }

@@ -1,6 +1,7 @@
 //! Source output inventory only; neither a declaration nor an executable witness.
 use super::super::{budget as raw_budget, *};
 use super::{lower, typeck::TypedOwnedProgram};
+use crate::frontend::project::budget::Allocator;
 use std::mem::size_of;
 
 pub(super) const MAX_RAW_BYTES: usize = 64 * 1024 * 1024;
@@ -112,6 +113,10 @@ pub(super) fn function_bytes(c: raw_budget::FunctionCounts) -> Result<usize, Own
         (c.constructed_fields, size_of::<(FieldId, Operand)>()),
         (c.constructed_elements, size_of::<Operand>()),
         (c.composite_fields, size_of::<(FieldId, FieldInitializer)>()),
+        (
+            c.destructured_fields as usize,
+            size_of::<(FieldId, OwnerPlaceId)>(),
+        ),
         (c.projection_fields, size_of::<FieldId>()),
     ] {
         bytes = add(bytes, mul(n, width)?)?;
@@ -139,6 +144,14 @@ pub(super) fn preflight(
     typed: &TypedOwnedProgram<'_>,
     limits: Limits,
 ) -> Result<Usage, OwnedFailure> {
+    if typed.admission() == super::resolve::SourceAdmission::OwnedVectorPipeline
+        && !typed.index().is_owned_vector_candidate_pipeline()
+    {
+        return Err(OwnedFailure::malformed(
+            Malformed::Binding,
+            typed.index().sources().eof(),
+        ));
+    }
     if (typed.index().builtin_set() != BuiltinOrigins::None || {
         #[cfg(test)]
         {
@@ -178,7 +191,29 @@ pub(super) fn preflight(
     guard_event(GuardEvent::DeclarationAdmission);
     let mut declarations =
         admit_declaration_counts(typed.records().iter().map(|r| r.fields.len()))?;
-    declarations.layout_bytes = if typed
+    declarations.layout_bytes = if super::record_enum_layouts::needed(typed.records()) {
+        super::record_enum_layouts::inventory(
+            typed.index(),
+            typed.records(),
+            typed.work(),
+            &mut Allocator::default(),
+        )
+        .map_err(|error| {
+            let span = error
+                .primary
+                .unwrap_or_else(|| typed.index().sources().eof());
+            at(
+                if error.code == "E0400" {
+                    OwnedFailure::resource("record and enum source layout inventory")
+                } else {
+                    OwnedFailure::malformed(Malformed::CanonicalSite, span)
+                },
+                span,
+            )
+        })?
+        .0
+        .layout_bytes
+    } else if typed
         .records()
         .iter()
         .all(|r| r.fields.iter().all(|f| matches!(f.ty, ValueTy::Scalar(_))))
@@ -192,12 +227,17 @@ pub(super) fn preflight(
             })
         }))?
     } else {
-        admit_value_layouts(
-            typed
-                .records()
-                .iter()
-                .map(|r| r.fields.iter().map(|f| f.ty)),
-        )?
+        let fields = typed
+            .records()
+            .iter()
+            .map(|r| r.fields.iter().map(|f| f.ty));
+        if typed.admission() == super::resolve::SourceAdmission::OwnedVectorPipeline
+            && typed.index().is_owned_vector_candidate_pipeline()
+        {
+            crate::frontend::oir::owned_types::admit_value_layouts_domain::<true, _, _>(fields)?
+        } else {
+            admit_value_layouts(fields)?
+        }
     };
     // Both aggregate counts and the actual padded record layout sum participate
     // in the shared record/enum gate, including unused enum declarations.
@@ -205,6 +245,13 @@ pub(super) fn preflight(
         .map_err(DeclarationError::from)?;
     let ceiling = limits.raw_bytes.min(MAX_RAW_BYTES);
     let mut bytes = size_of::<RawOwnedProgram>();
+    bytes = add(
+        bytes,
+        mul(
+            typed.index().vector_functions().len(),
+            size_of::<crate::frontend::builtin_catalog::vector::Function>(),
+        )?,
+    )?;
     bytes = add(
         bytes,
         mul(declarations.records, size_of::<RawRecordDecl>())?,
@@ -219,6 +266,12 @@ pub(super) fn preflight(
     raw_budget::account_enum_declarations(enums, raw_budget::Limits::DEFAULT, &mut counts)?;
     raw_budget::account_builtin_descriptors(
         typed.index().builtin_set(),
+        raw_budget::Limits::DEFAULT,
+        &mut counts,
+    )?;
+    raw_budget::account_vector_descriptors(
+        typed.index().vector_functions(),
+        typed.records().len(),
         raw_budget::Limits::DEFAULT,
         &mut counts,
     )?;
@@ -250,12 +303,69 @@ pub(super) fn preflight(
             }
         }
     }
+    for kind in crate::frontend::builtin_catalog::experimental::Function::ALL {
+        if typed
+            .index()
+            .builtin_set()
+            .experimental()
+            .contains(kind.item())
+        {
+            let count = super::experimental_lower::counts(kind);
+            raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+            bytes = cap(
+                add(bytes, function_bytes(count)?)?,
+                ceiling,
+                "source raw payload",
+            )?;
+        }
+    }
+    for key in typed.index().vector_functions() {
+        let count = super::vector_lower::counts(*key);
+        raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+        bytes = cap(
+            add(bytes, function_bytes(count)?)?,
+            ceiling,
+            "source raw payload",
+        )?;
+    }
+    for key in typed.index().owned_vector_functions() {
+        let count = super::vector_lower::owned_counts(*key);
+        raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+        bytes = cap(
+            add(bytes, function_bytes(count)?)?,
+            ceiling,
+            "source raw payload",
+        )?;
+    }
+    if typed.index().is_owned_vector_candidate_pipeline() {
+        scratch = scratch.max(add(
+            super::builtin_lower::carrier_bytes(),
+            super::vector_lower::owned_extra_bytes(),
+        )?);
+    }
+    if !typed.index().vector_functions().is_empty() {
+        scratch = scratch.max(add(
+            super::builtin_lower::carrier_bytes(),
+            super::vector_lower::extra_bytes(),
+        )?);
+    }
+    if !typed.index().builtin_set().experimental().is_empty() {
+        scratch = scratch.max(add(
+            super::builtin_lower::carrier_bytes(),
+            super::experimental_lower::extra_bytes(),
+        )?);
+    }
     // Status-only imports use the same fixed capacity-check roles for the new
     // enum suffix; conservatively admit the bounded builtin producer envelope.
     if typed.index().builtin_set() != BuiltinOrigins::None {
         scratch = scratch.max(super::builtin_lower::carrier_bytes());
     }
     if let Some(seed) = typed.source_storage_bytes() {
+        let seed = if typed.admission() == super::resolve::SourceAdmission::OwnedVectorPipeline {
+            add(seed, super::association::owned_vector_scope_bytes())?
+        } else {
+            seed
+        };
         admit_lower_scratch(seed, scratch)?;
     }
     Ok(Usage {
@@ -282,9 +392,12 @@ pub(super) fn admit_conversion_scratch(seed: usize, scratch: usize) -> Result<us
     )
 }
 pub(super) fn admit_lower_scratch(seed: usize, scratch: usize) -> Result<usize, OwnedFailure> {
+    let ceiling = super::hir_budget::MAX_HIR_BYTES;
+    #[cfg(test)]
+    let ceiling = LOWER_LIMIT.with(|limit| limit.get().map_or(ceiling, |limit| limit.min(ceiling)));
     cap(
         add(seed, add(scratch, lower::invocation_control_bytes())?)?,
-        super::hir_budget::MAX_HIR_BYTES,
+        ceiling,
         "source HIR scratch",
     )
 }
@@ -402,6 +515,18 @@ fn enum_lower_scratch_overlay_has_exact_unchanged_boundary_and_overflow() {
 #[cfg(test)]
 thread_local! {
     static CONVERSION_LIMIT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    static LOWER_LIMIT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+#[cfg(test)]
+pub(super) fn with_lower_limit<T>(limit: usize, action: impl FnOnce() -> T) -> T {
+    struct Reset(Option<usize>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            LOWER_LIMIT.with(|limit| limit.set(self.0));
+        }
+    }
+    let _reset = Reset(LOWER_LIMIT.with(|value| value.replace(Some(limit))));
+    action()
 }
 #[cfg(test)]
 pub(super) fn with_conversion_limit<T>(limit: usize, action: impl FnOnce() -> T) -> T {

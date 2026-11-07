@@ -87,6 +87,7 @@ impl OutputMode<'_> {
     pub(super) fn allocate(self, counted: usize, policy: EntryPolicy) -> Result<Emission, Failure> {
         match self {
             Self::Default => Ok(Emission {
+                debug: false,
                 len: 0,
                 text: Some(String::with_capacity(counted)),
                 policy,
@@ -110,6 +111,7 @@ impl OutputMode<'_> {
                     return Err(Failure::Invariant);
                 }
                 Ok(Emission {
+                    debug: false,
                     len: 0,
                     text: Some(text),
                     policy,

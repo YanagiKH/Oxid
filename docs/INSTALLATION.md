@@ -9,7 +9,15 @@ Choose a release binary to run Oxid without installing Rust, or build the curren
 3. Verify the archive checksum, extract `oxid` or `oxid.exe`, and put it on `PATH`.
 4. Run `oxid --version`.
 
-The release workflow targets Linux x86_64, Windows x86_64, macOS x86_64, and macOS arm64. Check the selected release for available assets; Linux arm64 is not covered by that workflow.
+Choose the archive for your system. Older releases may not provide every asset:
+
+| System | Processor | Archive |
+| --- | --- | --- |
+| Linux | x86_64 | `oxid-linux-x86_64.tar.gz` |
+| Linux | ARM64 | `oxid-linux-aarch64.tar.gz` |
+| Windows | x86_64 | `oxid-windows-x86_64.zip` |
+| macOS | Intel | `oxid-macos-x86_64.tar.gz` |
+| macOS | Apple silicon | `oxid-macos-aarch64.tar.gz` |
 
 A release binary includes the interpreter and project tools. Python, Java, Go, and other external process adapters still need their respective runtimes or toolchains.
 
@@ -24,7 +32,34 @@ export PATH="$HOME/.local/bin:$PATH"
 oxid --version
 ```
 
-Set `OXID_INSTALL_DIR` to choose another directory or `OXID_VERSION` to pin a release tag. Without `OXID_VERSION`, the installer uses the latest release. The Unix installer supports Linux x86_64 and macOS x86_64/arm64.
+Set `OXID_INSTALL_DIR` to choose another directory or `OXID_VERSION` to pin a release tag. Without `OXID_VERSION`, the installer uses the latest release. The Unix installer supports Linux and macOS on x86_64 or ARM64. A missing asset or failed checksum stops installation before replacing the existing executable.
+
+To update or return to an earlier version, run the installer again with the desired `OXID_VERSION`. The Unix installer verifies and stages the executable before replacing the installed file; a failed copy or replacement keeps the previous executable.
+
+For an offline Unix installation, copy `install.sh`, the archive for your system and its `.sha256` file to the computer, then run:
+
+```sh
+OXID_ARCHIVE=/media/usb/oxid-linux-aarch64.tar.gz sh install.sh
+```
+
+Keep the checksum beside the archive with the same filename plus `.sha256`. `OXID_ARCHIVE` uses those local files and makes no download requests. It can also restore a previously saved release.
+
+## Verify release provenance
+
+For releases that provide `.sigstore.json` files, use a recent [GitHub CLI](https://cli.github.com/) to verify that the archive was signed by Oxid's release workflow. Download the archive and its signature bundle, then run the following with the selected release tag:
+
+```sh
+gh attestation verify oxid-linux-aarch64.tar.gz \
+  --repo YanagiKH/Oxid \
+  --signer-workflow YanagiKH/Oxid/.github/workflows/release.yml \
+  --source-ref refs/tags/v1.0.0-rc.1 \
+  --deny-self-hosted-runners \
+  --bundle oxid-linux-aarch64.tar.gz.sigstore.json
+```
+
+Add `--source-digest COMMIT_SHA` to require a specific source commit. For offline verification, first obtain trusted roots on a connected computer with `gh attestation trusted-root > trusted_root.jsonl`; transfer that file with the archive and bundle, then add `--custom-trusted-root trusted_root.jsonl` to the verification command. Obtain the trusted roots independently of the downloaded release.
+
+Successful provenance verification identifies the producer and archive contents. Check the selected release notes for its supported language features and platforms; older releases may have checksums without signature bundles.
 
 ## Windows installer
 
@@ -36,7 +71,17 @@ Invoke-WebRequest https://raw.githubusercontent.com/YanagiKH/Oxid/main/install.p
 & "$env:LOCALAPPDATA\Oxid\bin\oxid.exe" --version
 ```
 
-The installer checks the archive checksum and supports Windows x86_64. `OXID_INSTALL_DIR` and `OXID_VERSION` override the installation directory and release tag. If your machine's script policy prevents execution, use a release archive or follow your organization's policy.
+The installer checks the archive checksum and supports Windows x86_64. Its default destination is `%LOCALAPPDATA%\Oxid\bin`. Use `-InstallDir` or `OXID_INSTALL_DIR` to choose another folder, and `-Version` or `OXID_VERSION` to select a release tag. Run it again with the desired tag to update or return to an earlier release; without a version it installs the latest release.
+
+For an offline installation, copy `install.ps1`, `oxid-windows-x86_64.zip` and its `.sha256` file to the computer. Keep the checksum beside the archive, then run:
+
+```powershell
+.\install.ps1 -Archive D:\Oxid\oxid-windows-x86_64.zip
+```
+
+`OXID_ARCHIVE` also selects a local archive. This mode makes no download requests and can restore a previously saved release.
+
+Close running Oxid programs before updating. Validation and copy errors keep the previous executable. If Windows prevents automatic recovery after a replacement error, the error identifies the backup to restore. If your machine's script policy prevents execution, use a release archive or follow your organization's policy.
 
 ## Cargo installation
 
@@ -59,6 +104,9 @@ cargo build --release --locked
 ```
 
 On Windows, use `.\target\release\oxid.exe` for the executable. To check a source contribution, follow [Contributing](../CONTRIBUTING.md).
+
+To build native Oxid programs on macOS, follow [Native builds on macOS](NATIVE_MACOS.md)
+to configure LLVM and the Command Line Tools SDK.
 
 ## Docker
 

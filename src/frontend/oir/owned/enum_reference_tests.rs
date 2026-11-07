@@ -484,6 +484,23 @@ fn enum_reference_poisoned_destinations_copy_only_tag_and_active_bytes() {
             copies += 1;
             assert_eq!(&snapshot.bytes[..4], &(constructed as u32).to_le_bytes());
             match payload {
+                Some(
+                    hir::Ty::I8
+                    | hir::Ty::I16
+                    | hir::Ty::U16
+                    | hir::Ty::U32
+                    | hir::Ty::U64
+                    | hir::Ty::Isize
+                    | hir::Ty::Usize
+                    | hir::Ty::I128
+                    | hir::Ty::U128
+                    | hir::Ty::Char
+                    | hir::Ty::F32
+                    | hir::Ty::F64,
+                ) => panic!("integer width is outside this retained narrow fixture or observer"),
+                Some(hir::Ty::I64) => {
+                    panic!("i64 is outside this retained narrow fixture or observer")
+                }
                 Some(hir::Ty::U8) => {
                     unreachable!("u8 is outside this predecessor fixture or observation domain")
                 }
@@ -924,6 +941,25 @@ fn enum_reference_changed_variant_replacement_every_fuel_and_active_bytes() {
                 assert_eq!((replaced.state, replaced.key.generation), old_identity);
                 assert_eq!(&replaced.bytes[..4], &(replacement as u32).to_le_bytes());
                 let active_end = match e::MIXED[replacement] {
+                    Some(
+                        hir::Ty::I8
+                        | hir::Ty::I16
+                        | hir::Ty::U16
+                        | hir::Ty::U32
+                        | hir::Ty::U64
+                        | hir::Ty::Isize
+                        | hir::Ty::Usize
+                        | hir::Ty::I128
+                        | hir::Ty::U128
+                        | hir::Ty::Char
+                        | hir::Ty::F32
+                        | hir::Ty::F64,
+                    ) => {
+                        panic!("integer width is outside this retained narrow fixture or observer")
+                    }
+                    Some(hir::Ty::I64) => {
+                        panic!("i64 is outside this retained narrow fixture or observer")
+                    }
                     Some(hir::Ty::U8) => {
                         unreachable!("u8 is outside this predecessor fixture or observation domain")
                     }

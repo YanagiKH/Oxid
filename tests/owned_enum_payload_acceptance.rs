@@ -6,7 +6,12 @@
 //! `OXID_TEST_LLVM_BIN=/usr/lib/llvm-19/bin cargo test --test
 //! owned_enum_payload_acceptance -- --include-ignored`. No qualification,
 //! capacity or fuel probes.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use std::{
     fs,
     path::{Path, PathBuf},

@@ -93,7 +93,9 @@ def main():
             counts["literal_cases"] += 1
 
         for literal in ["1i32", "1_000", "0xff", "0o7", "0b1", "1.0", "1e9", "9" * 200 + "i32", "１", "١", "1é", "1١", "- /* 雪 */ 1.0"]:
-            failure(f"fn main() -> i32 {{ return {literal}; }}", "E0101", "parse", literal)
+            code, stage = (("E0300", "type") if literal in ("1.0", "1e9", "- /* 雪 */ 1.0")
+                           else ("E0101", "parse"))
+            failure(f"fn main() -> i32 {{ return {literal}; }}", code, stage, literal)
             counts["unsupported_cases"] += 1
 
         values = [-(2**31), -(2**31) + 1, -1, 0, 1, 2**31 - 2, 2**31 - 1]

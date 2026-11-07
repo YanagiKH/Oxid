@@ -242,7 +242,7 @@ fn u8_bare_fields_ordinary_calls_and_len_byte_storage_successor() {
     // RFC0030's exact historical expectation for these six forms was
     // E0101/parse, at the two-byte u8 token, with this unchanged message.
     // RFC0031 intentionally supersedes precisely this array/slice domain;
-    // enum and conversion exclusions below remain active checks.
+    // Byte enum payloads now share the typed integer payload grammar.
     const PREDECESSOR: (&str, &str, &str) =
         ("E0101", "parse", "unsupported typed-preview construct `u8`");
     for ty in [
@@ -269,19 +269,20 @@ fn u8_bare_fields_ordinary_calls_and_len_byte_storage_successor() {
         assert_eq!(file.text_at(ast.functions[0].params[0].ty.span), ty);
     }
     let map = source("enum E{V(u8)}");
-    let errors = typed(
+    let (ast, _) = typed(
         &map,
         SourceMode::ProjectCandidate,
         MAX_NODES,
         &mut Allocator::default(),
         &mut SyntaxStorage::default(),
     )
-    .unwrap_err();
-    assert_eq!((errors[0].code, errors[0].stage), ("E0100", "parse"));
-    assert_eq!(
-        errors[0].message,
-        "only bool, i32 and () enum payloads are supported"
-    );
+    .unwrap();
+    let payload = ast.enums[0].variants[0].payload.unwrap();
+    assert!(matches!(
+        payload.kind,
+        ScalarTypeSyntax::Integer(IntegerTypeSyntax::U8)
+    ));
+    assert_eq!(map.get(SourceFileId(0)).text_at(payload.span), "u8");
 }
 
 #[test]

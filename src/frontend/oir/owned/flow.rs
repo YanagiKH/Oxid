@@ -37,12 +37,20 @@ pub(super) enum DeniedSubject {
         granted: BorrowKind,
         declaration: Span,
     },
+    LocalReference {
+        id: LoanId,
+        referent: BorrowedSlot,
+        granted: BorrowKind,
+        declaration: Span,
+    },
 }
 impl DeniedSubject {
     pub(super) fn referent(self) -> BorrowedTy {
         match self {
             Self::Owner(owner) => BorrowedTy::Exact(owner.aggregate()),
-            Self::Reference { referent, .. } => referent.referent(),
+            Self::Reference { referent, .. } | Self::LocalReference { referent, .. } => {
+                referent.referent()
+            }
         }
     }
 }
@@ -59,10 +67,14 @@ pub(super) enum DeniedOperation {
     StorageLive,
     StorageEnd,
     Construct,
+    DestructureRecord,
     ConstructArray,
     ConstructEnum,
     ConsumeVariant,
     MatchDispatch,
+    CopyInitialize,
+    CopyIndexInitialize,
+    CopyIndexWrite,
     MoveInitialize,
     Replace,
     Discard,
@@ -82,6 +94,7 @@ pub(super) enum DeniedOperation {
 pub(super) enum DeniedRole {
     Storage,
     InitializationDestination,
+    SourceCopy,
     SourceConsume,
     ReplacementDestination,
     FieldBase,
@@ -117,6 +130,15 @@ impl DenialContext {
                     declaration: r.span,
                 }
             }
+            AccessBase::Loan(id) => {
+                let loan = f.loans.get(id.0)?;
+                DeniedSubject::LocalReference {
+                    id,
+                    referent: loan.referent,
+                    granted: loan.kind,
+                    declaration: loan.span,
+                }
+            }
         })
     }
     /// Only listed operation/operand-role pairs can create context. Identity is
@@ -143,6 +165,13 @@ impl DenialContext {
             {
                 DeniedOperation::Construct
             }
+            (OwnedInstruction::DestructureRecord { source, .. }, SourceConsume)
+                if base == AccessBase::Owner(*source) => DeniedOperation::DestructureRecord,
+            (OwnedInstruction::DestructureRecord { source, fields }, InitializationDestination)
+                if fields.iter().any(|(_, destination)| base == AccessBase::Owner(*destination)) => {
+                counterpart = Some(Self::owner(f, *source)?);
+                DeniedOperation::DestructureRecord
+            }
             (OwnedInstruction::ConstructComposite { destination, fields }, SourceConsume)
                 if fields.iter().any(|(_, value)| matches!(value, FieldInitializer::Owned(source) if base == AccessBase::Owner(*source))) => {
                 counterpart = Some(Self::owner(f, *destination)?);
@@ -162,6 +191,16 @@ impl DenialContext {
                 if base == AccessBase::Owner(*destination) =>
             {
                 DeniedOperation::ConstructArray
+            }
+            (OwnedInstruction::CopyInitialize { source, destination }, SourceCopy)
+                if base == AccessBase::Owner(*source) => {
+                counterpart = Some(Self::owner(f, *destination)?);
+                DeniedOperation::CopyInitialize
+            }
+            (OwnedInstruction::CopyInitialize { source, destination }, InitializationDestination)
+                if base == AccessBase::Owner(*destination) => {
+                counterpart = Some(Self::owner(f, *source)?);
+                DeniedOperation::CopyInitialize
             }
             (
                 OwnedInstruction::MoveInitialize {
@@ -212,6 +251,10 @@ impl DenialContext {
             (OwnedInstruction::WriteField { base: actual, .. } | OwnedInstruction::WriteProjection { base: actual, .. }, FieldBase) if base == *actual => {
                 DeniedOperation::WriteField
             }
+            (OwnedInstruction::CopyIndexInitialize { base: actual, .. }, ArrayBase) if base == *actual => DeniedOperation::CopyIndexInitialize,
+            (OwnedInstruction::CopyIndexInitialize { destination, .. }, InitializationDestination) if base == AccessBase::Owner(*destination) => DeniedOperation::CopyIndexInitialize,
+            (OwnedInstruction::CopyIndexWrite { base: actual, .. }, ArrayBase) if base == *actual => DeniedOperation::CopyIndexWrite,
+            (OwnedInstruction::CopyIndexWrite { source, .. }, SourceCopy) if base == AccessBase::Owner(*source) => DeniedOperation::CopyIndexWrite,
             (OwnedInstruction::ReadIndex { base: actual, .. }, ArrayBase) if base == *actual => {
                 DeniedOperation::ReadIndex
             }
@@ -221,7 +264,7 @@ impl DenialContext {
             (OwnedInstruction::ArrayLength { base: actual, .. }, ArrayBase) if base == *actual => {
                 DeniedOperation::ArrayLength
             }
-            (OwnedInstruction::PrepareBorrow { loan, .. }, BorrowAuthority) => {
+            (OwnedInstruction::PrepareBorrow { loan, .. } | OwnedInstruction::PrepareBorrowRange { loan, .. } | OwnedInstruction::AcquireLocalBorrow(loan), BorrowAuthority) => {
                 let loan = f.loans.get(loan.0)?;
                 if base != loan.authority {
                     return None;
@@ -367,6 +410,15 @@ fn step(
     let (mut event, mut legal, mut next, mut failure) =
         (false, &[][..], state, Violation::Unavailable);
     match i {
+        OwnedInstruction::OwnedVector { operation, .. }
+            if operation.operation() == crate::frontend::builtin_catalog::owned_vector::Operation::PushReserved
+                && f.parameters.iter().any(|parameter| matches!(parameter, ParameterBinding::Owned(source) if *source == owner)) =>
+        {
+            event = true;
+            legal = &[Available];
+            next = Moved;
+            role = DeniedRole::SourceConsume;
+        }
         OwnedInstruction::StorageLive(o) if *o == owner => {
             event = true;
             legal = &[Dead];
@@ -386,13 +438,27 @@ fn step(
             failure = Violation::Lifetime;
             role = DeniedRole::InitializationDestination;
         }
-        OwnedInstruction::Construct { destination, .. }
+        OwnedInstruction::Experimental {
+            destination: CallResult::Owned(destination),
+            ..
+        }
+        | OwnedInstruction::Vector {
+            destination: CallResult::Owned(destination),
+            ..
+        }
+        | OwnedInstruction::OwnedVector {
+            destination: CallResult::Owned(destination),
+            ..
+        }
+        | OwnedInstruction::Construct { destination, .. }
         | OwnedInstruction::ConstructArray { destination, .. }
         | OwnedInstruction::ConstructEnum { destination, .. }
         | OwnedInstruction::ConstructOwnedEnum { destination, .. }
         | OwnedInstruction::ReadStdin { destination, .. }
         | OwnedInstruction::WriteStdout { destination, .. }
         | OwnedInstruction::ConstructComposite { destination, .. }
+        | OwnedInstruction::CopyInitialize { destination, .. }
+        | OwnedInstruction::CopyIndexInitialize { destination, .. }
         | OwnedInstruction::MoveInitialize { destination, .. }
             if *destination == owner =>
         {
@@ -411,6 +477,21 @@ fn step(
             next = Moved;
             role = DeniedRole::SourceConsume;
         }
+        OwnedInstruction::DestructureRecord { source, .. } if *source == owner => {
+            event = true;
+            legal = &[Available];
+            next = Moved;
+            role = DeniedRole::SourceConsume;
+        }
+        OwnedInstruction::DestructureRecord { fields, .. }
+            if fields.iter().any(|(_, destination)| *destination == owner) =>
+        {
+            event = true;
+            legal = &[Uninitialized];
+            next = Available;
+            failure = Violation::Initialization;
+            role = DeniedRole::InitializationDestination;
+        }
         OwnedInstruction::ConstructComposite { fields, .. }
             if fields.iter().any(
                 |(_, value)| matches!(value, FieldInitializer::Owned(source) if *source == owner),
@@ -427,6 +508,15 @@ fn step(
             next = Available;
             failure = Violation::Initialization;
             role = DeniedRole::ReplacementDestination;
+        }
+        OwnedInstruction::CopyInitialize { source, .. }
+        | OwnedInstruction::CopyIndexWrite { source, .. }
+            if *source == owner =>
+        {
+            event = true;
+            legal = &[Available];
+            next = Available;
+            role = DeniedRole::SourceCopy;
         }
         OwnedInstruction::MoveInitialize { source, .. }
         | OwnedInstruction::ConstructOwnedEnum {
@@ -467,7 +557,15 @@ fn step(
             next = Available;
             role = DeniedRole::FieldBase;
         }
-        OwnedInstruction::ReadIndex {
+        OwnedInstruction::CopyIndexInitialize {
+            base: AccessBase::Owner(o),
+            ..
+        }
+        | OwnedInstruction::CopyIndexWrite {
+            base: AccessBase::Owner(o),
+            ..
+        }
+        | OwnedInstruction::ReadIndex {
             base: AccessBase::Owner(o),
             ..
         }
@@ -485,6 +583,8 @@ fn step(
             role = DeniedRole::ArrayBase;
         }
         OwnedInstruction::PrepareBorrow { loan, .. }
+        | OwnedInstruction::PrepareBorrowRange { loan, .. }
+        | OwnedInstruction::AcquireLocalBorrow(loan)
             if f.loans[loan.0].authority == AccessBase::Owner(owner) =>
         {
             event = true;
@@ -811,8 +911,41 @@ enum Access {
 fn views_may_alias(a: BorrowedTy, b: BorrowedTy) -> bool {
     a.accepts(b) || b.accepts(a)
 }
-fn overlap(f: &RawOwnedFunction, a: AccessBase, b: AccessBase) -> bool {
-    match (a, b) {
+fn root_base(
+    f: &RawOwnedFunction,
+    mut base: AccessBase,
+    meter: &mut Meter,
+) -> Result<AccessBase, OwnedFailure> {
+    while let AccessBase::Loan(id) = base {
+        meter.visit()?;
+        base = f.loans[id.0].authority;
+    }
+    Ok(base)
+}
+fn through_loan(
+    f: &RawOwnedFunction,
+    mut base: AccessBase,
+    loan: usize,
+    meter: &mut Meter,
+) -> Result<bool, OwnedFailure> {
+    while let AccessBase::Loan(id) = base {
+        meter.visit()?;
+        if id.0 == loan {
+            return Ok(true);
+        }
+        base = f.loans[id.0].authority;
+    }
+    Ok(false)
+}
+fn overlap(
+    f: &RawOwnedFunction,
+    a: AccessBase,
+    b: AccessBase,
+    meter: &mut Meter,
+) -> Result<bool, OwnedFailure> {
+    let a = root_base(f, a, meter)?;
+    let b = root_base(f, b, meter)?;
+    Ok(match (a, b) {
         (AccessBase::Owner(a), AccessBase::Owner(b)) => a == b,
         (AccessBase::Parameter(a), AccessBase::Parameter(b)) => {
             a == b
@@ -821,7 +954,7 @@ fn overlap(f: &RawOwnedFunction, a: AccessBase, b: AccessBase) -> bool {
                     && f.references[b.0].kind == BorrowKind::Shared)
         }
         _ => false,
-    }
+    })
 }
 fn accesses(
     f: &RawOwnedFunction,
@@ -829,6 +962,74 @@ fn accesses(
     mut visit: impl FnMut(AccessBase, Access, DeniedRole) -> Result<(), OwnedFailure>,
 ) -> Result<(), OwnedFailure> {
     match i {
+        OwnedInstruction::OwnedVector {
+            operation,
+            destination,
+        } => {
+            for (index, reference) in f.references.iter().enumerate() {
+                visit(
+                    AccessBase::Parameter(ReferenceParamId(index)),
+                    if reference.kind == BorrowKind::Exclusive {
+                        Access::Write
+                    } else {
+                        Access::Read
+                    },
+                    DeniedRole::ArrayBase,
+                )?;
+            }
+            if operation.operation()
+                == crate::frontend::builtin_catalog::owned_vector::Operation::PushReserved
+            {
+                for parameter in &f.parameters {
+                    if let ParameterBinding::Owned(owner) = parameter {
+                        visit(
+                            AccessBase::Owner(*owner),
+                            Access::Consume,
+                            DeniedRole::SourceConsume,
+                        )?;
+                    }
+                }
+            }
+            if let CallResult::Owned(destination) = destination {
+                visit(
+                    AccessBase::Owner(*destination),
+                    Access::Write,
+                    DeniedRole::InitializationDestination,
+                )?;
+            }
+        }
+        OwnedInstruction::Experimental { destination, .. }
+        | OwnedInstruction::Vector { destination, .. } => {
+            for (index, reference) in f.references.iter().enumerate() {
+                visit(
+                    AccessBase::Parameter(ReferenceParamId(index)),
+                    if reference.kind == BorrowKind::Exclusive {
+                        Access::Write
+                    } else {
+                        Access::Read
+                    },
+                    DeniedRole::ArrayBase,
+                )?;
+            }
+            if matches!(i, OwnedInstruction::Vector { .. }) {
+                for parameter in &f.parameters {
+                    if let ParameterBinding::Owned(owner) = parameter {
+                        visit(
+                            AccessBase::Owner(*owner),
+                            Access::Read,
+                            DeniedRole::SourceCopy,
+                        )?;
+                    }
+                }
+            }
+            if let CallResult::Owned(destination) = destination {
+                visit(
+                    AccessBase::Owner(*destination),
+                    Access::Write,
+                    DeniedRole::InitializationDestination,
+                )?;
+            }
+        }
         OwnedInstruction::WriteStdout {
             buffer,
             destination,
@@ -874,6 +1075,39 @@ fn accesses(
         OwnedInstruction::WriteIndex { base, .. } => {
             visit(*base, Access::Write, DeniedRole::ArrayBase)?
         }
+        OwnedInstruction::CopyIndexInitialize {
+            base, destination, ..
+        } => {
+            visit(*base, Access::Read, DeniedRole::ArrayBase)?;
+            visit(
+                AccessBase::Owner(*destination),
+                Access::Write,
+                DeniedRole::InitializationDestination,
+            )?;
+        }
+        OwnedInstruction::CopyIndexWrite { base, source, .. } => {
+            visit(*base, Access::Write, DeniedRole::ArrayBase)?;
+            visit(
+                AccessBase::Owner(*source),
+                Access::Read,
+                DeniedRole::SourceCopy,
+            )?;
+        }
+        OwnedInstruction::CopyInitialize {
+            source,
+            destination,
+        } => {
+            visit(
+                AccessBase::Owner(*source),
+                Access::Read,
+                DeniedRole::SourceCopy,
+            )?;
+            visit(
+                AccessBase::Owner(*destination),
+                Access::Write,
+                DeniedRole::InitializationDestination,
+            )?;
+        }
         OwnedInstruction::MoveInitialize {
             source,
             destination,
@@ -896,6 +1130,20 @@ fn accesses(
                     DeniedRole::InitializationDestination
                 },
             )?;
+        }
+        OwnedInstruction::DestructureRecord { source, fields } => {
+            visit(
+                AccessBase::Owner(*source),
+                Access::Consume,
+                DeniedRole::SourceConsume,
+            )?;
+            for (_, destination) in fields {
+                visit(
+                    AccessBase::Owner(*destination),
+                    Access::Write,
+                    DeniedRole::InitializationDestination,
+                )?;
+            }
         }
         OwnedInstruction::ConstructComposite {
             destination,
@@ -968,7 +1216,14 @@ fn accesses(
         OwnedInstruction::StorageEnd(o) => {
             visit(AccessBase::Owner(*o), Access::End, DeniedRole::Storage)?
         }
-        OwnedInstruction::PrepareBorrow { loan, .. } => {
+        OwnedInstruction::ReleaseLocalBorrow(loan) => visit(
+            AccessBase::Loan(*loan),
+            Access::End,
+            DeniedRole::BorrowAuthority,
+        )?,
+        OwnedInstruction::AcquireLocalBorrow(loan)
+        | OwnedInstruction::PrepareBorrow { loan, .. }
+        | OwnedInstruction::PrepareBorrowRange { loan, .. } => {
             let l = &f.loans[loan.0];
             visit(
                 l.authority,
@@ -985,6 +1240,63 @@ fn conflict(kind: BorrowKind, access: Access) -> bool {
         Access::Read | Access::Borrow(BorrowKind::Shared) => kind == BorrowKind::Exclusive,
         _ => true,
     }
+}
+
+// Only shape-checked nominal paths can establish that two regions differ.
+// Empty paths include the whole owner and overlap every descendant.
+fn access_region<'a>(
+    f: &'a RawOwnedFunction,
+    instruction: &'a OwnedInstruction,
+    role: DeniedRole,
+) -> &'a [FieldId] {
+    match (instruction, role) {
+        (
+            OwnedInstruction::ReadField { field, .. } | OwnedInstruction::WriteField { field, .. },
+            DeniedRole::FieldBase,
+        ) => std::slice::from_ref(field),
+        (
+            OwnedInstruction::ReadProjection { path, .. }
+            | OwnedInstruction::WriteProjection { path, .. }
+            | OwnedInstruction::ProjectionLength { path, .. },
+            DeniedRole::FieldBase,
+        ) => path,
+        (
+            OwnedInstruction::CopyIndexInitialize { path, .. }
+            | OwnedInstruction::CopyIndexWrite { path, .. },
+            DeniedRole::ArrayBase,
+        ) => path,
+        (
+            OwnedInstruction::PrepareBorrow { loan, .. }
+            | OwnedInstruction::PrepareBorrowRange { loan, .. }
+            | OwnedInstruction::AcquireLocalBorrow(loan),
+            DeniedRole::BorrowAuthority,
+        ) => &f.loans[loan.0].projection,
+        _ => &[],
+    }
+}
+
+fn regions_overlap(
+    left: &[FieldId],
+    right: &[FieldId],
+    meter: &mut Meter,
+) -> Result<bool, OwnedFailure> {
+    let mut pairs = left.iter().zip(right);
+    let Some((left, right)) = pairs.next() else {
+        return Ok(true);
+    };
+    // The statement visit already pays for the first fixed-size comparison.
+    if left != right {
+        return Ok(false);
+    }
+    for (left, right) in pairs {
+        // The existing loan-count times projection-field budget covers these
+        // additional visits without changing old single-field work charges.
+        meter.visit()?;
+        if left != right {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
     for b in &f.blocks {
@@ -1005,10 +1317,15 @@ fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
                 {
                     Some((base, DeniedRole::FieldBase, None))
                 }
-                OwnedInstruction::WriteIndex { base, .. } if !shape::base(f, base, i.span)?.1 => {
+                OwnedInstruction::WriteIndex { base, .. }
+                | OwnedInstruction::CopyIndexWrite { base, .. }
+                    if !shape::base(f, base, i.span)?.1 =>
+                {
                     Some((base, DeniedRole::ArrayBase, None))
                 }
-                OwnedInstruction::PrepareBorrow { loan, .. } => {
+                OwnedInstruction::PrepareBorrow { loan, .. }
+                | OwnedInstruction::PrepareBorrowRange { loan, .. }
+                | OwnedInstruction::AcquireLocalBorrow(loan) => {
                     let l = &f.loans[loan.0];
                     (l.kind == BorrowKind::Exclusive && !shape::base(f, l.authority, i.span)?.1)
                         .then_some((l.authority, DeniedRole::BorrowAuthority, Some(l.span)))
@@ -1034,6 +1351,24 @@ fn exact(
     mut terminator: impl FnMut(usize, &OwnedTerminator) -> Result<usize, OwnedFailure>,
     kind: Violation,
 ) -> Result<(), OwnedFailure> {
+    exact_metered(
+        f,
+        initial,
+        meter,
+        |state, instruction, _| statement(state, instruction),
+        |state, end, _| terminator(state, end),
+        kind,
+    )
+}
+
+fn exact_metered(
+    f: &RawOwnedFunction,
+    initial: usize,
+    meter: &mut Meter,
+    mut statement: impl FnMut(usize, &OwnedStatement, &mut Meter) -> Result<usize, OwnedFailure>,
+    mut terminator: impl FnMut(usize, &OwnedTerminator, &mut Meter) -> Result<usize, OwnedFailure>,
+    kind: Violation,
+) -> Result<(), OwnedFailure> {
     let mut state = filled(f.blocks.len(), usize::MAX)?;
     let mut queue = reserve(f.blocks.len())?;
     state[f.entry.0] = initial;
@@ -1046,14 +1381,14 @@ fn exact(
         let mut s = state[b];
         for i in &f.blocks[b].statements {
             meter.visit()?;
-            s = statement(s, i)?;
+            s = statement(s, i, meter)?;
         }
         let end = f.blocks[b]
             .terminator
             .as_ref()
             .ok_or_else(|| OwnedFailure::malformed(Malformed::MissingTerminator, f.span))?;
         meter.visit()?;
-        s = terminator(s, end)?;
+        s = terminator(s, end, meter)?;
         for to in f.successors(b)?.into_iter().flatten() {
             meter.visit()?;
             let old = &mut state[to.0];
@@ -1075,12 +1410,13 @@ fn loans(
 ) -> Result<(), OwnedFailure> {
     let l = &f.loans[id];
     let cause = shape.acquisition_cause(f, LoanId(id))?;
-    exact(
+    exact_metered(
         f,
         0,
         meter,
-        |mut state, i| {
-            if matches!(i.kind,OwnedInstruction::PrepareBorrow{loan,..} if loan.0==id) {
+        |mut state, i, meter| {
+            if matches!(i.kind,OwnedInstruction::PrepareBorrow{loan,..} | OwnedInstruction::PrepareBorrowRange{loan,..} | OwnedInstruction::AcquireLocalBorrow(loan) if loan.0==id)
+            {
                 if state != 0 {
                     return Err(OwnedFailure::violation(
                         Violation::LoanRegion,
@@ -1089,9 +1425,44 @@ fn loans(
                     ));
                 }
                 state = 1;
-            } else if state == 1 {
+            } else if matches!(i.kind, OwnedInstruction::ReleaseLocalBorrow(loan) if loan.0==id) {
+                if state != 1 {
+                    return Err(OwnedFailure::violation(
+                        Violation::LoanRegion,
+                        i.primary_span(),
+                        Some(l.span),
+                    ));
+                }
+                state = 0;
+            } else {
                 accesses(f, &i.kind, |base, access, role| {
-                    if overlap(f, l.authority, base) && conflict(l.kind, access) {
+                    if l.region == LoanRegion::Local && through_loan(f, base, id, meter)? {
+                        if state == 0 {
+                            return Err(OwnedFailure::violation(
+                                Violation::Unavailable,
+                                i.primary_span(),
+                                Some(l.span),
+                            ));
+                        }
+                        return Ok(());
+                    }
+                    if let OwnedInstruction::ReleaseLocalBorrow(released) = i.kind {
+                        // Ending a loan changes no sibling's storage or lifetime.
+                        // Only a live descendant depends on the released loan.
+                        if state == 1 && through_loan(f, l.authority, released.0, meter)? {
+                            return Err(OwnedFailure::violation(
+                                Violation::LoanConflict,
+                                i.primary_span(),
+                                Some(l.span),
+                            ));
+                        }
+                        return Ok(());
+                    }
+                    if state == 1
+                        && overlap(f, l.authority, base, meter)?
+                        && conflict(l.kind, access)
+                        && regions_overlap(&l.projection, access_region(f, &i.kind, role), meter)?
+                    {
                         let mut e = OwnedFailure::violation(
                             Violation::LoanConflict,
                             i.primary_span(),
@@ -1112,8 +1483,10 @@ fn loans(
             }
             Ok(state)
         },
-        |state, e| match e.kind {
-            OwnedTerminatorKind::Invoke { call, .. } if call == l.call => {
+        |state, e, meter| match e.kind {
+            OwnedTerminatorKind::Invoke { call, .. }
+                if l.call_binding().is_some_and(|(owner, _)| owner == call) =>
+            {
                 if state != 1 {
                     return Err(OwnedFailure::violation(
                         Violation::LoanRegion,
@@ -1126,7 +1499,7 @@ fn loans(
             OwnedTerminatorKind::ReturnOwned(o) => {
                 if state == 1 {
                     let mut error = OwnedFailure::violation(
-                        if overlap(f, l.authority, AccessBase::Owner(o)) {
+                        if overlap(f, l.authority, AccessBase::Owner(o), meter)? {
                             Violation::LoanConflict
                         } else {
                             Violation::ActiveAtExit
@@ -1213,7 +1586,8 @@ fn call_regions(
                 }
                 OwnedInstruction::PrepareScalar { call, argument, .. }
                 | OwnedInstruction::PrepareOwned { call, argument, .. }
-                | OwnedInstruction::PrepareBorrow { call, argument, .. } => {
+                | OwnedInstruction::PrepareBorrow { call, argument, .. }
+                | OwnedInstruction::PrepareBorrowRange { call, argument, .. } => {
                     if call.0 == id {
                         if state != argument + 1 {
                             return Err(OwnedFailure::violation(
@@ -1286,4 +1660,70 @@ pub(super) fn check(
         call_regions(f, shape, id, meter)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod owned_vector_candidate_tests {
+    use super::*;
+    use crate::frontend::builtin_catalog::owned_vector::{Function, Operation};
+
+    #[test]
+    fn owned_vector_raw_push_candidate_consumes_the_parameter_and_never_copies_it() {
+        let (sources, mut raw, _) = consumer_fixtures::shared_read();
+        let span = raw.functions[0].span;
+        let function = &mut raw.functions[0];
+        function.owners[0].kind = OwnerKind::Parameter { position: 1 };
+        function.parameters = vec![
+            ParameterBinding::Reference(ReferenceParamId(0)),
+            ParameterBinding::Owned(OwnerPlaceId(0)),
+        ];
+        function.references = vec![ReferenceDecl {
+            referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::OwnedRecordVector(
+                RecordId(0),
+            )))
+            .unwrap(),
+            kind: BorrowKind::Exclusive,
+            position: 0,
+            span,
+        }];
+        let operation = Function::record(Operation::PushReserved, RecordId(0)).unwrap();
+        let statement = consumer_fixtures::instruction(
+            OwnedInstruction::OwnedVector {
+                operation,
+                destination: CallResult::Scalar(LocalId(0)),
+            },
+            span,
+        );
+        assert_eq!(
+            step(function, 0, State::Available, &statement).unwrap(),
+            State::Moved
+        );
+        assert!(step(function, 0, State::Moved, &statement).is_err());
+        let mut accesses_seen = Vec::new();
+        accesses(function, &statement.kind, |base, access, role| {
+            accesses_seen.push((base, access, role));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(accesses_seen.len(), 2);
+        assert!(matches!(
+            accesses_seen[0],
+            (
+                AccessBase::Parameter(ReferenceParamId(0)),
+                Access::Write,
+                DeniedRole::ArrayBase
+            )
+        ));
+        assert!(matches!(
+            accesses_seen[1],
+            (
+                AccessBase::Owner(OwnerPlaceId(0)),
+                Access::Consume,
+                DeniedRole::SourceConsume
+            )
+        ));
+        // Inert flow observations cannot bypass the ordinary raw type gate.
+        function.blocks[0].statements[0] = statement;
+        assert!(verify_owned(raw, &sources).is_err());
+    }
 }

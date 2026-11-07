@@ -115,6 +115,7 @@ fn c3a_inventory_reads_every_actual_nested_vector_length_and_capacity_without_al
     fields.extend([row_field(at, 0), row_field(at, 1)]);
     let mut records = Vec::with_capacity(2);
     records.push(Record {
+        is_copy: false,
         id: RecordId(0),
         name_span: at,
         span: at,
@@ -204,9 +205,16 @@ fn c3a_inventory_reads_every_actual_nested_vector_length_and_capacity_without_al
         super::super::reviewer_source::integration_measured(|| inventory_parts(&parts, &work, at));
     let inventory = result.unwrap();
     assert_eq!(stats, (0, 0, 0));
-    assert_eq!(inventory.counts, [1, 2, 1, 2, 1, 2, 3, 2, 2, 2, 1, 2, 0]);
     assert_eq!(
-        inventory.capacities,
+        crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<13>(
+            &inventory.counts
+        ),
+        [1, 2, 1, 2, 1, 2, 3, 2, 2, 2, 1, 2, 0]
+    );
+    assert_eq!(
+        crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<18>(
+            &inventory.capacities
+        ),
         [2, 3, 2, 3, 2, 4, 5, 3, 6, 4, 5, 6, 0, 0, 0, 0, 0, 0]
     );
     assert!(work.used() > 0);
@@ -230,11 +238,15 @@ fn c3a_inventory_reconciliation_uses_real_reserves_and_returns_fixed_payload_tot
     assert_eq!(live, 0);
     assert!(peak > 0);
     assert_eq!(
-        observation.retained_counts,
+        crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<13>(
+            &observation.retained_counts
+        ),
         [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0]
     );
     assert_eq!(
-        observation.capacities,
+        crate::frontend::oir::owned::source::resolver_storage::predecessor_values::<18>(
+            &observation.capacities
+        ),
         [0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 12]
     );
     assert_eq!(
@@ -251,7 +263,7 @@ fn c3a_inventory_reconciliation_uses_real_reserves_and_returns_fixed_payload_tot
 }
 
 #[test]
-fn c3a_inventory_distinguishes_legal_enum_values_from_forbidden_containment() {
+fn c3a_inventory_counts_enum_fields_but_keeps_enum_references_and_empty_matches_closed() {
     use crate::frontend::oir::owned_types::EnumId;
     let plan = scalar_plan();
     let at = at();
@@ -291,6 +303,7 @@ fn c3a_inventory_distinguishes_legal_enum_values_from_forbidden_containment() {
                 let mut field = row_field(at, 0);
                 field.ty = ValueTy::Owned(enumeration);
                 parts.0.push(Record {
+                    is_copy: false,
                     id: RecordId(0),
                     name_span: at,
                     span: at,
@@ -300,7 +313,7 @@ fn c3a_inventory_distinguishes_legal_enum_values_from_forbidden_containment() {
             }
         }
         let result = inventory_parts(&parts, &WorkMeter::default(), at);
-        if matches!(mutant, 1 | 4 | 6) {
+        if matches!(mutant, 1 | 4) {
             assert_eq!(
                 result.unwrap_err().code,
                 "E0500",
@@ -361,8 +374,9 @@ fn c3a_inventory_work_exhaustion_and_checked_totals_drop_errors_without_heap_ret
         let (_, (_, live, _)) = super::super::reviewer_source::integration_measured(|| {
             let work = WorkMeter::new(limit);
             let result = paid.reconcile(&plan, inventory, 13, &work, at);
-            assert_eq!(result.is_ok(), limit >= 18);
-            assert_eq!(work.used(), limit.min(18));
+            let current_total = 18 + (KINDS - 18) as u64;
+            assert_eq!(result.is_ok(), limit >= current_total);
+            assert_eq!(work.used(), limit.min(current_total));
             drop(result);
         });
         assert_eq!(live, 0);

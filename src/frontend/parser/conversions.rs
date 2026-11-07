@@ -17,8 +17,46 @@ impl Parser<'_> {
             return None;
         }
         let op = match self.source.text_at(name.span) {
+            "to_char_checked" if self.wide_scalars_enabled() => ConversionOp::ToCharChecked,
+            "to_u32" if self.wide_scalars_enabled() => ConversionOp::CharToU32,
+            "to_f32" if self.wide_scalars_enabled() => ConversionOp::ToFloat(FloatTypeSyntax::F32),
+            "to_f64" if self.wide_scalars_enabled() => ConversionOp::ToFloat(FloatTypeSyntax::F64),
+            "to_bits" if self.wide_scalars_enabled() => ConversionOp::FloatToBits,
+            "sqrt" if self.wide_scalars_enabled() => ConversionOp::FloatSqrt,
             "to_u8_checked" => ConversionOp::ToU8Checked,
             "to_i32" => ConversionOp::ToI32,
+            "to_i64" if self.wide_scalars_enabled() => ConversionOp::ToI64,
+            "to_i32_checked" if self.wide_scalars_enabled() => ConversionOp::ToI32Checked,
+            "to_i8_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::I8)
+            }
+            "to_i64_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::I64)
+            }
+            "to_i16_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::I16)
+            }
+            "to_u16_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::U16)
+            }
+            "to_u32_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::U32)
+            }
+            "to_u64_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::U64)
+            }
+            "to_isize_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::Isize)
+            }
+            "to_usize_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::Usize)
+            }
+            "to_i128_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::I128)
+            }
+            "to_u128_checked" if self.wide_scalars_enabled() => {
+                ConversionOp::ToIntegerChecked(IntegerTypeSyntax::U128)
+            }
             _ => return None,
         };
         (tokens.next()?.kind == Kind::LParen).then_some(op)

@@ -203,13 +203,84 @@ pub(in crate::frontend::oir::owned) fn with_raw<T>(
     text: &str,
     action: impl FnOnce(&SourceMap, &typeck::TypedOwnedProgram<'_>, RawOwnedProgram) -> T,
 ) -> T {
+    use crate::frontend::{
+        declaration_index::{self, IndexLimits, SourceOwner, WorkMeter},
+        project::budget::Allocator,
+        source::SourceView,
+    };
     let (sources, ast) = parsed(text);
-    let typed = typeck::check(
-        resolve::resolve_in_map(sources.get(SourceFileId(0)), &ast, &sources).unwrap(),
+    let owner = SourceOwner::original(
+        sources.get(SourceFileId(0)),
+        &ast,
+        SourceView::Map(&sources),
     )
     .unwrap();
+    let work = WorkMeter::default();
+    let mut allocator = Allocator::default();
+    let index =
+        declaration_index::collect_originals(owner, IndexLimits::default(), &work, &mut allocator)
+            .unwrap()
+            .finish(&work, &mut allocator)
+            .unwrap();
+    let typed = if resolve::requires_paid_source(&index) {
+        resolve::type_enum_source(&index, &work, &mut allocator).unwrap()
+    } else {
+        typeck::check(resolve::resolve_project(&index, &work).unwrap()).unwrap()
+    };
     let raw = lower::lower(&typed).unwrap();
     action(&sources, &typed, raw)
+}
+
+#[test]
+fn element_range_helper_keeps_paid_authority_and_original_map() {
+    for (body, ranged, expected) in [
+        (
+            "fn main()->i32{let a=[byte(0),byte(127),byte(128),byte(255)];let x=a[1];return x.to_i32();}",
+            false,
+            127,
+        ),
+        (
+            "fn score(p:&[u8])->i32{let a=p[0];let b=p[1];return a.to_i32()+b.to_i32()+p.len();}fn main()->i32{let a=[byte(0),byte(127),byte(128),byte(255)];return score(&a[2..4]);}",
+            true,
+            385,
+        ),
+        (
+            "fn put(p:&mut[u8])->(){p[0]=byte(77);return;}fn forward(p:&mut[u8])->(){put(&mut *p[1..2]);return;}fn main()->i32{let mut a=[byte(10),byte(20),byte(30),byte(40)];forward(&mut a[1..4]);let x=a[2];let y=a[1];return x.to_i32()+y.to_i32();}",
+            true,
+            97,
+        ),
+    ] {
+        let text = format!("{BYTE}{body}");
+        let (sources, ast) = parsed(&text);
+        let file = sources.get(SourceFileId(0));
+        if ranged {
+            // The legacy constructor must still refuse range sources. The
+            // helper succeeds by entering fresh paid typing, not by relabeling
+            // an ordinary resolved program or bypassing its admission fence.
+            let errors = resolve::resolve_in_map(file, &ast, &sources).unwrap_err();
+            assert_eq!(
+                (errors[0].code, errors[0].stage, errors[0].message.as_str()),
+                ("E0101", "resolve", "enum source requires fresh paid typing"),
+            );
+        }
+        let (checked, entry) = program::check_source(file, &ast, &sources).unwrap();
+        assert_eq!(checked.run(entry, &sources).unwrap(), Scalar::I32(expected));
+        with_raw(&text, |sources, typed, raw| {
+            let crate::frontend::source::SourceView::Map(bound) = typed.index().sources().view()
+            else { panic!("source helper must retain its original map"); };
+            assert!(std::ptr::eq(bound, sources));
+            assert_eq!(typed.index().has_element_ranges(), ranged);
+            assert_eq!(resolve::requires_paid_source(typed.index()), ranged);
+            assert_eq!(typed.source_storage_bytes().is_some(), ranged);
+            assert_eq!(typed.index().enum_count(), 0);
+            assert!(typed.index().builtin_set().experimental().is_empty());
+            assert!(!typed.index().has_range_for());
+            assert!(raw.vector_functions.is_empty());
+            let witness = verified::verify_associated(association::associate(raw, typed).unwrap())
+                .unwrap();
+            assert_eq!(execute::run(&witness, typed.entry()).unwrap(), Scalar::I32(expected));
+        });
+    }
 }
 
 pub(super) fn observe(

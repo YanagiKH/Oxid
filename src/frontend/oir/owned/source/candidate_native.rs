@@ -135,7 +135,12 @@ fn argv_fuel_harness(module: &str, budget: usize) -> String {
 
 fn kind(statement: &OwnedInstruction) -> &'static str {
     match statement {
-        OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => {
+        OwnedInstruction::OwnedVector { .. } => "unsupported-owned-vector",
+        OwnedInstruction::PrepareBorrowRange { .. }
+        | OwnedInstruction::Experimental { .. }
+        | OwnedInstruction::Vector { .. }
+        | OwnedInstruction::ReadStdin { .. }
+        | OwnedInstruction::WriteStdout { .. } => {
             unreachable!("builtin effect source gate")
         }
         OwnedInstruction::ConstructEnum { .. }
@@ -144,11 +149,14 @@ fn kind(statement: &OwnedInstruction) -> &'static str {
         | OwnedInstruction::ConsumeOwnedVariant { .. } => {
             unreachable!("enum source gate")
         }
+        OwnedInstruction::DestructureRecord { .. } => "DestructureRecord",
         OwnedInstruction::ConstructComposite { .. } => "ConstructComposite",
         OwnedInstruction::ReadProjection { .. } => "ReadProjection",
         OwnedInstruction::WriteProjection { .. } => "WriteProjection",
         OwnedInstruction::ProjectionLength { .. } => "ProjectionLength",
-        OwnedInstruction::ConstructArray { .. }
+        OwnedInstruction::CopyIndexInitialize { .. }
+        | OwnedInstruction::CopyIndexWrite { .. }
+        | OwnedInstruction::ConstructArray { .. }
         | OwnedInstruction::ReadIndex { .. }
         | OwnedInstruction::WriteIndex { .. }
         | OwnedInstruction::ArrayLength { .. } => {
@@ -158,6 +166,7 @@ fn kind(statement: &OwnedInstruction) -> &'static str {
         OwnedInstruction::Scalar(Statement::Initialize { .. }) => "Scalar(Initialize)",
         OwnedInstruction::Scalar(Statement::Store { .. }) => "Scalar(Store)",
         OwnedInstruction::Construct { .. } => "Construct",
+        OwnedInstruction::CopyInitialize { .. } => "CopyInitialize",
         OwnedInstruction::MoveInitialize { .. } => "MoveInitialize",
         OwnedInstruction::Replace { .. } => "Replace",
         OwnedInstruction::ReadField { .. } => "ReadField",
@@ -169,6 +178,8 @@ fn kind(statement: &OwnedInstruction) -> &'static str {
         OwnedInstruction::StorageEnd(_) => "StorageEnd",
         OwnedInstruction::Discard(_) => "Discard",
         OwnedInstruction::OpenCall(_) => "OpenCall",
+        OwnedInstruction::AcquireLocalBorrow(_) => "AcquireLocalBorrow",
+        OwnedInstruction::ReleaseLocalBorrow(_) => "ReleaseLocalBorrow",
     }
 }
 
@@ -604,7 +615,12 @@ fn budgets(name: &str) -> Vec<usize> {
 /// Runtime controls contain paths and budgets only. Hash/snapshot manifests are
 /// bound externally before executing the copied test binary. Each run creates a
 /// fresh directory containing only a linked immutable ELF and clears its env.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "bounded native source collector; requires frozen original source, budget controls, pinned LLVM and a fresh output path"]
 fn emit_candidate_native_receipts() {

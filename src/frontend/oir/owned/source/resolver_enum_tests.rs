@@ -442,8 +442,9 @@ fn bounded_enum_resolver_actual_changed_carrier_layouts() {
         enum_expression_carrier_bytes(),
         enum_match_carrier_bytes()
     );
-    assert_eq!(storage::KINDS, 18);
-    assert_eq!(storage::RETAINED_KINDS, 13);
+    assert_eq!(storage::KINDS - 1, 18);
+    assert_eq!(storage::RETAINED_KINDS - 1, 13);
+    assert_eq!(storage::WIDTHS[Kind::ByteStrings as usize], size_of::<u8>());
     assert_eq!(
         storage::WIDTHS[Kind::MatchArms as usize],
         size_of::<MatchArm>()
@@ -527,7 +528,7 @@ fn bounded_enum_resolver_single_file_signature_privacy_uses_nominal_index() {
             "E",
         ),
         ("enum E{V} pub fn expose()->E{return E::V;}", "E0207", "E"),
-        ("enum E{V} struct R{value:E}", "E0300", "value:E"),
+        ("enum E{V} pub struct R{pub value:E}", "E0207", "value"),
     ] {
         with_index(source, |index| {
             let mut allocator = Allocator::default();

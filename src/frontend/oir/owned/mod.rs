@@ -1,23 +1,36 @@
 //! Authoritative private ownership OIR and bounded verified consumers.
 //! Production record source lowering and both consumers require the sealed witness.
-//! Enum carriers are rejected before an executable witness can be built.
+//! Finite enum payloads and built-in resources use the same sealed witness.
 #![allow(dead_code)]
 // Denials retain exact verifier-derived facts on the stack. Boxing this fixed
 // transport would add an allocation on ownership/resource failure paths.
 #![allow(clippy::result_large_err)]
 use super::{owned_types::*, *};
+mod binary_io;
 mod budget;
 mod builtins;
+// Built-in buffer operations require the checked canonical resource catalog.
+mod byte_buffer;
 mod cfg;
+pub(super) mod debug;
 mod execute;
+mod experimental_descriptors;
 mod flow;
 mod input;
 mod native;
 mod output;
+mod owned_record_codec;
+mod owned_vector_descriptors;
+#[cfg(test)]
+mod owned_vector_type_tests;
 mod plan;
 pub(in crate::frontend) mod process;
+#[cfg(test)]
+mod resource_gate_tests;
 mod shape;
 pub(super) mod source;
+mod vector_descriptors;
+mod vector_type;
 pub(super) use source::SourceProgram;
 mod storage;
 mod verified;
@@ -58,9 +71,38 @@ impl BuiltinOrigins {
 #[derive(Debug)]
 struct RawOwnedProgram {
     builtins: BuiltinOrigins,
+    vector_functions: Vec<crate::frontend::builtin_catalog::vector::Function>,
     enums: Vec<RawEnumDecl>,
     records: Vec<RawRecordDecl>,
     functions: Vec<RawOwnedFunction>,
+}
+impl RawOwnedProgram {
+    /// Untrusted ordinals only. The descriptor and ordinary proofs must still
+    /// succeed before these offsets can be exposed by a sealed witness.
+    fn fixed_builtin_base(&self) -> Option<usize> {
+        self.functions
+            .len()
+            .checked_sub(self.vector_functions.len())?
+            .checked_sub(self.builtins.extra_functions())
+    }
+    fn fixed_builtin_base_at(&self, function_end: usize) -> Option<usize> {
+        if function_end > self.functions.len() {
+            return None;
+        }
+        function_end
+            .checked_sub(self.vector_functions.len())?
+            .checked_sub(self.builtins.extra_functions())
+    }
+    fn vector_operation_claim(
+        &self,
+        id: hir::DefId,
+    ) -> Option<crate::frontend::builtin_catalog::vector::Function> {
+        let base = self
+            .functions
+            .len()
+            .checked_sub(self.vector_functions.len())?;
+        self.vector_functions.get(id.0.checked_sub(base)?).copied()
+    }
 }
 #[derive(Clone, Debug)]
 struct RawOwnedFunction {
@@ -119,18 +161,38 @@ impl ReferenceDecl {
 enum AccessBase {
     Owner(OwnerPlaceId),
     Parameter(ReferenceParamId),
+    Loan(LoanId),
 }
+const MAX_LOCAL_REFERENCE_DEPTH: usize = 64;
+const _: () = assert!(MAX_LOCAL_REFERENCE_DEPTH <= u8::MAX as usize);
 #[derive(Clone, Debug)]
 struct LoanDecl {
-    call: CallSiteId,
-    argument: usize,
+    region: LoanRegion,
     authority: AccessBase,
     projection: Vec<FieldId>,
     kind: BorrowKind,
     referent: BorrowedSlot,
     span: Span,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoanRegion {
+    Call { call: CallSiteId, argument: usize },
+    Local,
+}
 impl LoanDecl {
+    fn call_binding(&self) -> Option<(CallSiteId, usize)> {
+        match self.region {
+            LoanRegion::Call { call, argument } => Some((call, argument)),
+            LoanRegion::Local => None,
+        }
+    }
+    #[cfg(test)]
+    fn call_binding_mut(&mut self) -> Option<(&mut CallSiteId, &mut usize)> {
+        match &mut self.region {
+            LoanRegion::Call { call, argument } => Some((call, argument)),
+            LoanRegion::Local => None,
+        }
+    }
     fn referent(&self) -> BorrowedTy {
         self.referent.referent()
     }
@@ -190,6 +252,29 @@ enum FieldInitializer {
 
 #[derive(Clone, Debug)]
 enum OwnedInstruction {
+    /// Consume a complete record and initialize every owned field binding.
+    /// Scalar fields use ordinary checked reads before this atomic transfer.
+    DestructureRecord {
+        source: OwnerPlaceId,
+        fields: Vec<(FieldId, OwnerPlaceId)>,
+    },
+    /// Operands are the independently checked canonical parameter rows. No
+    /// spelling, producer layout, or arbitrary owner ID grants this authority.
+    Experimental {
+        operation: crate::frontend::builtin_catalog::experimental::Function,
+        destination: CallResult,
+    },
+    /// Confined to the independently checked concrete builtin suffix.
+    Vector {
+        operation: crate::frontend::builtin_catalog::vector::Function,
+        destination: CallResult,
+    },
+    /// Inert until its owning extension, both consumers and ordinary proof
+    /// have been integrated. Ordinary raw/source verification rejects it.
+    OwnedVector {
+        operation: crate::frontend::builtin_catalog::owned_vector::Function,
+        destination: CallResult,
+    },
     // Atomic input is confined to the verified canonical builtin body.
     ReadStdin {
         buffer: ReferenceParamId,
@@ -273,6 +358,20 @@ enum OwnedInstruction {
         field: FieldId,
         value: Operand,
     },
+    /// A finite checked record copied from a vector element into a new owner.
+    CopyIndexInitialize {
+        destination: OwnerPlaceId,
+        base: AccessBase,
+        path: Vec<FieldId>,
+        index: Operand,
+    },
+    /// Whole-record replacement through exclusive vector or record-slice authority.
+    CopyIndexWrite {
+        base: AccessBase,
+        path: Vec<FieldId>,
+        index: Operand,
+        source: OwnerPlaceId,
+    },
     ReadIndex {
         destination: LocalId,
         base: AccessBase,
@@ -298,10 +397,25 @@ enum OwnedInstruction {
         argument: usize,
         source: OwnerPlaceId,
     },
+    PrepareBorrowRange {
+        call: CallSiteId,
+        argument: usize,
+        loan: LoanId,
+        start: Operand,
+        end: Operand,
+    },
     PrepareBorrow {
         call: CallSiteId,
         argument: usize,
         loan: LoanId,
+    },
+    AcquireLocalBorrow(LoanId),
+    ReleaseLocalBorrow(LoanId),
+    /// Checked finite record copy. Source stays live; validate all leaves
+    /// before writing any initialized destination leaf. Padding is never read.
+    CopyInitialize {
+        destination: OwnerPlaceId,
+        source: OwnerPlaceId,
     },
 }
 #[derive(Clone, Debug)]
@@ -368,6 +482,7 @@ enum OwnedFailureKind {
     Malformed(Malformed),
     Ownership(Violation),
     Resource(&'static str),
+    UnsupportedOwnedVectorElement,
 }
 /// Compact optional origin. The sentinel cannot be a valid SourceMap identity;
 /// no failure path needs a heap allocation merely to retain diagnostics.
@@ -395,6 +510,15 @@ struct OwnedFailure {
     context: Option<flow::DenialContext>,
 }
 impl OwnedFailure {
+    fn unsupported_owned_vector_element() -> Self {
+        Self {
+            kind: OwnedFailureKind::UnsupportedOwnedVectorElement,
+            primary: Origin::NONE,
+            related: Origin::NONE,
+            declaration: Origin::NONE,
+            context: None,
+        }
+    }
     fn malformed(kind: Malformed, span: Span) -> Self {
         Self {
             kind: OwnedFailureKind::Malformed(kind),
@@ -479,6 +603,8 @@ mod builtin_output_fixtures;
 mod builtin_output_process_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vector_raw_tests;
 
 #[cfg(test)]
 mod oracle_tests;

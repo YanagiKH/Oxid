@@ -1,4 +1,5 @@
 //! Unit2B raw checks. The probe returns usage/failure and cannot authorize execution.
+use super::super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH;
 use super::*;
 
 fn probe(raw: &RawOwnedProgram, sources: &SourceMap) -> Result<OwnershipUsage, OwnedFailure> {
@@ -47,6 +48,21 @@ fn fixture(span: Span, ty: hir::Ty, length: usize) -> RawOwnedProgram {
             }),
     );
     let value = match ty {
+        hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128
+        | hir::Ty::Char
+        | hir::Ty::F32
+        | hir::Ty::F64 => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::Bool => Rvalue::Bool(true),
         hir::Ty::I32 => Rvalue::I32(7),
@@ -488,7 +504,8 @@ fn unit2b_raw_q_limits_and_payload_are_independent_and_allocation_free() {
     assert_eq!(u.scratch_bytes, 33);
     let expected_metadata = (std::mem::size_of::<Vec<RawEnumDecl>>()
         + std::mem::size_of::<usize>()
-        + std::mem::size_of::<Vec<MatchDecl>>())
+        + std::mem::size_of::<Vec<MatchDecl>>()
+        + VECTOR_RAW_HEADER_GROWTH)
         + 10 * std::mem::size_of::<Option<DiagnosticOrigins>>()
         + std::mem::size_of::<shape::OwnerSites>()
         + 2 * std::mem::size_of::<Operand>();
@@ -750,6 +767,7 @@ fn unit2b_index_dominance_uses_real_branch_edges() {
 fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
     let (sources, s) = context();
     let raw = RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
@@ -762,14 +780,16 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
         scratch: 0,
         metadata: (std::mem::size_of::<Vec<RawEnumDecl>>()
             + std::mem::size_of::<usize>()
-            + std::mem::size_of::<Vec<MatchDecl>>()),
+            + std::mem::size_of::<Vec<MatchDecl>>()
+            + VECTOR_RAW_HEADER_GROWTH),
     };
     assert_eq!(
         verified::probe_array_validation(&raw, &sources, zero).unwrap(),
         OwnershipUsage {
             metadata_bytes: (std::mem::size_of::<Vec<RawEnumDecl>>()
                 + std::mem::size_of::<usize>()
-                + std::mem::size_of::<Vec<MatchDecl>>()),
+                + std::mem::size_of::<Vec<MatchDecl>>()
+                + VECTOR_RAW_HEADER_GROWTH),
             ..OwnershipUsage::default()
         }
     );
@@ -778,11 +798,13 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
         OwnershipUsage {
             metadata_bytes: (std::mem::size_of::<Vec<RawEnumDecl>>()
                 + std::mem::size_of::<usize>()
-                + std::mem::size_of::<Vec<MatchDecl>>()),
+                + std::mem::size_of::<Vec<MatchDecl>>()
+                + VECTOR_RAW_HEADER_GROWTH),
             ..OwnershipUsage::default()
         }
     );
     let mut raw = RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
@@ -825,6 +847,7 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
 fn unit2b_actual_raw_q_reaches_expanded_event_ceiling_inclusively() {
     let (sources, s) = context();
     let mut raw = RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
@@ -849,7 +872,8 @@ fn unit2b_actual_raw_q_reaches_expanded_event_ceiling_inclusively() {
         admitted.metadata_bytes,
         (std::mem::size_of::<Vec<RawEnumDecl>>()
             + std::mem::size_of::<usize>()
-            + std::mem::size_of::<Vec<MatchDecl>>())
+            + std::mem::size_of::<Vec<MatchDecl>>()
+            + VECTOR_RAW_HEADER_GROWTH)
             + 100 * std::mem::size_of::<Option<DiagnosticOrigins>>()
             + 99_901 * std::mem::size_of::<Operand>()
     );
@@ -898,6 +922,7 @@ fn unit2b_valid_arrays_reach_expanded_event_ceiling_inclusively() {
         ]);
     }
     let mut raw = RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],

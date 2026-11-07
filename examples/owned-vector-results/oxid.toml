@@ -1,0 +1,13 @@
+[project]
+name = "owned-vector-results"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+owned_vec = "../../packages/owned_vec"
+
+[build]
+entry-mode = "result"
+
+[execution]
+policy = "bounded"

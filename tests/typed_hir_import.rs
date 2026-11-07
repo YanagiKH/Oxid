@@ -181,9 +181,14 @@ fn imported_native_compile_preserves_no_replace_before_tool_access() {
     assert!(!fixture.0.join("program.elf").exists());
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
-#[ignore = "explicit Linux x86_64 LLVM19.1.7 integration; requires OXID_LLVM_BIN"]
+#[ignore = "explicit Linux x86_64 or ARM64 LLVM19.1.7 integration; requires OXID_LLVM_BIN"]
 fn imported_public_compile_produces_source_independent_executable() {
     std::env::var_os("OXID_LLVM_BIN").expect("explicit LLVM tool directory required");
     for (source, wire) in [(SOURCE, WIRE)].into_iter().chain(arithmetic_cases()) {

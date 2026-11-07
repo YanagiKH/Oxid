@@ -35,8 +35,16 @@ This explicit-file command uses `-O0`. Native project builds additionally accept
 `--profile dev|release|bounded`, applying `-O0` or `-O2` to the program and runtime.
 See [native build profiles](../rfcs/0040-native-build-profiles.md).
 
-The only build host is Linux x86_64 and the only target is
-`x86_64-unknown-linux-gnu` (also the default). Generated files are ELF PIE
+Typed projects can additionally select `policy = "hosted"` to use recursive
+native calls. The call-graph rejection and static depth of 32 described below
+apply to bounded execution. Hosted recursion checks live call storage at each
+call; see [its limits and errors](../rfcs/0058-hosted-native-recursion.md).
+
+
+Build hosts are Linux x86_64 and Linux ARM64, using
+`x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` respectively.
+The current host's target is the default; an explicit `--target` must name that
+same target. Cross-compilation is not available. Generated files are ELF PIE
 executables, not OXBC. They depend on the host-compatible libc and ELF loader;
 they do not depend on Oxid, Rust, LLVM shared libraries, Python, or source files.
 This is not a portable-binary or minimum-glibc-version promise.
@@ -70,15 +78,29 @@ costs and using checked subtraction from zero only after operand evaluation. Boo
 follows [RFC 0011](../rfcs/0011-mutable-scalar-locals.md). Ordinary bool-condition while and shared runtime fuel follow [RFC 0012](../rfcs/0012-while-runtime-fuel.md). Unlabeled break/continue follow [RFC 0013](../rfcs/0013-loop-control.md), using existing charged Goto edges. Native guarding follows actual CFG cycles: a break-only while can be acyclic, whereas continue targets its original condition header. The owned route additionally supports nominal structs containing scalars,
 records and fixed scalar arrays under [RFC 0020](../rfcs/0020-owned-record-composition.md),
 whole-value transfers/replacement, bounded scalar leaf access, owned helper returns and
-explicit call-only shared/exclusive loans and reborrows through its sealed
-witness. Fixed scalar arrays also support complete construction/transfers,
+explicit shared/exclusive loans and reborrows through its sealed witness.
+[Local reference bindings](../rfcs/0068-local-reference-bindings.md) retain a
+whole-value loan across statements and release it on scope exits. Field and
+slice borrows keep their existing call lifetimes.
+Fixed scalar arrays also support complete construction/transfers,
 checked signed indexing and `len()` under [RFC 0016](../rfcs/0016-fixed-scalar-arrays.md).
 Their private positive storage includes initialized zero-length sentinels; no
-array ABI, element references or heap allocation is exposed. Indexed writes keep
+array ABI, element references or heap allocation is exposed. Record-contained
+u8 scalars and byte arrays use the same rules under
+[byte record fields](../rfcs/0042-byte-record-fields.md), including whole-root
+projected loans and complete transfer validation. Indexed writes keep
 RHS-before-index snapshots, and guarded access charges fuel before bounds.
 Invalid executed indexes emit the exact reference E0606/oir-owned-run diagnostic,
 including source origin, with empty stdout and exit 1. No element pointer is
-formed before the signed bounds check succeeds. Source I/O is limited to the bounded stdin and stdout operations specified below. Address values, heap containers,
+formed before the signed bounds check succeeds. Source I/O includes the bounded
+stdin/stdout operations specified below and experimental byte-slice
+`read_some`/`write_some` in process entry mode. Move-only
+[growable byte buffers](../rfcs/0043-growable-byte-buffers.md) use private
+allocation identities, checked initialized ranges and scope cleanup. Resource
+modules use guarded execution at O0/O2, with unchanged fuel limits and a 16 MiB
+normalized live heap limit. Runtime compilation and linking remain fresh when
+the verified program object comes from the native cache. Address values,
+generic heap containers,
 indirect calls, module initialization and implicit legacy adapters remain absent.
 Bounded declaration-only modules, direct imports and visibility are resolved before
 emission, as specified by [RFC 0015](../rfcs/0015-bounded-typed-projects.md).
@@ -126,7 +148,7 @@ Reads use fd 0 at operation time; startup may repair a descriptor closed before
 launch, so such a launch is not a cross-runtime IoError guarantee. Check, format
 and compile consume no program stdin. The native host/toolchain/target policy
 and zero-argument scalar main are unchanged. Reference input execution also
-requires Linux x86_64 and otherwise reports E0608 before activation, including
+requires Linux x86_64 or ARM64 and otherwise reports E0608 before activation, including
 unused input imports and zero-capacity calls; importing ReadStatus alone has no
 input host gate. The [stdin expression application](../fixtures/typed-expression-samples/README.md#bounded-stdin-entry)
 has passed the local 28-case reference/native runner, including 39 and 63 from
@@ -154,7 +176,7 @@ introduced. Source effects cannot be rolled back after bytes are accepted.
 
 Run/Compile share the source-level zero-argument i32 entry rule. Check remains
 library-capable. Process Compile executes no signal setup or source I/O, and JSON
-remains its ordinary build report. Execution still targets Linux x86_64; other
+remains its ordinary build report. Execution targets Linux x86_64 and ARM64; other
 Process Compile hosts report E0608 before source loading/output creation.
 Process Run terminal portability is narrower and explicitly specified in the
 [typed contract](typed-preview.md#bounded-stdout-and-process-entry).
@@ -164,9 +186,9 @@ produces exactly 80 bytes and has separate Oxid/external consumers. Local tests
 exercise 39/63, malformed frames, capacity, checked overflow and publication
 failure; current-source qualification and exact-head hosted CI are separate.
 
-The entire call graph must be acyclic, including dead declarations and calls in
+The entire bounded call graph must be acyclic, including dead declarations and calls in
 constant-false branches and skipped logical RHSs. Iterative leaf-first traversal rejects recursive graphs.
-The following inclusive bounds are the scalar-only native restrictions. Owned
+The following inclusive bounds are the bounded scalar-only native restrictions. Owned
 modules retain them and add the inventory and byte restrictions below; the scalar
 slot/cost formulas and examples in this section apply to scalar-only modules.
 
@@ -214,12 +236,15 @@ this is evidence, not an all-environments stack-safety theorem.
 
 ## Owned-module storage, costs and private representation
 
-Owned modules retain 256 functions, 64 user parameters, 4,096 OIR blocks, call
+Bounded owned modules retain 256 functions, 64 user parameters, 4,096 OIR blocks, call
 depth 32, whole-call-graph recursion rejection, at most 256 scalar slots per
 function and 8,192 aggregate/maximum-call-path scalar slots. Every declaration
 is included, even if unused or statically skipped. A scalar `main` is required;
 owned return values are permitted only in helpers. Native admission additionally
 requires:
+
+Hosted projects use the larger [program-size limits](../rfcs/0062-hosted-native-program-size.md).
+The remaining storage, verification and output limits below apply to both policies.
 
 | Owned resource | Inclusive maximum |
 | --- | ---: |
@@ -467,12 +492,33 @@ and [mutable-local evidence](../docs/architecture/mutable-locals-validation.md).
 contract. [Owned source qualification](../docs/architecture/owned-source-validation.md)
 records actual production CLI and reference/native evidence separately from
 preactivation candidate results.
-Linux x86_64, pinned LLVM 19.1.7 and O0 remain the only native qualification
-target; O2, LTO, other targets, heap/drop safety and a completed roadmap milestone
-are outside this increment.
+Native builds use LLVM 19.1.7 on Linux x86_64 or ARM64. File compilation uses
+O0; project builds select O0 or O2. LTO, references stored inside values and general heap
+containers remain unavailable.
 
 The [fixed-array public-route evidence](../docs/architecture/fixed-array-public-validation.md)
 records real source-file CLI compilation and source-free native execution.
 Array source length 0..1024 does not override stricter native frame, local, IR,
 call-graph or fuel admission. The three-module samples pilot is also covered;
 its complete sequence is checked separately from its result checksum.
+
+## Project execution policy
+
+A typed project's `oxid.toml` can select execution independently of its build profile:
+
+```toml
+[execution]
+policy = "hosted"
+```
+
+`hosted` has no cumulative execution-work budget. `bounded` retains the existing
+1,000,000-unit budget and is the default when the setting is absent. These units
+count language operations and byte work rather than processor instructions.
+The fuel schedules and fuel-admission limits elsewhere in this document describe
+bounded execution. Both policies retain type, ownership, arithmetic, bounds,
+allocation, live-storage and compiler-resource checks.
+
+Each workspace binary chooses its own policy; library dependencies cannot change
+the caller's policy. `run`, native `build` and declared project tests use the same
+setting. The `dev`/`release` optimization choice is independent. See the
+[execution policy contract](../rfcs/0044-project-execution-policy.md).

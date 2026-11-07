@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Compare untouched native ELF bytes across clean/cache/relocated builds.
 
-Requires Linux x86_64 and actual LLVM 19.1.7 plus its SDK. All comparisons use
+Requires Linux x86_64 or ARM64 and actual LLVM 19.1.7 plus its SDK. All comparisons use
 one captured, explicitly recorded environment and preserve relative source
 layout. This is a bounded R1 application regression, not a cross-SDK/OS claim.
 """
+import linux_native_target as native_target
 import argparse
 import hashlib
 import json
@@ -137,7 +138,7 @@ class Oracle:
         shutil.copyfile(executable, retained)
         retained.chmod(0o555)
         body = retained.read_bytes()
-        require(body[:7] == b"\x7fELF\x02\x01\x01" and body[16:20] == b"\x03\x00\x3e\x00", "build did not emit x86_64 PIE ELF")
+        require(body[:7] == b"\x7fELF\x02\x01\x01" and body[16:20] == native_target.elf_identity(3), "build did not emit host PIE ELF")
         require(str(layout).encode() not in body and str(self.output).encode() not in body,
                 "reproducible ELF contains an absolute source/staging/output root")
         names = ([APP + "/src/主程式.ox", COUNTS + "/src/數量.ox", REPORT + "/src/報告.ox"] if workspace else
@@ -195,7 +196,7 @@ def clean(layout):
 
 
 def verify(args):
-    require(platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"), "requires Linux x86_64")
+    require(native_target.host() is not None, "requires Linux x86_64 or ARM64")
     output = args.output.resolve()
     require(not output.exists() and not args.output.is_symlink() and ROOT not in output.parents and output != ROOT,
             "output must be a new directory outside the repository")
@@ -219,7 +220,7 @@ def verify(args):
         path.write_text("#!/bin/sh\nprintf '%s\\n' invoked >> '" + marker + "'\nexit 91\n")
         path.chmod(0o700)
     report = {"schema": "oxid-reproducible-native-application-v1", "status": "running",
-              "scope": "bounded Linux x86_64, same recorded toolchain/environment and preserved relative layout; not cross-SDK or v1",
+              "scope": "bounded Linux x86_64 or ARM64, same recorded toolchain/environment and preserved relative layout; not cross-SDK or v1",
               "environment": environment, "host": platform.uname()._asdict(), "source_inputs": sources,
               "controllers_sha256": controllers, "compilers": [], "tools": [], "layouts": {}, "builds": [], "controls": []}
     report["environment_sha256"] = hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest()

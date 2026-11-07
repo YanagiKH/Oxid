@@ -40,7 +40,7 @@ fn forward_composition_preserves_nominal_order_padding_and_recursive_width() {
             .unwrap(),
         6
     );
-    assert_eq!(declarations.usage.layout_bytes, 28);
+    assert_eq!(declarations.usage().layout_bytes, 28);
     assert_eq!(
         declarations.fields(RecordId(0)).unwrap()[1].value_ty(),
         ValueTy::Owned(AggregateTy::Record(RecordId(1)))
@@ -268,7 +268,7 @@ fn source_inventory_and_checked_facade_agree_without_executable_authority() {
         admit_value_layouts(types()).unwrap(),
         Declarations::check(&raw, &sources)
             .unwrap()
-            .usage
+            .usage()
             .layout_bytes
     );
     assert!(matches!(

@@ -1,0 +1,75 @@
+name: CPython native packages
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: '1'
+  CARGO_INCREMENTAL: '0'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  python-native:
+    name: CPython 3.12 Linux x86_64 wheel and sdist
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: python:3.12-trixie
+    defaults:
+      run:
+        shell: bash
+    env:
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+      OXID_PYTHON_CC: /usr/lib/llvm-19/bin/clang
+    steps:
+      - name: Prepare retained evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/python-native"
+          python3 -I -B -c 'import platform, sys; assert sys.implementation.name == "cpython" and sys.version_info[:2] == (3, 12) and platform.machine() == "x86_64"; print(sys.version); print(platform.platform())' > "$RUNNER_TEMP/python-native/host.txt"
+      - name: Install pinned LLVM and host tools
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace gdb \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Build both current compiler profiles
+        run: |
+          set -euo pipefail
+          cargo build --locked 2>&1 | tee "$RUNNER_TEMP/python-native/build-debug.log"
+          cargo build --release --locked 2>&1 | tee "$RUNNER_TEMP/python-native/build-release.log"
+      - name: Verify Python package controls
+        run: |
+          set -euo pipefail
+          python3 -B scripts/test_python_native_package.py 2>&1 | tee "$RUNNER_TEMP/python-native/controls.log"
+      - name: Verify real wheel sdist installation and native calls
+        env:
+          OXID: ${{ github.workspace }}/target/release/oxid
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_python_native_package.py \
+            --output "$RUNNER_TEMP/python-native/qualification" \
+            2>&1 | tee "$RUNNER_TEMP/python-native/qualification.log"
+      - name: Retain Python native package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpython-312-linux-x86_64-native
+          path: ${{ runner.temp }}/python-native
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

@@ -270,6 +270,47 @@ impl SourceFile {
         }
     }
 
+    /// One-based line lookup without scanning the line for a column.
+    pub(super) fn line_number(&self, offset: usize) -> usize {
+        self.validate_offset(offset);
+        self.line_starts.partition_point(|&start| start <= offset)
+    }
+
+    /// LSP positions count UTF-16 code units from zero, independent of the
+    /// scalar columns used by human compiler diagnostics.
+    pub(super) fn editor_position(&self, offset: usize) -> (usize, usize) {
+        self.validate_offset(offset);
+        let bytes = self.text.as_bytes();
+        let offset =
+            if bytes.get(offset) == Some(&b'\n') && offset > 0 && bytes[offset - 1] == b'\r' {
+                offset - 1
+            } else {
+                offset
+            };
+        let (mut line, mut column, mut carriage) = (0, 0, false);
+        for ch in self.text[..offset].chars() {
+            match ch {
+                '\r' => {
+                    line += 1;
+                    column = 0;
+                    carriage = true;
+                }
+                '\n' => {
+                    if !carriage {
+                        line += 1;
+                    }
+                    column = 0;
+                    carriage = false;
+                }
+                _ => {
+                    column += ch.len_utf16();
+                    carriage = false;
+                }
+            }
+        }
+        (line, column)
+    }
+
     /// Convert a byte offset to one-based line and Unicode scalar column.
     /// LF starts a new line, including in CRLF. At the LF byte of a CRLF pair,
     /// the preceding CR counts as a scalar on the old line. Tabs, combining

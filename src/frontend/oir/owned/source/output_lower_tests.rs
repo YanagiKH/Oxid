@@ -81,7 +81,16 @@ fn with_project_kind(
     });
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 fn with_project_load(
     files: &[(&str, &str)],
     run: impl FnOnce(Result<ProjectSources, crate::frontend::project::LoadFailure>),
@@ -196,6 +205,7 @@ fn raw_prefix(index: &DeclarationIndex<'_>) -> RawOwnedProgram {
         })
         .collect();
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: index.builtin_set(),
         enums,
         records: vec![],
@@ -758,7 +768,16 @@ pub fn relay(bytes:&[i32])->i32{
     }
 }
 "#;
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )))]
     with_project_load(&[("main.ox", ROOT), ("child.ox", CHILD)], |loaded| {
         let failure = loaded.unwrap_err();
         assert_eq!(failure.diagnostics.len(), 1);
@@ -767,7 +786,16 @@ pub fn relay(bytes:&[i32])->i32{
             ("E0005", "source"),
         );
     });
-    #[cfg(target_os = "linux")]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    ))]
     with_each_project(
         &[("main.ox", ROOT), ("child.ox", CHILD)],
         |index, sources| {

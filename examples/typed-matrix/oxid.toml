@@ -1,0 +1,18 @@
+[project]
+name = "matrix-example"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+matrix = "../../packages/matrix"
+vector = "../../packages/float_vector"
+
+[build]
+entry-mode = "result"
+reproducible = true
+
+[tests]
+matrix = "tests/contracts.ox"
+
+[execution]
+policy = "hosted"

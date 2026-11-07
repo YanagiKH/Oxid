@@ -1,8 +1,165 @@
 use super::super::consumer_fixtures::*;
 use super::*;
 
+#[test]
+fn local_reference_every_fuel_boundary_matches_an_independent_schedule() {
+    let (sources, raw) = super::super::tests::local_reference_program();
+    let schedule = super::super::tests::local_reference_schedule(&sources);
+    assert_eq!(schedule.fuel(), 66);
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    for fuel in 0..=66 {
+        let mut events = vec![];
+        let result = run_observed(
+            &witness,
+            schedule.entry,
+            Limits {
+                fuel,
+                ..Limits::default()
+            },
+            &mut events,
+        );
+        match schedule.failure(fuel) {
+            Some(span) => assert_eq!(
+                result,
+                Err(OwnedRunFailure::Scalar(RunFailure::Fuel(span))),
+                "fuel {fuel}"
+            ),
+            None => assert_eq!(result, Ok(Scalar::I32(-47))),
+        }
+        let charges: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Charge(span, cost) => Some((*span, *cost)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(charges, schedule.events[..charges.len()], "fuel {fuel}");
+    }
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    // Acquisition and release have no effect until their one fuel unit is paid.
+    for (fuel, active, children) in [(40, 0, 0), (41, 1, 1), (58, 1, 1), (59, 0, 0)] {
+        let machine = stopped_machine(&plan, fuel);
+        assert_eq!(machine.frames[0].loans[0].state, active, "fuel {fuel}");
+        assert_eq!(
+            machine.frames[0].owners[0].shared_children, children,
+            "fuel {fuel}"
+        );
+        assert_eq!(machine.frames[0].loans[0].shared_children, 0, "fuel {fuel}");
+    }
+}
+
+#[test]
+fn local_reference_runtime_rejects_stale_epochs_and_failed_release_without_mutation() {
+    let (sources, raw) = super::super::tests::local_reference_program();
+    let witness = verified::verify_owned(raw, &sources).unwrap();
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    let span = witness.functions()[0].loans[0].span;
+    for mutation in 0..5 {
+        let mut machine = stopped_machine(&plan, 58);
+        let handle = machine.reference_from_loan(0, LoanId(0), span).unwrap();
+        match mutation {
+            0 => machine.frames[0].loans[0].shared_children = 1,
+            1 => machine.frames[0].loans[0].exclusive_children = 1,
+            2 => machine.frames[0].owners[0].shared_children = 0,
+            3 => machine.frames[0].owners[0].generation += 1,
+            4 => machine.frames[0].loans[0].instance += 1,
+            _ => unreachable!(),
+        }
+        let before = (machine.frames[0].loans[0], machine.frames[0].owners[0]);
+        assert!(
+            machine.release(handle.permission, span).is_err(),
+            "mutation {mutation}"
+        );
+        assert_eq!(
+            (machine.frames[0].loans[0], machine.frames[0].owners[0]),
+            before,
+            "mutation {mutation}"
+        );
+    }
+}
+
 #[path = "source/runtime_resource_tests.rs"]
 mod source_resources;
+
+#[test]
+fn record_pattern_runtime_preflights_every_destination_before_any_payload_copy() {
+    for source in [
+        "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;struct Pair{first:ByteBuf,second:ByteBuf}fn main()->i32{let pair=Pair{first:make(40u8),second:make(2u8)};let Pair{first:a,second:b}=pair;return len(&a)+len(&b);}fn make(n:u8)->ByteBuf{let mut value=new();try_push(&mut value,n);return value;}",
+        "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;enum Option<T>{None,Some(T)}struct Pair{first:Option<ByteBuf>,second:Option<ByteBuf>}fn main()->i32{let pair=Pair{first:Option::<ByteBuf>::Some(make(40u8)),second:Option::<ByteBuf>::Some(make(2u8))};let Pair{first:a,second:b}=pair;match a{Option::None=>{return 0;},Option::Some(value)=>{return len(&value);},}}fn make(n:u8)->ByteBuf{let mut value=new();try_push(&mut value,n);return value;}",
+    ] {
+    let checked = super::super::source::resource_fixtures::checked_enum_project(source);
+    assert_eq!(checked.entry, hir::DefId(0));
+    let plan = ExecutionPlan::build(&checked.witness).unwrap();
+    for mutation in 0..4 {
+        let initial = 1 + plan.function(checked.entry).usage().activation_fuel_cells();
+        let mut selected = None;
+        for fuel in initial..initial + 1000 {
+            let machine = stopped_machine(&plan, fuel);
+            let frame = machine.frames.len() - 1;
+            let current = &machine.frames[frame];
+            let function = &plan.witness().functions()[current.function.0];
+            if let Some(statement) = function.blocks[current.block.0]
+                .statements
+                .get(current.next)
+            {
+                if matches!(statement.kind, OwnedInstruction::DestructureRecord { .. }) {
+                    selected = Some((machine, frame, statement));
+                    break;
+                }
+            }
+        }
+        let (mut machine, frame, statement) = selected.expect("record pattern reached");
+        let OwnedInstruction::DestructureRecord { source, fields } = &statement.kind else {
+            unreachable!()
+        };
+        assert_eq!(fields.len(), 2);
+        let span = plan::instruction_span(statement);
+        let last = fields[1].1;
+        match mutation {
+            0 => machine.frames[frame].owners[last.0].generation = u64::MAX,
+            1 => machine.frames[frame].owners[source.0].generation = u64::MAX,
+            2 => machine.frames[frame].owners[last.0].state = AVAILABLE,
+            3 => {
+                let key = machine.raw_key(frame, *source);
+                let AggregateTy::Record(record) = machine.aggregate(key, span).unwrap() else {
+                    unreachable!()
+                };
+                let (_, extent) = machine
+                    .owned_record_field_extent(key, record, fields[1].0, span)
+                    .unwrap();
+                machine.frames[frame].payload[extent].fill(0xff);
+            }
+            _ => unreachable!(),
+        }
+        let payload = machine.frames[frame].payload.clone();
+        let owners = machine.frames[frame]
+            .owners
+            .iter()
+            .map(|owner| (owner.state, owner.generation))
+            .collect::<Vec<_>>();
+        assert!(machine.statement(frame, &statement.kind, span).is_err());
+        assert_eq!(
+            machine.frames[frame].payload, payload,
+            "mutation {mutation}"
+        );
+        assert_eq!(
+            machine.frames[frame]
+                .owners
+                .iter()
+                .map(|owner| (owner.state, owner.generation))
+                .collect::<Vec<_>>(),
+            owners
+        );
+        assert_eq!(machine.heap.ledger().live_allocations, 2);
+        machine.heap.cleanup();
+        assert_eq!(machine.heap.ledger().live_allocations, 0);
+        assert_eq!(
+            machine.heap.ledger().allocations,
+            machine.heap.ledger().releases
+        );
+    }
+    }
+}
 
 #[test]
 fn independently_counted_complete_traces_and_every_lower_fuel() {
@@ -233,6 +390,7 @@ fn stopped_machine<'p, 'w>(plan: &'p ExecutionPlan<'w>, fuel: usize) -> Machine<
         live_cells: 0,
         live_bytes: 0,
         header_bytes: limits.frames * size_of::<Frame>(),
+        heap: byte_buffer::Heap::default(),
         events: vec![],
         observer: array_observe::Observer::default(),
     };
@@ -894,6 +1052,7 @@ fn default_200000_expanded_cell_boundary_is_real_and_precedes_activation_allocat
         .push(assign(1, Rvalue::Unit, span));
     let p = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records,
@@ -917,6 +1076,7 @@ fn default_200000_expanded_cell_boundary_is_real_and_precedes_activation_allocat
     }
     let p = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records,
@@ -954,8 +1114,10 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     }];
     main.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         kind: BorrowKind::Shared,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -1020,8 +1182,10 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     }];
     recursive.loans = vec![LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         kind: BorrowKind::Shared,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -1059,6 +1223,7 @@ fn reference_default_1024_frame_bound_supports_deep_reborrow_provenance() {
     ];
     let p = verified::verify_owned(
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![record(&[], s(0))],
@@ -1225,4 +1390,375 @@ fn projected_slice_success_store_preserves_empty_sentinel_and_padding_bytes() {
         Err(OwnedRunFailure::Scalar(RunFailure::Fuel(_)))
     ));
     assert_eq!(m.frames[0].payload, expected);
+}
+
+#[test]
+fn checked_copy_runtime_preflights_all_leaves_and_owner_state_before_destination_write() {
+    let source = "#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:42,last:true};let second=p;return second.earlier+p.earlier;}";
+    let (_, witness, entry) = super::super::source::copy_record_tests::checked(source);
+    assert_eq!(entry, hir::DefId(0));
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    for mutation in 0..6 {
+        let initial = 1 + plan.function(entry).usage().activation_fuel_cells();
+        let mut selected = None;
+        for fuel in initial..initial + 1000 {
+            let machine = stopped_machine(&plan, fuel);
+            let frame = &machine.frames[0];
+            let function = &witness.functions()[frame.function.0];
+            if let Some(statement) = function.blocks[frame.block.0].statements.get(frame.next) {
+                if matches!(statement.kind, OwnedInstruction::CopyInitialize { .. }) {
+                    selected = Some((machine, statement));
+                    break;
+                }
+            }
+        }
+        let (mut machine, statement) = selected.expect("copy reached");
+        let OwnedInstruction::CopyInitialize {
+            destination,
+            source,
+        } = statement.kind
+        else {
+            unreachable!()
+        };
+        let span = plan::instruction_span(statement);
+        let from = machine.raw_key(0, source);
+        let to = machine.raw_key(0, destination);
+        let source_extent = machine.owner_extent(from, span).unwrap();
+        let destination_extent = machine.owner_extent(to, span).unwrap();
+        machine.frames[0].payload[destination_extent.clone()].fill(0xa5);
+        match mutation {
+            0 => machine.frames[0].owners[destination.0].generation = u64::MAX,
+            1 => machine.frames[0].owners[destination.0].state = AVAILABLE,
+            2 => machine.frames[0].owners[source.0].exclusive_children = 1,
+            3 => machine.frames[0].payload[source_extent.start + 8] = 2,
+            4 => machine.frames[0].owners[source.0].state = MOVED,
+            5 => (),
+            _ => unreachable!(),
+        }
+        let payload = machine.frames[0].payload.clone();
+        let owners = machine.frames[0].owners.clone();
+        let result = machine.statement(0, &statement.kind, span);
+        if mutation == 5 {
+            result.unwrap();
+            assert_eq!(machine.frames[0].owners[source.0], owners[source.0]);
+            assert_eq!(
+                machine.frames[0].payload[source_extent.clone()],
+                payload[source_extent]
+            );
+            // Only initialized fields change. Private record padding stays at
+            // the independently seeded byte value and is never copied/read.
+            assert_eq!(
+                &machine.frames[0].payload[destination_extent],
+                &[7, 165, 165, 165, 42, 0, 0, 0, 1, 165, 165, 165]
+            );
+            assert_eq!(machine.frames[0].owners[destination.0].state, AVAILABLE);
+        } else {
+            assert!(result.is_err(), "mutation={mutation}");
+            assert_eq!(machine.frames[0].payload, payload, "mutation={mutation}");
+            assert_eq!(machine.frames[0].owners, owners, "mutation={mutation}");
+        }
+    }
+}
+
+#[test]
+fn checked_copy_fuel_is_paid_before_any_destination_or_source_change() {
+    let text = "#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:42,last:true};let second=p;return second.earlier+p.earlier;}";
+    let (_, witness, entry) = super::super::source::copy_record_tests::checked(text);
+    let plan = ExecutionPlan::build(&witness).unwrap();
+    let initial = 1 + plan.function(entry).usage().activation_fuel_cells();
+    let mut selected = None;
+    for fuel in initial..initial + 1000 {
+        let machine = stopped_machine(&plan, fuel);
+        let frame = &machine.frames[0];
+        let function = &witness.functions()[frame.function.0];
+        if let Some(statement) = function.blocks[frame.block.0].statements.get(frame.next) {
+            if matches!(statement.kind, OwnedInstruction::CopyInitialize { .. }) {
+                selected = Some((fuel, statement));
+                break;
+            }
+        }
+    }
+    let (prefix, statement) = selected.expect("copy reached");
+    let OwnedInstruction::CopyInitialize {
+        source,
+        destination,
+    } = statement.kind
+    else {
+        unreachable!()
+    };
+    // Three scalar leaves require one dispatch and two three-cell passes;
+    // alignment padding does not add initialized cells.
+    assert_eq!(plan.statement_cost(entry, &statement.kind), 7);
+    for (fuel, copied) in [(6, false), (7, true)] {
+        let mut machine = stopped_machine(&plan, prefix);
+        let from = machine.raw_key(0, source);
+        let to = machine.raw_key(0, destination);
+        let source_extent = machine.owner_extent(from, statement.span).unwrap();
+        let destination_extent = machine.owner_extent(to, statement.span).unwrap();
+        machine.frames[0].payload[destination_extent.clone()].fill(0xa5);
+        let payload = machine.frames[0].payload.clone();
+        let owners = machine.frames[0].owners.clone();
+        let next = machine.frames[0].next;
+        machine.fuel = fuel;
+        assert!(matches!(
+            machine.execute(),
+            Err(OwnedRunFailure::Scalar(RunFailure::Fuel(_)))
+        ));
+        assert_eq!(machine.frames[0].owners[source.0], owners[source.0]);
+        assert_eq!(
+            machine.frames[0].payload[source_extent.clone()],
+            payload[source_extent]
+        );
+        if copied {
+            assert_eq!(machine.frames[0].next, next + 1);
+            assert_eq!(machine.frames[0].owners[destination.0].state, AVAILABLE);
+            assert_eq!(
+                &machine.frames[0].payload[destination_extent],
+                &[7, 165, 165, 165, 42, 0, 0, 0, 1, 165, 165, 165]
+            );
+        } else {
+            assert_eq!(machine.frames[0].next, next);
+            assert_eq!(machine.frames[0].owners, owners);
+            assert_eq!(machine.frames[0].payload, payload);
+        }
+    }
+}
+
+fn stopped_at_record_vector_index<'p, 'w>(
+    plan: &'p ExecutionPlan<'w>,
+    reading: bool,
+) -> Machine<'p, 'w> {
+    let entry = plan
+        .witness()
+        .functions()
+        .iter()
+        .find(|function| {
+            function
+                .blocks
+                .iter()
+                .flat_map(|block| &block.statements)
+                .any(|statement| {
+                    matches!(statement.kind, OwnedInstruction::CopyIndexInitialize { .. })
+                        == reading
+                        && matches!(
+                            statement.kind,
+                            OwnedInstruction::CopyIndexInitialize { .. }
+                                | OwnedInstruction::CopyIndexWrite { .. }
+                        )
+                })
+        })
+        .unwrap()
+        .id;
+    let initial = 1 + plan.function(entry).usage().activation_fuel_cells();
+    for fuel in initial..initial + 20_000 {
+        let machine = stopped_machine(plan, fuel);
+        if machine.frames.len() != 1 {
+            continue;
+        }
+        let frame = &machine.frames[0];
+        let f = &plan.witness().functions()[frame.function.0];
+        if f.blocks[frame.block.0]
+            .statements
+            .get(frame.next)
+            .is_some_and(|statement| {
+                if reading {
+                    matches!(statement.kind, OwnedInstruction::CopyIndexInitialize { .. })
+                } else {
+                    matches!(statement.kind, OwnedInstruction::CopyIndexWrite { .. })
+                }
+            })
+        {
+            return machine;
+        }
+    }
+    panic!("record vector index was not reached");
+}
+#[test]
+fn record_vector_copy_preflights_private_bytes_and_owner_epochs_before_any_write() {
+    let text="use alloc::vec::new;use alloc::vec::try_push;#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:42,last:true};let mut v=new::<P>();try_push(&mut v,p);let second=v[0];return second.earlier;}";
+    let checked = super::super::source::resource_fixtures::checked_enum_project(text);
+    let witness = &checked.witness;
+    let plan = ExecutionPlan::build(witness).unwrap();
+    let mut machine = stopped_at_record_vector_index(&plan, true);
+    let frame = &machine.frames[0];
+    let statement =
+        &witness.functions()[frame.function.0].blocks[frame.block.0].statements[frame.next];
+    let OwnedInstruction::CopyIndexInitialize {
+        destination,
+        base: AccessBase::Owner(base),
+        ref path,
+        ..
+    } = statement.kind
+    else {
+        unreachable!()
+    };
+    assert!(path.is_empty());
+    let span = plan::instruction_span(statement);
+    let target = machine
+        .owner_extent(machine.raw_key(0, destination), span)
+        .unwrap();
+    machine.frames[0].payload[target.clone()].fill(0xa5);
+    let descriptor_extent = machine
+        .owner_extent(machine.raw_key(0, base), span)
+        .unwrap();
+    let element =
+        byte_buffer::RecordVectorElement::check(witness.declarations(), RecordId(0)).unwrap();
+    let descriptor = machine
+        .heap
+        .vector_descriptor(
+            &machine.frames[0].payload[descriptor_extent.clone()],
+            element,
+        )
+        .unwrap();
+    let original_heap = machine
+        .heap
+        .vector_range(&descriptor, element, 0, 1)
+        .unwrap()
+        .to_vec();
+    assert_eq!(original_heap, [7, 42, 0, 0, 0, 1]);
+    let baseline_payload = machine.frames[0].payload.clone();
+    let baseline_owners = machine.frames[0].owners.clone();
+    for mutation in 0..6 {
+        machine.frames[0].payload.clone_from(&baseline_payload);
+        machine.frames[0].owners.clone_from(&baseline_owners);
+        unsafe { machine.heap.vector_range_mut(&descriptor, element, 0, 1) }
+            .unwrap()
+            .copy_from_slice(&original_heap);
+        match mutation {
+            0 => machine.frames[0].owners[destination.0].generation = u64::MAX,
+            1 => machine.frames[0].owners[destination.0].state = AVAILABLE,
+            2 => machine.frames[0].owners[base.0].exclusive_children = 1,
+            3 => {
+                unsafe { machine.heap.vector_range_mut(&descriptor, element, 0, 1) }.unwrap()[5] = 2
+            }
+            4 => machine.frames[0].payload
+                [descriptor_extent.start + 12..descriptor_extent.start + 16]
+                .copy_from_slice(&0i32.to_le_bytes()),
+            5 => (),
+            _ => unreachable!(),
+        }
+        let before = machine.frames[0].payload.clone();
+        let owners = machine.frames[0].owners.clone();
+        let heap = machine
+            .heap
+            .vector_range(&descriptor, element, 0, 1)
+            .unwrap()
+            .to_vec();
+        let result = machine.statement(0, &statement.kind, span);
+        if mutation == 5 {
+            result.unwrap();
+            let mut expected = before;
+            expected[target.clone()]
+                .copy_from_slice(&[7, 165, 165, 165, 42, 0, 0, 0, 1, 165, 165, 165]);
+            assert_eq!(machine.frames[0].payload, expected);
+            assert_eq!(machine.frames[0].owners[base.0], owners[base.0]);
+            assert_eq!(machine.frames[0].owners[destination.0].state, AVAILABLE);
+        } else {
+            assert!(result.is_err(), "mutation={mutation}");
+            assert_eq!(machine.frames[0].payload, before, "mutation={mutation}");
+            assert_eq!(machine.frames[0].owners, owners, "mutation={mutation}");
+        }
+        assert_eq!(
+            machine
+                .heap
+                .vector_range(&descriptor, element, 0, 1)
+                .unwrap(),
+            heap
+        );
+    }
+}
+#[test]
+fn record_vector_store_validates_every_source_leaf_before_staging_or_heap_publication() {
+    let text="use alloc::vec::new;use alloc::vec::try_push;#[derive(Copy)]struct P{first:u8,earlier:i32,last:bool}fn main()->i32{let p=P{first:7u8,earlier:21,last:false};let mut v=new::<P>();try_push(&mut v,p);let replacement=P{first:9u8,earlier:42,last:true};v[0]=replacement;return replacement.earlier;}";
+    let checked = super::super::source::resource_fixtures::checked_enum_project(text);
+    let witness = &checked.witness;
+    let plan = ExecutionPlan::build(witness).unwrap();
+    let mut machine = stopped_at_record_vector_index(&plan, false);
+    let frame = &machine.frames[0];
+    let statement =
+        &witness.functions()[frame.function.0].blocks[frame.block.0].statements[frame.next];
+    let OwnedInstruction::CopyIndexWrite {
+        base: AccessBase::Owner(base),
+        source,
+        ref path,
+        ..
+    } = statement.kind
+    else {
+        unreachable!()
+    };
+    assert!(path.is_empty());
+    let span = plan::instruction_span(statement);
+    let source_extent = machine
+        .owner_extent(machine.raw_key(0, source), span)
+        .unwrap();
+    for padding in [1, 2, 3, 9, 10, 11] {
+        machine.frames[0].payload[source_extent.start + padding] = 0xcc;
+    }
+    let descriptor_extent = machine
+        .owner_extent(machine.raw_key(0, base), span)
+        .unwrap();
+    let element =
+        byte_buffer::RecordVectorElement::check(witness.declarations(), RecordId(0)).unwrap();
+    let descriptor = machine
+        .heap
+        .vector_descriptor(&machine.frames[0].payload[descriptor_extent], element)
+        .unwrap();
+    let original_heap = machine
+        .heap
+        .vector_range(&descriptor, element, 0, 1)
+        .unwrap()
+        .to_vec();
+    let baseline_payload = machine.frames[0].payload.clone();
+    let baseline_owners = machine.frames[0].owners.clone();
+    for mutation in 0..5 {
+        machine.frames[0].payload.clone_from(&baseline_payload);
+        machine.frames[0].owners.clone_from(&baseline_owners);
+        unsafe { machine.heap.vector_range_mut(&descriptor, element, 0, 1) }
+            .unwrap()
+            .copy_from_slice(&original_heap);
+        match mutation {
+            0 => machine.frames[0].payload[source_extent.start + 8] = 2,
+            1 => machine.frames[0].owners[source.0].state = MOVED,
+            2 => machine.frames[0].owners[source.0].exclusive_children = 1,
+            3 => machine.frames[0].owners[base.0].shared_children = 1,
+            4 => (),
+            _ => unreachable!(),
+        }
+        let before = machine.frames[0].payload.clone();
+        let owners = machine.frames[0].owners.clone();
+        let result = machine.statement(0, &statement.kind, span);
+        if mutation == 4 {
+            result.unwrap();
+            let scratch = plan
+                .record_vector_scratch_range(machine.frames[0].function)
+                .unwrap();
+            let mut expected = before.clone();
+            expected[scratch].copy_from_slice(&[9, 42, 0, 0, 0, 1]);
+            assert_eq!(machine.frames[0].payload, expected);
+            assert_eq!(machine.frames[0].owners, owners);
+            assert_eq!(
+                machine
+                    .heap
+                    .vector_range(&descriptor, element, 0, 1)
+                    .unwrap(),
+                [9, 42, 0, 0, 0, 1]
+            );
+            assert_eq!(
+                &machine.frames[0].payload[source_extent.clone()],
+                &before[source_extent.clone()]
+            );
+        } else {
+            assert!(result.is_err(), "mutation={mutation}");
+            assert_eq!(machine.frames[0].payload, before, "mutation={mutation}");
+            assert_eq!(machine.frames[0].owners, owners, "mutation={mutation}");
+            assert_eq!(
+                machine
+                    .heap
+                    .vector_range(&descriptor, element, 0, 1)
+                    .unwrap(),
+                original_heap,
+                "mutation={mutation}"
+            );
+        }
+    }
 }

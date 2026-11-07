@@ -377,6 +377,7 @@ fn scalar(local: usize, value: Rvalue, span: Span) -> OwnedStatement {
 }
 fn record(span: Span) -> RawRecordDecl {
     RawRecordDecl {
+        is_copy: false,
         id: RecordId(0),
         span,
         fields: vec![RawFieldDecl {
@@ -520,6 +521,7 @@ fn availability_raw(graph: &model::Graph, prologue: usize, span: Span) -> RawOwn
     }
     f.blocks.insert(prologue, setup);
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![record(span)],
@@ -655,8 +657,10 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
         let acquisition = at(span, 400 + position);
         caller.loans.push(LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: position,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: position,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(root)),
             kind,
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))
@@ -721,6 +725,7 @@ fn alias_raw(partition: &[usize], exclusive: &[bool], span: Span) -> RawOwnedPro
         at(span, 1_300),
     ));
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![record(span)],
@@ -844,6 +849,7 @@ fn lifecycle_raw(initial: model::Storage, word: &[model::Event], span: Span) -> 
         at(span, 500),
     ));
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![record(span)],
@@ -1969,8 +1975,7 @@ impl NestedRawBuilder<'_> {
                     };
                     self.raw.loans.push(LoanDecl {
                         projection: Vec::new(),
-                        call,
-                        argument,
+                        region: LoanRegion::Call { call, argument },
                         authority,
                         kind,
                         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(
@@ -2116,6 +2121,7 @@ fn nested_raw(model: &nested_model::Program, span: Span) -> RawOwnedProgram {
         functions.push(builder.raw);
     }
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![record(span)],
@@ -2917,6 +2923,7 @@ fn array_model_staged_access_and_reference_permissions_match_class_table() {
                 ));
                 let raw = array_raw(
                     RawOwnedProgram {
+                        vector_functions: Vec::new(),
                         builtins: BuiltinOrigins::None,
                         enums: vec![],
                         records: vec![record(span)],

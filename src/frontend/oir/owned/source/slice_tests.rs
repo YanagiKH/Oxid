@@ -132,7 +132,6 @@ fn borrowed_slice_syntax_remains_parameter_only_and_scalar_only() {
         "fn f()->[i32]{return [];}",
         "fn f()->&[i32]{return [];}",
         "struct R{p:&[i32]}",
-        "fn f()->(){let p:&[i32]=[];return;}",
         "fn f(p:&[[i32;1]])->(){return;}",
         "struct R{} fn f(p:&[R])->(){return;}",
         "fn f(p:&[&i32])->(){return;}",
@@ -141,4 +140,10 @@ fn borrowed_slice_syntax_remains_parameter_only_and_scalar_only() {
         let errors = parsed(text).unwrap_err();
         assert_eq!(errors[0].stage, "parse", "{text}: {errors:?}");
     }
+    let text = "fn f()->(){let p:&[i32]=[];return;}";
+    parsed(text).unwrap();
+    assert!(run(text)
+        .unwrap_err()
+        .iter()
+        .all(|error| error.code != "E0500"));
 }

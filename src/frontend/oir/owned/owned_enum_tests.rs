@@ -169,6 +169,7 @@ fn array_case(span: Span, nullary: bool) -> RawOwnedProgram {
         ),
     ];
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         records: vec![],
         enums: vec![RawEnumDecl {

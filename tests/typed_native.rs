@@ -145,7 +145,7 @@ fn native_limits_preflight_dead_declarations_and_exponential_calls() {
 #[test]
 fn unsupported_cli_combinations_have_no_effects() {
     for option in [
-        "--target=aarch64-unknown-linux-gnu",
+        "--target=riscv64-unknown-linux-gnu",
         "--profile=release",
         "--features=avx",
         "--backend=llvm",
@@ -171,7 +171,12 @@ fn existing_output_is_never_overwritten_even_before_missing_toolchain() {
     fs::write(f.0.join("program"), "keep me").unwrap();
     let out = f.compile(&[]);
     assert_eq!(out.status.code(), Some(1));
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
         assert!(String::from_utf8(out.stdout)
             .unwrap()
             .contains("already exists"));
@@ -179,7 +184,12 @@ fn existing_output_is_never_overwritten_even_before_missing_toolchain() {
     assert_eq!(fs::read_to_string(f.0.join("program")).unwrap(), "keep me");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn fake_tools(f: &Fixture, script: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let dir = f.0.join("tools");
@@ -191,7 +201,12 @@ fn fake_tools(f: &Fixture, script: &str) -> PathBuf {
     }
     dir
 }
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn compile_with_tools(f: &Fixture, dir: &std::path::Path, mode: &str) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_oxid"))
         .current_dir(&f.0)
@@ -209,7 +224,12 @@ fn compile_with_tools(f: &Fixture, dir: &std::path::Path, mode: &str) -> std::pr
         .output()
         .unwrap()
 }
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn versions_failures_cleanup_and_atomic_no_clobber_are_enforced() {
     let script = r#"
@@ -332,7 +352,12 @@ fn whole_file_native_count_limits_are_inclusive_before_any_tools() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn syntactic_directory_outputs_are_rejected_before_any_tool_or_artifact() {
     for output in [

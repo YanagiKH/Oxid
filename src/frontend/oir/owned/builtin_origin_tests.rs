@@ -4,6 +4,7 @@ use std::mem::{align_of, size_of};
 
 fn empty(builtins: BuiltinOrigins) -> RawOwnedProgram {
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins,
         enums: vec![],
         records: vec![],
@@ -149,6 +150,7 @@ fn builtin_input_carrier_is_rejected_even_in_unreachable_source_blocks() {
                 diagnostic_origins: None,
             });
         let raw = RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],

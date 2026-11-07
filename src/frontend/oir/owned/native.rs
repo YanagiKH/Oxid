@@ -1,10 +1,39 @@
 //! Private owned LLVM consumer. All metadata is bound to one immutable witness
 //! by ExecutionPlan; the scalar source route does not enter this module.
-use super::{plan::ExecutionPlan, verified::VerifiedOwnedProgram, *};
+use super::super::native::hosted_frames;
+#[cfg(test)]
+use super::verified::VerifiedOwnedProgram;
+use super::{plan::ExecutionPlan, verified::PlanWitness, *};
 use crate::frontend::build_config::NativeSourceNames;
 use plan::native_storage::{NativeFunctionStorage, NativeStoragePlan};
 use std::fmt::Write;
 use std::mem::size_of;
+
+#[path = "native_bitwise.rs"]
+mod bitwise;
+#[path = "native_composition.rs"]
+mod composition;
+#[path = "native_experimental.rs"]
+mod experimental;
+#[path = "native_floats.rs"]
+mod floats;
+#[path = "native_integer128.rs"]
+mod integer128;
+#[path = "native_integers.rs"]
+mod integers;
+#[path = "native_numeric.rs"]
+mod numeric;
+#[path = "native_owned_vector.rs"]
+mod owned_vector;
+#[path = "native_owned_vector_schemas.rs"]
+mod owned_vector_schemas;
+#[path = "native_reachability.rs"]
+mod reachability;
+#[path = "native_resources.rs"]
+mod resources;
+#[path = "native_vector.rs"]
+mod vector;
+use reachability::EmittedFunctions;
 
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
@@ -12,6 +41,8 @@ const MAX_FUNCTION_SLOTS: usize = 256;
 const MAX_SLOTS: usize = 8_192;
 const MAX_NATIVE_INVENTORY_ITEMS: usize = 8_192;
 const MAX_NATIVE_OWNER_WIDTH: usize = 8_192;
+const MAX_HOSTED_NATIVE_INVENTORY_ITEMS: usize = 65_536;
+const MAX_HOSTED_NATIVE_OWNER_WIDTH: usize = 65_536;
 const MAX_BLOCKS: usize = 4_096;
 const MAX_DEPTH: usize = 32;
 const MAX_COST: usize = 100_000;
@@ -46,6 +77,55 @@ const OUTPUT_CAPACITY_INVARIANT: &str =
 // Includes the fixed depth-bounded ScalarLeaves traversal stack; projection
 // resolution and composite emission never retain an expanded leaf collection.
 const EMITTER_TRANSIENT_BYTES: usize = 32_768;
+// Copy makes complete scalar validation reachable without a resource helper.
+// Charge its real iterator, caller/leaf transports and simultaneous owned names
+// separately; the old emitter envelope and limits are unchanged.
+#[allow(dead_code)]
+struct CopyTransferCarriers {
+    source_and_destination: [String; 2],
+    leaf_names: [String; 4], // copy prefix, input/output pointers, field-pointer temporary
+    leaves: std::iter::Enumerate<crate::frontend::oir::owned_types::ScalarLeaves<'static>>,
+    next_leaf: Option<(usize, crate::frontend::oir::owned_types::ScalarLeaf)>,
+    selected_leaf: (usize, crate::frontend::oir::owned_types::ScalarLeaf),
+    emission: &'static mut Emission,
+    parameters: (
+        &'static ExecutionPlan<'static>,
+        &'static str,
+        AggregateTy,
+        &'static str,
+        TransferIntent<'static>,
+        (&'static Diagnostics, Span),
+    ),
+    formatting: [FormatCallsiteBacking<8>; 4],
+    writes: [std::fmt::Result; 4],
+    scalar_storage: &'static str,
+    predicate: &'static str,
+    bound: usize,
+}
+const COPY_TRANSFER_CONTROL_BYTES: usize =
+    size_of::<CopyTransferCarriers>() + 6 * (5 * usize::BITS as usize + 128);
+// Debug records describe the existing owner arena. Charge the marker's actual
+// borrowed transports and formatting roles separately from the inherited
+// emitter envelope; no owner table, name String or runtime storage is added.
+#[allow(dead_code)]
+struct RecordDebugCarriers {
+    output: &'static mut Emission,
+    plan: &'static ExecutionPlan<'static>,
+    owner: &'static OwnerDecl,
+    aggregate: AggregateTy,
+    record: RecordId,
+    // The table query really returns a Result, including its error payload.
+    // Its construction/return/caller roles precede the selected reference.
+    declaration_result: [debug::RecordDeclaration<'static>; 3],
+    declaration: &'static RecordDecl,
+    marker_parameters: (Span, usize, usize, usize),
+    offset_and_argument: [usize; 2],
+    local_owner: Option<usize>,
+    parameter: Option<(usize, &'static ParameterBinding)>,
+    formatting: FormatCallsiteBacking<6>,
+    write: std::fmt::Result,
+}
+const RECORD_DEBUG_CONTROL_BYTES: usize = size_of::<RecordDebugCarriers>();
 // The borrowed native plan and its fixed checking/mapping carriers occupy this
 // part of the inherited envelope; no retained table or new reserve is added.
 const _: () = assert!(plan::native_storage::FIXED_CARRIER_ALLOWANCE <= EMITTER_TRANSIENT_BYTES);
@@ -191,8 +271,31 @@ impl Limits {
         metadata_bytes: plan::MAX_PLAN_BYTES,
         ir_bytes: MAX_IR_BYTES,
     };
+    fn for_policy(policy: NativeEntryPolicy) -> Self {
+        if policy.hosted() {
+            Self {
+                functions: super::super::native::MAX_HOSTED_FUNCTIONS,
+                scalar_slots: super::super::native::MAX_HOSTED_LOCALS,
+                blocks: super::super::native::MAX_HOSTED_BLOCKS,
+                inventory_items: MAX_HOSTED_NATIVE_INVENTORY_ITEMS,
+                owner_width: MAX_HOSTED_NATIVE_OWNER_WIDTH,
+                ..Self::DEFAULT
+            }
+        } else {
+            Self::DEFAULT
+        }
+    }
     fn bounded(self) -> Self {
-        let d = Self::DEFAULT;
+        self.clamped(Self::DEFAULT)
+    }
+    fn bounded_for(self, policy: NativeEntryPolicy) -> Self {
+        if policy.hosted() {
+            self.clamped(Self::for_policy(policy))
+        } else {
+            self.bounded()
+        }
+    }
+    fn clamped(self, d: Self) -> Self {
         Self {
             functions: self.functions.min(d.functions),
             parameters: self.parameters.min(d.parameters),
@@ -250,8 +353,8 @@ pub(super) struct NativeObservation {
     pub(super) metrics: NativeMetrics,
 }
 #[cfg(test)]
-pub(super) fn run_array_observed(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn run_array_observed<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     control: NativeControl,
@@ -278,10 +381,137 @@ pub(super) fn run_array_observed(
 enum NativeEntryPolicy {
     Result,
     Process,
+    HostedResult,
+    HostedProcess,
+    TypedResult,
+    HostedTypedResult,
+    RecursiveHostedResult,
+    RecursiveHostedProcess,
+    RecursiveHostedTypedResult,
 }
 
-pub(super) fn native_process_module_with_fuel(
-    witness: &VerifiedOwnedProgram,
+impl NativeEntryPolicy {
+    fn process(self) -> bool {
+        matches!(
+            self,
+            Self::Process | Self::HostedProcess | Self::RecursiveHostedProcess
+        )
+    }
+
+    fn hosted(self) -> bool {
+        matches!(
+            self,
+            Self::HostedResult
+                | Self::HostedProcess
+                | Self::HostedTypedResult
+                | Self::RecursiveHostedResult
+                | Self::RecursiveHostedProcess
+                | Self::RecursiveHostedTypedResult
+        )
+    }
+
+    fn recursive(self) -> bool {
+        matches!(
+            self,
+            Self::RecursiveHostedResult
+                | Self::RecursiveHostedProcess
+                | Self::RecursiveHostedTypedResult
+        )
+    }
+
+    fn with_recursion(self, recursive: bool) -> Self {
+        match (self, recursive) {
+            (Self::HostedResult, true) => Self::RecursiveHostedResult,
+            (Self::HostedProcess, true) => Self::RecursiveHostedProcess,
+            (Self::HostedTypedResult, true) => Self::RecursiveHostedTypedResult,
+            _ => self,
+        }
+    }
+}
+
+pub(super) fn native_module_with_execution<W: PlanWitness>(
+    witness: &W,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    process: bool,
+    execution: crate::frontend::build_config::ExecutionPolicy,
+    names: Option<&NativeSourceNames<'_>>,
+) -> Result<String, Box<Diagnostic>> {
+    let policy = match (process, execution.hosted()) {
+        (false, false) => NativeEntryPolicy::TypedResult,
+        (true, false) => NativeEntryPolicy::Process,
+        (false, true) => NativeEntryPolicy::HostedTypedResult,
+        (true, true) => NativeEntryPolicy::HostedProcess,
+    };
+    native_module_policy_accounted_with_source_names(
+        witness,
+        entry,
+        sources,
+        plan::MAX_FUEL,
+        Limits::for_policy(policy),
+        policy,
+        &mut Accounting::default(),
+        names,
+    )
+}
+
+pub(super) fn native_debug_module_with_execution<W: PlanWitness>(
+    witness: &W,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    process: bool,
+    execution: crate::frontend::build_config::ExecutionPolicy,
+    names: Option<&NativeSourceNames<'_>>,
+) -> Result<String, Box<Diagnostic>> {
+    let policy = match (process, execution.hosted()) {
+        (false, false) => NativeEntryPolicy::TypedResult,
+        (true, false) => NativeEntryPolicy::Process,
+        (false, true) => NativeEntryPolicy::HostedTypedResult,
+        (true, true) => NativeEntryPolicy::HostedProcess,
+    };
+    native_module_policy_accounted_with_source_names_debug(
+        witness,
+        entry,
+        sources,
+        plan::MAX_FUEL,
+        Limits::for_policy(policy),
+        policy,
+        &mut Accounting::default(),
+        names,
+        true,
+    )
+}
+
+pub(super) fn native_optimized_module_with_execution<W: PlanWitness>(
+    witness: &W,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    process: bool,
+    execution: crate::frontend::build_config::ExecutionPolicy,
+    names: Option<&NativeSourceNames<'_>>,
+    debug: bool,
+) -> Result<String, Box<Diagnostic>> {
+    let policy = match (process, execution.hosted()) {
+        (false, false) => NativeEntryPolicy::TypedResult,
+        (true, false) => NativeEntryPolicy::Process,
+        (false, true) => NativeEntryPolicy::HostedTypedResult,
+        (true, true) => NativeEntryPolicy::HostedProcess,
+    };
+    native_module_policy_accounted_with_selection::<_, reachability::Reachable>(
+        witness,
+        entry,
+        sources,
+        plan::MAX_FUEL,
+        Limits::for_policy(policy),
+        policy,
+        &mut Accounting::default(),
+        names,
+        debug,
+    )
+}
+
+pub(super) fn native_process_module_with_fuel<W: PlanWitness>(
+    witness: &W,
     entry: hir::DefId,
     sources: &SourceMap,
     fuel: usize,
@@ -297,16 +527,16 @@ pub(super) fn native_process_module_with_fuel(
     )
 }
 
-pub(super) fn native_module(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_module<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
 ) -> Result<String, Box<Diagnostic>> {
     native_module_limits(witness, entry, sources, plan::MAX_FUEL, Limits::DEFAULT)
 }
 
-pub(super) fn native_module_with_source_names(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_module_with_source_names<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     names: &NativeSourceNames<'_>,
@@ -323,8 +553,8 @@ pub(super) fn native_module_with_source_names(
     )
 }
 
-pub(super) fn native_process_module_with_source_names(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_process_module_with_source_names<W: PlanWitness>(
+    witness: &W,
     entry: hir::DefId,
     sources: &SourceMap,
     names: &NativeSourceNames<'_>,
@@ -342,16 +572,16 @@ pub(super) fn native_process_module_with_source_names(
 }
 
 #[cfg(test)]
-pub(super) fn native_module_with_fuel(
-    witness: &VerifiedOwnedProgram,
+pub(super) fn native_module_with_fuel<W: PlanWitness>(
+    witness: &W,
     entry: hir::DefId,
     sources: &SourceMap,
     fuel: usize,
 ) -> Result<String, Box<Diagnostic>> {
     native_module_limits(witness, Some(entry), sources, fuel, Limits::DEFAULT)
 }
-fn native_module_limits(
-    witness: &VerifiedOwnedProgram,
+fn native_module_limits<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -366,8 +596,8 @@ fn native_module_limits(
         &mut Accounting::default(),
     )
 }
-fn native_module_accounted(
-    witness: &VerifiedOwnedProgram,
+fn native_module_accounted<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -384,8 +614,8 @@ fn native_module_accounted(
         accounting,
     )
 }
-fn native_module_policy_accounted(
-    witness: &VerifiedOwnedProgram,
+fn native_module_policy_accounted<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -399,8 +629,8 @@ fn native_module_policy_accounted(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn native_module_policy_accounted_with_source_names(
-    witness: &VerifiedOwnedProgram,
+fn native_module_policy_accounted_with_source_names<W: PlanWitness>(
+    witness: &W,
     entry: Option<hir::DefId>,
     sources: &SourceMap,
     fuel: usize,
@@ -409,12 +639,56 @@ fn native_module_policy_accounted_with_source_names(
     accounting: &mut Accounting,
     names: Option<&NativeSourceNames<'_>>,
 ) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted_with_source_names_debug(
+        witness, entry, sources, fuel, limits, policy, accounting, names, false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_module_policy_accounted_with_source_names_debug<W: PlanWitness>(
+    witness: &W,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    fuel: usize,
+    limits: Limits,
+    policy: NativeEntryPolicy,
+    accounting: &mut Accounting,
+    names: Option<&NativeSourceNames<'_>>,
+    debug: bool,
+) -> Result<String, Box<Diagnostic>> {
+    native_module_policy_accounted_with_selection::<_, reachability::Full>(
+        witness, entry, sources, fuel, limits, policy, accounting, names, debug,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunctions>(
+    witness: &W,
+    entry: Option<hir::DefId>,
+    sources: &SourceMap,
+    fuel: usize,
+    limits: Limits,
+    policy: NativeEntryPolicy,
+    accounting: &mut Accounting,
+    names: Option<&NativeSourceNames<'_>>,
+    debug: bool,
+) -> Result<String, Box<Diagnostic>> {
     if let Some(names) = names {
         names.validate(sources)?;
     }
     // Inventory policy precedes plan allocation or emitted effects, including
     // unused output functions. Status-only declarations do not require it.
-    if policy == NativeEntryPolicy::Result && witness.builtin_output_function().is_some() {
+    if !policy.process() {
+        for operation in [
+            crate::frontend::builtin_catalog::experimental::Function::ReadSome,
+            crate::frontend::builtin_catalog::experimental::Function::WriteSome,
+        ] {
+            if witness.experimental_function(operation).is_some() {
+                return Err(reject("binary I/O requires process entry", None));
+            }
+        }
+    }
+    if !policy.process() && witness.builtin_output_function().is_some() {
         return Err(reject("write_stdout requires process entry", None));
     }
     // Entry denial is deliberately before plan construction, diagnostics,
@@ -446,10 +720,15 @@ fn native_module_policy_accounted_with_source_names(
     if !matches!(root.result, ValueTy::Scalar(_)) {
         return Err(reject("native main must return a scalar", Some(root.span)));
     }
-    if policy == NativeEntryPolicy::Process && root.result != ValueTy::Scalar(hir::Ty::I32) {
+    if policy.process() && root.result != ValueTy::Scalar(hir::Ty::I32) {
         return Err(reject("process main must return i32", Some(root.span)));
     }
-    if root.result == ValueTy::Scalar(hir::Ty::U8) {
+    if root.result == ValueTy::Scalar(hir::Ty::U8)
+        && matches!(
+            policy,
+            NativeEntryPolicy::Result | NativeEntryPolicy::HostedResult
+        )
+    {
         return Err(reject(
             "native main must return bool, i32 or ()",
             Some(root.span),
@@ -458,8 +737,9 @@ fn native_module_policy_accounted_with_source_names(
     let plan = ExecutionPlan::build(witness).map_err(|e| reject(e.name, e.span))?;
     accounting.metrics.plan_bytes = plan.metadata_bytes();
     accounting.metrics.metadata_peak = accounting.metrics.metadata_peak.max(plan.metadata_bytes());
-    let limits = limits.bounded();
+    let limits = limits.bounded_for(policy);
     let bounds = admit_policy_accounted(&plan, limits, policy, accounting)?;
+    let policy = policy.with_recursion(bounds.iter().any(|bound| bound.depth == 0));
     let admission_metadata = add(
         plan.metadata_bytes(),
         accounting.metrics.admission_scratch_peak,
@@ -471,7 +751,8 @@ fn native_module_policy_accounted_with_source_names(
         "admission metadata bytes",
         root.span,
     )?;
-    let guarded = policy == NativeEntryPolicy::Process || bounds.iter().any(|b| b.cyclic);
+    let guarded =
+        plan.uses_dynamic_resources() || policy.process() || bounds.iter().any(|b| b.cyclic);
     let diagnostics = Diagnostics::new_policy_accounted_with_source_names(
         &plan,
         id,
@@ -482,6 +763,68 @@ fn native_module_policy_accounted_with_source_names(
         limits.metadata_bytes,
         accounting,
         names,
+    )?;
+    let inherited_emitter_transient = add(
+        if plan.uses_enum_record_nesting() {
+            composition::control_bytes()
+        } else {
+            0
+        },
+        add(
+            add(
+                EMITTER_TRANSIENT_BYTES,
+                if policy.recursive() {
+                    hosted_frames::EMISSION_BYTES
+                } else {
+                    0
+                },
+            )?,
+            if plan.uses_dynamic_resources() {
+                resources::control_bytes(&plan)
+            } else {
+                0
+            },
+        )?,
+    )?;
+    let inherited_emitter_transient = add(
+        inherited_emitter_transient,
+        if plan.uses_owned_vectors() {
+            owned_vector::control_bytes()
+        } else {
+            0
+        },
+    )?;
+    let emitter_transient = add(
+        add(
+            if debug { RECORD_DEBUG_CONTROL_BYTES } else { 0 },
+            if plan.has_file_seek() {
+                experimental::seek_emitter_control_bytes()
+            } else {
+                0
+            },
+        )?,
+        add(
+            add(
+                add(inherited_emitter_transient, R::CONTROL_BYTES)?,
+                if plan.uses_checked_copies() {
+                    COPY_TRANSFER_CONTROL_BYTES
+                } else {
+                    0
+                },
+            )?,
+            if plan.uses_vectors() {
+                vector::control_bytes()
+                    + if plan.uses_record_vectors() {
+                        vector::record_control_bytes()
+                    } else {
+                        0
+                    }
+            } else if plan.uses_typed_ranges() {
+                vector::range_control_bytes()
+            } else {
+                0
+            },
+        )?,
     )?;
     let emission_metadata = add(
         add(
@@ -494,9 +837,9 @@ fn native_module_policy_accounted_with_source_names(
                 accounting.metrics.message_header_bytes,
             )?,
         )?,
-        EMITTER_TRANSIENT_BYTES,
+        emitter_transient,
     )?;
-    accounting.metrics.emitter_transient_bound = EMITTER_TRANSIENT_BYTES;
+    accounting.metrics.emitter_transient_bound = emitter_transient;
     accounting.metrics.metadata_peak = accounting.metrics.metadata_peak.max(emission_metadata);
     limit(
         emission_metadata,
@@ -504,20 +847,24 @@ fn native_module_policy_accounted_with_source_names(
         "emission metadata bytes",
         root.span,
     )?;
-    let (transfer_cells, transfer_visits) = transfer_inventory(&plan)?;
+    let selected = R::build(&plan, id)?;
+    let (transfer_cells, transfer_visits) = transfer_inventory_selected(&plan, selected)?;
     accounting.metrics.transfer_cells = transfer_cells;
     accounting.metrics.transfer_inventory_visits = transfer_visits;
     let storage = NativeStoragePlan::checked(&plan, guarded).map_err(|e| mismatch(e.name))?;
     let mut count = Emission {
         policy,
+        debug,
+        ordinary_visits: selected.work(),
         ..Emission::count(limits.ir_bytes)
     };
-    emit(
+    emit_selected(
         &storage,
         id,
         &diagnostics,
         fuel.min(plan::MAX_FUEL),
         &mut count,
+        selected,
     );
     accounting.metrics.count_bytes = count.len;
     accounting.metrics.count_expansions = count.expansions;
@@ -547,14 +894,17 @@ fn native_module_policy_accounted_with_source_names(
     let mut output = Emission {
         text: Some(text),
         policy,
+        debug,
+        ordinary_visits: selected.work(),
         ..Emission::count(count.len)
     };
-    emit(
+    emit_selected(
         &storage,
         id,
         &diagnostics,
         fuel.min(plan::MAX_FUEL),
         &mut output,
+        selected,
     );
     accounting.metrics.render_bytes = output.len;
     accounting.metrics.render_expansions = output.expansions;
@@ -581,18 +931,21 @@ fn native_module_policy_accounted_with_source_names(
     Ok(output.text.expect("render pass"))
 }
 
-fn admit(plan: &ExecutionPlan<'_>, limits: Limits) -> Result<Vec<Bound>, Box<Diagnostic>> {
+fn admit<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    limits: Limits,
+) -> Result<Vec<Bound>, Box<Diagnostic>> {
     admit_accounted(plan, limits, &mut Accounting::default())
 }
-fn admit_accounted(
-    plan: &ExecutionPlan<'_>,
+fn admit_accounted<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     limits: Limits,
     accounting: &mut Accounting,
 ) -> Result<Vec<Bound>, Box<Diagnostic>> {
     admit_policy_accounted(plan, limits, NativeEntryPolicy::Result, accounting)
 }
-fn admit_policy_accounted(
-    plan: &ExecutionPlan<'_>,
+fn admit_policy_accounted<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     limits: Limits,
     policy: NativeEntryPolicy,
     accounting: &mut Accounting,
@@ -665,7 +1018,11 @@ fn admit_policy_accounted(
     limit(blocks, limits.blocks, "aggregate blocks", origin)?;
     // Independent compiler inventories replace reference-runtime X here.
     // Fixed count facts end before graph, diagnostic and emission phases.
-    admit_inventory_policy(plan, (limits.inventory_items, limits.owner_width))?;
+    admit_inventory_policy_with_execution(
+        plan,
+        (limits.inventory_items, limits.owner_width),
+        policy,
+    )?;
     let mut ready: Vec<_> = remaining
         .iter()
         .enumerate()
@@ -702,7 +1059,9 @@ fn admit_policy_accounted(
             cycle_scratch,
         )?;
         accounting.admission_peak(scratch)?;
-        let cyclic = local_cycle
+        let cyclic = policy.hosted()
+            || plan.uses_dynamic_resources()
+            || local_cycle
             || plan.witness().builtin_function() == Some(f.id)
             || plan.witness().builtin_output_function() == Some(f.id)
             || f.blocks.iter().any(|b| {
@@ -758,7 +1117,9 @@ fn admit_policy_accounted(
                 f.span,
             )?;
         }
-        limit(bound.depth, limits.depth, "call depth", f.span)?;
+        if !policy.hosted() {
+            limit(bound.depth, limits.depth, "call depth", f.span)?;
+        }
         limit(
             bound.scalar_slots,
             limits.scalar_slots,
@@ -773,27 +1134,43 @@ fn admit_policy_accounted(
             }
         }
     }
-    if visited != functions.len() {
+    if policy.hosted() {
+        // An unresolved call-cycle component is charged dynamically by its
+        // callers. All ordinary per-function/compiler inventories still apply.
+        for (i, pending) in remaining.iter().enumerate() {
+            if *pending != 0 {
+                let u = plan.function(functions[i].id).usage();
+                bounds[i] = Bound {
+                    cyclic: true,
+                    scalar_slots: u.scalar_slots,
+                    cells: u.expanded_cells,
+                    bytes: u.native_bytes,
+                    ..Bound::default()
+                };
+            }
+        }
+    } else if visited != functions.len() {
         let f = &functions[remaining
             .iter()
             .position(|&n| n != 0)
             .expect("cycle member")];
         return Err(reject("native preview does not support recursive call graphs, including unused functions and unchosen branches", Some(f.span)));
     }
-    let fuel_bytes = if policy == NativeEntryPolicy::Process || bounds.iter().any(|b| b.cyclic) {
-        8
-    } else {
-        0
-    };
+    let recursive_policy = policy.with_recursion(bounds.iter().any(|bound| bound.depth == 0));
+    let runtime_bytes = runtime_storage_bytes(
+        plan,
+        plan.uses_dynamic_resources() || policy.process() || bounds.iter().any(|b| b.cyclic),
+        recursive_policy,
+    )?;
     limit(
-        add(bytes, fuel_bytes)?,
+        add(bytes, runtime_bytes)?,
         limits.bytes,
         "aggregate storage bytes",
         origin,
     )?;
     for (f, bound) in functions.iter().zip(&bounds) {
         limit(
-            add(bound.bytes, fuel_bytes)?,
+            add(bound.bytes, runtime_bytes)?,
             limits.live_bytes,
             "live storage bytes",
             f.span,
@@ -801,6 +1178,66 @@ fn admit_policy_accounted(
     }
     Ok(bounds)
 }
+fn runtime_storage_bytes<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    guarded: bool,
+    policy: NativeEntryPolicy,
+) -> Result<usize, Box<Diagnostic>> {
+    let fuel_bytes = if guarded { 8 } else { 0 };
+    let runtime_bytes = add(
+        add(fuel_bytes, if plan.uses_floats() { 8192 } else { 0 })?,
+        add(
+            if plan.uses_dynamic_resources() { 64 } else { 0 },
+            if plan.has_binary_delivery() {
+                experimental::BINARY_DELIVERY_BYTES
+            } else {
+                0
+            } + if plan.has_file_delivery() {
+                experimental::FILE_DELIVERY_BYTES
+            } else {
+                0
+            } + if plan.has_file_seek() {
+                experimental::FILE_SEEK_BYTES
+            } else {
+                0
+            } + if plan.has_program_arguments() {
+                experimental::ARGUMENT_DELIVERY_BYTES
+            } else {
+                0
+            } + if plan.uses_vectors() {
+                vector::RUNTIME_BYTES
+                    + if plan.uses_record_vectors() {
+                        vector::RECORD_RUNTIME_BYTES
+                    } else {
+                        0
+                    }
+            } else {
+                0
+            } + if plan.uses_wide_scalars() {
+                experimental::WIDE_DELIVERY_BYTES
+            } else {
+                0
+            },
+        )?,
+    )?;
+    let runtime_bytes = add(
+        runtime_bytes,
+        if plan.uses_owned_vectors() {
+            owned_vector::RUNTIME_BYTES
+        } else {
+            0
+        },
+    )?;
+    add(
+        runtime_bytes,
+        if policy.recursive() {
+            hosted_frames::COUNTER_BYTES
+        } else {
+            0
+        },
+    )
+}
+
 fn successors(f: &RawOwnedFunction, kind: &OwnedTerminatorKind) -> impl Iterator<Item = BlockId> {
     let targets = match kind {
         OwnedTerminatorKind::MatchDispatch { match_id, arm } => {
@@ -868,11 +1305,13 @@ enum Expansion {
     Diagnostic = 2,
 }
 struct Emission {
+    debug: bool,
     len: usize,
     text: Option<String>,
     maximum: usize,
     exceeded: bool,
     policy: NativeEntryPolicy,
+    resources: bool,
     call_scratch_peak: usize,
     expansions: usize,
     expansion_kinds: [usize; 3],
@@ -908,6 +1347,8 @@ impl Emission {
             maximum,
             exceeded: false,
             policy: NativeEntryPolicy::Result,
+            resources: false,
+            debug: false,
             call_scratch_peak: 0,
             expansions: 0,
             expansion_kinds: [0; 3],
@@ -961,22 +1402,92 @@ impl Write for LimitedCount {
         Ok(())
     }
 }
+// The private codebook keeps diagnostic keys at their existing one-byte size.
+// Codes 0..16 retain the old ordering; extended codes are made only by the
+// checked integer constructors below, with no producer-supplied numeric code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum FailureKind {
-    Fuel,
-    Overflow,
-    DivisionByZero,
-    ByteRange,
-    Bounds,
-    EnumTag,
-    EnumPayload,
-    InputCapacity,
-    OutputCapacity,
-    ProcessStatus,
-}
+#[repr(transparent)]
+struct FailureKind(u8);
+const _: () = assert!(size_of::<FailureKind>() == 1);
+#[allow(non_upper_case_globals)]
 impl FailureKind {
+    const Fuel: Self = Self(0);
+    const Overflow: Self = Self(1);
+    const DivisionByZero: Self = Self(2);
+    const ByteRange: Self = Self(3);
+    const Bounds: Self = Self(4);
+    const EnumTag: Self = Self(5);
+    const EnumPayload: Self = Self(6);
+    const InputCapacity: Self = Self(7);
+    const OutputCapacity: Self = Self(8);
+    const ProcessStatus: Self = Self(9);
+    const ResourceDescriptor: Self = Self(10);
+    const AllocationIdentity: Self = Self(11);
+    const WideOverflow: Self = Self(12);
+    const WideDivisionByZero: Self = Self(13);
+    const I64ToI32Range: Self = Self(14);
+    const I64ToU8Range: Self = Self(15);
+    const BitShift: Self = Self(16);
+    const CharacterRange: Self = Self(17);
+    const Frames: Self = Self(18);
+    const Slots: Self = Self(19);
+    const NativeFrameBytes: Self = Self(20);
+    fn integer_code(ty: hir::Ty) -> u8 {
+        match ty {
+            hir::Ty::I8 => 0,
+            hir::Ty::U8 => 1,
+            hir::Ty::I16 => 2,
+            hir::Ty::I32 => 3,
+            hir::Ty::I64 => 4,
+            hir::Ty::U16 => 5,
+            hir::Ty::U32 => 6,
+            hir::Ty::U64 => 7,
+            hir::Ty::Isize => 8,
+            hir::Ty::Usize => 9,
+            hir::Ty::I128 => 10,
+            hir::Ty::U128 => 11,
+            hir::Ty::Char | hir::Ty::F32 | hir::Ty::F64 | hir::Ty::Bool | hir::Ty::Unit => {
+                unreachable!("checked integer diagnostic")
+            }
+        }
+    }
+    fn integer_type(code: u8) -> hir::Ty {
+        match code {
+            0 => hir::Ty::I8,
+            1 => hir::Ty::U8,
+            2 => hir::Ty::I16,
+            3 => hir::Ty::I32,
+            4 => hir::Ty::I64,
+            5 => hir::Ty::U16,
+            6 => hir::Ty::U32,
+            7 => hir::Ty::U64,
+            8 => hir::Ty::Isize,
+            9 => hir::Ty::Usize,
+            10 => hir::Ty::I128,
+            11 => hir::Ty::U128,
+            _ => unreachable!("private integer diagnostic code"),
+        }
+    }
+    fn integer_overflow(ty: hir::Ty) -> Self {
+        Self(32 + Self::integer_code(ty))
+    }
+    fn integer_division_by_zero(ty: hir::Ty) -> Self {
+        Self(48 + Self::integer_code(ty))
+    }
+    fn integer_range(input: hir::Ty, target: hir::Ty) -> Self {
+        let input = Self::integer_code(input);
+        let target = Self::integer_code(target);
+        Self(match (input < 10, target < 10) {
+            (true, true) => 64 + input * 10 + target,
+            (false, true) => 164 + (input - 10) * 10 + target,
+            (true, false) => 184 + input * 2 + target - 10,
+            (false, false) => 204 + (input - 10) * 2 + target - 10,
+        })
+    }
     fn transient_bytes(self) -> usize {
         match self {
+            Self::ResourceDescriptor => size_of::<Diagnostic>() + "internal compiler error: owned execution invariant resource descriptor".len(),
+            Self::AllocationIdentity => size_of::<Diagnostic>() + "internal compiler error: owned execution invariant allocation identity exhausted".len(),
             Self::InputCapacity => size_of::<Diagnostic>() + INPUT_CAPACITY_INVARIANT.len(),
             Self::OutputCapacity => size_of::<Diagnostic>() + OUTPUT_CAPACITY_INVARIANT.len(),
             _ => DIAGNOSTIC_TRANSIENT_BYTES,
@@ -984,10 +1495,32 @@ impl FailureKind {
     }
     fn diagnostic(self, span: Span, sources: &SourceMap) -> Box<Diagnostic> {
         match self {
+            Self::AllocationIdentity | Self::ResourceDescriptor => Diagnostic::new(
+                "E0500",
+                "oir-owned-run",
+                if self == Self::AllocationIdentity {
+                    "internal compiler error: owned execution invariant allocation identity exhausted"
+                } else {
+                    "internal compiler error: owned execution invariant resource descriptor"
+                },
+                Some(span).filter(|span| sources.is_valid_span(*span)),
+            ),
             Self::Fuel => RunFailure::Fuel(span).diagnostic(sources),
+            Self::Frames => RunFailure::Frames(span).diagnostic(sources),
+            Self::Slots => RunFailure::Slots(span).diagnostic(sources),
+            Self::NativeFrameBytes => execute::OwnedRunFailure::Resource(
+                plan::AdmissionFailure::new("live native frame bytes", Some(span)),
+            )
+            .diagnostic(sources),
             Self::Overflow => RunFailure::Overflow(span).diagnostic(sources),
             Self::DivisionByZero => RunFailure::DivisionByZero(span).diagnostic(sources),
             Self::ByteRange => RunFailure::ByteRange(span).diagnostic(sources),
+            Self::BitShift => RunFailure::BitShift(span).diagnostic(sources),
+            Self::CharacterRange => RunFailure::CharacterRange(span).diagnostic(sources),
+            Self::WideOverflow => RunFailure::WideOverflow(span).diagnostic(sources),
+            Self::WideDivisionByZero => RunFailure::WideDivisionByZero(span).diagnostic(sources),
+            Self::I64ToI32Range => RunFailure::I64ToI32Range(span).diagnostic(sources),
+            Self::I64ToU8Range => RunFailure::I64ToU8Range(span).diagnostic(sources),
             Self::Bounds => execute::OwnedRunFailure::Bounds(span).diagnostic(sources),
             Self::ProcessStatus => Diagnostic::new(
                 "E0600",
@@ -1015,6 +1548,38 @@ impl FailureKind {
                     Some(span).filter(|span| sources.is_valid_span(*span)),
                 )
             }
+            _ => match self.0 {
+                32..=43 => RunFailure::IntegerOverflow {
+                    ty: Self::integer_type(self.0 - 32),
+                    span,
+                }
+                .diagnostic(sources),
+                48..=59 => RunFailure::IntegerDivisionByZero {
+                    ty: Self::integer_type(self.0 - 48),
+                    span,
+                }
+                .diagnostic(sources),
+                64..=163 => RunFailure::IntegerRange {
+                    input: Self::integer_type((self.0 - 64) / 10),
+                    target: Self::integer_type((self.0 - 64) % 10),
+                    span,
+                }
+                .diagnostic(sources),
+                164..=207 => {
+                    let (input, target) = match self.0 {
+                        164..=183 => ((self.0 - 164) / 10 + 10, (self.0 - 164) % 10),
+                        184..=203 => ((self.0 - 184) / 2, (self.0 - 184) % 2 + 10),
+                        _ => ((self.0 - 204) / 2 + 10, (self.0 - 204) % 2 + 10),
+                    };
+                    RunFailure::IntegerRange {
+                        input: Self::integer_type(input),
+                        target: Self::integer_type(target),
+                        span,
+                    }
+                    .diagnostic(sources)
+                }
+                _ => unreachable!("private native diagnostic code"),
+            },
         }
     }
 }
@@ -1080,14 +1645,14 @@ struct Diagnostics {
     messages: Vec<String>,
     ids: Vec<DiagnosticLookup>,
 }
-fn diagnostic_occurrences(
-    plan: &ExecutionPlan<'_>,
+fn diagnostic_occurrences<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     entry: hir::DefId,
     guarded: bool,
     policy: NativeEntryPolicy,
     mut visit: impl FnMut(FailureKind, Span) -> Result<(), Box<Diagnostic>>,
 ) -> Result<(), Box<Diagnostic>> {
-    if policy == NativeEntryPolicy::Process {
+    if policy.process() {
         visit(
             FailureKind::ProcessStatus,
             plan.witness().functions()[entry.0].span,
@@ -1096,7 +1661,25 @@ fn diagnostic_occurrences(
     if guarded {
         visit(FailureKind::Fuel, plan.witness().functions()[entry.0].span)?;
     }
+    if policy.recursive() {
+        let span = plan.witness().functions()[entry.0].span;
+        for kind in [
+            FailureKind::Frames,
+            FailureKind::Slots,
+            FailureKind::NativeFrameBytes,
+        ] {
+            visit(kind, span)?;
+        }
+    }
     for f in plan.witness().functions() {
+        if plan.uses_owned_vectors() {
+            visit(FailureKind::Fuel, f.span)?;
+        }
+        if plan.uses_dynamic_resources() || plan.uses_enum_record_nesting() {
+            visit(FailureKind::ResourceDescriptor, f.span)?;
+            visit(FailureKind::EnumTag, f.span)?;
+            visit(FailureKind::EnumPayload, f.span)?;
+        }
         for parameter in &f.parameters {
             if let ParameterBinding::Owned(owner) = parameter {
                 if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_)) {
@@ -1112,10 +1695,150 @@ fn diagnostic_occurrences(
                 }
             }
             for statement in &b.statements {
+                if matches!(statement.kind, OwnedInstruction::DestructureRecord { .. }) {
+                    let span = plan::instruction_span(statement);
+                    visit(FailureKind::ResourceDescriptor, span)?;
+                    visit(FailureKind::EnumTag, span)?;
+                    visit(FailureKind::EnumPayload, span)?;
+                }
+                if plan.uses_dynamic_resources() || plan.uses_enum_record_nesting() {
+                    let span = plan::instruction_span(statement);
+                    visit(FailureKind::ResourceDescriptor, span)?;
+                    visit(FailureKind::EnumTag, span)?;
+                    visit(FailureKind::EnumPayload, span)?;
+                    if let OwnedInstruction::ConsumeOwnedVariant { match_id, .. } = statement.kind {
+                        visit(FailureKind::ResourceDescriptor, f.matches[match_id.0].span)?;
+                    }
+                }
                 if guarded {
                     visit(FailureKind::Fuel, plan::instruction_span(statement))?;
                 }
                 match &statement.kind {
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value:
+                            Rvalue::CharacterConvert {
+                                op: hir::ConversionOp::ToCharChecked,
+                                name_span,
+                                ..
+                            },
+                        ..
+                    })) => visit(FailureKind::CharacterRange, *name_span)?,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value:
+                            Rvalue::Bitwise {
+                                op, operator_span, ..
+                            },
+                        ..
+                    })) if op.shift() => visit(FailureKind::BitShift, *operator_span)?,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        destination,
+                        value:
+                            Rvalue::CheckedInteger {
+                                op, operator_span, ..
+                            },
+                        ..
+                    })) => {
+                        let kind = f.locals[destination.0].ty;
+                        if !matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder)
+                            || kind.signed_integer()
+                        {
+                            visit(FailureKind::integer_overflow(kind), *operator_span)?;
+                        }
+                        if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) {
+                            visit(FailureKind::integer_division_by_zero(kind), *operator_span)?;
+                        }
+                    }
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        destination,
+                        value: Rvalue::CheckedNegateInteger { operator_span, .. },
+                        ..
+                    })) => visit(
+                        FailureKind::integer_overflow(f.locals[destination.0].ty),
+                        *operator_span,
+                    )?,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value:
+                            Rvalue::CheckedIntegerCast {
+                                operand,
+                                target,
+                                name_span,
+                                ..
+                            },
+                        ..
+                    })) => visit(
+                        FailureKind::integer_range(f.locals[operand.local.0].ty, *target),
+                        *name_span,
+                    )?,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value:
+                            Rvalue::CheckedI64 {
+                                op, operator_span, ..
+                            },
+                        ..
+                    })) => {
+                        visit(FailureKind::WideOverflow, *operator_span)?;
+                        if matches!(op, hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder) {
+                            visit(FailureKind::WideDivisionByZero, *operator_span)?;
+                        }
+                    }
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::CheckedNegateI64 { operator_span, .. },
+                        ..
+                    })) => visit(FailureKind::WideOverflow, *operator_span)?,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::CheckedI64ToI32 { name_span, .. },
+                        ..
+                    })) => visit(FailureKind::I64ToI32Range, *name_span)?,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::CheckedI64ToU8 { name_span, .. },
+                        ..
+                    })) => visit(FailureKind::I64ToU8Range, *name_span)?,
+                    OwnedInstruction::Vector { .. } | OwnedInstruction::OwnedVector { .. } => {
+                        // The helper emits a fuel refusal label in hosted mode
+                        // too; its fresh budget does not remove that IR block.
+                        if !guarded {
+                            visit(FailureKind::Fuel, plan::instruction_span(statement))?;
+                        }
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?;
+                        visit(
+                            FailureKind::AllocationIdentity,
+                            plan::instruction_span(statement),
+                        )?;
+                    }
+                    OwnedInstruction::Experimental { .. } => {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?;
+                        visit(
+                            FailureKind::AllocationIdentity,
+                            plan::instruction_span(statement),
+                        )?;
+                    }
+                    OwnedInstruction::PrepareBorrowRange { .. } => {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?
+                    }
+                    OwnedInstruction::PrepareBorrow { loan, .. }
+                    | OwnedInstruction::AcquireLocalBorrow(loan)
+                        if experimental::resource_borrow(plan, f, *loan) =>
+                    {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?
+                    }
+                    OwnedInstruction::ArrayLength { base, .. }
+                        if matches!(
+                            indexed_base(f, *base),
+                            BorrowedTy::Exact(
+                                AggregateTy::Vector(_) | AggregateTy::RecordVector(_)
+                            )
+                        ) =>
+                    {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?;
+                    }
+                    OwnedInstruction::ProjectionLength { base, path, .. }
+                        if matches!(
+                            projection(plan, f, *base, path).0,
+                            ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
+                        ) =>
+                    {
+                        visit(FailureKind::Bounds, plan::instruction_span(statement))?;
+                    }
                     OwnedInstruction::ReadStdin { .. } => visit(
                         FailureKind::InputCapacity,
                         plan::instruction_span(statement),
@@ -1134,6 +1857,9 @@ fn diagnostic_occurrences(
                         let span = plan::instruction_span(statement);
                         visit(FailureKind::EnumTag, span)?;
                         visit(FailureKind::EnumPayload, span)?;
+                    }
+                    OwnedInstruction::CopyInitialize { .. } => {
+                        visit(FailureKind::EnumPayload, plan::instruction_span(statement))?;
                     }
                     OwnedInstruction::MoveInitialize { source, .. }
                     | OwnedInstruction::Replace { source, .. }
@@ -1165,7 +1891,9 @@ fn diagnostic_occurrences(
                         value: Rvalue::CheckedNegateI32 { operator_span, .. },
                         ..
                     })) => visit(FailureKind::Overflow, *operator_span)?,
-                    OwnedInstruction::ReadIndex { .. }
+                    OwnedInstruction::CopyIndexInitialize { .. }
+                    | OwnedInstruction::CopyIndexWrite { .. }
+                    | OwnedInstruction::ReadIndex { .. }
                     | OwnedInstruction::WriteIndex { .. }
                     | OwnedInstruction::ReadProjection { index: Some(_), .. }
                     | OwnedInstruction::WriteProjection { index: Some(_), .. } => {
@@ -1181,6 +1909,20 @@ fn diagnostic_occurrences(
                 )?;
             }
             let term = b.terminator.as_ref().expect("verified terminator");
+            if policy.recursive() && matches!(term.kind, OwnedTerminatorKind::Invoke { .. }) {
+                for kind in [
+                    FailureKind::Frames,
+                    FailureKind::Slots,
+                    FailureKind::NativeFrameBytes,
+                ] {
+                    visit(kind, term.span)?;
+                }
+            }
+            if plan.uses_dynamic_resources() || plan.uses_enum_record_nesting() {
+                visit(FailureKind::ResourceDescriptor, term.span)?;
+                visit(FailureKind::EnumTag, term.span)?;
+                visit(FailureKind::EnumPayload, term.span)?;
+            }
             match term.kind {
                 OwnedTerminatorKind::MatchDispatch { match_id, .. } => {
                     visit(FailureKind::EnumTag, f.matches[match_id.0].span)?
@@ -1198,8 +1940,8 @@ fn diagnostic_occurrences(
     Ok(())
 }
 impl Diagnostics {
-    fn new(
-        plan: &ExecutionPlan<'_>,
+    fn new<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
         entry: hir::DefId,
         sources: &SourceMap,
         guarded: bool,
@@ -1215,8 +1957,8 @@ impl Diagnostics {
             &mut Accounting::default(),
         )
     }
-    fn new_accounted(
-        plan: &ExecutionPlan<'_>,
+    fn new_accounted<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
         entry: hir::DefId,
         sources: &SourceMap,
         guarded: bool,
@@ -1237,8 +1979,8 @@ impl Diagnostics {
     }
     // Entry policy is explicit alongside the existing accounted inputs.
     #[allow(clippy::too_many_arguments)]
-    fn new_policy_accounted(
-        plan: &ExecutionPlan<'_>,
+    fn new_policy_accounted<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
         entry: hir::DefId,
         sources: &SourceMap,
         guarded: bool,
@@ -1261,8 +2003,8 @@ impl Diagnostics {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new_policy_accounted_with_source_names(
-        plan: &ExecutionPlan<'_>,
+    fn new_policy_accounted_with_source_names<W: PlanWitness>(
+        plan: &ExecutionPlan<'_, W>,
         entry: hir::DefId,
         sources: &SourceMap,
         guarded: bool,
@@ -1497,10 +2239,21 @@ impl Diagnostics {
     }
 }
 fn emit_failure(out: &mut Emission, diagnostics: &Diagnostics, kind: FailureKind, span: Span) {
+    if out.resources {
+        out.write_str("  call void @__oxid_bytebuf_cleanup()\n")
+            .unwrap();
+    }
     let (id, len) = diagnostics.get(kind, span);
     let helper = match out.policy {
-        NativeEntryPolicy::Result => "__oxid_overflow",
-        NativeEntryPolicy::Process => "__oxid_process_failure",
+        NativeEntryPolicy::Result
+        | NativeEntryPolicy::HostedResult
+        | NativeEntryPolicy::TypedResult
+        | NativeEntryPolicy::HostedTypedResult
+        | NativeEntryPolicy::RecursiveHostedResult
+        | NativeEntryPolicy::RecursiveHostedTypedResult => "__oxid_overflow",
+        NativeEntryPolicy::Process
+        | NativeEntryPolicy::HostedProcess
+        | NativeEntryPolicy::RecursiveHostedProcess => "__oxid_process_failure",
     };
     writeln!(
         out,
@@ -1518,15 +2271,27 @@ fn emit_guard_value(
     cost: impl std::fmt::Display,
     span: Span,
 ) {
+    if out.policy.hosted() {
+        // Keep the continuation identity used by phi/call predecessor maps.
+        // Hosted execution removes the counter and failure edge, not the
+        // verified control-flow relationship between adjacent operations.
+        writeln!(out, "  br label %{name}_ok\n{name}_ok:").unwrap();
+        return;
+    }
     writeln!(out, "  %{name}_remaining = load i64, ptr %fuel\n  %{name}_exhausted = icmp ult i64 %{name}_remaining, {cost}\n  br i1 %{name}_exhausted, label %{name}_error, label %{name}_ok\n{name}_error:").unwrap();
     emit_failure(out, diagnostics, FailureKind::Fuel, span);
     writeln!(out, "{name}_ok:\n  %{name}_next = sub i64 %{name}_remaining, {cost}\n  store i64 %{name}_next, ptr %fuel").unwrap();
 }
 fn ty(t: hir::Ty) -> &'static str {
     match t {
+        hir::Ty::F32 => "float",
+        hir::Ty::F64 => "double",
         hir::Ty::Bool => "i1",
-        hir::Ty::I32 => "i32",
-        hir::Ty::U8 | hir::Ty::Unit => "i8",
+        hir::Ty::Char | hir::Ty::I32 | hir::Ty::U32 => "i32",
+        hir::Ty::I16 | hir::Ty::U16 => "i16",
+        hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
+        hir::Ty::I128 | hir::Ty::U128 => "i128",
+        hir::Ty::I8 | hir::Ty::U8 | hir::Ty::Unit => "i8",
     }
 }
 fn result_ty(t: ValueTy) -> &'static str {
@@ -1536,10 +2301,34 @@ fn result_ty(t: ValueTy) -> &'static str {
     }
 }
 fn load_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty) -> String {
+    if t.floating() {
+        writeln!(out, "  %{name} = load {}, ptr {pointer}, align 8", ty(t)).unwrap();
+        return format!("%{name}");
+    }
+    if t.quad_integer() {
+        writeln!(out, "  %{name} = load i128, ptr {pointer}, align 16").unwrap();
+        return format!("%{name}");
+    }
+    if t.integer_bits() == Some(64) {
+        writeln!(out, "  %{name} = load i64, ptr {pointer}, align 8").unwrap();
+        return format!("%{name}");
+    }
     writeln!(out, "  %{name}_wide = load i64, ptr {pointer}, align 8\n  %{name} = trunc i64 %{name}_wide to {}", ty(t)).unwrap();
     format!("%{name}")
 }
 fn store_slot(out: &mut Emission, name: &str, pointer: &str, t: hir::Ty, value: &str) {
+    if t.floating() {
+        writeln!(out, "  store {} {value}, ptr {pointer}, align 8", ty(t)).unwrap();
+        return;
+    }
+    if t.quad_integer() {
+        writeln!(out, "  store i128 {value}, ptr {pointer}, align 16").unwrap();
+        return;
+    }
+    if t.integer_bits() == Some(64) {
+        writeln!(out, "  store i64 {value}, ptr {pointer}, align 8").unwrap();
+        return;
+    }
     writeln!(
         out,
         "  %{name}_wide = zext {} {value} to i64\n  store i64 %{name}_wide, ptr {pointer}, align 8",
@@ -1555,8 +2344,17 @@ fn load_operand(out: &mut Emission, f: &RawOwnedFunction, name: &str, value: Ope
         f.locals[value.local.0].ty,
     )
 }
-fn base_pointer(out: &mut Emission, name: &str, base: AccessBase) -> String {
+fn base_pointer(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: AccessBase) -> String {
     match base {
+        AccessBase::Loan(loan) => {
+            writeln!(
+                out,
+                "  %{name}_base = load ptr, ptr %r{}, align 8",
+                f.references.len() + loan.0
+            )
+            .unwrap();
+            format!("%{name}_base")
+        }
         AccessBase::Owner(o) => format!("%o{}", o.0),
         AccessBase::Parameter(p) => {
             writeln!(out, "  %{name}_base = load ptr, ptr %r{}, align 8", p.0).unwrap();
@@ -1575,51 +2373,80 @@ fn field_pointer(out: &mut Emission, name: &str, base: &str, offset: usize) -> S
 fn slice_reference_count(f: &RawOwnedFunction) -> usize {
     f.references
         .iter()
-        .filter(|reference| matches!(reference.referent(), BorrowedTy::ScalarSlice(_)))
+        .filter(|reference| {
+            matches!(
+                reference.referent(),
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+            )
+        })
         .count()
 }
 fn indexed_base(f: &RawOwnedFunction, base: AccessBase) -> BorrowedTy {
     match base {
         AccessBase::Owner(owner) => BorrowedTy::Exact(f.owners[owner.0].aggregate()),
         AccessBase::Parameter(reference) => f.references[reference.0].referent(),
+        AccessBase::Loan(loan) => f.loans[loan.0].referent(),
     }
 }
 fn index_length(out: &mut Emission, f: &RawOwnedFunction, name: &str, base: AccessBase) -> String {
     match indexed_base(f, base) {
+        BorrowedTy::Exact(AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)) => {
+            out.exceeded = true;
+            String::new()
+        }
         BorrowedTy::Exact(AggregateTy::FixedArray(array)) => array.length().to_string(),
-        BorrowedTy::ScalarSlice(_) => {
-            let AccessBase::Parameter(reference) = base else {
-                unreachable!("slices are borrowed parameter views")
-            };
-            writeln!(
-                out,
-                "  %{name}_length = load i32, ptr %rl{}, align 4",
-                reference.0
-            )
-            .unwrap();
+        BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => {
+            match base {
+                AccessBase::Parameter(reference) => writeln!(
+                    out,
+                    "  %{name}_length = load i32, ptr %rl{}, align 4",
+                    reference.0
+                )
+                .unwrap(),
+                AccessBase::Loan(loan) => writeln!(
+                    out,
+                    "  %{name}_length = load i32, ptr %ll{}, align 4",
+                    loan.0
+                )
+                .unwrap(),
+                AccessBase::Owner(_) => unreachable!("slices are borrowed views"),
+            }
             format!("%{name}_length")
         }
-        BorrowedTy::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_)) => {
+        BorrowedTy::Exact(
+            AggregateTy::Record(_)
+            | AggregateTy::Enum(_)
+            | AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_),
+        ) => {
             unreachable!("verified indexed base")
         }
     }
 }
 fn element_stride(element: hir::Ty) -> usize {
     match element {
-        hir::Ty::I32 => 4,
-        hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => 1,
+        hir::Ty::I16 | hir::Ty::U16 => 2,
+        hir::Ty::Char | hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => 4,
+        hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => 8,
+        hir::Ty::I128 | hir::Ty::U128 => 16,
+        hir::Ty::I8 | hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => 1,
     }
 }
 fn sentinel_ty(array: FixedArrayTy) -> &'static str {
     match array.element() {
-        hir::Ty::I32 => "i32",
-        hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => "i8",
+        hir::Ty::I16 | hir::Ty::U16 => "i16",
+        hir::Ty::Char | hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => "i32",
+        hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => "i64",
+        hir::Ty::I128 | hir::Ty::U128 => "i128",
+        hir::Ty::I8 | hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => "i8",
     }
 }
 /// Resolve from the verified nominal root every time; raw offsets are never
 /// authority, and this bounded path walk allocates no projection metadata.
-fn projection(
-    plan: &ExecutionPlan<'_>,
+fn projection<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     f: &RawOwnedFunction,
     base: AccessBase,
     path: &[FieldId],
@@ -1633,8 +2460,8 @@ fn projection(
         .expect("verified projection")
 }
 
-fn index_pointer(
-    plan: &ExecutionPlan<'_>,
+fn index_pointer<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     id: hir::DefId,
     name: &str,
     statement: &OwnedStatement,
@@ -1642,6 +2469,11 @@ fn index_pointer(
     out: &mut Emission,
 ) -> (hir::Ty, String) {
     let f = &plan.witness().functions()[id.0];
+    if plan.uses_vectors() {
+        if let Some(indexed) = vector::index_pointer(plan, f, name, statement, diagnostics, out) {
+            return indexed;
+        }
+    }
     let (base, index, element, length, projection_offset) = match &statement.kind {
         OwnedInstruction::ReadIndex { base, index, .. }
         | OwnedInstruction::WriteIndex { base, index, .. } => (
@@ -1680,7 +2512,7 @@ fn index_pointer(
         _ => unreachable!("indexed operation"),
     };
     let index = load_operand(out, f, &format!("{name}_index"), index);
-    let suffix = continuation(f, &statement.kind)
+    let suffix = continuation(plan, f, &statement.kind)
         .suffix()
         .expect("indexed continuation");
     writeln!(out, "  %{name}_nonnegative = icmp sge i32 {index}, 0\n  %{name}_below = icmp slt i32 {index}, {}\n  %{name}_in_range = and i1 %{name}_nonnegative, %{name}_below\n  br i1 %{name}_in_range, label %{name}_{suffix}, label %{name}_bounds_error\n{name}_bounds_error:", length).unwrap();
@@ -1692,7 +2524,7 @@ fn index_pointer(
     );
     writeln!(out, "{name}_{suffix}:\n  %{name}_index64 = zext i32 {index} to i64\n  %{name}_offset = mul i64 %{name}_index64, {}", element_stride(element)).unwrap();
     // Even resolving a reference base happens only on the successful edge.
-    let base = base_pointer(out, name, base);
+    let base = base_pointer(out, f, name, base);
     let base = match projection_offset {
         Some(offset) => field_pointer(out, &format!("{name}_projection"), &base, offset),
         None => base,
@@ -1707,11 +2539,24 @@ fn index_pointer(
 
 /// Counts raw sites and active enum branch trees without expanding static
 /// record or array leaves during inventory.
-fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Diagnostic>> {
-    let mut cells = 0;
+#[cfg(test)]
+fn transfer_inventory<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+) -> Result<(usize, usize), Box<Diagnostic>> {
+    transfer_inventory_selected(plan, reachability::Full)
+}
+
+fn transfer_inventory_selected<W: PlanWitness, R: EmittedFunctions>(
+    plan: &ExecutionPlan<'_, W>,
+    selected: R,
+) -> Result<(usize, usize), Box<Diagnostic>> {
     let mut visits = 0;
+    let mut cells = composition::helper_inventory(plan, &mut visits)?;
     for f in plan.witness().functions() {
         visits = add(visits, 1)?;
+        if !selected.contains(f.id) {
+            continue;
+        }
         for parameter in &f.parameters {
             visits = add(visits, 1)?;
             if let ParameterBinding::Owned(owner) = parameter {
@@ -1737,6 +2582,31 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                         // Complete/InvalidInput tags and IoError tag/payload.
                         // Staging and one-byte attempts remain fixed loop text.
                         cells = add(cells, 4)?;
+                        None
+                    }
+                    OwnedInstruction::DestructureRecord { ref fields, .. } => {
+                        cells = add(cells, 1)?;
+                        for (_, destination) in fields {
+                            visits = add(visits, 1)?;
+                            let aggregate = f.owners[destination.0].aggregate();
+                            cells = add(
+                                cells,
+                                active_transfer_inventory(plan, aggregate, false, &mut visits)?,
+                            )?;
+                            cells = add(
+                                cells,
+                                // The new-domain commit moves only initialized
+                                // leaves after the complete preflight above.
+                                // One leaf pass has the validation-only count;
+                                // it must not count a second admission pass.
+                                active_transfer_inventory(
+                                    plan,
+                                    aggregate,
+                                    !plan.uses_owned_vectors(),
+                                    &mut visits,
+                                )?,
+                            )?;
+                        }
                         None
                     }
                     OwnedInstruction::ConstructEnum { payload, .. } => {
@@ -1771,7 +2641,8 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                         None
                     }
                     OwnedInstruction::Discard(owner)
-                        if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_)) =>
+                        if matches!(f.owners[owner.0].aggregate(), AggregateTy::Enum(_))
+                            || composition::needed(plan, f.owners[owner.0].aggregate()) =>
                     {
                         cells = add(
                             cells,
@@ -1784,9 +2655,61 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
                         )?;
                         None
                     }
+                    OwnedInstruction::ConstructComposite {
+                        destination,
+                        ref fields,
+                    } if composition::needed(plan, f.owners[destination.0].aggregate()) => {
+                        cells = add(cells, usize::from(fields.is_empty()))?;
+                        for (_, value) in fields {
+                            visits = add(visits, 1)?;
+                            cells = add(
+                                cells,
+                                match value {
+                                    FieldInitializer::Scalar(_) => 1,
+                                    FieldInitializer::Owned(source) => {
+                                        composition::construction_cells(
+                                            plan,
+                                            f.owners[source.0].aggregate(),
+                                        )
+                                    }
+                                },
+                            )?;
+                        }
+                        None
+                    }
                     OwnedInstruction::Construct { destination, .. }
                     | OwnedInstruction::ConstructComposite { destination, .. }
-                    | OwnedInstruction::ConstructArray { destination, .. } => Some(destination),
+                    | OwnedInstruction::ConstructArray { destination, .. } => {
+                        // Construction writes each logical leaf once. Resource
+                        // sources have a separate complete preflight below;
+                        // this is not a whole-owner checked move.
+                        cells = add(cells, plan.owner_width(f.id, destination))?;
+                        None
+                    }
+                    OwnedInstruction::CopyInitialize { source, .. } => {
+                        // Complete validation and then initialized-leaf copy.
+                        cells = add(cells, mul(2, plan.owner_width(f.id, source))?)?;
+                        None
+                    }
+                    OwnedInstruction::Replace {
+                        destination,
+                        source,
+                    } if plan.uses_owned_vectors()
+                        && resources::contains(plan, f.owners[destination.0].aggregate()) =>
+                    {
+                        // Incoming validation and old-value release are counted
+                        // below. MoveAdmitted commits one initialized-leaf pass.
+                        cells = add(
+                            cells,
+                            active_transfer_inventory(
+                                plan,
+                                f.owners[source.0].aggregate(),
+                                false,
+                                &mut visits,
+                            )?,
+                        )?;
+                        None
+                    }
                     OwnedInstruction::MoveInitialize { source, .. }
                     | OwnedInstruction::Replace { source, .. }
                     | OwnedInstruction::PrepareOwned { source, .. } => Some(source),
@@ -1803,10 +2726,117 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
             if let OwnedTerminatorKind::ReturnOwned(owner) =
                 block.terminator.as_ref().expect("verified terminator").kind
             {
-                cells = add(
-                    cells,
-                    transfer_expansions_counted(plan, f.id, owner, &mut visits)?,
-                )?;
+                // The sealed binary adapter already commits the status to
+                // the caller; its immediate return emits no transfer tree.
+                if plan.binary_delivery_cost(f.id).is_none()
+                    && plan.file_delivery_cost(f.id).is_none()
+                    && !vector::delivery(plan, f.id)
+                    && !owned_vector::delivery(plan, f.id)
+                {
+                    cells = add(
+                        cells,
+                        transfer_expansions_counted(plan, f.id, owner, &mut visits)?,
+                    )?;
+                }
+            }
+        }
+    }
+    // Resource preflight and release add no user fuel. All of their generated
+    // tag/leaf checks still belong to the native text expansion inventory.
+    for function in plan.witness().functions() {
+        if !selected.contains(function.id) {
+            continue;
+        }
+        for block in &function.blocks {
+            for statement in &block.statements {
+                match &statement.kind {
+                    OwnedInstruction::Replace { source, .. } => {
+                        let aggregate = function.owners[source.0].aggregate();
+                        if resources::contains(plan, aggregate) {
+                            cells = add(
+                                cells,
+                                active_transfer_inventory(plan, aggregate, false, &mut visits)?,
+                            )?;
+                        }
+                    }
+                    OwnedInstruction::ConstructComposite {
+                        destination,
+                        fields,
+                    } if resources::contains(plan, function.owners[destination.0].aggregate())
+                        || composition::needed(
+                            plan,
+                            function.owners[destination.0].aggregate(),
+                        ) =>
+                    {
+                        for (_, value) in fields {
+                            if let FieldInitializer::Owned(source) = value {
+                                let aggregate = function.owners[source.0].aggregate();
+                                if composition::needed(
+                                    plan,
+                                    function.owners[destination.0].aggregate(),
+                                ) && matches!(
+                                    aggregate,
+                                    AggregateTy::Record(_) | AggregateTy::Enum(_)
+                                ) {
+                                    visits = add(visits, 1)?;
+                                    cells = add(cells, 1)?;
+                                    continue;
+                                }
+                                cells = add(
+                                    cells,
+                                    active_transfer_inventory(
+                                        plan,
+                                        function.owners[source.0].aggregate(),
+                                        false,
+                                        &mut visits,
+                                    )?,
+                                )?;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                let owner = match statement.kind {
+                    OwnedInstruction::StorageEnd(owner) => Some(owner),
+                    OwnedInstruction::Replace { destination, .. } => Some(destination),
+                    OwnedInstruction::Discard(owner)
+                        if !matches!(
+                            function.owners[owner.0].aggregate(),
+                            AggregateTy::Enum(_)
+                        ) && !composition::needed(
+                            plan,
+                            function.owners[owner.0].aggregate(),
+                        ) =>
+                    {
+                        Some(owner)
+                    }
+                    _ => None,
+                };
+                if let Some(owner) = owner {
+                    let aggregate = function.owners[owner.0].aggregate();
+                    if resources::contains(plan, aggregate) {
+                        cells = add(
+                            cells,
+                            active_transfer_inventory(plan, aggregate, false, &mut visits)?,
+                        )?;
+                    }
+                }
+            }
+            if matches!(
+                block.terminator.as_ref().expect("verified terminator").kind,
+                OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_)
+            ) && plan.file_delivery_cost(function.id).is_none()
+                && !vector::delivery(plan, function.id)
+                && !owned_vector::delivery(plan, function.id)
+            {
+                for owner in &function.owners {
+                    if resources::contains(plan, owner.aggregate()) {
+                        cells = add(
+                            cells,
+                            active_transfer_inventory(plan, owner.aggregate(), false, &mut visits)?,
+                        )?;
+                    }
+                }
             }
         }
     }
@@ -1814,21 +2844,24 @@ fn transfer_inventory(plan: &ExecutionPlan<'_>) -> Result<(usize, usize), Box<Di
 }
 /// Tag-directed enum validation/copy work grows with the number of cases, not
 /// logical owner width. The switch rows and bodies are separately expanded.
-fn transfer_expansions(
-    plan: &ExecutionPlan<'_>,
+fn transfer_expansions<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     id: hir::DefId,
     owner: OwnerPlaceId,
 ) -> Result<usize, Box<Diagnostic>> {
     transfer_expansions_counted(plan, id, owner, &mut 0)
 }
-fn transfer_expansions_counted(
-    plan: &ExecutionPlan<'_>,
+fn transfer_expansions_counted<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     id: hir::DefId,
     owner: OwnerPlaceId,
     visits: &mut usize,
 ) -> Result<usize, Box<Diagnostic>> {
     let aggregate = plan.witness().functions()[id.0].owners[owner.0].aggregate();
-    if matches!(aggregate, AggregateTy::Enum(_)) {
+    if matches!(aggregate, AggregateTy::Enum(_))
+        || resources::contains(plan, aggregate)
+        || composition::needed(plan, aggregate)
+    {
         active_transfer_inventory(plan, aggregate, true, visits)
     } else {
         Ok(plan.owner_width(id, owner))
@@ -1838,18 +2871,22 @@ fn transfer_expansions_counted(
 /// Count the same switch rows, case bodies, active validation cells and copy
 /// cells as the emitter. The bounded stack retains no expanded variant tree.
 /// Reject a count larger than the existing text ceiling before expanding it.
-fn active_transfer_inventory(
-    plan: &ExecutionPlan<'_>,
+fn active_transfer_inventory<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
     aggregate: AggregateTy,
     copy: bool,
     visits: &mut usize,
 ) -> Result<usize, Box<Diagnostic>> {
+    if composition::needed(plan, aggregate) {
+        *visits = add(*visits, 1)?;
+        return Ok(1);
+    }
     let declarations = plan.witness().declarations();
     let factor = 1 + usize::from(copy);
     let AggregateTy::Enum(enumeration) = aggregate else {
         *visits = add(*visits, 1)?;
         return mul(
-            declarations
+            plan.witness()
                 .aggregate_width(aggregate)
                 .expect("verified width"),
             factor,
@@ -1895,7 +2932,7 @@ fn active_transfer_inventory(
                         cells = add(
                             cells,
                             mul(
-                                declarations
+                                plan.witness()
                                     .aggregate_width(payload)
                                     .expect("verified payload width"),
                                 factor,
@@ -1919,14 +2956,28 @@ fn active_transfer_inventory(
 
 /// All callers receive types, extents and ownership transitions from the sealed
 /// witness. Runtime tags and active payload cells still require validation.
-fn transfer_checked(
+fn transfer_checked<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     pointers: (&str, &str),
     failure: (&Diagnostics, Span),
 ) {
+    if composition::needed(plan, aggregate) {
+        composition::transfer(
+            out,
+            plan,
+            name,
+            aggregate,
+            pointers.0,
+            TransferIntent::Move(pointers.1),
+            Expansion::Transfer,
+            failure,
+            false,
+        );
+        return;
+    }
     match aggregate {
         AggregateTy::Enum(enumeration) => enum_transfer(
             out,
@@ -1937,15 +2988,24 @@ fn transfer_checked(
             Some(pointers.1),
             failure,
         ),
-        _ => transfer(out, plan, name, aggregate, pointers.0, pointers.1),
+        _ if resources::contains(plan, aggregate) => active_transfer(
+            out,
+            plan,
+            name,
+            aggregate,
+            pointers.0,
+            Some(pointers.1),
+            failure,
+        ),
+        _ => transfer(out, plan, name, aggregate, pointers, failure),
     }
 }
 
 /// Read precisely the active scalar after the caller has proved the tag.
 /// In particular an i1 load cannot establish a canonical boolean byte.
-fn enum_payload_load(
+fn enum_payload_load<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     source: &str,
     variant: VariantId,
@@ -1967,13 +3027,17 @@ fn enum_payload_load(
         source,
         declaration.payload_offset().expect("active scalar offset"),
     );
-    let storage = if scalar == hir::Ty::I32 { "i32" } else { "i8" };
+    let storage = if matches!(scalar, hir::Ty::Bool | hir::Ty::Unit) {
+        "i8"
+    } else {
+        ty(scalar)
+    };
     writeln!(
         out,
         "  %{name}_active = load {storage}, ptr {pointer}, align 1"
     )
     .unwrap();
-    if scalar != hir::Ty::I32 {
+    if matches!(scalar, hir::Ty::Bool | hir::Ty::Unit) {
         let predicate = if scalar == hir::Ty::Bool { "ule" } else { "eq" };
         let bound = usize::from(scalar == hir::Ty::Bool);
         writeln!(out, "  %{name}_canonical = icmp {predicate} i8 %{name}_active, {bound}\n  br i1 %{name}_canonical, label %{name}_payload_ok, label %{name}_payload_error\n{name}_payload_error:").unwrap();
@@ -2012,15 +3076,81 @@ fn enum_payload_store(
 /// A switch validates the tag before reaching any case's active payload read.
 /// No destination byte is touched until all runtime checks for that case pass.
 /// With no destination this is explicit available-value discard validation.
-fn enum_transfer(
+#[derive(Clone, Copy)]
+enum TransferIntent<'a> {
+    Move(&'a str),
+    // Only a completed whole-instruction preflight may select this commit.
+    MoveAdmitted(&'a str),
+    Validate,
+    Release,
+}
+impl<'a> TransferIntent<'a> {
+    fn destination(self) -> Option<&'a str> {
+        match self {
+            Self::Move(destination) | Self::MoveAdmitted(destination) => Some(destination),
+            _ => None,
+        }
+    }
+    fn prevalidated(self) -> bool {
+        matches!(self, Self::MoveAdmitted(_))
+    }
+    fn child<'b>(self, destination: Option<&'b str>) -> TransferIntent<'b> {
+        match self {
+            Self::Move(_) => TransferIntent::Move(destination.expect("move destination")),
+            Self::MoveAdmitted(_) => {
+                TransferIntent::MoveAdmitted(destination.expect("admitted move destination"))
+            }
+            Self::Validate => TransferIntent::Validate,
+            Self::Release => TransferIntent::Release,
+        }
+    }
+}
+
+fn enum_transfer<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     enumeration: EnumId,
     source: &str,
     destination: Option<&str>,
     failure: (&Diagnostics, Span),
 ) {
+    enum_transfer_with_intent(
+        out,
+        plan,
+        name,
+        enumeration,
+        source,
+        destination.map_or(TransferIntent::Release, TransferIntent::Move),
+        failure,
+    );
+}
+
+fn enum_transfer_with_intent<W: PlanWitness>(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_, W>,
+    name: &str,
+    enumeration: EnumId,
+    source: &str,
+    intent: TransferIntent<'_>,
+    failure: (&Diagnostics, Span),
+) {
+    let aggregate = AggregateTy::Enum(enumeration);
+    if composition::needed(plan, aggregate) {
+        composition::transfer(
+            out,
+            plan,
+            name,
+            aggregate,
+            source,
+            intent,
+            Expansion::Transfer,
+            failure,
+            intent.prevalidated(),
+        );
+        return;
+    }
+    let destination = intent.destination();
     if out.exceeded {
         return;
     }
@@ -2034,7 +3164,7 @@ fn enum_transfer(
         .iter()
         .any(|variant| matches!(variant.value_payload(), Some(ValueTy::Owned(_))))
     {
-        owned_enum_transfer(out, plan, name, enumeration, source, destination, failure);
+        owned_enum_transfer(out, plan, name, enumeration, source, intent, failure);
         return;
     }
     out.ordinary_visits += 1;
@@ -2126,9 +3256,9 @@ fn enum_node_pointer(name: &str, frame: EnumTransferFrame, root: &str, output: b
         format!("%{}_{}_ptr", enum_node_name(name, frame.ordinal), role)
     }
 }
-fn enum_node_switch(
+fn enum_node_switch<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     frame: EnumTransferFrame,
     source: &str,
@@ -2175,15 +3305,16 @@ fn enum_node_switch(
 /// Validate all terminal leaves before copying any. Enum chains validate each
 /// tag on descent; ancestor tag stores happen only after a complete child has
 /// been validated. Thus a bad nested tag or terminal scalar writes no payload.
-fn owned_enum_transfer(
+fn owned_enum_transfer<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     enumeration: EnumId,
     source: &str,
-    destination: Option<&str>,
+    intent: TransferIntent<'_>,
     failure: (&Diagnostics, Span),
 ) {
+    let destination = intent.destination();
     let first = EnumTransferFrame {
         enumeration,
         relative: 0,
@@ -2259,13 +3390,13 @@ fn owned_enum_transfer(
                 let target = output.as_ref().map(|output| {
                     field_pointer(out, &format!("{case}_active_out"), output, offset)
                 });
-                active_transfer(
+                active_transfer_with_intent(
                     out,
                     plan,
                     &case,
                     aggregate,
                     &active,
-                    target.as_deref(),
+                    intent.child(target.as_deref()),
                     failure,
                 );
                 if let Some(output) = &output {
@@ -2293,45 +3424,128 @@ fn owned_enum_transfer(
     }
 }
 
-fn active_transfer(
+fn active_transfer<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     source: &str,
     destination: Option<&str>,
     failure: (&Diagnostics, Span),
 ) {
-    if let AggregateTy::Enum(enumeration) = aggregate {
-        enum_transfer(out, plan, name, enumeration, source, destination, failure);
+    active_transfer_with_intent(
+        out,
+        plan,
+        name,
+        aggregate,
+        source,
+        destination.map_or(TransferIntent::Release, TransferIntent::Move),
+        failure,
+    );
+}
+
+fn active_transfer_with_intent<W: PlanWitness>(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_, W>,
+    name: &str,
+    aggregate: AggregateTy,
+    source: &str,
+    intent: TransferIntent<'_>,
+    failure: (&Diagnostics, Span),
+) {
+    if composition::needed(plan, aggregate) {
+        composition::transfer(
+            out,
+            plan,
+            name,
+            aggregate,
+            source,
+            intent,
+            Expansion::Transfer,
+            failure,
+            intent.prevalidated(),
+        );
         return;
     }
-    for (index, leaf) in plan
-        .witness()
-        .declarations()
-        .leaves(aggregate)
-        .expect("verified payload leaves")
-        .enumerate()
-    {
-        if !out.expand(Expansion::Transfer) {
-            return;
-        }
-        let cell = format!("{name}_validate{index}");
-        let input = field_pointer(out, &cell, source, leaf.offset);
-        let storage = if leaf.ty == hir::Ty::I32 { "i32" } else { "i8" };
-        writeln!(out, "  %{cell} = load {storage}, ptr {input}, align 1").unwrap();
-        if matches!(leaf.ty, hir::Ty::Bool | hir::Ty::Unit) {
-            let predicate = if leaf.ty == hir::Ty::Bool {
-                "ule"
+    let destination = intent.destination();
+    if let AggregateTy::Enum(enumeration) = aggregate {
+        enum_transfer_with_intent(out, plan, name, enumeration, source, intent, failure);
+        return;
+    }
+    if intent.prevalidated() {
+        assert!(
+            plan.uses_owned_vectors(),
+            "owned-vector instruction admission"
+        );
+        transfer_leaves(
+            out,
+            plan,
+            name,
+            aggregate,
+            (source, destination.expect("admitted move destination")),
+            true,
+            Expansion::Transfer,
+            failure,
+        );
+        return;
+    }
+    if !matches!(
+        aggregate,
+        AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_)
+            | AggregateTy::OwnedRecordVector(_)
+            | AggregateTy::OwnedEnumVector(_)
+    ) {
+        for (index, leaf) in plan
+            .witness()
+            .declarations()
+            .leaves(aggregate)
+            .expect("verified payload leaves")
+            .enumerate()
+        {
+            if !out.expand(Expansion::Transfer) {
+                return;
+            }
+            let cell = format!("{name}_validate{index}");
+            let input = field_pointer(out, &cell, source, leaf.offset);
+            let storage = if matches!(leaf.ty, hir::Ty::Bool | hir::Ty::Unit) {
+                "i8"
             } else {
-                "eq"
+                ty(leaf.ty)
             };
-            let bound = usize::from(leaf.ty == hir::Ty::Bool);
-            writeln!(out, "  %{cell}_canonical = icmp {predicate} i8 %{cell}, {bound}\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
-            emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
-            writeln!(out, "{cell}_ok:").unwrap();
+            writeln!(out, "  %{cell} = load {storage}, ptr {input}, align 1").unwrap();
+            if matches!(leaf.ty, hir::Ty::Bool | hir::Ty::Unit) {
+                let predicate = if leaf.ty == hir::Ty::Bool {
+                    "ule"
+                } else {
+                    "eq"
+                };
+                let bound = usize::from(leaf.ty == hir::Ty::Bool);
+                writeln!(out, "  %{cell}_canonical = icmp {predicate} i8 %{cell}, {bound}\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
+                emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
+                writeln!(out, "{cell}_ok:").unwrap();
+            } else if leaf.ty == hir::Ty::Char && plan.witness().declarations().is_copy(aggregate) {
+                writeln!(out, "  %{cell}_below = icmp ule i32 %{cell}, 1114111\n  %{cell}_before_surrogate = icmp ult i32 %{cell}, 55296\n  %{cell}_after_surrogate = icmp ugt i32 %{cell}, 57343\n  %{cell}_not_surrogate = or i1 %{cell}_before_surrogate, %{cell}_after_surrogate\n  %{cell}_canonical = and i1 %{cell}_below, %{cell}_not_surrogate\n  br i1 %{cell}_canonical, label %{cell}_ok, label %{cell}_error\n{cell}_error:").unwrap();
+                emit_failure(out, failure.0, FailureKind::EnumPayload, failure.1);
+                writeln!(out, "{cell}_ok:").unwrap();
+            }
         }
     }
+    resources::leaves(
+        out,
+        plan,
+        &format!("{name}_admit"),
+        aggregate,
+        source,
+        match intent {
+            TransferIntent::Release => resources::Action::Release,
+            _ => resources::Action::Validate,
+        },
+        Expansion::Transfer,
+        failure,
+    );
     if let Some(destination) = destination {
         transfer_leaves(
             out,
@@ -2339,14 +3553,16 @@ fn active_transfer(
             &format!("{name}_copy"),
             aggregate,
             (source, destination),
+            true,
             Expansion::Transfer,
+            failure,
         );
     }
 }
 
-fn emit_dispatch(
+fn emit_dispatch<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     f: &RawOwnedFunction,
     name: &str,
     match_id: MatchId,
@@ -2392,14 +3608,15 @@ fn emit_dispatch(
     }
 }
 
-fn transfer(
+fn transfer<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
-    source: &str,
-    destination: &str,
+    pointers: (&str, &str),
+    failure: (&Diagnostics, Span),
 ) {
+    let (source, destination) = pointers;
     if out.exceeded {
         return;
     }
@@ -2407,6 +3624,24 @@ fn transfer(
     let record = match aggregate {
         AggregateTy::Record(record) => record,
         AggregateTy::Enum(_) => unreachable!("enum transfers require checked tag-directed path"),
+        AggregateTy::ByteBuf
+        | AggregateTy::File
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_)
+        | AggregateTy::OwnedRecordVector(_)
+        | AggregateTy::OwnedEnumVector(_) => {
+            resources::leaves(
+                out,
+                plan,
+                name,
+                aggregate,
+                source,
+                resources::Action::Move(destination),
+                Expansion::Transfer,
+                failure,
+            );
+            return;
+        }
         AggregateTy::FixedArray(array) => {
             if array.length() == 0 {
                 if !out.expand(Expansion::Transfer) {
@@ -2450,21 +3685,51 @@ fn transfer(
         name,
         aggregate,
         (source, destination),
+        false,
         Expansion::Transfer,
+        failure,
     );
 }
 
 /// The declaration iterator stores at most one frame per admitted containment
 /// level. It yields initialized scalar/sentinel cells, never record padding.
-fn transfer_leaves(
+#[allow(clippy::too_many_arguments)]
+fn transfer_leaves<W: PlanWitness>(
     out: &mut Emission,
-    plan: &ExecutionPlan<'_>,
+    plan: &ExecutionPlan<'_, W>,
     name: &str,
     aggregate: AggregateTy,
     pointers: (&str, &str),
+    prevalidated: bool,
     kind: Expansion,
+    failure: (&Diagnostics, Span),
 ) {
     let (source, destination) = pointers;
+    resources::leaves(
+        out,
+        plan,
+        &format!("{name}_owned"),
+        aggregate,
+        source,
+        if prevalidated && plan.uses_owned_vectors() {
+            resources::Action::MovePrevalidated(destination)
+        } else {
+            resources::Action::Move(destination)
+        },
+        kind,
+        failure,
+    );
+    if matches!(
+        aggregate,
+        AggregateTy::ByteBuf
+            | AggregateTy::File
+            | AggregateTy::Vector(_)
+            | AggregateTy::RecordVector(_)
+            | AggregateTy::OwnedRecordVector(_)
+            | AggregateTy::OwnedEnumVector(_)
+    ) {
+        return;
+    }
     let leaves = plan
         .witness()
         .declarations()
@@ -2486,10 +3751,19 @@ fn transfer_leaves(
 
 // Independently checked compiler-work facts; no native allocation, witness,
 // or emitter capability escapes. The caller discards them after the guards.
-pub(super) fn admit_inventory_policy(
-    execution: &ExecutionPlan<'_>,
+pub(super) fn admit_inventory_policy<W: PlanWitness>(
+    execution: &ExecutionPlan<'_, W>,
     limits: (usize, usize),
 ) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
+    admit_inventory_policy_with_execution(execution, limits, NativeEntryPolicy::Result)
+}
+
+fn admit_inventory_policy_with_execution<W: PlanWitness>(
+    execution: &ExecutionPlan<'_, W>,
+    limits: (usize, usize),
+    policy: NativeEntryPolicy,
+) -> Result<plan::native_storage::NativeInventories, Box<Diagnostic>> {
+    let maximum = Limits::for_policy(policy);
     let counts = plan::native_storage::NativeInventories::checked(execution)
         .map_err(|failure| reject(failure.name, failure.span))?;
     // An empty library has zero inventory but is not an executable entry.
@@ -2497,13 +3771,13 @@ pub(super) fn admit_inventory_policy(
     if let Some(function) = execution.witness().functions().first() {
         limit(
             counts.items(),
-            limits.0.min(MAX_NATIVE_INVENTORY_ITEMS),
+            limits.0.min(maximum.inventory_items),
             "aggregate compiler inventory items",
             function.span,
         )?;
         limit(
             counts.owner_width(),
-            limits.1.min(MAX_NATIVE_OWNER_WIDTH),
+            limits.1.min(maximum.owner_width),
             "aggregate owner width cells",
             function.span,
         )?;
@@ -2511,25 +3785,127 @@ pub(super) fn admit_inventory_policy(
     Ok(counts)
 }
 
-fn emit(
-    storage: &NativeStoragePlan<'_, '_>,
+#[cfg(test)]
+fn emit<W: PlanWitness>(
+    storage: &NativeStoragePlan<'_, '_, W>,
     entry: hir::DefId,
     diagnostics: &Diagnostics,
     fuel: usize,
     out: &mut Emission,
 ) {
+    emit_selected(storage, entry, diagnostics, fuel, out, reachability::Full);
+}
+
+fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
+    storage: &NativeStoragePlan<'_, '_, W>,
+    entry: hir::DefId,
+    diagnostics: &Diagnostics,
+    fuel: usize,
+    out: &mut Emission,
+    selected: R,
+) {
     let plan = storage.execution();
+    out.resources = plan.uses_dynamic_resources();
     let guarded = storage.guarded();
-    out.write_str("; Oxid private owned native ABI 1\nsource_filename = \"oxid-owned-native\"\ntarget triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare i32 @__oxid_print_bool(i32)\ndeclare i32 @__oxid_print_i32(i32)\ndeclare i32 @__oxid_print_unit()\ndeclare void @__oxid_overflow(ptr, i64) noreturn\ndeclare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.ssub.with.overflow.i32(i32, i32)\ndeclare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)\n").unwrap();
+    out.write_str(crate::frontend::build_config::NativeBuildSettings::ir_header(true))
+        .unwrap();
+    vector::schemas(plan, out);
+    if plan.uses_owned_vectors() {
+        let elements = plan
+            .witness()
+            .elements()
+            .expect("sealed owned vector bounds");
+        if owned_vector_schemas::schemas(plan.witness().declarations(), &elements, out).is_err() {
+            out.exceeded = true;
+            return;
+        }
+        owned_vector::declarations(out);
+    }
+    if out.policy.recursive() {
+        hosted_frames::globals(out);
+    }
+    if plan.uses_wide_scalars() {
+        out.write_str("declare i32 @__oxid_print_i64(i64)\ndeclare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64)\ndeclare { i64, i1 } @llvm.ssub.with.overflow.i64(i64, i64)\ndeclare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64)\n").unwrap();
+    }
+    if matches!(
+        plan.witness().functions()[entry.0].result,
+        ValueTy::Scalar(hir::Ty::U64 | hir::Ty::Usize)
+    ) {
+        out.write_str("declare i32 @__oxid_print_u64(i64)\n")
+            .unwrap();
+    }
+    if plan.uses_integer_extension() {
+        for width in [8, 16] {
+            for operation in ["sadd", "ssub", "smul"] {
+                writeln!(out, "declare {{ i{width}, i1 }} @llvm.{operation}.with.overflow.i{width}(i{width}, i{width})").unwrap();
+            }
+        }
+        for width in [8, 16, 32, 64] {
+            for operation in ["uadd", "usub", "umul"] {
+                writeln!(out, "declare {{ i{width}, i1 }} @llvm.{operation}.with.overflow.i{width}(i{width}, i{width})").unwrap();
+            }
+        }
+    }
+    if plan.witness().functions()[entry.0].result == ValueTy::Scalar(hir::Ty::Char) {
+        out.write_str("declare i32 @__oxid_print_char(i32)\n")
+            .unwrap();
+    }
+    if plan.uses_floats() {
+        out.write_str("declare void @__oxid_float_runtime()\ndeclare float @llvm.sqrt.f32(float)\ndeclare double @llvm.sqrt.f64(double)\n")
+            .unwrap();
+    }
+    if matches!(plan.witness().functions()[entry.0].result, ValueTy::Scalar(ty) if ty.floating()) {
+        out.write_str("declare i32 @__oxid_print_float_bits(i64, i32)\n")
+            .unwrap();
+    }
+    if plan.uses_quad_scalars() {
+        out.write_str("declare i32 @__oxid_print_i128_parts(i64, i64)\ndeclare i32 @__oxid_print_u128_parts(i64, i64)\ndeclare i32 @__oxid_checked_mul128_parts(i64, i64, i64, i64, i32, ptr, ptr)\ndeclare i32 @__oxid_udivmod128_parts(i64, i64, i64, i64, ptr, ptr, ptr, ptr)\n").unwrap();
+        for operation in ["sadd", "ssub", "uadd", "usub"] {
+            writeln!(
+                out,
+                "declare {{ i128, i1 }} @llvm.{operation}.with.overflow.i128(i128, i128)"
+            )
+            .unwrap();
+        }
+    }
+    if out.resources {
+        if plan.has_file_seek() {
+            out.write_str("declare i32 @__oxid_file_seek_absolute(ptr, i64, ptr, ptr, i64)\n")
+                .unwrap();
+            if out.policy.hosted() {
+                out.write_str(
+                    "declare i32 @__oxid_file_seek_absolute_hosted(ptr, i64, ptr, ptr, i64)\n",
+                )
+                .unwrap();
+            }
+        }
+        out.write_str("declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_bytebuf_cleanup()\ndeclare i32 @__oxid_bytebuf_finish()\ndeclare i32 @__oxid_bytebuf_valid(ptr)\ndeclare i32 @__oxid_file_valid(ptr)\ndeclare void @__oxid_file_drop(ptr)\ndeclare i32 @__oxid_file_delivery(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare void @__oxid_bytebuf_drop(ptr)\ndeclare i32 @__oxid_bytebuf_operation(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_bytebuf_view(ptr, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery(i32, ptr, i32, ptr, ptr, i64)\ndeclare void @llvm.memset.p0.i64(ptr, i8, i64, i1 immarg)\n").unwrap();
+        if plan.uses_vectors() {
+            out.write_str("declare i32 @__oxid_vector_valid(ptr, i32)\ndeclare void @__oxid_vector_drop(ptr, i32)\ndeclare i32 @__oxid_vector_operation(i32, i32, ptr, i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare i32 @__oxid_vector_view(ptr, i32, i32, i32, i32, ptr, ptr)\ndeclare i32 @__oxid_vector_index(ptr, i32, i32, ptr)\ndeclare i32 @__oxid_vector_length(ptr, i32, ptr)\ndeclare i32 @__oxid_record_vector_pack(i32, ptr, ptr)\ndeclare i32 @__oxid_record_vector_unpack(i32, ptr, ptr)\ndeclare i32 @__oxid_record_vector_write(i32, ptr, ptr)\ndeclare i32 @__oxid_record_vector_index_slice(ptr, i32, i32, i32, ptr)\n").unwrap();
+            if out.policy.hosted() {
+                out.write_str("declare i32 @__oxid_vector_operation_hosted(i32, i32, ptr, i32, ptr, ptr, i32, ptr, ptr, i64)\n").unwrap();
+            }
+        }
+        if out.policy.hosted() {
+            out.write_str("declare i32 @__oxid_file_delivery_hosted(i32, ptr, ptr, i32, ptr, ptr, i64)\ndeclare i32 @__oxid_bytebuf_operation_hosted(i32, ptr, i32, i32, ptr, i32, ptr, ptr)\ndeclare i32 @__oxid_binary_delivery_hosted(i32, ptr, i32, ptr, ptr, i64)\n").unwrap();
+        }
+    }
     if plan.witness().builtin_function().is_some() {
         out.write_str("declare i32 @__oxid_read_stdin_byte(ptr)\n")
             .unwrap();
+    }
+    if plan.has_program_arguments() {
+        out.write_str("declare void @__oxid_arguments_start(i32, ptr)\ndeclare i32 @__oxid_arg_count()\ndeclare i32 @__oxid_arg_bytes(i32, ptr, i32, ptr, ptr, i64)\n").unwrap();
+        if out.policy.hosted() {
+            out.write_str("declare i32 @__oxid_arg_bytes_hosted(i32, ptr, i32, ptr, ptr, i64)\n")
+                .unwrap();
+        }
     }
     if plan.witness().builtin_output_function().is_some() {
         out.write_str("declare i32 @__oxid_write_stdout_byte(ptr)\n")
             .unwrap();
     }
-    if out.policy == NativeEntryPolicy::Process {
+    if out.policy.process() || plan.has_file_delivery() {
         out.write_str("declare i32 @__oxid_process_setup()\ndeclare void @__oxid_process_failure(ptr, i64) noreturn\n")
             .unwrap();
     }
@@ -2552,11 +3928,15 @@ fn emit(
         }
         writeln!(out, "\"").unwrap();
     }
+    composition::emit_helpers(out, plan);
     for f in plan.witness().functions() {
         if out.exceeded {
             return;
         }
         out.ordinary_visits += 1;
+        if !selected.contains(f.id) {
+            continue;
+        }
         emit_function(storage, f.id, diagnostics, out);
     }
     if out.exceeded {
@@ -2566,10 +3946,18 @@ fn emit(
     let ValueTy::Scalar(result) = root.result else {
         unreachable!("entry gate")
     };
-    out.write_str("\ndefine i32 @main() {\nentry:\n").unwrap();
-    if out.policy == NativeEntryPolicy::Process {
+    if plan.has_program_arguments() {
+        out.write_str("\ndefine i32 @main(i32 %argc, ptr %argv) {\nentry:\n  call void @__oxid_arguments_start(i32 %argc, ptr %argv)\n").unwrap();
+    } else {
+        out.write_str("\ndefine i32 @main() {\nentry:\n").unwrap();
+    }
+    if out.policy.process() || plan.has_file_delivery() {
         // Signal safety precedes even the root activation/fuel diagnostic.
         out.write_str("  %setup = call i32 @__oxid_process_setup()\n  %setup_ok = icmp eq i32 %setup, 0\n  br i1 %setup_ok, label %process_ready, label %setup_error\nsetup_error:\n  ret i32 74\nprocess_ready:\n").unwrap();
+    }
+    if out.resources {
+        out.write_str("  call void @__oxid_bytebuf_start()\n")
+            .unwrap();
     }
     if storage.wrapper_fuel_bytes() != 0 {
         writeln!(
@@ -2585,6 +3973,13 @@ fn emit(
             root.span,
         );
     }
+    let usage = frame_usage(plan, entry);
+    if out.policy.recursive() {
+        let initial_bytes =
+            runtime_storage_bytes(plan, guarded, out.policy).expect("admitted runtime storage");
+        hosted_frames::reset(out, initial_bytes);
+        emit_frame_enter(out, diagnostics, "hosted_root", usage, root.span);
+    }
     writeln!(
         out,
         "  %value = call {} @__oxid_owned_fn_{}({})",
@@ -2593,7 +3988,15 @@ fn emit(
         if guarded { "ptr %fuel" } else { "" }
     )
     .unwrap();
-    if out.policy == NativeEntryPolicy::Process {
+    if out.policy.recursive() {
+        hosted_frames::leave(out, "hosted_root", usage);
+    }
+    if out.resources {
+        out.write_str("  %resource_status = call i32 @__oxid_bytebuf_finish()\n  %resources_released = icmp eq i32 %resource_status, 0\n  br i1 %resources_released, label %resources_complete, label %resources_error\nresources_error:\n").unwrap();
+        emit_failure(out, diagnostics, FailureKind::ResourceDescriptor, root.span);
+        out.write_str("resources_complete:\n").unwrap();
+    }
+    if out.policy.process() {
         // Unsigned comparison rejects negatives without truncating i32 status.
         out.write_str("  %status_valid = icmp ule i32 %value, 255\n  br i1 %status_valid, label %process_complete, label %process_status_error\nprocess_status_error:\n").unwrap();
         emit_failure(out, diagnostics, FailureKind::ProcessStatus, root.span);
@@ -2602,9 +4005,26 @@ fn emit(
         return;
     }
     match result {
+        hir::Ty::Char => out.write_str("  %status = call i32 @__oxid_print_char(i32 %value)\n").unwrap(),
+        hir::Ty::F32 => out.write_str("  %float_bits = bitcast float %value to i32\n  %output_value = zext i32 %float_bits to i64\n  %status = call i32 @__oxid_print_float_bits(i64 %output_value, i32 32)\n").unwrap(),
+        hir::Ty::F64 => out.write_str("  %output_value = bitcast double %value to i64\n  %status = call i32 @__oxid_print_float_bits(i64 %output_value, i32 64)\n").unwrap(),
+
         hir::Ty::Bool => out.write_str("  %wide = zext i1 %value to i32\n  %status = call i32 @__oxid_print_bool(i32 %wide)\n").unwrap(),
         hir::Ty::I32 => out.write_str("  %status = call i32 @__oxid_print_i32(i32 %value)\n").unwrap(),
-        hir::Ty::U8 => unreachable!("byte entry rejected before native plan"),
+        hir::Ty::I64 => out.write_str("  %status = call i32 @__oxid_print_i64(i64 %value)\n").unwrap(),
+        hir::Ty::U8 => out.write_str("  %output_value = zext i8 %value to i32\n  %status = call i32 @__oxid_print_i32(i32 %output_value)\n").unwrap(),
+        hir::Ty::I8 | hir::Ty::I16 => {
+            writeln!(out, "  %output_value = sext {} %value to i64\n  %status = call i32 @__oxid_print_i64(i64 %output_value)", ty(result)).unwrap();
+        }
+        hir::Ty::U16 | hir::Ty::U32 => {
+            writeln!(out, "  %output_value = zext {} %value to i64\n  %status = call i32 @__oxid_print_i64(i64 %output_value)", ty(result)).unwrap();
+        }
+        hir::Ty::Isize => out.write_str("  %status = call i32 @__oxid_print_i64(i64 %value)\n").unwrap(),
+        hir::Ty::I128 | hir::Ty::U128 => {
+            let function = if result.signed_integer() { "i128" } else { "u128" };
+            writeln!(out, "  %output_low = trunc i128 %value to i64\n  %output_shifted = lshr i128 %value, 64\n  %output_high = trunc i128 %output_shifted to i64\n  %status = call i32 @__oxid_print_{function}_parts(i64 %output_low, i64 %output_high)").unwrap();
+        }
+        hir::Ty::U64 | hir::Ty::Usize => out.write_str("  %status = call i32 @__oxid_print_u64(i64 %value)\n").unwrap(),
         hir::Ty::Unit => out.write_str("  %status = call i32 @__oxid_print_unit()\n").unwrap(),
     }
     out.write_str("  ret i32 %status\n}\n").unwrap();
@@ -2613,55 +4033,132 @@ fn emit(
 #[derive(Clone, Copy)]
 enum Continuation {
     Unsplit,
+    Aggregate,
     Arithmetic,
     Conversion,
     Bounds,
     Enum,
     Input,
     Output,
+    Vector,
+    VectorOperation,
 }
 impl Continuation {
     fn suffix(self) -> Option<&'static str> {
         match self {
             Self::Unsplit => None,
+            Self::Aggregate => Some("aggregate_ok"),
             Self::Arithmetic => Some("checked_ok"),
             Self::Conversion => Some("conversion_ok"),
             Self::Bounds => Some("bounds_ok"),
             Self::Enum => Some("enum_ok"),
             Self::Input => Some("input_ok"),
             Self::Output => Some("output_ok"),
+            Self::Vector => Some("vector_ok"),
+            Self::VectorOperation => Some("operation_ok"),
         }
     }
 }
 /// Exhaustive classification shared by operation emission and phi predecessors.
-fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continuation {
+fn continuation<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    f: &RawOwnedFunction,
+    instruction: &OwnedInstruction,
+) -> Continuation {
+    if let OwnedInstruction::ConstructComposite { destination, .. } = instruction {
+        if composition::needed(plan, f.owners[destination.0].aggregate()) {
+            return Continuation::Aggregate;
+        }
+    }
+    if let OwnedInstruction::StorageEnd(owner) = instruction {
+        let aggregate = f.owners[owner.0].aggregate();
+        if composition::needed(plan, aggregate) && resources::contains(plan, aggregate) {
+            return Continuation::Aggregate;
+        }
+    }
     match instruction {
+        OwnedInstruction::PrepareBorrow { loan, .. }
+        | OwnedInstruction::AcquireLocalBorrow(loan)
+            if vector::borrow_splits(plan, f, *loan) =>
+        {
+            Continuation::Bounds
+        }
+        OwnedInstruction::OwnedVector { .. } => Continuation::Unsplit,
+        OwnedInstruction::Vector { .. } => Continuation::VectorOperation,
+        OwnedInstruction::ArrayLength { base, .. }
+            if matches!(
+                indexed_base(f, *base),
+                BorrowedTy::Exact(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
+            ) =>
+        {
+            Continuation::Vector
+        }
+        OwnedInstruction::ProjectionLength { base, path, .. }
+            if matches!(
+                projection(plan, f, *base, path).0,
+                ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
+            ) =>
+        {
+            Continuation::Vector
+        }
+        OwnedInstruction::DestructureRecord { .. } => Continuation::Aggregate,
+        OwnedInstruction::PrepareBorrowRange { .. } => Continuation::Bounds,
+        OwnedInstruction::Experimental { .. } => Continuation::Unsplit,
         OwnedInstruction::ReadStdin { .. } => Continuation::Input,
         OwnedInstruction::WriteStdout { .. } => Continuation::Output,
         OwnedInstruction::ConsumeVariant { .. }
         | OwnedInstruction::ConsumeOwnedVariant { .. }
         | OwnedInstruction::ConstructOwnedEnum { .. } => Continuation::Enum,
+        OwnedInstruction::CopyInitialize { .. }
+        | OwnedInstruction::CopyIndexInitialize { .. }
+        | OwnedInstruction::CopyIndexWrite { .. } => Continuation::Aggregate,
         OwnedInstruction::MoveInitialize { source, .. }
         | OwnedInstruction::Replace { source, .. }
         | OwnedInstruction::PrepareOwned { source, .. }
         | OwnedInstruction::Discard(source) => {
             if matches!(f.owners[source.0].aggregate(), AggregateTy::Enum(_)) {
                 Continuation::Enum
+            } else if composition::needed(plan, f.owners[source.0].aggregate()) {
+                Continuation::Aggregate
             } else {
                 Continuation::Unsplit
             }
         }
         OwnedInstruction::Scalar(statement) => match statement {
             Statement::Assign(assign) => match assign.value {
-                Rvalue::CheckedI32 { .. } | Rvalue::CheckedNegateI32 { .. } => {
+                Rvalue::CharacterConvert {
+                    op: hir::ConversionOp::ToCharChecked,
+                    ..
+                } => Continuation::Conversion,
+                Rvalue::CharacterConvert { .. } => Continuation::Unsplit,
+                Rvalue::Bitwise { op, .. } if op.shift() => Continuation::Arithmetic,
+                Rvalue::Bitwise { .. } | Rvalue::BitNot { .. } => Continuation::Unsplit,
+                Rvalue::CheckedI32 { .. }
+                | Rvalue::CheckedNegateI32 { .. }
+                | Rvalue::CheckedI64 { .. }
+                | Rvalue::CheckedNegateI64 { .. } => Continuation::Arithmetic,
+                Rvalue::CheckedInteger { .. } | Rvalue::CheckedNegateInteger { .. } => {
                     Continuation::Arithmetic
                 }
-                Rvalue::CheckedI32ToU8 { .. } => Continuation::Conversion,
+                Rvalue::CheckedI32ToU8 { .. }
+                | Rvalue::CheckedI64ToI32 { .. }
+                | Rvalue::CheckedI64ToU8 { .. }
+                | Rvalue::CheckedIntegerCast { .. } => Continuation::Conversion,
                 Rvalue::Load(_)
                 | Rvalue::U8ToI32 { .. }
+                | Rvalue::WidenI64 { .. }
                 | Rvalue::NotBool { .. }
                 | Rvalue::Bool(_)
                 | Rvalue::I32(_)
+                | Rvalue::I64(_)
+                | Rvalue::Integer { .. }
+                | Rvalue::FloatConvert { .. }
+                | Rvalue::Character(_)
+                | Rvalue::Float { .. }
+                | Rvalue::FloatArithmetic { .. }
+                | Rvalue::FloatNegate { .. }
+                | Rvalue::Integer128 { .. }
+                | Rvalue::U8(_)
                 | Rvalue::Unit
                 | Rvalue::Copy(_)
                 | Rvalue::CompareScalar { .. } => Continuation::Unsplit,
@@ -2686,10 +4183,18 @@ fn continuation(f: &RawOwnedFunction, instruction: &OwnedInstruction) -> Continu
         | OwnedInstruction::ArrayLength { .. }
         | OwnedInstruction::OpenCall(_)
         | OwnedInstruction::PrepareScalar { .. }
-        | OwnedInstruction::PrepareBorrow { .. } => Continuation::Unsplit,
+        | OwnedInstruction::PrepareBorrow { .. }
+        | OwnedInstruction::AcquireLocalBorrow(_)
+        | OwnedInstruction::ReleaseLocalBorrow(_) => Continuation::Unsplit,
     }
 }
-fn exit_label(f: &RawOwnedFunction, block: usize, guarded: bool, out: &mut Emission) -> String {
+fn exit_label<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    f: &RawOwnedFunction,
+    block: usize,
+    guarded: bool,
+    out: &mut Emission,
+) -> String {
     if guarded {
         return format!(
             "f{}_b{block}_g{}_ok",
@@ -2699,14 +4204,14 @@ fn exit_label(f: &RawOwnedFunction, block: usize, guarded: bool, out: &mut Emiss
     }
     for (i, statement) in f.blocks[block].statements.iter().enumerate().rev() {
         out.predecessor_visits += 1;
-        if let Some(suffix) = continuation(f, &statement.kind).suffix() {
+        if let Some(suffix) = continuation(plan, f, &statement.kind).suffix() {
             return format!("f{}_b{block}_i{i}_{suffix}", f.id.0);
         }
     }
     format!("b{block}")
 }
-fn emit_function(
-    module_storage: &NativeStoragePlan<'_, '_>,
+fn emit_function<W: PlanWitness>(
+    module_storage: &NativeStoragePlan<'_, '_, W>,
     id: hir::DefId,
     diagnostics: &Diagnostics,
     out: &mut Emission,
@@ -2719,6 +4224,9 @@ fn emit_function(
     let guarded = module_storage.guarded();
     let storage = module_storage.function(id);
     let f = storage.raw();
+    if out.debug {
+        crate::frontend::native_debug::function(out, f.span);
+    }
     write!(
         out,
         "\ndefine internal {} @__oxid_owned_fn_{}(",
@@ -2748,7 +4256,7 @@ fn emit_function(
         if let ParameterBinding::Reference(reference) = parameter {
             if matches!(
                 f.references[reference.0].referent(),
-                BorrowedTy::ScalarSlice(_)
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
             ) {
                 write!(out, ", i32 %arg{i}_length").unwrap();
             }
@@ -2756,16 +4264,52 @@ fn emit_function(
         separator = ", ";
     }
     out.write_str(") noinline {\nentry:\n").unwrap();
+    if out.debug {
+        crate::frontend::native_debug::location(out, f.span);
+    }
+    if storage.scalar_width() == 16 {
+        out.write_str("  %integer128_scratch = alloca [4 x i64], align 8\n")
+            .unwrap();
+        for word in 0..4 {
+            writeln!(
+                out,
+                "  %integer128_word{word} = getelementptr i8, ptr %integer128_scratch, i64 {}",
+                word * 8
+            )
+            .unwrap();
+        }
+    }
+    if plan::native_vector_layout::frame_bytes_with_witness(plan.witness(), f)
+        .expect("admitted vector index scratch")
+        != 0
+    {
+        writeln!(out, "  %vector_index_pointer = alloca ptr, align 8").unwrap();
+    }
     let slots = storage.scalar_slots();
     if slots != 0 {
-        writeln!(out, "  %scalars = alloca [{slots} x i64], align 8").unwrap();
+        let scalar_width = storage.scalar_width();
+        let scalar_bits = scalar_width * 8;
+        writeln!(
+            out,
+            "  %scalars = alloca [{slots} x i{scalar_bits}], align {scalar_width}"
+        )
+        .unwrap();
     }
     // Round the byte alloca itself to the four-byte size charged in Dnative.
     if storage.owner_bytes() != 0 {
         writeln!(
             out,
-            "  %owners = alloca [{} x i8], align 4",
-            storage.owner_bytes()
+            "  %owners = alloca [{} x i8], align {}",
+            storage.owner_bytes(),
+            storage.owner_alignment()
+        )
+        .unwrap();
+    }
+    if let Some(scratch) = plan.record_vector_scratch_range(f.id) {
+        writeln!(
+            out,
+            "  %record_vector_scratch = getelementptr i8, ptr %owners, i64 {}",
+            scratch.start
         )
         .unwrap();
     }
@@ -2836,6 +4380,37 @@ fn emit_function(
         )
         .unwrap();
     }
+    if out.debug {
+        // Describe existing activation storage at its dominating definition.
+        // A range binding is initialized before its body; a declaration there
+        // would lose its location across the generated cursor-update blocks.
+        for (i, declaration) in f.locals.iter().enumerate() {
+            if declaration.kind == LocalKind::Binding {
+                crate::frontend::native_debug::variable(
+                    out,
+                    declaration.span,
+                    declaration.ty,
+                    0,
+                    crate::frontend::native_debug::VariableValue::Address(
+                        "%scalars",
+                        storage.scalar_offset(i),
+                    ),
+                );
+            }
+        }
+        for (i, declaration) in f.places.iter().enumerate() {
+            crate::frontend::native_debug::variable(
+                out,
+                declaration.span,
+                declaration.ty,
+                0,
+                crate::frontend::native_debug::VariableValue::Address(
+                    "%scalars",
+                    storage.scalar_offset(storage.place_slot(PlaceId(i))),
+                ),
+            );
+        }
+    }
     for i in 0..f.owners.len() {
         if out.exceeded {
             return;
@@ -2847,6 +4422,16 @@ fn emit_function(
             storage.owner_offset(OwnerPlaceId(i))
         )
         .unwrap();
+        resources::initialize(out, plan, f.owners[i].aggregate(), &format!("%o{i}"));
+        if out.debug && matches!(f.owners[i].kind, OwnerKind::Local { .. }) {
+            record_debug_variable(
+                out,
+                plan,
+                &f.owners[i],
+                storage.owner_offset(OwnerPlaceId(i)),
+                0,
+            );
+        }
     }
     for i in 0..storage.reference_slots() {
         if out.exceeded {
@@ -2876,7 +4461,10 @@ fn emit_function(
             ),
             ParameterBinding::Reference(r) => {
                 writeln!(out, "  store ptr %arg{i}, ptr %r{}, align 8", r.0).unwrap();
-                if matches!(f.references[r.0].referent(), BorrowedTy::ScalarSlice(_)) {
+                if matches!(
+                    f.references[r.0].referent(),
+                    BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                ) {
                     writeln!(out, "  store i32 %arg{i}_length, ptr %rl{}, align 4", r.0).unwrap();
                 }
             }
@@ -2890,6 +4478,31 @@ fn emit_function(
             ),
         }
     }
+    if out.debug {
+        for (i, parameter) in f.parameters.iter().enumerate() {
+            if let ParameterBinding::Scalar(local) = parameter {
+                let declaration = &f.locals[local.0];
+                crate::frontend::native_debug::variable(
+                    out,
+                    declaration.span,
+                    declaration.ty,
+                    i + 1,
+                    crate::frontend::native_debug::VariableValue::Address(
+                        "%scalars",
+                        storage.scalar_offset(local.0),
+                    ),
+                );
+            } else if let ParameterBinding::Owned(owner) = parameter {
+                record_debug_variable(
+                    out,
+                    plan,
+                    &f.owners[owner.0],
+                    storage.owner_offset(*owner),
+                    i + 1,
+                );
+            }
+        }
+    }
     writeln!(out, "  br label %b{}", f.entry.0).unwrap();
     for (b, block) in f.blocks.iter().enumerate() {
         if out.exceeded {
@@ -2898,12 +4511,15 @@ fn emit_function(
         out.ordinary_visits += 1;
         writeln!(out, "b{b}:").unwrap();
         if let Some(m) = &block.merge {
+            if out.debug {
+                crate::frontend::native_debug::location(out, m.span);
+            }
             let name = format!("f{}_b{b}_merge", id.0);
             let [left, right] = m.incoming;
             // Select storage, then read exactly the taken input after charging.
             // A value phi would read an uninitialized slot on the untaken arm.
-            let left_label = exit_label(f, left.predecessor.0, guarded, out);
-            let right_label = exit_label(f, right.predecessor.0, guarded, out);
+            let left_label = exit_label(plan, f, left.predecessor.0, guarded, out);
+            let right_label = exit_label(plan, f, right.predecessor.0, guarded, out);
             writeln!(
                 out,
                 "  %{name}_slot = phi ptr [ %s{}, %{} ], [ %s{}, %{} ]",
@@ -2927,11 +4543,16 @@ fn emit_function(
                 return;
             }
             out.ordinary_visits += 1;
+            if out.debug {
+                crate::frontend::native_debug::location(out, plan::instruction_span(statement));
+            }
             let name = format!("f{}_b{b}_i{i}", id.0);
             if guarded
                 && !matches!(
                     statement.kind,
-                    OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. }
+                    OwnedInstruction::ReadStdin { .. }
+                        | OwnedInstruction::WriteStdout { .. }
+                        | OwnedInstruction::OwnedVector { .. }
                 )
             {
                 emit_guard(
@@ -2948,7 +4569,15 @@ fn emit_function(
             return;
         }
         let term = block.terminator.as_ref().expect("verified terminator");
-        if guarded {
+        if out.debug {
+            crate::frontend::native_debug::location(out, term.span);
+        }
+        if guarded
+            && plan.binary_delivery_cost(id).is_none()
+            && plan.file_delivery_cost(id).is_none()
+            && !vector::delivery(plan, id)
+            && !owned_vector::delivery(plan, id)
+        {
             emit_guard(
                 out,
                 diagnostics,
@@ -2968,12 +4597,29 @@ fn emit_function(
     out.write_str("}\n").unwrap();
 }
 
+fn record_debug_variable<W: PlanWitness>(
+    out: &mut Emission,
+    plan: &ExecutionPlan<'_, W>,
+    owner: &OwnerDecl,
+    offset: usize,
+    argument: usize,
+) {
+    let AggregateTy::Record(record) = owner.aggregate() else {
+        return;
+    };
+    let declaration: debug::RecordDeclaration<'_> = plan.witness().declarations().record(record);
+    let declaration = declaration.expect("verified record");
+    if declaration.is_copy() {
+        crate::frontend::native_debug::record_variable(out, owner.span, record.0, argument, offset);
+    }
+}
+
 /// The sealed builtin owns both the result extent and its admitted scratch
 /// suffix. Its exclusive slice pointer follows the existing verified ABI;
 /// capacity is checked before any input, result store, or destination write.
 /// Only successful/EOF paths enter the prepaid, infallible commit loop.
-fn emit_read_stdin(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn emit_read_stdin<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     places: (ReferenceParamId, OwnerPlaceId),
     failure: (&Diagnostics, Span),
@@ -3010,6 +4656,7 @@ fn emit_read_stdin(
         .size();
     debug_assert!(storage.owner_offset(destination) + result_extent <= scratch.start);
     let suffix = continuation(
+        plan,
         &plan.witness().functions()[id.0],
         &OwnedInstruction::ReadStdin {
             buffer,
@@ -3078,8 +4725,8 @@ fn emit_read_stdin(
 /// Capacity and storage are preflighted before reads; the complete validated
 /// byte image is staged before any attempt. The only post-effect failure point
 /// in the effect itself is the deliberately metered next-attempt fuel guard.
-fn emit_write_stdout(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn emit_write_stdout<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     places: (ReferenceParamId, OwnerPlaceId),
     failure: (&Diagnostics, Span),
@@ -3094,7 +4741,7 @@ fn emit_write_stdout(
         .expect("verified output scratch suffix");
     debug_assert_eq!(plan.witness().builtin_output_function(), Some(id));
     debug_assert_eq!(scratch.len(), 1024);
-    debug_assert_eq!(out.policy, NativeEntryPolicy::Process);
+    debug_assert!(out.policy.process());
     let enumeration = plan
         .witness()
         .builtin_output_enumeration()
@@ -3117,6 +4764,7 @@ fn emit_write_stdout(
         .size();
     debug_assert!(storage.owner_offset(destination) + result_extent <= scratch.start);
     let suffix = continuation(
+        plan,
         &plan.witness().functions()[id.0],
         &OwnedInstruction::WriteStdout {
             buffer,
@@ -3180,8 +4828,8 @@ fn emit_write_stdout(
     writeln!(out, "  br label %{name}_{suffix}\n{name}_{suffix}:").unwrap();
 }
 
-fn emit_statement(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn emit_statement<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     statement: &OwnedStatement,
     diagnostics: &Diagnostics,
@@ -3195,6 +4843,42 @@ fn emit_statement(
     out.ordinary_visits += 1;
     let f = &plan.witness().functions()[id.0];
     match &statement.kind {
+        OwnedInstruction::OwnedVector {
+            operation,
+            destination,
+        } => owned_vector::operation(
+            storage,
+            name,
+            *operation,
+            *destination,
+            diagnostics,
+            plan::instruction_span(statement),
+            out,
+        ),
+        OwnedInstruction::Vector {
+            operation,
+            destination,
+        } => vector::operation(
+            storage,
+            name,
+            *operation,
+            *destination,
+            diagnostics,
+            plan::instruction_span(statement),
+            out,
+        ),
+        OwnedInstruction::Experimental {
+            operation,
+            destination,
+        } => experimental::operation(
+            storage,
+            name,
+            *operation,
+            *destination,
+            diagnostics,
+            plan::instruction_span(statement),
+            out,
+        ),
         OwnedInstruction::ReadStdin {
             buffer,
             destination,
@@ -3367,7 +5051,29 @@ fn emit_statement(
             writeln!(out, "  br label %{name}_enum_ok\n{name}_enum_ok:").unwrap();
         }
         OwnedInstruction::Discard(owner) => {
-            if let AggregateTy::Enum(enumeration) = f.owners[owner.0].aggregate() {
+            let aggregate = f.owners[owner.0].aggregate();
+            if composition::needed(plan, aggregate) {
+                composition::transfer(
+                    out,
+                    plan,
+                    name,
+                    aggregate,
+                    &format!("%o{}", owner.0),
+                    TransferIntent::Release,
+                    Expansion::Transfer,
+                    (diagnostics, plan::instruction_span(statement)),
+                    false,
+                );
+            } else if resources::contains(plan, aggregate) {
+                resources::drop_owner(
+                    out,
+                    plan,
+                    name,
+                    aggregate,
+                    &format!("%o{}", owner.0),
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            } else if let AggregateTy::Enum(enumeration) = aggregate {
                 enum_transfer(
                     out,
                     plan,
@@ -3450,6 +5156,22 @@ fn emit_statement(
             writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(element)).unwrap();
         }
         OwnedInstruction::ArrayLength { destination, base } => {
+            if let BorrowedTy::Exact(aggregate) = indexed_base(f, *base) {
+                if let Some(element) = super::vector_type::VectorTy::from_aggregate(aggregate) {
+                    vector::length(
+                        out,
+                        f,
+                        name,
+                        *base,
+                        None,
+                        element,
+                        *destination,
+                        diagnostics,
+                        plan::instruction_span(statement),
+                    );
+                    return;
+                }
+            }
             let length = index_length(out, f, name, *base);
             store_slot(
                 out,
@@ -3464,7 +5186,23 @@ fn emit_statement(
             base,
             path,
         } => {
-            let (value, _) = projection(plan, f, *base, path);
+            let (value, offset) = projection(plan, f, *base, path);
+            if let ValueTy::Owned(aggregate) = value {
+                if let Some(element) = super::vector_type::VectorTy::from_aggregate(aggregate) {
+                    vector::length(
+                        out,
+                        f,
+                        name,
+                        *base,
+                        Some(offset),
+                        element,
+                        *destination,
+                        diagnostics,
+                        plan::instruction_span(statement),
+                    );
+                    return;
+                }
+            }
             let ValueTy::Owned(AggregateTy::FixedArray(array)) = value else {
                 unreachable!("verified projected array length")
             };
@@ -3486,7 +5224,7 @@ fn emit_statement(
             let ValueTy::Scalar(scalar) = value else {
                 unreachable!("verified scalar projection")
             };
-            let base = base_pointer(out, name, *base);
+            let base = base_pointer(out, f, name, *base);
             let ptr = field_pointer(out, name, &base, offset);
             writeln!(
                 out,
@@ -3513,14 +5251,97 @@ fn emit_statement(
                 unreachable!("verified scalar projection")
             };
             let value = load_operand(out, f, &format!("{name}_value"), *value);
-            let base = base_pointer(out, name, *base);
+            let base = base_pointer(out, f, name, *base);
             let ptr = field_pointer(out, name, &base, offset);
             writeln!(out, "  store {} {value}, ptr {ptr}, align 1", ty(scalar)).unwrap();
+        }
+        OwnedInstruction::DestructureRecord { source, fields } => {
+            // Admit every field before the first ownership-bearing store.
+            for (index, (field, destination)) in fields.iter().enumerate() {
+                let member = plan
+                    .witness()
+                    .declarations()
+                    .field(field.record, *field)
+                    .expect("verified record pattern field");
+                let name = format!("{name}_admit{index}");
+                let pointer =
+                    field_pointer(out, &name, &format!("%o{}", source.0), member.offset());
+                active_transfer_with_intent(
+                    out,
+                    plan,
+                    &name,
+                    f.owners[destination.0].aggregate(),
+                    &pointer,
+                    TransferIntent::Validate,
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            }
+            for (index, (field, destination)) in fields.iter().enumerate() {
+                let member = plan
+                    .witness()
+                    .declarations()
+                    .field(field.record, *field)
+                    .expect("verified record pattern field");
+                let name = format!("{name}_move{index}");
+                let pointer =
+                    field_pointer(out, &name, &format!("%o{}", source.0), member.offset());
+                let output = format!("%o{}", destination.0);
+                active_transfer_with_intent(
+                    out,
+                    plan,
+                    &name,
+                    f.owners[destination.0].aggregate(),
+                    &pointer,
+                    if plan.uses_owned_vectors() {
+                        TransferIntent::MoveAdmitted(&output)
+                    } else {
+                        TransferIntent::Move(&output)
+                    },
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            }
+            if !out.expand(Expansion::Transfer) {
+                return;
+            }
+            writeln!(out, "  br label %{name}_aggregate_ok\n{name}_aggregate_ok:").unwrap();
         }
         OwnedInstruction::ConstructComposite {
             destination,
             fields,
         } => {
+            let composed = composition::needed(plan, f.owners[destination.0].aggregate());
+            if resources::contains(plan, f.owners[destination.0].aggregate()) || composed {
+                for (index, (_, value)) in fields.iter().enumerate() {
+                    if let FieldInitializer::Owned(source) = value {
+                        let aggregate = f.owners[source.0].aggregate();
+                        if composed
+                            && matches!(aggregate, AggregateTy::Record(_) | AggregateTy::Enum(_))
+                        {
+                            composition::transfer(
+                                out,
+                                plan,
+                                &format!("{name}_incoming{index}"),
+                                aggregate,
+                                &format!("%o{}", source.0),
+                                TransferIntent::Validate,
+                                Expansion::Transfer,
+                                (diagnostics, plan::instruction_span(statement)),
+                                false,
+                            );
+                            continue;
+                        }
+                        active_transfer_with_intent(
+                            out,
+                            plan,
+                            &format!("{name}_incoming{index}"),
+                            f.owners[source.0].aggregate(),
+                            &format!("%o{}", source.0),
+                            TransferIntent::Validate,
+                            (diagnostics, plan::instruction_span(statement)),
+                        );
+                    }
+                }
+            }
             if fields.is_empty() {
                 if !out.expand(Expansion::Construct) {
                     return;
@@ -3560,16 +5381,38 @@ fn emit_statement(
                         // No recursive native calls or intermediate leaf buffers.
                         let ptr =
                             field_pointer(out, &n, &format!("%o{}", destination.0), field.offset());
+                        let aggregate = f.owners[source.0].aggregate();
+                        if composed
+                            && matches!(aggregate, AggregateTy::Record(_) | AggregateTy::Enum(_))
+                        {
+                            composition::transfer(
+                                out,
+                                plan,
+                                &n,
+                                aggregate,
+                                &format!("%o{}", source.0),
+                                TransferIntent::Move(&ptr),
+                                Expansion::Construct,
+                                (diagnostics, plan::instruction_span(statement)),
+                                true,
+                            );
+                            continue;
+                        }
                         transfer_leaves(
                             out,
                             plan,
                             &n,
                             f.owners[source.0].aggregate(),
                             (&format!("%o{}", source.0), &ptr),
+                            true,
                             Expansion::Construct,
+                            (diagnostics, plan::instruction_span(statement)),
                         );
                     }
                 }
+            }
+            if composed {
+                writeln!(out, "  br label %{name}_aggregate_ok\n{name}_aggregate_ok:").unwrap();
             }
         }
         OwnedInstruction::Scalar(_) => emit_scalar(storage, name, statement, diagnostics, out),
@@ -3607,6 +5450,26 @@ fn emit_statement(
                 .unwrap();
             }
         }
+        OwnedInstruction::CopyIndexInitialize { .. } | OwnedInstruction::CopyIndexWrite { .. } => {
+            vector::record_index(storage, name, statement, diagnostics, out)
+        }
+        OwnedInstruction::CopyInitialize {
+            destination,
+            source,
+        } => {
+            let aggregate = f.owners[source.0].aggregate();
+            assert!(plan.witness().declarations().is_copy(aggregate));
+            active_transfer_with_intent(
+                out,
+                plan,
+                name,
+                aggregate,
+                &format!("%o{}", source.0),
+                TransferIntent::Move(&format!("%o{}", destination.0)),
+                (diagnostics, plan::instruction_span(statement)),
+            );
+            writeln!(out, "  br label %{name}_aggregate_ok\n{name}_aggregate_ok:").unwrap();
+        }
         OwnedInstruction::MoveInitialize {
             destination,
             source,
@@ -3615,14 +5478,50 @@ fn emit_statement(
             destination,
             source,
         } => {
-            transfer_checked(
-                out,
-                plan,
-                name,
-                f.owners[source.0].aggregate(),
-                (&format!("%o{}", source.0), &format!("%o{}", destination.0)),
-                (diagnostics, plan::instruction_span(statement)),
-            );
+            if matches!(statement.kind, OwnedInstruction::Replace { .. }) {
+                if resources::contains(plan, f.owners[destination.0].aggregate()) {
+                    active_transfer_with_intent(
+                        out,
+                        plan,
+                        &format!("{name}_incoming"),
+                        f.owners[source.0].aggregate(),
+                        &format!("%o{}", source.0),
+                        TransferIntent::Validate,
+                        (diagnostics, plan::instruction_span(statement)),
+                    );
+                }
+                resources::drop_owner(
+                    out,
+                    plan,
+                    &format!("{name}_old"),
+                    f.owners[destination.0].aggregate(),
+                    &format!("%o{}", destination.0),
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            }
+            if plan.uses_owned_vectors()
+                && matches!(statement.kind, OwnedInstruction::Replace { .. })
+                && resources::contains(plan, f.owners[destination.0].aggregate())
+            {
+                active_transfer_with_intent(
+                    out,
+                    plan,
+                    name,
+                    f.owners[source.0].aggregate(),
+                    &format!("%o{}", source.0),
+                    TransferIntent::MoveAdmitted(&format!("%o{}", destination.0)),
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            } else {
+                transfer_checked(
+                    out,
+                    plan,
+                    name,
+                    f.owners[source.0].aggregate(),
+                    (&format!("%o{}", source.0), &format!("%o{}", destination.0)),
+                    (diagnostics, plan::instruction_span(statement)),
+                );
+            }
         }
         OwnedInstruction::ReadField {
             destination,
@@ -3634,7 +5533,7 @@ fn emit_statement(
                 .declarations()
                 .field(field.record, *field)
                 .expect("verified field");
-            let base = base_pointer(out, name, *base);
+            let base = base_pointer(out, f, name, *base);
             let ptr = field_pointer(out, name, &base, field.offset());
             writeln!(
                 out,
@@ -3657,7 +5556,7 @@ fn emit_statement(
                 .field(field.record, *field)
                 .expect("verified field");
             let value = load_operand(out, f, &format!("{name}_value"), *value);
-            let base = base_pointer(out, name, *base);
+            let base = base_pointer(out, f, name, *base);
             let ptr = field_pointer(out, name, &base, field.offset());
             writeln!(
                 out,
@@ -3699,9 +5598,33 @@ fn emit_statement(
                 (diagnostics, plan::instruction_span(statement)),
             );
         }
-        OwnedInstruction::PrepareBorrow { loan, .. } => {
+        OwnedInstruction::PrepareBorrowRange {
+            loan, start, end, ..
+        } => experimental::borrow(
+            storage,
+            name,
+            *loan,
+            Some((*start, *end)),
+            diagnostics,
+            plan::instruction_span(statement),
+            out,
+        ),
+        OwnedInstruction::PrepareBorrow { loan, .. }
+        | OwnedInstruction::AcquireLocalBorrow(loan) => {
+            if experimental::resource_borrow(plan, f, *loan) {
+                experimental::borrow(
+                    storage,
+                    name,
+                    *loan,
+                    None,
+                    diagnostics,
+                    plan::instruction_span(statement),
+                    out,
+                );
+                return;
+            }
             let declaration = &f.loans[loan.0];
-            let base = base_pointer(out, name, declaration.authority);
+            let base = base_pointer(out, f, name, declaration.authority);
             if out.exceeded {
                 return;
             }
@@ -3714,12 +5637,14 @@ fn emit_statement(
                 out.borrow_projection_visits += declaration.projection.len();
                 let (value, offset) =
                     projection(plan, f, declaration.authority, &declaration.projection);
-                let ValueTy::Owned(AggregateTy::FixedArray(array)) = value else {
-                    unreachable!("verified projected array slice")
+                let projected_length = match value {
+                    ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(array.length()),
+                    ValueTy::Owned(AggregateTy::Record(_)) => None,
+                    _ => unreachable!("verified projected record or array slice"),
                 };
                 (
                     field_pointer(out, &format!("{name}_borrow_projection"), &base, offset),
-                    Some(array.length()),
+                    projected_length,
                 )
             };
             writeln!(
@@ -3728,7 +5653,10 @@ fn emit_statement(
                 storage.loan_slot(*loan)
             )
             .unwrap();
-            if matches!(declaration.referent(), BorrowedTy::ScalarSlice(_)) {
+            if matches!(
+                declaration.referent(),
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+            ) {
                 // Stage the target view's length when its loan begins, alongside
                 // the pointer, before evaluating any later call argument.
                 let length = projected_length.map_or_else(
@@ -3740,13 +5668,29 @@ fn emit_statement(
         }
         // The witness proves these logical transitions. Backing storage remains
         // allocated throughout the activation, including suspended staging.
-        OwnedInstruction::StorageLive(_)
-        | OwnedInstruction::StorageEnd(_)
-        | OwnedInstruction::OpenCall(_) => {}
+        OwnedInstruction::StorageLive(owner) => {
+            resources::initialize(
+                out,
+                plan,
+                f.owners[owner.0].aggregate(),
+                &format!("%o{}", owner.0),
+            );
+        }
+        OwnedInstruction::StorageEnd(owner) => {
+            resources::drop_owner(
+                out,
+                plan,
+                name,
+                f.owners[owner.0].aggregate(),
+                &format!("%o{}", owner.0),
+                (diagnostics, plan::instruction_span(statement)),
+            );
+        }
+        OwnedInstruction::OpenCall(_) | OwnedInstruction::ReleaseLocalBorrow(_) => {}
     }
 }
-fn emit_scalar(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn emit_scalar<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     owned_statement: &OwnedStatement,
     diagnostics: &Diagnostics,
@@ -3778,8 +5722,175 @@ fn emit_scalar(
     };
     let t = f.locals[assign.destination.0].ty;
     let value = match assign.value {
+        Rvalue::CharacterConvert {
+            op,
+            operand,
+            name_span,
+            ..
+        } => {
+            let input = f.locals[operand.local.0].ty;
+            let value = load_operand(out, f, &format!("{name}_source"), operand);
+            if op == hir::ConversionOp::CharToU32 {
+                value
+            } else {
+                let width = ty(input);
+                let guarded = if input.quad_integer() {
+                    value.clone()
+                } else {
+                    let extension = if input.signed_integer() {
+                        "sext"
+                    } else {
+                        "zext"
+                    };
+                    writeln!(
+                        out,
+                        "  %{name}_char_full = {extension} {width} {value} to i128"
+                    )
+                    .unwrap();
+                    format!("%{name}_char_full")
+                };
+                writeln!(out, "  %{name}_char_max = icmp ule i128 {guarded}, 1114111\n  %{name}_char_before = icmp ult i128 {guarded}, 55296\n  %{name}_char_after = icmp ugt i128 {guarded}, 57343\n  %{name}_char_not_surrogate = or i1 %{name}_char_before, %{name}_char_after\n  %{name}_char_valid = and i1 %{name}_char_max, %{name}_char_not_surrogate\n  br i1 %{name}_char_valid, label %{name}_conversion_ok, label %{name}_char_error\n{name}_char_error:").unwrap();
+                emit_failure(out, diagnostics, FailureKind::CharacterRange, name_span);
+                writeln!(out, "{name}_conversion_ok:").unwrap();
+                if input.integer_bits() == Some(32) {
+                    value
+                } else {
+                    let instruction = if input.integer_bits().expect("verified integer") < 32 {
+                        "zext"
+                    } else {
+                        "trunc"
+                    };
+                    writeln!(
+                        out,
+                        "  %{name}_value = {instruction} {width} {value} to i32"
+                    )
+                    .unwrap();
+                    format!("%{name}_value")
+                }
+            }
+        }
+        Rvalue::Character(value) => u32::from(value).to_string(),
+        Rvalue::Float { bits, ty: selected } => {
+            let integer = if selected == hir::Ty::F32 {
+                "i32"
+            } else {
+                "i64"
+            };
+            writeln!(
+                out,
+                "  %{name}_value = bitcast {integer} {bits} to {}",
+                ty(selected)
+            )
+            .unwrap();
+            format!("%{name}_value")
+        }
+        Rvalue::FloatNegate { operand, .. } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            writeln!(out, "  %{name}_value = fneg {} {value}", ty(t)).unwrap();
+            format!("%{name}_value")
+        }
+        Rvalue::FloatArithmetic {
+            op, left, right, ..
+        } => {
+            let a = load_operand(out, f, &format!("{name}_left"), left);
+            let b = load_operand(out, f, &format!("{name}_right"), right);
+            floats::arithmetic(out, name, t, op, &a, &b)
+        }
+        Rvalue::FloatConvert { op, operand, .. } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            floats::convert(out, name, f.locals[operand.local.0].ty, t, op, &value)
+        }
+        Rvalue::BitNot { operand, .. } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            writeln!(out, "  %{name}_value = xor {} {value}, -1", ty(t)).unwrap();
+            format!("%{name}_value")
+        }
+        Rvalue::Bitwise {
+            op,
+            left,
+            right,
+            operator_span,
+        } => {
+            let a = load_operand(out, f, &format!("{name}_left"), left);
+            let b = load_operand(out, f, &format!("{name}_right"), right);
+            bitwise::binary(
+                out,
+                diagnostics,
+                name,
+                op,
+                t,
+                f.locals[right.local.0].ty,
+                &a,
+                &b,
+                operator_span,
+            )
+        }
+        Rvalue::Integer128 { low, high, .. } => {
+            (u128::from(low) | (u128::from(high) << 64)).to_string()
+        }
+        Rvalue::Integer { ty, bits } => integers::literal(ty, bits),
+        Rvalue::CheckedInteger {
+            op,
+            left,
+            right,
+            operator_span,
+        } => {
+            let a = load_operand(out, f, &format!("{name}_left"), left);
+            let b = load_operand(out, f, &format!("{name}_right"), right);
+            integers::arithmetic(out, diagnostics, name, t, op, &a, &b, operator_span)
+        }
+        Rvalue::CheckedNegateInteger {
+            operand,
+            operator_span,
+        } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            integers::negate(out, diagnostics, name, t, &value, operator_span)
+        }
+        Rvalue::CheckedIntegerCast {
+            operand,
+            target,
+            name_span,
+            ..
+        } => {
+            let input = f.locals[operand.local.0].ty;
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            integers::cast(out, diagnostics, name, input, target, &value, name_span)
+        }
+        Rvalue::I64(value) => value.to_string(),
+        Rvalue::WidenI64 { operand, .. } => {
+            let input = f.locals[operand.local.0].ty;
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            numeric::widen(out, name, input, &value)
+        }
+        Rvalue::CheckedI64ToI32 {
+            operand, name_span, ..
+        }
+        | Rvalue::CheckedI64ToU8 {
+            operand, name_span, ..
+        } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            numeric::narrow(out, diagnostics, name, t, &value, name_span)
+        }
+        Rvalue::CheckedNegateI64 {
+            operand,
+            operator_span,
+        } => {
+            let value = load_operand(out, f, &format!("{name}_operand"), operand);
+            numeric::negate(out, diagnostics, name, &value, operator_span)
+        }
+        Rvalue::CheckedI64 {
+            op,
+            left,
+            right,
+            operator_span,
+        } => {
+            let a = load_operand(out, f, &format!("{name}_left"), left);
+            let b = load_operand(out, f, &format!("{name}_right"), right);
+            numeric::arithmetic(out, diagnostics, name, op, &a, &b, operator_span)
+        }
         Rvalue::Bool(v) => if v { "true" } else { "false" }.to_string(),
         Rvalue::I32(v) => v.to_string(),
+        Rvalue::U8(v) => v.to_string(),
         Rvalue::Unit => "0".into(),
         Rvalue::Copy(v) => load_operand(out, f, &format!("{name}_value"), v),
         Rvalue::Load(p) => load_slot(
@@ -3792,7 +5903,7 @@ fn emit_scalar(
             operand, name_span, ..
         } => {
             let operand = load_operand(out, f, &format!("{name}_operand"), operand);
-            let suffix = continuation(f, &owned_statement.kind)
+            let suffix = continuation(plan, f, &owned_statement.kind)
                 .suffix()
                 .expect("conversion continuation");
             writeln!(out, "  %{name}_negative = icmp slt i32 {operand}, 0\n  %{name}_large = icmp sgt i32 {operand}, 255\n  %{name}_invalid = or i1 %{name}_negative, %{name}_large\n  br i1 %{name}_invalid, label %{name}_conversion_error, label %{name}_{suffix}\n{name}_conversion_error:").unwrap();
@@ -3817,7 +5928,16 @@ fn emit_scalar(
         Rvalue::CompareScalar {
             op, left, right, ..
         } => {
-            let unsigned = f.locals[left.local.0].ty == hir::Ty::U8;
+            let unsigned = matches!(
+                f.locals[left.local.0].ty,
+                hir::Ty::U8
+                    | hir::Ty::U16
+                    | hir::Ty::U32
+                    | hir::Ty::U64
+                    | hir::Ty::Usize
+                    | hir::Ty::U128
+            );
+            let floating = f.locals[left.local.0].ty.floating();
             let operand_type = ty(f.locals[left.local.0].ty);
             let left = load_operand(out, f, &format!("{name}_left"), left);
             let right = load_operand(out, f, &format!("{name}_right"), right);
@@ -3853,9 +5973,24 @@ fn emit_scalar(
                     }
                 }
             };
+            let (instruction, predicate) = if floating {
+                (
+                    "fcmp",
+                    match op {
+                        hir::ComparisonOp::Equal => "oeq",
+                        hir::ComparisonOp::NotEqual => "une",
+                        hir::ComparisonOp::Less => "olt",
+                        hir::ComparisonOp::LessEqual => "ole",
+                        hir::ComparisonOp::Greater => "ogt",
+                        hir::ComparisonOp::GreaterEqual => "oge",
+                    },
+                )
+            } else {
+                ("icmp", predicate)
+            };
             writeln!(
                 out,
-                "  %{name}_value = icmp {predicate} {operand_type} {left}, {right}"
+                "  %{name}_value = {instruction} {predicate} {operand_type} {left}, {right}"
             )
             .unwrap();
             format!("%{name}_value")
@@ -3865,7 +6000,7 @@ fn emit_scalar(
             operator_span,
         } => {
             let operand = load_operand(out, f, &format!("{name}_operand"), operand);
-            let suffix = continuation(f, &owned_statement.kind)
+            let suffix = continuation(plan, f, &owned_statement.kind)
                 .suffix()
                 .expect("arithmetic continuation");
             writeln!(out, "  %{name}_checked = call {{ i32, i1 }} @llvm.ssub.with.overflow.i32(i32 0, i32 {operand})\n  %{name}_overflow = extractvalue {{ i32, i1 }} %{name}_checked, 1").unwrap();
@@ -3886,7 +6021,7 @@ fn emit_scalar(
         } => {
             let left = load_operand(out, f, &format!("{name}_left"), left);
             let right = load_operand(out, f, &format!("{name}_right"), right);
-            let suffix = continuation(f, &owned_statement.kind)
+            let suffix = continuation(plan, f, &owned_statement.kind)
                 .suffix()
                 .expect("arithmetic continuation");
             match op {
@@ -3942,8 +6077,36 @@ fn emit_scalar(
         &value,
     );
 }
-fn emit_terminator(
-    storage: &NativeFunctionStorage<'_, '_>,
+fn frame_usage<W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    function: hir::DefId,
+) -> hosted_frames::Usage {
+    let usage = plan.function(function).usage();
+    hosted_frames::Usage {
+        slots: usage.scalar_slots,
+        bytes: usage.native_bytes,
+    }
+}
+
+fn emit_frame_enter(
+    out: &mut Emission,
+    diagnostics: &Diagnostics,
+    name: &str,
+    usage: hosted_frames::Usage,
+    span: Span,
+) {
+    hosted_frames::enter(out, name, usage, |out, kind| {
+        let kind = match kind {
+            hosted_frames::Failure::Frames => FailureKind::Frames,
+            hosted_frames::Failure::Slots => FailureKind::Slots,
+            hosted_frames::Failure::Bytes => FailureKind::NativeFrameBytes,
+        };
+        emit_failure(out, diagnostics, kind, span);
+    });
+}
+
+fn emit_terminator<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
     name: &str,
     term: &OwnedTerminator,
     context: (&Diagnostics, bool),
@@ -3978,9 +6141,24 @@ fn emit_terminator(
         OwnedTerminatorKind::ReturnScalar(value) => {
             let t = ty(f.locals[value.local.0].ty);
             let value = load_operand(out, f, &format!("{name}_value"), *value);
+            if !owned_vector::delivery(plan, id) {
+                // A canonical consuming vector primitive has already moved
+                // and cleared its input. Its prepaid return owns no leaves.
+                resources::drop_frame(out, plan, f, name, (diagnostics, term.span));
+            }
             writeln!(out, "  ret {t} {value}").unwrap();
         }
         OwnedTerminatorKind::ReturnOwned(owner) => {
+            if plan.binary_delivery_cost(id).is_some()
+                || plan.file_delivery_cost(id).is_some()
+                || vector::delivery(plan, id)
+                || owned_vector::delivery(plan, id)
+            {
+                // The canonical operation prepaid this exact return cost and
+                // already delivered into %result. It owns no resource leaves.
+                out.write_str("  ret void\n").unwrap();
+                return;
+            }
             transfer_checked(
                 out,
                 plan,
@@ -3989,6 +6167,7 @@ fn emit_terminator(
                 (&format!("%o{}", owner.0), "%result"),
                 (diagnostics, term.span),
             );
+            resources::drop_frame(out, plan, f, name, (diagnostics, term.span));
             out.write_str("  ret void\n").unwrap();
         }
         OwnedTerminatorKind::Invoke { call, continuation } => {
@@ -4029,7 +6208,10 @@ fn emit_terminator(
                         )
                         .unwrap();
                         args.push(format!("ptr %{name}_arg{i}"));
-                        if matches!(f.loans[l.0].referent(), BorrowedTy::ScalarSlice(_)) {
+                        if matches!(
+                            f.loans[l.0].referent(),
+                            BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                        ) {
                             writeln!(
                                 out,
                                 "  %{name}_arg{i}_length = load i32, ptr %ll{}, align 4",
@@ -4056,6 +6238,10 @@ fn emit_terminator(
                 + joined.capacity()
                 + prefix.capacity();
             out.call_scratch_peak = out.call_scratch_peak.max(scratch);
+            let usage = frame_usage(plan, descriptor.target);
+            if out.policy.recursive() {
+                emit_frame_enter(out, diagnostics, name, usage, term.span);
+            }
             writeln!(
                 out,
                 "  {prefix}call {} @__oxid_owned_fn_{}({})",
@@ -4064,6 +6250,9 @@ fn emit_terminator(
                 joined
             )
             .unwrap();
+            if out.policy.recursive() {
+                hosted_frames::leave(out, name, usage);
+            }
             if let CallResult::Scalar(destination) = descriptor.result {
                 store_slot(
                     out,
@@ -4087,6 +6276,10 @@ mod builtin_output_tests;
 #[cfg(test)]
 #[path = "native_tests.rs"]
 mod tests;
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+#[path = "native_vector_tests.rs"]
+mod vector_emission_tests;
 
 #[cfg(test)]
 mod division_tests {
@@ -4300,6 +6493,10 @@ mod division_tests {
 #[cfg(test)]
 #[path = "native_inventory_admission_tests.rs"]
 mod inventory_admission_tests;
+
+#[cfg(test)]
+#[path = "hosted_capacity_tests.rs"]
+mod hosted_capacity_tests;
 
 #[cfg(test)]
 mod source_name_controls {
@@ -5013,3 +7210,31 @@ fn owned_enum_native_shared_branch_counts_and_exact_ir_admission() {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "copy_record_native_tests.rs"]
+mod copy_record_tests;
+
+#[cfg(test)]
+#[path = "copy_record_debug_tests.rs"]
+mod copy_record_debug_tests;
+
+#[cfg(test)]
+#[path = "record_vector_native_tests.rs"]
+mod record_vector_tests;
+
+#[cfg(test)]
+#[path = "native_owned_vector_schema_tests.rs"]
+mod owned_vector_schema_tests;
+
+#[cfg(test)]
+#[path = "native_owned_enum_vector_schema_tests.rs"]
+mod owned_enum_vector_schema_tests;
+
+#[cfg(test)]
+#[path = "native_owned_vector_tests.rs"]
+mod owned_vector_tests;
+
+#[cfg(test)]
+#[path = "native_owned_vector_commit_tests.rs"]
+mod owned_vector_commit_tests;

@@ -104,8 +104,8 @@ class NativeSuiteTests(unittest.TestCase):
         self.assertEqual(scripts, {
             "verify_native_preview.py": ("/release",),
             "verify_native_arithmetic.py": ("/debug", "/release"),
-            "verify_scalar_comparisons.py": ("/debug", "/release"),
-            "verify_boolean_logic.py": ("/debug", "/release", "--expectation-amendment", "checked-unary-negation-v1"),
+            "verify_bit_scalar_comparisons.py": ("/debug", "/release"),
+            "verify_bit_boolean_logic.py": ("/debug", "/release", "--expectation-amendment", "checked-unary-negation-v1"),
             "verify_mutable_locals.py": ("/debug", "/release", "--expectation-amendment", "bounded-enum-match-v1"),
             "verify_while_loops.py": ("/debug", "/release"),
             "verify_loop_control.py": ("/debug", "/release"),
@@ -201,7 +201,7 @@ class NativeSuiteTests(unittest.TestCase):
         for job in build_jobs(scripts, str(binary), str(binary)):
             Path(job.command[1]).write_text(f"print({job.pass_prefix.decode()!r} + ': fixture: PASS')\n")
         self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
-        script = scripts / "verify_scalar_comparisons.py"
+        script = scripts / "verify_bit_scalar_comparisons.py"
         script.write_text("from pathlib import Path\n" +
                           f"Path({str(binary)!r}).write_text('changed compiler')\n" + script.read_text())
         result = subprocess.run(command, capture_output=True)

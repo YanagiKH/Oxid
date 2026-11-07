@@ -29,6 +29,16 @@ class PrivacyCheckoutTests(unittest.TestCase):
             "tests/fixtures/bounded_enum_scanner/scanner.ox",
         ))
 
+    def test_exact_owned_record_vector_compile_time_fixture_roster(self):
+        expected = ("scripts/owned_record_vector_acceptance/enum16.ox",)
+        self.assertEqual(privacy.OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES, expected)
+        includer = ROOT / "src/frontend/oir/owned/source/owned_vector_source_resource_tests.rs"
+        references = re.findall(r'include_str!\("([^"\n]+)"\)', includer.read_text())
+        self.assertEqual(references, ["../../../../../" + expected[0]] * 2)
+        self.assertEqual({(includer.parent / name).resolve() for name in references},
+                         {ROOT / name for name in expected})
+        self.assertFalse(set(expected) & set(privacy.COMPILE_TIME_FIXTURES))
+
     def test_exact_hir_compile_time_fixture_roster(self):
         stems = ('public', 'rich', 'scalar-arithmetic', 'scalar-assignment',
                  'scalar-boolean', 'scalar-comparison', 'scalar-loop', 'scalar-unit',
@@ -38,6 +48,33 @@ class PrivacyCheckoutTests(unittest.TestCase):
         self.assertEqual(privacy.HIR_IMPORT_COMPILE_TIME_FIXTURES, expected)
         self.assertEqual(len(privacy.COMPILE_TIME_FIXTURES), 74)
         self.assertEqual(len(set(privacy.COMPILE_TIME_FIXTURES)), 74)
+
+    def test_exact_owned_text_compile_time_fixture_roster(self):
+        expected = ('packages/utf8_text/src/lib.ox',)
+        self.assertEqual(privacy.OWNED_TEXT_COMPILE_TIME_FIXTURES, expected)
+        includer = ROOT / 'src/frontend/oir/owned/source/owned_text_source_resource_tests.rs'
+        references = re.findall(r'include_str!\("([^"\n]+)"\)', includer.read_text())
+        self.assertEqual(references, ['../../../../../' + expected[0]])
+        self.assertEqual({(includer.parent / name).resolve() for name in references},
+                         {ROOT / name for name in expected})
+        self.assertFalse(set(expected) & set(privacy.COMPILE_TIME_FIXTURES))
+        self.assertFalse(set(expected) & set(privacy.OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES))
+
+    def test_exact_owned_parameter_compile_time_fixture_roster(self):
+        expected = (
+            'packages/owned_vec/src/lib.ox',
+            'examples/owned-vector-results/src/main.ox',
+        )
+        self.assertEqual(privacy.OWNED_PARAMETER_COMPILE_TIME_FIXTURES, expected)
+        includer = ROOT / 'src/frontend/oir/owned/source/owned_parameter_cases.rs'
+        references = re.findall(r'include_str!\("([^"\n]+)"\)', includer.read_text())
+        self.assertEqual(references, ['../../../../../' + name for name in expected])
+        self.assertEqual({(includer.parent / name).resolve() for name in references},
+                         {ROOT / name for name in expected})
+        previous = (*privacy.COMPILE_TIME_FIXTURES,
+                    *privacy.OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES,
+                    *privacy.OWNED_TEXT_COMPILE_TIME_FIXTURES)
+        self.assertFalse(set(expected) & set(previous))
 
     def test_exact_v2_compile_time_fixture_roster(self):
         expected = (
@@ -83,7 +120,20 @@ class PrivacyCheckoutTests(unittest.TestCase):
             actual = {path.relative_to(checkout).as_posix()
                       for path in (checkout / 'tests').rglob('*') if path.is_file()}
             self.assertEqual(actual, set(privacy.COMPILE_TIME_FIXTURES))
-            for name in actual:
+            self.assertFalse((checkout / 'tests/native_library.rs').exists())
+            external = {path.relative_to(checkout).as_posix()
+                        for path in (checkout / 'scripts').rglob('*') if path.is_file()}
+            self.assertEqual(external, set(privacy.OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES))
+            text_sources = {path.relative_to(checkout).as_posix()
+                            for path in (checkout / 'packages').rglob('*') if path.is_file()}
+            self.assertEqual(text_sources, set(privacy.OWNED_TEXT_COMPILE_TIME_FIXTURES)
+                             | {'packages/owned_vec/src/lib.ox'})
+            examples = {path.relative_to(checkout).as_posix()
+                        for path in (checkout / 'examples').rglob('*') if path.is_file()}
+            self.assertEqual(examples, {'examples/owned-vector-results/src/main.ox'})
+            self.assertFalse((checkout / 'packages/owned_vec/oxid.toml').exists())
+            self.assertFalse((checkout / 'examples/owned-vector-results/oxid.toml').exists())
+            for name in actual | external | text_sources | examples:
                 self.assertEqual((checkout / name).read_bytes(), (ROOT / name).read_bytes())
             empty = checkout / 'tests/fixtures/fixed_array_source_unit3/typing-contracts-v1/fixtures/guard-empty/main.ox'
             self.assertEqual(empty.read_bytes(), b'')
@@ -98,7 +148,13 @@ class PrivacyCheckoutTests(unittest.TestCase):
                 dynamic = re.findall(
                     r'include(?:_str|_bytes)?!\(\s*concat!\(\s*env!\("CARGO_MANIFEST_DIR"\),\s*"(/tests/fixtures/checked_hir_import/(?:scalar-)?)",\s*\$name,\s*"(-source\.txt|-success\.bin)"\s*\)\s*\)',
                     text)
-                self.assertEqual(len(literal) + len(rooted) + len(dynamic),
+                generated = re.findall(r'include_bytes!\(concat!\(env!\("OUT_DIR"\), "/float_format\.a"\)\)', text)
+                self.assertEqual(len(generated), 1 if source.relative_to(checkout).as_posix() == 'src/frontend/native.rs' else 0)
+                if generated:
+                    self.assertEqual((checkout / 'native/float_format.rs').read_bytes(), (ROOT / 'native/float_format.rs').read_bytes())
+                    self.assertIn('native/float_format.rs', (checkout / 'build.rs').read_text())
+                    self.assertIn('float_format.a', (checkout / 'build.rs').read_text())
+                self.assertEqual(len(literal) + len(rooted) + len(dynamic) + len(generated),
                                  len(re.findall(r'include(?:_str|_bytes)?!\(', text)), source)
                 for name, base in [(name, source.parent) for name in literal] + [(name.lstrip('/'), checkout) for name in rooted]:
                     target = (base / name).resolve()
@@ -115,7 +171,7 @@ class PrivacyCheckoutTests(unittest.TestCase):
                         relative = prefix.lstrip('/') + name + suffix
                         self.assertIn(relative, privacy.HIR_IMPORT_COMPILE_TIME_FIXTURES)
                         self.assertTrue((checkout / relative).is_file(), relative)
-                count += len(literal) + len(rooted) + len(dynamic)
+                count += len(literal) + len(rooted) + len(dynamic) + len(generated)
             # 61 predecessor includes, 60 original import includes/macro
             # definitions, two v2 endpoints and ten diagnostic-test include sites.
             # Real cfg(test)
@@ -124,7 +180,37 @@ class PrivacyCheckoutTests(unittest.TestCase):
             # RFC0030's importer work-bound controls read these existing frozen
             # sources independently; no new fixture or dynamic include shape.
             u8_boundary_source_reads = 2  # rich-source.txt and source-255.txt
-            self.assertEqual(count, predecessor_include_sites + u8_boundary_source_reads)
+            byte_buffer_runtime_reads = 3  # runtime adapter, implementation and header
+            native_file_runtime_reads = 1  # experimental_files.c
+            program_argument_runtime_reads = 1  # experimental_arguments.c
+            integer128_runtime_reads = 1  # typed_integer128.c
+            self.assertEqual((checkout / 'native/typed_integer128.c').read_bytes(),
+                             (ROOT / 'native/typed_integer128.c').read_bytes())
+            # The float adapter embeds one C source and its generated no_std archive.
+            float_runtime_inputs = 2
+            character_runtime_inputs = 1
+            vector_runtime_inputs = 3
+            for name in ("typed_vector.c", "experimental_vector.c", "experimental_vector.h"):
+                self.assertEqual((checkout / "native" / name).read_bytes(),
+                                 (ROOT / "native" / name).read_bytes())
+            owned_record_runtime_inputs = 2
+            owned_vector_runtime_inputs = 2
+            for name in ("experimental_owned_record.c", "experimental_owned_record.h",
+                         "experimental_owned_vector.c", "experimental_owned_vector.h"):
+                self.assertEqual((checkout / "native" / name).read_bytes(),
+                                 (ROOT / "native" / name).read_bytes())
+            # Two literal include sites share the one explicitly copied source.
+            owned_vector_fixture_reads = 2
+            owned_text_fixture_reads = 1
+            owned_parameter_fixture_reads = 2
+            self.assertEqual((checkout / "native/typed_character.c").read_bytes(),
+                             (ROOT / "native/typed_character.c").read_bytes())
+            self.assertEqual(count, vector_runtime_inputs + character_runtime_inputs + float_runtime_inputs + predecessor_include_sites + u8_boundary_source_reads
+                             + byte_buffer_runtime_reads + native_file_runtime_reads
+                             + program_argument_runtime_reads + integer128_runtime_reads
+                             + owned_record_runtime_inputs + owned_vector_runtime_inputs
+                             + owned_vector_fixture_reads + owned_text_fixture_reads
+                             + owned_parameter_fixture_reads)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -136,6 +222,62 @@ class PrivacyCheckoutTests(unittest.TestCase):
                 (root / name).mkdir()
             with self.assertRaises(FileNotFoundError):
                 privacy.materialize_checkout(root, Path(directory) / 'checkout')
+
+    def test_missing_owned_record_vector_fixture_fails_materialization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'source'
+            root.mkdir()
+            for name in ('Cargo.toml', 'Cargo.lock', 'build.rs'):
+                (root / name).write_bytes(b'')
+            for name in ('src', 'native', 'compiler', 'stdlib', 'rfcs', 'fixtures'):
+                (root / name).mkdir()
+            for name in privacy.COMPILE_TIME_FIXTURES:
+                fixture = root / name
+                fixture.parent.mkdir(parents=True, exist_ok=True)
+                fixture.write_bytes(b'fixture')
+            with self.assertRaises(FileNotFoundError) as error:
+                privacy.materialize_checkout(root, Path(directory) / 'checkout')
+            self.assertEqual(Path(error.exception.filename),
+                             root / 'scripts/owned_record_vector_acceptance/enum16.ox')
+
+    def test_missing_owned_text_fixture_fails_materialization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'source'
+            root.mkdir()
+            for name in ('Cargo.toml', 'Cargo.lock', 'build.rs'):
+                (root / name).write_bytes(b'')
+            for name in ('src', 'native', 'compiler', 'stdlib', 'rfcs', 'fixtures'):
+                (root / name).mkdir()
+            for name in (*privacy.COMPILE_TIME_FIXTURES,
+                         *privacy.OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES):
+                fixture = root / name
+                fixture.parent.mkdir(parents=True, exist_ok=True)
+                fixture.write_bytes(b'fixture')
+            with self.assertRaises(FileNotFoundError) as error:
+                privacy.materialize_checkout(root, Path(directory) / 'checkout')
+            self.assertEqual(Path(error.exception.filename), root / 'packages/utf8_text/src/lib.ox')
+
+    def test_either_missing_owned_parameter_asset_fails_materialization(self):
+        for missing in privacy.OWNED_PARAMETER_COMPILE_TIME_FIXTURES:
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'source'
+                root.mkdir()
+                for name in ('Cargo.toml', 'Cargo.lock', 'build.rs'):
+                    (root / name).write_bytes(b'')
+                for name in ('src', 'native', 'compiler', 'stdlib', 'rfcs', 'fixtures'):
+                    (root / name).mkdir()
+                for name in (*privacy.COMPILE_TIME_FIXTURES,
+                             *privacy.OWNED_RECORD_VECTOR_COMPILE_TIME_FIXTURES,
+                             *privacy.OWNED_TEXT_COMPILE_TIME_FIXTURES,
+                             *privacy.OWNED_PARAMETER_COMPILE_TIME_FIXTURES):
+                    if name == missing:
+                        continue
+                    fixture = root / name
+                    fixture.parent.mkdir(parents=True, exist_ok=True)
+                    fixture.write_bytes(b'fixture')
+                with self.assertRaises(FileNotFoundError) as error:
+                    privacy.materialize_checkout(root, Path(directory) / 'checkout')
+                self.assertEqual(Path(error.exception.filename), root / missing)
 
 
 if __name__ == '__main__':

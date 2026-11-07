@@ -2,7 +2,9 @@
 //! No linked execution witness is constructed in this module.
 #![allow(dead_code)] // Private ProjectCandidate qualification precedes activation.
 
+pub(in crate::frontend) mod editor_completion;
 mod enum_views;
+mod generics;
 mod resource;
 mod sealed;
 mod source_owner;
@@ -20,7 +22,10 @@ mod enum_tests;
 mod tests;
 use super::{
     ast,
-    builtin_catalog::{BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet, DeclarationOrigin},
+    builtin_catalog::{
+        experimental, owned_vector, vector, BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet,
+        DeclarationOrigin,
+    },
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
     oir::owned_types::{
@@ -42,6 +47,84 @@ pub(super) use resource::{
     AliasObservation, NominalAliasObservation, Observation, SeenObservation,
 };
 pub(super) use resource::{Counts, IndexLimits, IndexPlan, WorkMeter};
+
+/// Semantic observations describe the selected source pipeline. WorkEvent,
+/// spent work, work limits and allocator traces describe every actual attempt.
+/// This guard changes only test telemetry; it does not exist in production.
+#[cfg(test)]
+pub(in crate::frontend) struct SemanticObservationTransaction<'w> {
+    work: &'w WorkMeter,
+    enabled: bool,
+    original_start: usize,
+    candidate_start: Option<(usize, &'static str)>,
+}
+#[cfg(test)]
+impl SemanticObservationTransaction<'_> {
+    pub fn candidate_started(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        assert!(self.candidate_start.is_none());
+        let observations = self.work.observations.borrow();
+        let phase = observations
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                Observation::Phase(phase) => Some(*phase),
+                _ => None,
+            })
+            .expect("the original source attempt must observe its phase");
+        self.candidate_start = Some((observations.len(), phase));
+    }
+
+    pub fn candidate_selected(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        let (original_end, _) = self
+            .candidate_start
+            .take()
+            .expect("semantic candidate must be started before selection");
+        drop(
+            self.work
+                .observations
+                .borrow_mut()
+                .drain(self.original_start..original_end),
+        );
+    }
+}
+#[cfg(test)]
+impl Drop for SemanticObservationTransaction<'_> {
+    fn drop(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        if let Some((original_end, original_phase)) = self.candidate_start {
+            // Restore the private cursor through its ordinary phase primitive,
+            // then remove both the abandoned suffix and this transient reset.
+            self.work.phase(original_phase);
+            self.work.observations.borrow_mut().truncate(original_end);
+        }
+    }
+}
+#[cfg(test)]
+impl WorkMeter {
+    pub fn semantic_observation_transaction(&self) -> SemanticObservationTransaction<'_> {
+        let enabled = self.observing();
+        SemanticObservationTransaction {
+            work: self,
+            enabled,
+            original_start: if enabled {
+                self.observations.borrow().len()
+            } else {
+                0
+            },
+            candidate_start: None,
+        }
+    }
+}
+
+pub(super) use sealed::collect_owned_vector_candidate;
 #[cfg(test)]
 pub(super) use sealed::{
     collect_builtin_candidate, collect_closed, collect_enum_candidate, collect_output_candidate,
@@ -59,6 +142,11 @@ const MODULE: u32 = 2;
 const ENUM: u32 = 3;
 const KIND_MASK: u32 = 3;
 const PUBLIC: u32 = 4;
+
+/// One preorder containment predicate for executable and editor namespaces.
+fn module_contains(root: usize, subtree_end: usize, module: usize) -> bool {
+    root <= module && module < subtree_end
+}
 
 /// Both alias lanes share the original-row prefix and checked builtin suffix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -270,6 +358,7 @@ struct Tables<'s> {
     alias_order: Vec<u32>,
     root_main: u32,
     candidate_source_origin: CandidateOrigin,
+    has_element_ranges: bool,
     builtins: BuiltinAdmission<'s>,
 }
 #[derive(Debug)]
@@ -285,7 +374,8 @@ struct Scratch {
 // item handles, counters, ranges and formatter arithmetic; row copies and other
 // association handles are listed separately. Disjoint build/query/format phases are deliberately
 // summed, except the explicitly named u8 reservation/preflight phase overlay
-// on the noncoexisting prepared-name pair. No counter-bank credit is taken.
+// on the noncoexisting prepared-name pair and the collector/query overlay below.
+// No counter-bank credit is taken.
 // Test-only event Vec headers/payloads are excluded.
 // The prior absolute record/callee -> select -> absolute_endpoint -> segments
 // chain has four by-value ItemPathRef handles (20 measured words). Name that
@@ -301,10 +391,76 @@ const PREPARED_OR_RESERVATION: usize = {
         pair
     }
 };
+// The table and the independent admission temporary both retain this carrier.
+pub(in crate::frontend) const FILE_ADMISSION_CARRIER_GROWTH: usize =
+    size_of::<BuiltinAdmission<'static>>() - 32;
+// For one index, sealed::collect moves its non-Copy admission local into Tables
+// before returning DeclarationFacts. Only that returned owner (or its finished
+// DeclarationIndex) can create a QuerySession. Their complete standalone
+// carriers therefore do not coexist. Tables and its own admission remain fully
+// charged independently; this overlay takes no credit from either carrier.
+const ADMISSION_OR_QUERY_SESSION: usize = {
+    let admission = size_of::<BuiltinAdmission<'static>>();
+    let query = size_of::<QuerySession<'static, 'static>>();
+    if admission > query {
+        admission
+    } else {
+        query
+    }
+};
+// Preserve the pre-vector carrier bank and price complete current header growth
+// separately. These mirrors are accounting types, never constructor authority.
+#[allow(dead_code)]
+#[repr(C, align(8))]
+struct PreVectorBuiltinAdmission<'s> {
+    anchors: [u32; 9],
+    experimental: [u8; 4],
+    source: std::marker::PhantomData<&'s Span>,
+}
+#[allow(dead_code)]
+struct PreVectorTables<'s> {
+    sources: SourceOwner<'s>,
+    originals: Vec<OriginalRow>,
+    original_order: Vec<u32>,
+    functions: Vec<FunctionRow>,
+    records: Vec<RecordRow>,
+    fields: Vec<FieldRow>,
+    enums: Vec<EnumRow>,
+    variants: Vec<VariantRow>,
+    modules: Vec<ModuleRow>,
+    children: Vec<u32>,
+    imports: Vec<ImportRow>,
+    aliases: Vec<AliasCell>,
+    alias_order: Vec<u32>,
+    root_main: u32,
+    candidate_source_origin: CandidateOrigin,
+    builtins: PreVectorBuiltinAdmission<'s>,
+}
+const PRE_VECTOR_ADMISSION_OR_QUERY: usize = {
+    let admission = size_of::<PreVectorBuiltinAdmission<'static>>();
+    let query = size_of::<QuerySession<'static, 'static>>();
+    if admission > query {
+        admission
+    } else {
+        query
+    }
+};
+const VECTOR_INDEX_HEADER_GROWTH: usize = size_of::<Tables<'static>>()
+    - size_of::<PreVectorTables<'static>>()
+    + ADMISSION_OR_QUERY_SESSION
+    - PRE_VECTOR_ADMISSION_OR_QUERY;
+// New counted syntax controls have a separate exact typed row. The historical
+// 4096-byte bank is not enlarged or treated as spare room for these roles. The
+// source-authentication cursor is added only when the same paid walk reports a
+// source-backed slice; both additions remain subject to the unchanged IndexLimits.
+const SYNTAX_FEATURE_CONTROL_BYTES: usize = ast::SYNTAX_FEATURE_CONTROL_BYTES
+    + size_of::<usize>() // supplemental syntax_scratch subtotal
+    + size_of::<usize>() // combined fixed_scratch subtotal
+    + size_of::<[Option<usize>; 2]>(); // checked subtotal result transports
 const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<IndexPlan>()
     + size_of::<Counts>()
-    + size_of::<Tables<'static>>()
+    + size_of::<PreVectorTables<'static>>()
     + size_of::<[u32; 33]>() * 3
     + size_of::<ImportTxn>()
     + PREPARED_OR_RESERVATION
@@ -316,7 +472,6 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     // The checked path view and its full associated handle coexist at query sites.
     + size_of::<source_owner::QualifiedPathView<'static>>()
     + size_of::<super::project::QualifiedPathRef>()
-    + size_of::<QuerySession<'static, 'static>>()
     + size_of::<OriginalRow>()
     + size_of::<ModuleRow>()
     + size_of::<FunctionRow>()
@@ -346,9 +501,8 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     + size_of::<Result<NominalId, Box<Diagnostic>>>()
     // The shared nominal helper borrows a handle rather than making a fifth copy.
     + size_of::<&ItemPathRef>()
-    // Added import/identity state is priced in full, even when build/query
-    // phases do not overlap. The admission local is separate from Tables.
-    + size_of::<BuiltinAdmission<'static>>()
+    // Complete collector/query carriers share only their disjoint phase slot.
+    + PRE_VECTOR_ADMISSION_OR_QUERY
     + size_of::<Result<DeclarationProjection, Box<Diagnostic>>>()
     + size_of::<Result<Option<DeclarationHandle>, Box<Diagnostic>>>()
     + size_of::<Result<BuiltinItem, Box<Diagnostic>>>()
@@ -370,7 +524,14 @@ const FIXED_SCRATCH: usize = size_of::<Scratch>()
     // transports in production index queries. No transport savings are credited.
     + size_of::<BuiltinEnum>()
     + size_of::<BuiltinFunction>();
+#[cfg(test)]
+const CURRENT_BASE_SCRATCH: usize = FIXED_SCRATCH
+    + VECTOR_INDEX_HEADER_GROWTH
+    + SYNTAX_FEATURE_CONTROL_BYTES
+    + super::builtin_catalog::builtin_set_control_bytes();
 const _: () = {
+    assert!(size_of::<Tables<'static>>() >= size_of::<PreVectorTables<'static>>());
+    assert!(ADMISSION_OR_QUERY_SESSION >= PRE_VECTOR_ADMISSION_OR_QUERY);
     assert!(FIXED_SCRATCH <= 4096);
     assert!(size_of::<[ItemPathRef; 4]>().is_multiple_of(size_of::<usize>()));
     assert!(ITEM_HANDLE_WORDS <= 128);
@@ -389,7 +550,17 @@ enum AbsolutePrefix {
     Enumeration(u32), // The visible enum original, not a module/record ordinal.
 }
 
-impl Tables<'_> {
+impl<'s> Tables<'s> {
+    fn builtin_anchor(&self, import: u32) -> Result<&'s Span, Box<Diagnostic>> {
+        let import = self.import(import)?;
+        let view = self.sources.import_path(QualifiedPathRef {
+            file: import.span.file,
+            path: import.path,
+        })?;
+        view.segments()
+            .last()
+            .ok_or_else(|| bad(self.sources.eof()))
+    }
     fn require_current_source_pipeline(&self) -> Result<(), Box<Diagnostic>> {
         if let Some(origin) = self.candidate_source_origin.span() {
             return Err(diagnostic(
@@ -397,6 +568,11 @@ impl Tables<'_> {
                 "resolve",
                 if self.candidate_source_origin.is_builtin() {
                     "builtin source syntax is unavailable"
+                } else if matches!(
+                    self.candidate_source_origin,
+                    CandidateOrigin::OwnedVectorPlan(_)
+                ) {
+                    "owned record vector source admission is unavailable"
                 } else {
                     "enum source syntax is unavailable"
                 },
@@ -448,6 +624,27 @@ impl Tables<'_> {
             Err(bad(self.sources.eof()))
         }
     }
+    fn experimental_rank(&self, item: experimental::Item) -> Result<usize, Box<Diagnostic>> {
+        let set = self.builtins.set();
+        if !set.experimental().contains(item) {
+            return Err(bad(self.sources.eof()));
+        }
+        if let Some(enumeration) = item.enumeration() {
+            set.experimental_enum_rank(enumeration)
+                .ok_or_else(|| bad(self.sources.eof()))
+        } else if let Some(function) = item.function() {
+            set.experimental_function_rank(function)
+                .map(|rank| set.extra_enums() + rank)
+                .ok_or_else(|| bad(self.sources.eof()))
+        } else {
+            Ok(set.extra_enums()
+                + set.extra_functions()
+                + usize::from(
+                    item == experimental::Item::File
+                        && set.experimental().contains(experimental::Item::ByteBuf),
+                ))
+        }
+    }
     fn builtin_handle(&self, item: BuiltinItem) -> Result<DeclarationHandle, Box<Diagnostic>> {
         let extra = match item {
             BuiltinItem::Enum(item) if self.builtins.set().contains_enum(item) => match item {
@@ -466,6 +663,18 @@ impl Tables<'_> {
                                 .contains_function(BuiltinFunction::ReadStdin),
                         ),
                     }
+            }
+            BuiltinItem::Experimental(item) => self.experimental_rank(item)?,
+            BuiltinItem::Vector(item) if self.builtins.set().contains_vector(item) => {
+                let set = self.builtins.set();
+                set.extra_enums()
+                    + set.extra_functions()
+                    + usize::from(set.experimental().contains(experimental::Item::ByteBuf))
+                    + usize::from(set.experimental().contains(experimental::Item::File))
+                    + set
+                        .experimental()
+                        .vector_item_rank(item)
+                        .ok_or_else(|| bad(self.sources.eof()))?
             }
             _ => return Err(bad(self.sources.eof())),
         };
@@ -528,6 +737,28 @@ impl Tables<'_> {
                 BuiltinFunction::WriteStdout,
             )));
         }
+        let set = self.builtins.set();
+        let vector_base = self.originals.len()
+            + set.extra_enums()
+            + set.extra_functions()
+            + usize::from(set.experimental().contains(experimental::Item::ByteBuf))
+            + usize::from(set.experimental().contains(experimental::Item::File));
+        if let Some(rank) = (handle.0 as usize).checked_sub(vector_base) {
+            let item = set
+                .experimental()
+                .vector_item_at(rank)
+                .ok_or_else(|| bad(self.sources.eof()))?;
+            return Ok(DeclarationProjection::Builtin(BuiltinItem::Vector(item)));
+        }
+        for item in experimental::Item::ALL {
+            if self.builtins.set().experimental().contains(item)
+                && handle == self.builtin_handle(BuiltinItem::Experimental(item))?
+            {
+                return Ok(DeclarationProjection::Builtin(BuiltinItem::Experimental(
+                    item,
+                )));
+            }
+        }
         Err(bad(self.sources.eof()))
     }
     fn nominal_handle(&self, handle: DeclarationHandle) -> Result<NominalId, Box<Diagnostic>> {
@@ -542,6 +773,21 @@ impl Tables<'_> {
                         }
                     },
             ))),
+            DeclarationProjection::Builtin(BuiltinItem::Experimental(item)) => {
+                if item == experimental::Item::ByteBuf {
+                    Ok(NominalId::ByteBuf)
+                } else if item == experimental::Item::File {
+                    Ok(NominalId::File)
+                } else {
+                    item.enumeration()
+                        .and_then(|item| self.builtins.set().experimental_enum_rank(item))
+                        .map(|rank| NominalId::Enum(EnumId(self.enums.len() + rank)))
+                        .ok_or_else(|| bad(self.sources.eof()))
+                }
+            }
+            DeclarationProjection::Builtin(BuiltinItem::Vector(vector::Item::Vec)) => {
+                Ok(NominalId::Vector)
+            }
             _ => Err(bad(self.sources.eof())),
         }
     }
@@ -573,6 +819,34 @@ impl Tables<'_> {
                         ),
                     },
             )),
+            DeclarationProjection::Builtin(BuiltinItem::Experimental(item)) => item
+                .function()
+                .and_then(|item| self.builtins.set().experimental_function_rank(item))
+                .map(|rank| DefId(self.functions.len() + rank))
+                .ok_or_else(|| bad(self.sources.eof())),
+            DeclarationProjection::Builtin(BuiltinItem::Vector(item))
+                if item.owned_item().is_some() =>
+            {
+                let item = item.owned_item().ok_or_else(|| bad(self.sources.eof()))?;
+                self.builtins
+                    .set()
+                    .experimental()
+                    .owned_vector_item_rank(item)
+                    .map(|rank| {
+                        DefId(
+                            self.functions.len()
+                                + self.builtins.set().extra_functions()
+                                + self.builtins.set().vector_templates()
+                                + rank,
+                        )
+                    })
+                    .ok_or_else(|| bad(self.sources.eof()))
+            }
+            DeclarationProjection::Builtin(BuiltinItem::Vector(item)) => item
+                .operation()
+                .and_then(|operation| self.builtins.set().vector_template_rank(operation))
+                .map(|rank| DefId(self.functions.len() + rank))
+                .ok_or_else(|| bad(self.sources.eof())),
             _ => Err(bad(self.sources.eof())),
         }
     }
@@ -641,7 +915,27 @@ impl Tables<'_> {
         {
             return self.builtin_handle(BuiltinItem::Enum(BuiltinEnum::WriteStatus));
         }
+        if nominal == NominalId::File {
+            return self.builtin_handle(BuiltinItem::Experimental(experimental::Item::File));
+        }
+        if nominal == NominalId::Vector {
+            return self.builtin_handle(BuiltinItem::Vector(vector::Item::Vec));
+        }
+        if nominal == NominalId::ByteBuf {
+            return self.builtin_handle(BuiltinItem::Experimental(experimental::Item::ByteBuf));
+        }
+        for item in experimental::Enumeration::ALL {
+            if self
+                .builtins
+                .set()
+                .experimental_enum_rank(item)
+                .is_some_and(|rank| nominal == NominalId::Enum(EnumId(self.enums.len() + rank)))
+            {
+                return self.builtin_handle(BuiltinItem::Experimental(item.item()));
+            }
+        }
         let original = match nominal {
+            NominalId::ByteBuf | NominalId::File | NominalId::Vector => None,
             NominalId::Record(id) => self.records.get(id.0).map(|row| row.original),
             NominalId::Enum(id) => self.enums.get(id.0).map(|row| row.original),
         }
@@ -760,7 +1054,11 @@ impl Tables<'_> {
         if b as usize >= self.modules.len() {
             return Err(bad(self.sources.eof()));
         }
-        Ok(a <= b && b < row.subtree_end)
+        Ok(module_contains(
+            a as usize,
+            row.subtree_end as usize,
+            b as usize,
+        ))
     }
     fn permission(
         &self,
@@ -943,7 +1241,7 @@ impl Tables<'_> {
             let item = match self
                 .project_handle(self.original_for_nominal(NominalId::Enum(enumeration), member)?)?
             {
-                DeclarationProjection::Builtin(BuiltinItem::Enum(item)) => item,
+                DeclarationProjection::Builtin(item) if item.variant_count() != 0 => item,
                 _ => return Err(bad(member)),
             };
             let spelling = self.sources.text(member)?;
@@ -1075,6 +1373,12 @@ pub(super) enum TypeContext {
     Reference,
     Constructor,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NominalTypeFilter {
+    Records,
+    References,
+    Values,
+}
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Access {
     Allowed,
@@ -1192,13 +1496,22 @@ impl<'i, 's> QuerySession<'i, 's> {
         self.work.debit(1, ty.span, "query value type")?;
         self.requester(requester, ty.span)?;
         match ty.kind {
+            ast::TypeSyntaxKind::Applied(_) | ast::TypeSyntaxKind::AppliedReference { .. } => {
+                Err(diagnostic(
+                    "E0300",
+                    "generics",
+                    "generic nominal types are not available yet",
+                    ty.span,
+                ))
+            }
             ast::TypeSyntaxKind::Array(array) => self
                 .array_type(requester, array, ty.span)
                 .map(|array| ValueTy::Owned(AggregateTy::FixedArray(array))),
             ast::TypeSyntaxKind::Unit => Ok(ValueTy::Scalar(Ty::Unit)),
             ast::TypeSyntaxKind::Reference { .. }
             | ast::TypeSyntaxKind::ArrayReference { .. }
-            | ast::TypeSyntaxKind::SliceReference { .. } => Err(diagnostic(
+            | ast::TypeSyntaxKind::SliceReference { .. }
+            | ast::TypeSyntaxKind::GenericSliceReference { .. } => Err(diagnostic(
                 if matches!(context, TypeContext::Scalar) {
                     "E0500"
                 } else {
@@ -1228,6 +1541,34 @@ impl<'i, 's> QuerySession<'i, 's> {
                     if compare_bytes(spelling, "u8", self.work, name)? == Ordering::Equal {
                         return Ok(ValueTy::Scalar(Ty::U8));
                     }
+                    if spelling.len() == 3
+                        && spelling.as_bytes()[0] == b'i'
+                        && compare_bytes(spelling, "i64", self.work, name)? == Ordering::Equal
+                    {
+                        return Ok(ValueTy::Scalar(Ty::I64));
+                    }
+                    if spelling == "char"
+                        && compare_bytes(spelling, "char", self.work, name)? == Ordering::Equal
+                    {
+                        return Ok(ValueTy::Scalar(Ty::Char));
+                    }
+                    if let Some(kind) = ast::FloatTypeSyntax::from_spelling(spelling) {
+                        if compare_bytes(spelling, kind.spelling(), self.work, name)?
+                            == Ordering::Equal
+                        {
+                            return Ok(ValueTy::Scalar(Ty::from_float(kind)));
+                        }
+                    }
+                    if let Some(kind) = ast::IntegerTypeSyntax::from_spelling(spelling) {
+                        // The fixed keyword selector does not scan an arbitrary
+                        // identifier. Only its successful new primitive query
+                        // introduces additional metered comparison work.
+                        if compare_bytes(spelling, kind.spelling(), self.work, name)?
+                            == Ordering::Equal
+                        {
+                            return Ok(ValueTy::Scalar(Ty::from_extended_integer(kind)));
+                        }
+                    }
                 }
                 self.lookup_nominal_type(
                     requester,
@@ -1236,13 +1577,23 @@ impl<'i, 's> QuerySession<'i, 's> {
                         path,
                     },
                     context,
-                    false,
+                    NominalTypeFilter::Values,
                 )
-                .map(|nominal| {
-                    ValueTy::Owned(match nominal {
+                .and_then(|nominal| {
+                    Ok(ValueTy::Owned(match nominal {
+                        NominalId::ByteBuf => AggregateTy::ByteBuf,
+                        NominalId::File => AggregateTy::File,
+                        NominalId::Vector => {
+                            return Err(diagnostic(
+                                "E0300",
+                                "generics",
+                                "Vec requires exactly one scalar element type argument",
+                                ty.span,
+                            ))
+                        }
                         NominalId::Record(record) => AggregateTy::Record(record),
                         NominalId::Enum(enumeration) => AggregateTy::Enum(enumeration),
-                    })
+                    }))
                 })
             }
         }
@@ -1262,6 +1613,10 @@ impl<'i, 's> QuerySession<'i, 's> {
             ast::ArrayElementTypeSyntax::I32 => Ty::I32,
             ast::ArrayElementTypeSyntax::U8 => Ty::U8,
             ast::ArrayElementTypeSyntax::Unit => Ty::Unit,
+            ast::ArrayElementTypeSyntax::I64 => Ty::I64,
+            ast::ArrayElementTypeSyntax::Float(kind) => Ty::from_float(kind),
+            ast::ArrayElementTypeSyntax::Char => Ty::Char,
+            ast::ArrayElementTypeSyntax::Integer(kind) => Ty::from_extended_integer(kind),
         };
         FixedArrayTy::check(element, usize::from(array.length)).map_err(|_| bad(at))
     }
@@ -1272,16 +1627,62 @@ impl<'i, 's> QuerySession<'i, 's> {
         ty: ast::TypeSyntax,
     ) -> Result<ParameterTy, Box<Diagnostic>> {
         let (mutable, referent) = match ty.kind {
-            ast::TypeSyntaxKind::Reference { mutable, referent } => {
-                let record = self.record_type(
+            ast::TypeSyntaxKind::GenericSliceReference { mutable, element } => {
+                let span = self.tables.sources.path_span(ItemPathRef {
+                    file: ty.span.file,
+                    path: element,
+                })?;
+                let element = self.value_type(
                     requester,
-                    ItemPathRef {
+                    ast::TypeSyntax {
+                        span,
+                        kind: ast::TypeSyntaxKind::Name(element),
+                    },
+                    TypeContext::Value,
+                )?;
+                let ValueTy::Scalar(element) = element else {
+                    return Err(diagnostic(
+                        "E0300",
+                        "type",
+                        "slice elements must be scalar Copy types",
+                        ty.span,
+                    ));
+                };
+                if !vector::scalar_admitted(element) {
+                    return Err(diagnostic(
+                        "E0300",
+                        "type",
+                        "slice elements must be scalar Copy types",
+                        ty.span,
+                    ));
+                }
+                (mutable, BorrowedTy::ScalarSlice(element))
+            }
+            ast::TypeSyntaxKind::Reference { mutable, referent } => {
+                let nominal = self.lookup_nominal_type(
+                    requester,
+                    &ItemPathRef {
                         file: ty.span.file,
                         path: referent,
                     },
                     TypeContext::Reference,
+                    NominalTypeFilter::References,
                 )?;
-                (mutable, BorrowedTy::Exact(AggregateTy::Record(record)))
+                let aggregate = match nominal {
+                    NominalId::Record(record) => AggregateTy::Record(record),
+                    NominalId::ByteBuf => AggregateTy::ByteBuf,
+                    NominalId::File => AggregateTy::File,
+                    NominalId::Vector => {
+                        return Err(diagnostic(
+                            "E0300",
+                            "generics",
+                            "Vec requires exactly one scalar element type argument",
+                            ty.span,
+                        ))
+                    }
+                    NominalId::Enum(_) => return Err(bad(ty.span)),
+                };
+                (mutable, BorrowedTy::Exact(aggregate))
             }
             ast::TypeSyntaxKind::ArrayReference { mutable, array } => (
                 mutable,
@@ -1298,6 +1699,10 @@ impl<'i, 's> QuerySession<'i, 's> {
                     ast::ArrayElementTypeSyntax::I32 => Ty::I32,
                     ast::ArrayElementTypeSyntax::U8 => Ty::U8,
                     ast::ArrayElementTypeSyntax::Unit => Ty::Unit,
+                    ast::ArrayElementTypeSyntax::I64 => Ty::I64,
+                    ast::ArrayElementTypeSyntax::Float(kind) => Ty::from_float(kind),
+                    ast::ArrayElementTypeSyntax::Char => Ty::Char,
+                    ast::ArrayElementTypeSyntax::Integer(kind) => Ty::from_extended_integer(kind),
                 };
                 (mutable, BorrowedTy::ScalarSlice(element))
             }
@@ -1322,9 +1727,11 @@ impl<'i, 's> QuerySession<'i, 's> {
         path: ItemPathRef,
         context: TypeContext,
     ) -> Result<RecordId, Box<Diagnostic>> {
-        match self.lookup_nominal_type(requester, &path, context, true)? {
+        match self.lookup_nominal_type(requester, &path, context, NominalTypeFilter::Records)? {
             NominalId::Record(record) => Ok(record),
-            NominalId::Enum(_) => Err(bad(self.tables.sources.eof())),
+            NominalId::Enum(_) | NominalId::ByteBuf | NominalId::File | NominalId::Vector => {
+                Err(bad(self.tables.sources.eof()))
+            }
         }
     }
     pub fn nominal_type(
@@ -1333,20 +1740,20 @@ impl<'i, 's> QuerySession<'i, 's> {
         path: ItemPathRef,
         context: TypeContext,
     ) -> Result<NominalId, Box<Diagnostic>> {
-        self.lookup_nominal_type(requester, &path, context, false)
+        self.lookup_nominal_type(requester, &path, context, NominalTypeFilter::Values)
     }
     fn lookup_nominal_type(
         &mut self,
         requester: ModuleId,
         path: &ItemPathRef,
         context: TypeContext,
-        records_only: bool,
+        filter: NominalTypeFilter,
     ) -> Result<NominalId, Box<Diagnostic>> {
         let at = self.tables.sources.path_span(*path)?;
         self.work.debit(
             1,
             at,
-            if records_only || self.tables.enums.is_empty() {
+            if filter != NominalTypeFilter::Values || self.tables.enums.is_empty() {
                 "query record type"
             } else {
                 "query nominal type"
@@ -1356,10 +1763,28 @@ impl<'i, 's> QuerySession<'i, 's> {
             let accepted = match self.tables.project_handle(id)? {
                 DeclarationProjection::SourceOriginal(original) => {
                     let kind = self.tables.original(original)?.flags & KIND_MASK;
-                    kind == RECORD || (!records_only && kind == ENUM)
+                    kind == RECORD || (filter == NominalTypeFilter::Values && kind == ENUM)
                 }
-                DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => !records_only,
+                DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
+                    filter == NominalTypeFilter::Values
+                }
                 DeclarationProjection::Builtin(BuiltinItem::Function(_)) => false,
+                DeclarationProjection::Builtin(BuiltinItem::Vector(item)) => {
+                    item == vector::Item::Vec
+                        && matches!(
+                            filter,
+                            NominalTypeFilter::Values | NominalTypeFilter::References
+                        )
+                }
+                DeclarationProjection::Builtin(BuiltinItem::Experimental(item)) => {
+                    item.function().is_none()
+                        && (filter == NominalTypeFilter::Values
+                            || (filter == NominalTypeFilter::References
+                                && matches!(
+                                    item,
+                                    experimental::Item::ByteBuf | experimental::Item::File
+                                )))
+                }
             };
             if accepted {
                 let nominal = self.tables.nominal_handle(id)?;
@@ -1372,10 +1797,14 @@ impl<'i, 's> QuerySession<'i, 's> {
                     },
                     origin: at,
                     kind: match nominal {
+                        NominalId::ByteBuf | NominalId::File | NominalId::Vector => "resource",
                         NominalId::Record(_) => "record",
                         NominalId::Enum(_) => "enum",
                     },
                     id: match nominal {
+                        NominalId::ByteBuf => 0,
+                        NominalId::File => 1,
+                        NominalId::Vector => 2,
                         NominalId::Record(id) => id.0,
                         NominalId::Enum(id) => id.0,
                     },
@@ -1514,7 +1943,10 @@ impl<'i, 's> QuerySession<'i, 's> {
                 }
                 match self.tables.nominal_handle(original)? {
                     NominalId::Enum(enumeration) => enumeration,
-                    NominalId::Record(_) => return Err(bad(prefix)),
+                    NominalId::Record(_)
+                    | NominalId::ByteBuf
+                    | NominalId::File
+                    | NominalId::Vector => return Err(bad(prefix)),
                 }
             }
             ast::PathRoot::Crate => match self
@@ -1524,7 +1956,10 @@ impl<'i, 's> QuerySession<'i, 's> {
                 AbsolutePrefix::Enumeration(original) => {
                     match self.tables.nominal_original(original)? {
                         NominalId::Enum(enumeration) => enumeration,
-                        NominalId::Record(_) => return Err(bad(member)),
+                        NominalId::Record(_)
+                        | NominalId::ByteBuf
+                        | NominalId::File
+                        | NominalId::Vector => return Err(bad(member)),
                     }
                 }
                 AbsolutePrefix::Module(owner) => {
@@ -1751,11 +2186,8 @@ impl<'i, 's> QuerySession<'i, 's> {
         let f = self.tables.original(function.original)?;
         self.requester(ModuleId(f.owner as usize), at)?;
         let original = match self.tables.project_handle(handle)? {
-            DeclarationProjection::Builtin(BuiltinItem::Enum(_)) => {
-                return Ok(NominalExposure::Allowed)
-            }
+            DeclarationProjection::Builtin(_) => return Ok(NominalExposure::Allowed),
             DeclarationProjection::SourceOriginal(id) => id,
-            _ => return Err(bad(at)),
         };
         let r = self.tables.original(original)?;
         let allowed =
@@ -1770,6 +2202,62 @@ impl<'i, 's> QuerySession<'i, 's> {
         };
         Ok(NominalExposure::Denied {
             declaration: r.name.span(),
+            restrictor,
+        })
+    }
+    /// A field's nominal type must be visible throughout the intersection of
+    /// the record's visibility and the field's own visibility.
+    pub fn record_field_exposure(
+        &mut self,
+        field: FieldId,
+        nominal: NominalId,
+        at: Span,
+    ) -> Result<NominalExposure, Box<Diagnostic>> {
+        self.work.debit(1, at, "record field exposure")?;
+        let record = self
+            .tables
+            .records
+            .get(field.record.0)
+            .ok_or_else(|| bad(at))?;
+        if field.index >= record.field_len as usize {
+            return Err(bad(at));
+        }
+        let declared = self.tables.original(record.original)?;
+        self.requester(ModuleId(declared.owner as usize), at)?;
+        let member = self
+            .tables
+            .fields
+            .get(record.field_start as usize + field.index)
+            .ok_or_else(|| bad(at))?;
+        let domain = if declared.domain == NONE {
+            member.domain
+        } else if member.domain == NONE {
+            declared.domain
+        } else if self.tables.ancestor(declared.domain, member.domain)? {
+            member.domain
+        } else if self.tables.ancestor(member.domain, declared.domain)? {
+            declared.domain
+        } else {
+            return Err(bad(at));
+        };
+        let handle = self.tables.original_for_nominal(nominal, at)?;
+        let original = match self.tables.project_handle(handle)? {
+            DeclarationProjection::Builtin(_) => return Ok(NominalExposure::Allowed),
+            DeclarationProjection::SourceOriginal(id) => id,
+        };
+        let target = self.tables.original(original)?;
+        if target.domain == NONE
+            || (domain != NONE && self.tables.ancestor(target.domain, domain)?)
+        {
+            return Ok(NominalExposure::Allowed);
+        }
+        let restrictor = if target.restrictor != NONE && target.restrictor != original {
+            Some(self.tables.original(target.restrictor)?.name.span())
+        } else {
+            None
+        };
+        Ok(NominalExposure::Denied {
+            declaration: target.name.span(),
             restrictor,
         })
     }
@@ -1789,9 +2277,19 @@ impl<'i, 's> QuerySession<'i, 's> {
         self.work.debit(1, at, "nominal format preparation")?;
         let handle = self.tables.original_for_nominal(nominal, at)?;
         let id = match self.tables.project_handle(handle)? {
-            DeclarationProjection::Builtin(BuiltinItem::Enum(item)) => {
-                self.work
-                    .debit((9 + item.name().len()) as u64, at, "nominal display bytes")?;
+            DeclarationProjection::Builtin(item) => {
+                let prefix = if matches!(item, BuiltinItem::Vector(_)) {
+                    12
+                } else if item.path()[0] == "alloc" {
+                    14
+                } else {
+                    9
+                };
+                self.work.debit(
+                    (prefix + item.name().len()) as u64,
+                    at,
+                    "nominal display bytes",
+                )?;
                 return Ok(PreparedTypeName {
                     names: [CompactSpan::default(); 32],
                     sources: self.tables.sources,
@@ -1799,16 +2297,18 @@ impl<'i, 's> QuerySession<'i, 's> {
                     terminal: item.name(),
                     ordinal: match nominal {
                         NominalId::Enum(id) => id.0,
-                        _ => unreachable!("checked builtin enum"),
+                        NominalId::ByteBuf => 0,
+                        NominalId::File => 1,
+                        NominalId::Vector => 2,
+                        _ => unreachable!("checked builtin nominal"),
                     },
-                    total: 9 + item.name().len(),
+                    total: prefix + item.name().len(),
                     original: false,
                     is_enum: true,
                     builtin: true,
                 });
             }
             DeclarationProjection::SourceOriginal(id) => id,
-            _ => return Err(bad(at)),
         };
         let original = self.tables.original(id)?;
         let terminal = self.tables.sources.text(original.name.span())?;
@@ -1861,6 +2361,9 @@ impl<'i, 's> QuerySession<'i, 's> {
             count,
             terminal,
             ordinal: match nominal {
+                NominalId::ByteBuf => 0,
+                NominalId::File => 1,
+                NominalId::Vector => 2,
                 NominalId::Record(id) => id.0,
                 NominalId::Enum(id) => id.0,
             },
@@ -1887,7 +2390,21 @@ pub(super) struct PreparedTypeName<'s> {
 impl fmt::Display for PreparedTypeName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.builtin {
-            return write!(f, "std::io::{}", self.terminal);
+            return write!(
+                f,
+                "{}::{}",
+                if self.terminal == "Vec" {
+                    "alloc::vec"
+                } else if experimental::Item::ALL
+                    .into_iter()
+                    .any(|item| item.name() == self.terminal && item.path()[0] == "alloc")
+                {
+                    "alloc::bytes"
+                } else {
+                    "std::io"
+                },
+                self.terminal
+            );
         }
         if self.original {
             return write!(f, "{}", owned_diagnostic::name(self.terminal));

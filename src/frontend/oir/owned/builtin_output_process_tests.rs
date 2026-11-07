@@ -208,7 +208,12 @@ fn bounded_fuel() -> Option<usize> {
 
 /// Rebind fd 1 only in the exact child, after libtest's opening text went to the
 /// harness stream. The parent must provide a separate open fd, never 0/1/2.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 pub(super) fn redirect_actual_stdout() -> bool {
     use std::io::Write;
     unsafe extern "C" {
@@ -239,7 +244,12 @@ pub(super) fn redirect_actual_stdout() -> bool {
         redirected
     }
 }
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+)))]
 pub(super) fn redirect_actual_stdout() -> bool {
     false
 }
@@ -409,7 +419,12 @@ fn builtin_output_process_candidates_require_the_ordinary_verifier() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 mod subprocess {
     use super::*;
     use std::os::{fd::AsRawFd, unix::process::CommandExt};

@@ -87,7 +87,7 @@ fn heldout_condition_name_can_share_record_name_at_all_precedence_levels() {
 }
 
 #[test]
-fn heldout_reference_grammar_cross_product_stays_argument_only() {
+fn heldout_reference_grammar_cross_product_limits_values_to_local_initializers() {
     for borrow in ["&v", "&mut v", "&*p", "&mut *p"] {
         parsed(&format!("fn f() -> () {{ call({borrow}); return; }}")).unwrap();
         // RFC 0022 adds only complete named-root field paths at this seam;
@@ -107,11 +107,8 @@ fn heldout_reference_grammar_cross_product_stays_argument_only() {
                 "{expression}"
             );
         }
-        for statement in [
-            format!("let r = {borrow};"),
-            format!("return {borrow};"),
-            format!("{borrow};"),
-        ] {
+        parsed(&format!("fn f() -> () {{ let r = {borrow}; }}")).unwrap();
+        for statement in [format!("return {borrow};"), format!("{borrow};")] {
             assert!(
                 parsed(&format!("fn f() -> () {{ {statement} }}")).is_err(),
                 "{statement}"
@@ -121,7 +118,9 @@ fn heldout_reference_grammar_cross_product_stays_argument_only() {
     for ty in ["&Packet", "&mut Packet"] {
         assert!(parsed(&format!("struct Packet {{ v: {ty} }}")).is_err());
         assert!(parsed(&format!("fn f() -> {ty} {{ return; }}")).is_err());
-        assert!(parsed(&format!("fn f() -> () {{ let r: {ty} = 0; return; }}")).is_err());
+        let text = format!("struct Packet {{}} fn f() -> () {{ let r: {ty} = 0; return; }}");
+        parsed(&text).unwrap();
+        assert!(diagnosed(&text).iter().all(|error| error.code != "E0500"));
     }
 }
 

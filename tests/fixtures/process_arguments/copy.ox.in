@@ -1,0 +1,117 @@
+use std::env::arg_count;
+use std::env::arg_bytes;
+use std::env::ArgStatus;
+use std::fs::File;
+use std::fs::OpenResult;
+use std::fs::FileStatus;
+use std::fs::open_read;
+use std::fs::create;
+use std::fs::read_some;
+use std::fs::write_some;
+use std::fs::sync_all;
+use std::fs::close;
+use std::io::ReadSomeStatus;
+use std::io::WriteSomeStatus;
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::try_resize;
+
+fn copy(input_file: File, output_file: File) -> i32 {
+    let mut input = input_file;
+    let mut output = output_file;
+    let mut buffer = new();
+    let zero = 0;
+    let resized = try_resize(&mut buffer, 1024, zero.to_u8_checked());
+    match resized {
+        GrowStatus::Ok => {},
+        GrowStatus::CapacityOverflow => { return -3; },
+        GrowStatus::AllocationFailed => { return -3; },
+        GrowStatus::MemoryLimit => { return -3; },
+    }
+    let mut total = 0;
+    while true {
+        let read = read_some(&mut input, &mut buffer);
+        match read {
+            ReadSomeStatus::Data(count) => {
+                if count <= 0 { return -4; }
+                let mut offset = 0;
+                while offset < count {
+                    let written = write_some(&mut output, &buffer[offset..count]);
+                    match written {
+                        WriteSomeStatus::Written(progress) => {
+                            if progress <= 0 { return -5; }
+                            offset = offset + progress;
+                        },
+                        WriteSomeStatus::Error(code) => { return -5; },
+                    }
+                }
+                total = total + count;
+            },
+            ReadSomeStatus::Eof => {
+                let synced = sync_all(&mut output);
+                match synced {
+                    FileStatus::Ok => {},
+                    FileStatus::Error(code) => { return -6; },
+                }
+                let closed = close(&mut output);
+                match closed {
+                    FileStatus::Ok => {},
+                    FileStatus::Error(code) => { return -7; },
+                }
+                return total;
+            },
+            ReadSomeStatus::Error(code) => { return -4; },
+        }
+    }
+    return -8;
+}
+
+fn argument_length(status: ArgStatus) -> i32 {
+    match status {
+        ArgStatus::Copied(length) => { return length; },
+        ArgStatus::TooSmall(required) => { return -1; },
+        ArgStatus::Missing => { return -1; },
+        ArgStatus::TooLong => { return -1; },
+    }
+}
+
+fn main() -> i32 {
+    if arg_count() != 3 { return -10; }
+    let zero = 0;
+    let mut input_path = new();
+    let mut output_path = new();
+    let input_size = try_resize(&mut input_path, 4095, zero.to_u8_checked());
+    match input_size {
+        GrowStatus::Ok => {},
+        GrowStatus::CapacityOverflow => { return -11; },
+        GrowStatus::AllocationFailed => { return -11; },
+        GrowStatus::MemoryLimit => { return -11; },
+    }
+    let output_size = try_resize(&mut output_path, 4095, zero.to_u8_checked());
+    match output_size {
+        GrowStatus::Ok => {},
+        GrowStatus::CapacityOverflow => { return -11; },
+        GrowStatus::AllocationFailed => { return -11; },
+        GrowStatus::MemoryLimit => { return -11; },
+    }
+    let input_status = arg_bytes(1, &mut input_path);
+    let input_length = argument_length(input_status);
+    let output_status = arg_bytes(2, &mut output_path);
+    let output_length = argument_length(output_status);
+    if input_length < 0 || output_length < 0 { return -11; }
+    let opened = open_read(&input_path[0..input_length]);
+    match opened {
+        OpenResult::Opened(input) => {
+            let created = create(&output_path[0..output_length]);
+            match created {
+                OpenResult::Opened(output) => { return copy(input, output); },
+                OpenResult::Error(code) => { return -2; },
+                OpenResult::MemoryLimit => { return -2; },
+                OpenResult::AllocationFailed => { return -2; },
+            }
+        },
+        OpenResult::Error(code) => { return -1; },
+        OpenResult::MemoryLimit => { return -1; },
+        OpenResult::AllocationFailed => { return -1; },
+    }
+}

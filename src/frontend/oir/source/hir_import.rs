@@ -197,9 +197,11 @@ fn bounded_ast_domain(program: &ast::Program) -> Result<(), Boundary> {
                     | ast::StmtKind::Continue
                     | ast::StmtKind::While { .. }
                     | ast::StmtKind::If { .. } => (),
-                    ast::StmtKind::FieldAssign { .. }
+                    ast::StmtKind::DestructureRecord { .. }
+                    | ast::StmtKind::FieldAssign { .. }
                     | ast::StmtKind::IndexAssign { .. }
-                    | ast::StmtKind::Match { .. } => return Err(Boundary::Domain),
+                    | ast::StmtKind::Match { .. }
+                    | ast::StmtKind::ForRange { .. } => return Err(Boundary::Domain),
                 }
             }
         }

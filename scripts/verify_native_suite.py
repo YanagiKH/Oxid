@@ -3,7 +3,8 @@
 
 Linux/POSIX only, like the real LLVM gate. Default to serial locally. Each child
 keeps its existing command/stack limits, private scratch, corpus and profile
-checks. The boolean oracle selects the explicit checked-unary successor; the
+checks. Boolean and comparison oracles select exact bit-operator diagnostics.
+The boolean oracle also retains the explicit checked-unary successor; the
 mutable oracle selects the exact bounded-enum diagnostic successor.
 Never import the oracle modules here: they use preexec_fn internally.
 """
@@ -41,7 +42,9 @@ def build_jobs(scripts, debug, release):
         ("while_loops", b"while loops O0", (debug, release)),
         ("loop_control", b"loop control O0", (debug, release)),
     )
-    return [Job(name, (sys.executable, str(scripts / f"verify_{name}.py"), *args), prefix)
+    current = {"scalar_comparisons": "verify_bit_scalar_comparisons.py",
+               "boolean_logic": "verify_bit_boolean_logic.py"}
+    return [Job(name, (sys.executable, str(scripts / current.get(name, f"verify_{name}.py")), *args), prefix)
             for name, prefix, args in suites]
 
 

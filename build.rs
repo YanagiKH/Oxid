@@ -1,4 +1,49 @@
 fn main() {
+    println!("cargo:rerun-if-changed=native");
+    let target = std::env::var("TARGET").expect("Cargo target");
+    // Match the supported parser nesting envelope on Windows' primary thread.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
+            Ok("msvc") => println!("cargo:rustc-link-arg-bin=oxid=/STACK:8388608"),
+            Ok("gnu") => println!("cargo:rustc-link-arg-bin=oxid=-Wl,--stack,8388608"),
+            _ => (),
+        }
+    }
+    if matches!(
+        std::env::var("CARGO_CFG_TARGET_OS").as_deref(),
+        Ok("linux" | "macos")
+    ) && std::env::var("CARGO_CFG_TARGET_POINTER_WIDTH").as_deref() == Ok("64")
+        && std::env::var("CARGO_CFG_TARGET_ENDIAN").as_deref() == Ok("little")
+        && matches!(
+            std::env::var("CARGO_CFG_TARGET_ARCH").as_deref(),
+            Ok("x86_64" | "aarch64")
+        )
+    {
+        let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo OUT_DIR"));
+        let compiler = std::env::var_os("RUSTC").expect("Cargo RUSTC");
+        let root = std::env::var("CARGO_MANIFEST_DIR").expect("Cargo manifest path");
+        let status = std::process::Command::new(compiler)
+            .args([
+                "--edition=2021",
+                "--crate-name",
+                "oxid_float_format",
+                "--crate-type=staticlib",
+                "--target",
+                &target,
+                "-Cpanic=abort",
+                "-Copt-level=3",
+                "-Ccodegen-units=1",
+                "-Cembed-bitcode=no",
+                &format!("--remap-path-prefix={root}=."),
+                "native/float_format.rs",
+                "-o",
+            ])
+            .arg(output.join("float_format.a"))
+            .status()
+            .expect("build floating-point formatter");
+        assert!(status.success(), "floating-point formatter build failed");
+    }
+
     cc::Build::new()
         .file("native/oxid_ffi.c")
         .include("native")

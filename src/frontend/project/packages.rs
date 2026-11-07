@@ -46,8 +46,8 @@ impl<'a> PackageContext<'a> {
 }
 
 #[derive(Debug)]
-pub(in crate::frontend) struct PackageSources<'a> {
-    pub project: ProjectSources,
+pub(in crate::frontend) struct PackageSources<'a, S = ast::Program> {
+    pub project: ProjectSources<S>,
     pub context: PackageContext<'a>,
 }
 
@@ -167,6 +167,11 @@ pub(in crate::frontend) fn validate_graph(
         }
         if path_bytes > 4 * 1024 * 1024 {
             return Err(failure("package graph path budget exceeded"));
+        }
+        #[cfg(windows)]
+        {
+            filesystem::admit_package_path(&spec.root)?;
+            filesystem::admit_package_path(entry)?;
         }
         let canonical = spec.root.canonicalize().map_err(|e| {
             failure(format!(
@@ -331,6 +336,28 @@ impl<'a> PackageSources<'a> {
         entry_override: Option<&Path>,
         limits: ProjectLimits,
     ) -> Result<Self, LoadFailure> {
+        Self::load_with_editor(specs, entry_override, limits, None)
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(in crate::frontend) fn load_with_editor(
+        specs: &'a [PackageSpec],
+        entry_override: Option<&Path>,
+        limits: ProjectLimits,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_syntax_with_editor(specs, entry_override, limits, overlay)
+    }
+}
+
+impl<'a, S: ModuleSyntax> PackageSources<'a, S> {
+    #[allow(clippy::result_large_err)]
+    pub(in crate::frontend) fn load_syntax_with_editor(
+        specs: &'a [PackageSpec],
+        entry_override: Option<&Path>,
+        limits: ProjectLimits,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<Self, LoadFailure> {
         let mut allocator = Allocator::default();
         let mut builder = SourceSetBuilder {
             entry: "",
@@ -356,9 +383,18 @@ impl<'a> PackageSources<'a> {
         };
         let result = (|| {
             validate_graph(specs, entry_override).map_err(one)?;
-            if !cfg!(target_os = "linux") {
+            if !cfg!(any(
+                target_os = "linux",
+                target_os = "macos",
+                all(
+                    target_os = "windows",
+                    target_arch = "x86_64",
+                    target_pointer_width = "64",
+                    target_endian = "little"
+                )
+            )) {
                 return Err(one(failure(
-                    "package source policy is qualified only on Linux",
+                    "package source policy is not qualified on this host",
                 )));
             }
             for (package, spec) in specs.iter().enumerate() {
@@ -369,7 +405,11 @@ impl<'a> PackageSources<'a> {
                 };
                 builder.entry = entry.to_str().expect("validated UTF-8 entry");
                 let start = builder.project.modules.len();
-                builder.load_package_root(spec)?;
+                if overlay.is_some() {
+                    builder.load_package_root_with_editor(spec, overlay)?;
+                } else {
+                    builder.load_package_root(spec)?;
+                }
                 let end = builder.project.modules.len();
                 context.roots[package] = start;
                 context.owners[start..end].fill(package);
@@ -393,16 +433,127 @@ impl<'a> PackageSources<'a> {
     }
 }
 
-impl SourceSetBuilder<'_> {
+#[cfg(windows)]
+#[cfg_attr(test, allow(clippy::result_large_err))]
+impl<S: ModuleSyntax> ProjectSources<S> {
+    pub(in crate::frontend) fn load_local_package_entry(
+        spec: &PackageSpec,
+        entry: &Path,
+        limits: ProjectLimits,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<Self, LoadFailure> {
+        let mut allocator = Allocator::default();
+        let mut builder = SourceSetBuilder {
+            entry: entry.to_str().expect("validated UTF-8 entry"),
+            limits,
+            allocator: &mut allocator,
+            mode: parser::SourceMode::ProjectCandidate,
+            arrays: parser::ArraySyntaxPolicy::Enabled,
+            enums: ProjectEnumSyntax::Enabled,
+            project: ProjectSources {
+                sources: SourceMap::new(),
+                programs: Vec::new(),
+                modules: Vec::new(),
+                canonical_root: None,
+                usage: SourceUsage::default(),
+                syntax_flavor: SyntaxFlavor::OriginalSingleFile,
+            },
+        };
+        let result = if !spec.dependencies.is_empty() {
+            Err(one(failure(
+                "single-package entry cannot declare dependency capabilities",
+            )))
+        } else if cfg!(all(
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )) {
+            builder.load_package_root_with_editor(spec, overlay)
+        } else {
+            Err(one(failure(
+                "package source policy is not qualified on this host",
+            )))
+        };
+        match result {
+            Ok(()) => Ok(builder.project),
+            Err(diagnostics) => Err(LoadFailure {
+                sources: builder.project.sources,
+                diagnostics,
+                usage: builder.project.usage,
+                #[cfg(test)]
+                allocator: std::mem::take(builder.allocator),
+            }),
+        }
+    }
+}
+
+impl<S: ModuleSyntax> SourceSetBuilder<'_, S> {
+    #[cfg(windows)]
+    fn windows_package_entry(
+        &mut self,
+        spec: &PackageSpec,
+        entry: &Path,
+    ) -> Result<(PathBuf, filesystem::VerifiedChild), Box<Diagnostic>> {
+        let path = entry_relative(&spec.root, entry)?;
+        let mut length = 0usize;
+        for part in path.components() {
+            length = add(length, usize::from(length != 0), None)
+                .and_then(|n| add(n, part.as_os_str().len(), None))?;
+        }
+        let retained = self.project.usage.retained_path_bytes;
+        let held = add(retained, length, None)?;
+        if held > self.limits.path_bytes.min(4 * 1024 * 1024) {
+            return Err(resource("package entry relative path limit exceeded", None));
+        }
+        let mut relative = String::new();
+        self.allocator
+            .string(&mut relative, length, "package entry relative path")
+            .map_err(|e| reserve_error(e, None))?;
+        for part in path.components() {
+            if !relative.is_empty() {
+                relative.push('/');
+            }
+            relative.push_str(
+                part.as_os_str()
+                    .to_str()
+                    .ok_or_else(|| failure("package paths must be UTF-8"))?,
+            );
+        }
+        // The serialization coexists with the native probe and wide scratch.
+        // Restore only this transient charge; real scan/probe usage survives.
+        self.project.usage.retained_path_bytes = held;
+        let result = filesystem::verify_entry(
+            &spec.root,
+            &relative,
+            self.limits,
+            &mut self.project.usage,
+            self.allocator,
+        );
+        self.project.usage.retained_path_bytes = retained;
+        result
+    }
+
     fn load_package_root(&mut self, spec: &PackageSpec) -> Result<(), Errors> {
+        self.load_package_root_with_editor(spec, None)
+    }
+
+    fn load_package_root_with_editor(
+        &mut self,
+        spec: &PackageSpec,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<(), Errors> {
         let id = ModuleId(self.project.modules.len());
         if id.0 >= self.limits.modules.min(256) {
             return Err(one(resource("module count limit exceeded", None)));
         }
         let entry = Path::new(self.entry);
+        #[cfg(not(windows))]
         let canonical = entry
             .canonicalize()
             .map_err(|e| one(io_error(e, self.entry, None)))?;
+        #[cfg(windows)]
+        let (canonical, mut verified_entry) =
+            self.windows_package_entry(spec, entry).map_err(one)?;
         if self
             .project
             .modules
@@ -417,9 +568,16 @@ impl SourceSetBuilder<'_> {
             .parent()
             .expect("absolute entry has parent")
             .to_path_buf();
+        #[cfg(not(windows))]
         let text = self
-            .read_source(&canonical, self.entry, None)
+            .read_source_input(&canonical, self.entry, None, overlay)
             .map_err(one)?;
+        #[cfg(windows)]
+        let text = self
+            .read_verified_child_input(&mut verified_entry, &canonical, self.entry, None, overlay)
+            .map_err(one)?;
+        #[cfg(windows)]
+        drop(verified_entry);
         let mut display = String::new();
         self.allocator
             .string(&mut display, self.entry.len(), "package entry display")
@@ -430,14 +588,7 @@ impl SourceSetBuilder<'_> {
         // Manifest aliases are separate capabilities, never synthetic AST items.
         // Reject conflicts before following any ordinary module declaration.
         for dep in &spec.dependencies {
-            let names = program
-                .functions
-                .iter()
-                .map(|v| v.name)
-                .chain(program.records.iter().map(|v| v.name))
-                .chain(program.enums.iter().map(|v| v.name))
-                .chain(program.modules.iter().map(|v| v.name))
-                .chain(program.imports.iter().map(|v| v.alias));
+            let names = program.binding_names();
             for name in names {
                 if self.project.sources.text(name) == dep.alias {
                     return Err(one(Diagnostic::new(
@@ -483,12 +634,16 @@ impl SourceSetBuilder<'_> {
         let mut height = 1;
         while height != 0 {
             let frame = stack[height - 1];
-            if frame.next == self.project.programs[frame.module.0].modules.len() {
+            if frame.next == self.project.programs[frame.module.0].modules().len() {
                 height -= 1;
                 continue;
             }
             stack[height - 1].next += 1;
-            let child = self.load_child(frame.module, frame.next)?;
+            let child = if overlay.is_some() {
+                self.load_child_with_inputs(frame.module, frame.next, &mut None, overlay)?
+            } else {
+                self.load_child(frame.module, frame.next)?
+            };
             if height == stack.len() {
                 return Err(one(resource("module depth limit exceeded", Some(at))));
             }
@@ -504,3 +659,76 @@ impl SourceSetBuilder<'_> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[allow(dead_code)]
+mod editor_loader_layout_tests {
+    use super::*;
+    use std::mem::{align_of, offset_of, size_of};
+
+    struct BaselinePackageContext<'a> {
+        specs: &'a [PackageSpec],
+        roots: [usize; 256],
+        owners: [usize; 256],
+        modules: usize,
+    }
+    struct BaselinePackageSources<'a> {
+        project: ProjectSources<ast::Program>,
+        context: BaselinePackageContext<'a>,
+    }
+    #[test]
+    fn editor_query_package_loader_keeps_ordinary_field_types_and_offsets() {
+        let _package_types = |value: &PackageSources<'_>| {
+            let PackageSources { project, context } = value;
+            let _: &ProjectSources<ast::Program> = project;
+            let _: &PackageContext<'_> = context;
+        };
+        let _context_types = |value: &PackageContext<'_>| {
+            let PackageContext {
+                specs,
+                roots,
+                owners,
+                modules,
+            } = value;
+            let _: &&[PackageSpec] = specs;
+            let _: &[usize; 256] = roots;
+            let _: &[usize; 256] = owners;
+            let _: &usize = modules;
+        };
+        assert_eq!(
+            size_of::<PackageContext<'_>>(),
+            size_of::<BaselinePackageContext<'_>>()
+        );
+        assert_eq!(
+            align_of::<PackageContext<'_>>(),
+            align_of::<BaselinePackageContext<'_>>()
+        );
+        assert_eq!(
+            size_of::<PackageSources<'_>>(),
+            size_of::<BaselinePackageSources<'_>>()
+        );
+        assert_eq!(
+            align_of::<PackageSources<'_>>(),
+            align_of::<BaselinePackageSources<'_>>()
+        );
+        macro_rules! same_offsets {
+            ($current:ty, $previous:ty, $($field:ident),+ $(,)?) => {
+                $(assert_eq!(offset_of!($current, $field), offset_of!($previous, $field), stringify!($field));)+
+            };
+        }
+        same_offsets!(
+            PackageContext<'_>,
+            BaselinePackageContext<'_>,
+            specs,
+            roots,
+            owners,
+            modules
+        );
+        same_offsets!(
+            PackageSources<'_>,
+            BaselinePackageSources<'_>,
+            project,
+            context
+        );
+    }
+}

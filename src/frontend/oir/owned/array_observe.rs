@@ -185,8 +185,8 @@ impl Observer {
         });
     }
 }
-impl Machine<'_, '_> {
-    pub(super) fn record_event(&mut self, event: Event) {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
+    pub(super) fn record_event(&mut self, event: Event<V>) {
         if self.observer.silent {
             return;
         }
@@ -349,7 +349,7 @@ pub(in super::super) enum FaultKind {
         owner: OwnerPlaceId,
     },
 }
-impl Machine<'_, '_> {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     fn pending_fault(&mut self, span: Span) -> Option<FaultKind> {
         if !self.observer.collecting() || self.observer.fault_attempted {
             return None;
@@ -423,15 +423,17 @@ impl Machine<'_, '_> {
                 return;
             };
             *value = if value.ty() == hir::Ty::Bool {
-                Scalar::I32(0)
+                Scalar::I32(0).into()
             } else {
-                Scalar::Bool(false)
+                Scalar::Bool(false).into()
             };
             self.observer.fault_applied = true;
             return;
         }
         let base = match instruction {
-            OwnedInstruction::ReadIndex { base, .. }
+            OwnedInstruction::CopyIndexInitialize { base, .. }
+            | OwnedInstruction::CopyIndexWrite { base, .. }
+            | OwnedInstruction::ReadIndex { base, .. }
             | OwnedInstruction::WriteIndex { base, .. }
             | OwnedInstruction::ArrayLength { base, .. }
             | OwnedInstruction::ReadProjection { base, .. }
@@ -540,7 +542,7 @@ impl Machine<'_, '_> {
     }
 }
 
-impl Machine<'_, '_> {
+impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     fn inject_enum_owner(&mut self, frame: usize, kind: FaultKind, span: Span) -> bool {
         let owner = match kind {
             FaultKind::EnumOwnerTag { owner, .. }

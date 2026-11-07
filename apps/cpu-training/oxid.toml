@@ -1,0 +1,4 @@
+[workspace]
+edition = "typed-preview"
+members = ["tensor", "checkpoint", "trainer"]
+default-members = ["trainer"]

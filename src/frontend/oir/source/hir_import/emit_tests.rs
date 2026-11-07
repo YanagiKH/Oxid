@@ -12,6 +12,32 @@ use crate::frontend::{
     source::{SourceMap, SourceView},
 };
 
+// Specify host headers independently from the native emitter. Source, wire,
+// work and allocation contracts retain their measured predecessor values.
+pub(super) const TARGET_TRIPLE: &str = if cfg!(all(
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+)) {
+    "x86_64-pc-windows-msvc"
+} else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    "aarch64-apple-darwin"
+} else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+    "x86_64-apple-darwin"
+} else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+    "aarch64-unknown-linux-gnu"
+} else {
+    "x86_64-unknown-linux-gnu"
+};
+
+// The frozen byte counts include the Linux x86_64 triple. Replacing its
+// length also handles shorter Darwin/MSVC headers without unsigned underflow.
+pub(super) const fn target_text_bytes(linux_x86_64_bytes: usize) -> usize {
+    linux_x86_64_bytes - "x86_64-unknown-linux-gnu".len() + TARGET_TRIPLE.len()
+}
+
 const RICH_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/checked_hir_import/rich-source.txt"
@@ -242,7 +268,10 @@ fn checked_hir_import_emit_rich_smoke_matches_source_after_backing_drop_u8_succe
     assert_eq!(artifact.bytes, artifact.text.len());
     assert_eq!(artifact.capacity, artifact.text.capacity());
     assert_eq!(artifact.bytes, artifact.capacity);
-    assert_eq!(artifact.bytes, 14_325);
+    assert_eq!(artifact.bytes, target_text_bytes(14_325));
+    assert!(artifact
+        .text
+        .contains(&format!("target triple = \"{TARGET_TRIPLE}\"")));
     assert!(verified.candidate.equal);
     assert_eq!(verified.functions, 2);
     assert_eq!(verified.typed_cells, 29);
@@ -429,7 +458,7 @@ fn checked_hir_import_emit_synthetic_arithmetic_is_inert_llvm_text() {
     assert!(division.artifact.text.contains("sdiv i32"));
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn checked_hir_import_emit_genuine_rich_and_public_project_text_survives_backing_drop() {
     use crate::frontend::{declaration_index::WorkMeter, oir::project};
@@ -468,7 +497,16 @@ fn checked_hir_import_emit_genuine_rich_and_public_project_text_survives_backing
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        target_os = "windows",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+)))]
 #[test]
 fn checked_hir_import_emit_project_child_policy_stays_e0005_on_unqualified_hosts() {
     use crate::frontend::project::{ProjectLimits, ProjectSources};

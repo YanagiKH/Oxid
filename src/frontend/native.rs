@@ -12,10 +12,40 @@ use std::{
 };
 
 const LLVM_VERSION: &str = "19.1.7";
-const TARGET: &str = "x86_64-unknown-linux-gnu";
+const TARGET: &str = NativeBuildSettings::new(false).target_triple();
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
+const CHARACTER_RUNTIME: &str = include_str!("../../native/typed_character.c");
+const FLOAT_RUNTIME: &str = include_str!("../../native/typed_float.c");
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+const FLOAT_FORMAT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/float_format.a"));
+#[cfg(not(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+)))]
+const FLOAT_FORMAT: &[u8] = &[];
+const INTEGER128_RUNTIME: &str = include_str!("../../native/typed_integer128.c");
+const BYTEBUF_RUNTIME: &str = include_str!("../../native/typed_bytebuf.c");
+const BYTEBUF_CORE: &str = include_str!("../../native/experimental_bytebuf.c");
+const FILE_CORE: &str = include_str!("../../native/experimental_files.c");
+const ARGUMENT_CORE: &str = include_str!("../../native/experimental_arguments.c");
+const BYTEBUF_HEADER: &str = include_str!("../../native/experimental_bytebuf.h");
+const VECTOR_CORE: &str = include_str!("../../native/experimental_vector.c");
+const VECTOR_HEADER: &str = include_str!("../../native/experimental_vector.h");
+const VECTOR_ADAPTER: &str = include_str!("../../native/typed_vector.c");
+const OWNED_RECORD_CORE: &str = include_str!("../../native/experimental_owned_record.c");
+const OWNED_RECORD_HEADER: &str = include_str!("../../native/experimental_owned_record.h");
+const OWNED_VECTOR_CORE: &str = include_str!("../../native/experimental_owned_vector.c");
+const OWNED_VECTOR_HEADER: &str = include_str!("../../native/experimental_owned_vector.h");
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 pub(crate) mod doctor;
+pub(super) mod library;
 fn failure(message: impl Into<String>) -> Box<Diagnostic> {
     Diagnostic::new("E0701", "native-toolchain", message, None)
 }
@@ -53,10 +83,25 @@ impl Drop for Workspace {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+fn tool_name(name: &str) -> String {
+    if NativeBuildSettings::windows_msvc_host() && !name.ends_with(".exe") {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    }
+}
 fn tool(name: &str) -> PathBuf {
     match std::env::var_os("OXID_LLVM_BIN") {
-        Some(dir) => PathBuf::from(dir).join(name),
+        Some(dir) => PathBuf::from(dir).join(tool_name(name)),
+        None if NativeBuildSettings::windows_msvc_host() => PathBuf::from(tool_name(name)),
         None => PathBuf::from(format!("{name}-19")),
+    }
+}
+fn environment_name(left: &OsStr, right: &str) -> bool {
+    if cfg!(windows) {
+        left.to_string_lossy().eq_ignore_ascii_case(right)
+    } else {
+        left == right
     }
 }
 // Preserve argv[0] symlink names: ld.lld is a multi-call driver. Relative
@@ -132,12 +177,74 @@ fn validate_version_output(
     Ok(())
 }
 
+/// Runtime catalog linkage follows an emitted global definition. Printable
+/// source names in debug metadata cannot select a different runtime ABI.
+fn owned_enum_vector_schemas_declared(module: &str) -> bool {
+    module
+        .lines()
+        .any(|line| line == "@__oxid_owned_enum_vectors = constant i1 true")
+}
+
+fn record_vector_schemas_declared(module: &str) -> bool {
+    module
+        .lines()
+        .any(|line| line.starts_with("@__oxid_record_vector_schema_count = constant i32 "))
+}
+
+fn windows_link_args(program: &OsStr, runtime: &OsStr, output: &OsStr) -> Vec<OsString> {
+    let mut arguments: Vec<OsString> = [
+        "/Brepro",
+        "/DYNAMICBASE",
+        "/HIGHENTROPYVA",
+        "/NXCOMPAT",
+        "/SUBSYSTEM:CONSOLE",
+        "/STACK:8388608",
+        "/OPT:REF",
+        "/MACHINE:X64",
+        "/DEFAULTLIB:libcmt",
+        "/DEFAULTLIB:oldnames",
+        "/DEFAULTLIB:kernel32",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    arguments.push(program.to_owned());
+    arguments.push(runtime.to_owned());
+    let mut destination = OsString::from("/OUT:");
+    destination.push(output);
+    arguments.push(destination);
+    arguments
+}
+
+fn link_tool_and_args<'a>(
+    clang: &'a Path,
+    lld: &'a Path,
+    windows_msvc: bool,
+    mut arguments: Vec<OsString>,
+) -> (&'a Path, Vec<OsString>) {
+    if windows_msvc {
+        // MSVC's Clang driver ignores --ld-path and searches tool names for
+        // -fuse-ld. Invoke the already resolved, version-checked file directly.
+        (lld, arguments)
+    } else {
+        let mut linker = OsString::from("--ld-path=");
+        linker.push(lld);
+        arguments.push(linker);
+        (clang, arguments)
+    }
+}
+
 fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
-    [
+    let target = format!("--target={}", settings.target_triple());
+    let mut arguments: Vec<OsString> = [
         "--no-default-config",
-        &format!("--target={}", settings.target_triple()),
+        &target,
         settings.optimization_flag(),
-        "-fPIE",
+        if NativeBuildSettings::windows_msvc_host() {
+            "-fms-runtime-lib=static"
+        } else {
+            "-fPIE"
+        },
         "-std=c11",
         "-Wall",
         "-Wextra",
@@ -145,16 +252,27 @@ fn runtime_compile_args(settings: &NativeBuildSettings) -> Vec<OsString> {
         "-c",
         "runtime.c",
         "-o",
-        "runtime.o",
+        NativeBuildSettings::runtime_object(),
     ]
     .into_iter()
     .map(OsString::from)
-    .collect()
+    .collect();
+    if cfg!(target_os = "macos") {
+        arguments.push(OsString::from("-mmacosx-version-min=11.0"));
+        arguments.push(OsString::from("-D_DARWIN_C_SOURCE"));
+    }
+    if settings.execution().heap_limit() != super::build_config::ExecutionPolicy::DEFAULT_HEAP_LIMIT
+    {
+        arguments.push(OsString::from(format!(
+            "-DOXID_BYTEBUF_LIMIT={}ULL",
+            settings.execution().heap_limit()
+        )));
+    }
+    arguments
 }
-
 /// Publish a project-owned native output without destroying the previous build
-/// on a compile/link failure. This route retains the Linux host restriction;
-/// rename replaces a regular file atomically on that supported filesystem.
+/// on a compile/link failure. Rename replaces a regular file atomically on
+/// the supported host filesystems.
 pub(super) fn compile_managed(module: &str, output: &str) -> Result<(), Box<Diagnostic>> {
     managed(module, output, false, None).map(|_| ())
 }
@@ -188,9 +306,7 @@ fn managed(
     incremental: bool,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<Outcome, Box<Diagnostic>> {
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        return Err(failure("native preview requires a Linux x86_64 build host"));
-    }
+    admit_settings(settings)?;
     let output = Path::new(output);
     let parent = output
         .parent()
@@ -203,14 +319,13 @@ fn managed(
     let name = output
         .file_name()
         .and_then(OsStr::to_str)
-        .filter(|name| {
-            !name.is_empty()
-                && name
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
-        })
+        .filter(|name| NativeBuildSettings::executable_stem(name).is_some())
         .ok_or_else(|| {
-            failure("managed executable name must contain only letters, digits, _ or -")
+            failure(if NativeBuildSettings::windows_msvc_host() {
+                "managed executable name must contain only letters, digits, _ or -, with .exe on Windows"
+            } else {
+                "managed executable name must contain only letters, digits, _ or -"
+            })
         })?;
     // Do not follow symlinks in the two directories owned by the build tool.
     // The project filesystem is trusted and stable, as for source loading; this
@@ -248,7 +363,9 @@ fn managed(
         Err(error) => return Err(io(error)),
     }
     let stage = Workspace::create(parent)?;
-    let staged_output = stage.0.join("program");
+    let staged_output = stage
+        .0
+        .join(NativeBuildSettings::executable_name("program"));
     let outcome = compile_inner(
         module,
         staged_output
@@ -273,18 +390,42 @@ pub(super) fn compile_with_settings(
     compile_inner(module, output, None, Some(settings)).map(|_| ())
 }
 
+fn admit_settings(settings: Option<&NativeBuildSettings>) -> Result<(), Box<Diagnostic>> {
+    if !NativeBuildSettings::host_supported() {
+        return Err(failure(
+            "native builds require Linux or macOS on x86_64 or ARM64, or Windows MSVC x86_64",
+        ));
+    }
+    if NativeBuildSettings::windows_msvc_host()
+        && settings.is_some_and(|settings| settings.execution().hosted() || settings.debug_info())
+    {
+        return Err(failure(
+            "Windows native builds require bounded execution without debug information",
+        ));
+    }
+    if settings.is_some_and(|settings| settings.debug_info())
+        && !NativeBuildSettings::debug_info_supported()
+    {
+        return Err(failure("native debug information currently requires Linux"));
+    }
+    Ok(())
+}
+
 fn compile_inner(
     module: &str,
     output: &str,
     cache_root: Option<&Path>,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<Outcome, Box<Diagnostic>> {
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        return Err(failure("native preview requires a Linux x86_64 build host"));
-    }
+    admit_settings(settings)?;
     // Path::file_name normalizes trailing separators and `.` components.
     // Preserve the caller's file-vs-directory intent before that normalization.
-    if matches!(output.rsplit('/').next(), Some("" | "." | "..")) {
+    let tail = if cfg!(windows) {
+        output.rsplit(['/', '\\']).next()
+    } else {
+        output.rsplit('/').next()
+    };
+    if matches!(tail, Some("" | "." | "..")) {
         return Err(failure(
             "native output must name a new file, not a directory path",
         ));
@@ -293,6 +434,19 @@ fn compile_inner(
     let name = requested
         .file_name()
         .ok_or_else(|| failure("native output must name a new file"))?;
+    if NativeBuildSettings::windows_msvc_host()
+        && (requested
+            .extension()
+            .is_none_or(|extension| !extension.eq_ignore_ascii_case("exe"))
+            || requested
+                .file_stem()
+                .and_then(OsStr::to_str)
+                .is_none_or(NativeBuildSettings::windows_device_name))
+    {
+        return Err(failure(
+            "Windows native output must name a new .exe file with an ordinary filename",
+        ));
+    }
     let parent = requested
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -316,7 +470,7 @@ fn compile_inner(
             |values| {
                 values
                     .iter()
-                    .find(|(key, _)| key == name)
+                    .find(|(key, _)| environment_name(key, name))
                     .map(|(_, value)| value.clone())
             },
         )
@@ -347,19 +501,115 @@ fn compile_inner(
             return tool(name);
         }
         env_value("OXID_LLVM_BIN").map_or_else(
-            || PathBuf::from(format!("{name}-19")),
-            |dir| PathBuf::from(dir).join(name),
+            || {
+                if NativeBuildSettings::windows_msvc_host() {
+                    PathBuf::from(tool_name(name))
+                } else {
+                    PathBuf::from(format!("{name}-19"))
+                }
+            },
+            |dir| PathBuf::from(dir).join(tool_name(name)),
         )
     };
     let clang = resolve(selected("clang"))?;
     let opt = resolve(selected("opt"))?;
-    let lld = resolve(selected("ld.lld"))?;
+    let lld = resolve(selected(NativeBuildSettings::linker()))?;
     version(&clang, "clang version", &parent, environment.as_ref())?;
     version(&opt, "LLVM version", &parent, environment.as_ref())?;
     version(&lld, "LLD", &parent, environment.as_ref())?;
     let workspace = Workspace::create(&parent)?;
     fs::write(workspace.0.join("program.ll"), module).map_err(io)?;
     fs::write(workspace.0.join("runtime.c"), RUNTIME).map_err(io)?;
+    if module.contains("declare void @__oxid_bytebuf_start()") {
+        // The sealed emitter selects the runtime. The complete source is
+        // embedded in the compiler; the linked program needs no checkout.
+        fs::write(workspace.0.join("experimental_bytebuf.h"), BYTEBUF_HEADER).map_err(io)?;
+        fs::write(workspace.0.join("experimental_bytebuf.c"), BYTEBUF_CORE).map_err(io)?;
+        fs::write(workspace.0.join("experimental_vector.c"), VECTOR_CORE).map_err(io)?;
+        fs::write(workspace.0.join("experimental_vector.h"), VECTOR_HEADER).map_err(io)?;
+        fs::write(workspace.0.join("typed_vector.c"), VECTOR_ADAPTER).map_err(io)?;
+        fs::write(workspace.0.join("experimental_files.c"), FILE_CORE).map_err(io)?;
+        fs::write(workspace.0.join("experimental_arguments.c"), ARGUMENT_CORE).map_err(io)?;
+        fs::write(workspace.0.join("typed_bytebuf.c"), BYTEBUF_RUNTIME).map_err(io)?;
+        let arguments = if module.contains("declare void @__oxid_arguments_start(i32, ptr)") {
+            "#include \"experimental_arguments.c\"\n"
+        } else {
+            ""
+        };
+        let record_schemas = if record_vector_schemas_declared(module) {
+            "#define OXID_RECORD_VECTOR_SCHEMAS 1\n"
+        } else {
+            ""
+        };
+        let owned_vectors = if module
+            .lines()
+            .any(|line| line == "declare ptr @__oxid_owned_vector_heap()")
+        {
+            fs::write(
+                workspace.0.join("experimental_owned_record.c"),
+                OWNED_RECORD_CORE,
+            )
+            .map_err(io)?;
+            fs::write(
+                workspace.0.join("experimental_owned_record.h"),
+                OWNED_RECORD_HEADER,
+            )
+            .map_err(io)?;
+            fs::write(
+                workspace.0.join("experimental_owned_vector.c"),
+                OWNED_VECTOR_CORE,
+            )
+            .map_err(io)?;
+            fs::write(
+                workspace.0.join("experimental_owned_vector.h"),
+                OWNED_VECTOR_HEADER,
+            )
+            .map_err(io)?;
+            if owned_enum_vector_schemas_declared(module) {
+                "#define OXID_OWNED_VECTOR_RUNTIME 1\n#define OXID_OWNED_VECTOR_SCHEMAS 1\n#define OXID_OWNED_ENUM_VECTOR_SCHEMAS 1\n"
+            } else {
+                "#define OXID_OWNED_VECTOR_RUNTIME 1\n#define OXID_OWNED_VECTOR_SCHEMAS 1\n"
+            }
+        } else {
+            ""
+        };
+        fs::write(
+            workspace.0.join("runtime.c"),
+            format!("{record_schemas}{owned_vectors}{RUNTIME}\n#include \"typed_bytebuf.c\"\n{arguments}"),
+        )
+        .map_err(io)?;
+    }
+    if module.contains("declare i32 @__oxid_print_i128_parts(i64, i64)") {
+        let runtime_path = workspace.0.join("runtime.c");
+        let mut runtime = fs::read_to_string(&runtime_path).map_err(io)?;
+        runtime.push('\n');
+        runtime.push_str(INTEGER128_RUNTIME);
+        fs::write(runtime_path, runtime).map_err(io)?;
+    }
+    if module
+        .lines()
+        .any(|line| line == "declare i32 @__oxid_print_char(i32)")
+    {
+        let path = workspace.0.join("runtime.c");
+        let mut runtime = fs::read_to_string(&path).map_err(io)?;
+        runtime.push('\n');
+        runtime.push_str(CHARACTER_RUNTIME);
+        fs::write(path, runtime).map_err(io)?;
+    }
+    let float_output = module.contains("declare i32 @__oxid_print_float_bits(i64, i32)");
+    let float_operations = module
+        .lines()
+        .any(|line| line == "declare void @__oxid_float_runtime()");
+    if float_operations {
+        fs::write(workspace.0.join("float_format.a"), FLOAT_FORMAT).map_err(io)?;
+    }
+    if float_output {
+        let path = workspace.0.join("runtime.c");
+        let mut runtime = fs::read_to_string(&path).map_err(io)?;
+        runtime.push('\n');
+        runtime.push_str(FLOAT_RUNTIME);
+        fs::write(path, runtime).map_err(io)?;
+    }
     let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
     let invoke = |path: &Path, values: Vec<OsString>| {
         run(
@@ -375,18 +625,25 @@ fn compile_inner(
         args(&["-passes=verify", "-disable-output", "program.ll"]),
     )?;
     let target = format!("--target={}", settings.target_triple());
-    let program_args = args(&[
+    let mut program_args = args(&[
         "--no-default-config",
         &target,
         settings.optimization_flag(),
-        "-fPIE",
+        if NativeBuildSettings::windows_msvc_host() {
+            "-fms-runtime-lib=static"
+        } else {
+            "-fPIE"
+        },
         "-c",
         "-x",
         "ir",
         "program.ll",
         "-o",
-        "program.o",
+        NativeBuildSettings::program_object(),
     ]);
+    if cfg!(target_os = "macos") {
+        program_args.push(OsString::from("-mmacosx-version-min=11.0"));
+    }
     let key = || {
         cache_root
             .and(environment.as_ref())
@@ -405,7 +662,7 @@ fn compile_inner(
         (Some(root), Some(key)) => Some(native_cache::Cache::new(root, key).map_err(io)?),
         _ => None,
     };
-    let object = workspace.0.join("program.o");
+    let object = workspace.0.join(NativeBuildSettings::program_object());
     let mut hit = cache.as_ref().is_some_and(|cache| cache.restore(&object));
     if hit && key() != initial_key {
         fs::remove_file(&object).map_err(io)?;
@@ -436,24 +693,167 @@ fn compile_inner(
         }
     }
     invoke(&clang, runtime_compile_args(&settings))?;
-    let mut link = args(&[
-        "--no-default-config",
-        &target,
-        "-pie",
-        "-Wl,-z,noexecstack",
-        "-Wl,-z,relro",
-        "-Wl,-z,now",
-        "program.o",
-        "runtime.o",
-        "-o",
-        "executable",
-    ]);
-    let mut linker = OsString::from("--ld-path=");
-    linker.push(lld);
-    link.push(linker);
-    invoke(&clang, link)?;
+    let mut link = if NativeBuildSettings::windows_msvc_host() {
+        windows_link_args(
+            OsStr::new(NativeBuildSettings::program_object()),
+            OsStr::new(NativeBuildSettings::runtime_object()),
+            OsStr::new(NativeBuildSettings::staged_executable()),
+        )
+    } else if cfg!(target_os = "macos") {
+        args(&[
+            "--no-default-config",
+            &target,
+            "-mmacosx-version-min=11.0",
+            "-Wl,-pie",
+            "program.o",
+            "runtime.o",
+            "-o",
+            "executable",
+        ])
+    } else {
+        args(&[
+            "--no-default-config",
+            &target,
+            "-pie",
+            "-Wl,-z,noexecstack",
+            "-Wl,-z,relro",
+            "-Wl,-z,now",
+            "program.o",
+            "runtime.o",
+            "-o",
+            "executable",
+        ])
+    };
+    if cfg!(target_os = "macos") && settings.reproducible() {
+        // Keep archive-member debug maps independent of the private workspace.
+        link.push(OsString::from("-Wl,-oso_prefix,."));
+    }
+    if float_operations {
+        link.push(OsString::from("float_format.a"));
+        link.push(OsString::from(if cfg!(target_os = "macos") {
+            "-Wl,-dead_strip"
+        } else {
+            "-Wl,--gc-sections"
+        }));
+    }
+    if float_operations {
+        link.push(OsString::from("-lm"));
+    }
+    let (link_tool, link) =
+        link_tool_and_args(&clang, &lld, NativeBuildSettings::windows_msvc_host(), link);
+    invoke(link_tool, link)?;
     // Atomic no-replace publication on the same filesystem. Unlike rename,
     // hard_link cannot clobber an output created concurrently after preflight.
-    fs::hard_link(workspace.0.join("executable"), output).map_err(io)?;
+    fs::hard_link(
+        workspace.0.join(NativeBuildSettings::staged_executable()),
+        output,
+    )
+    .map_err(io)?;
     Ok(outcome)
+}
+
+#[cfg(test)]
+mod owned_enum_schema_selection_tests {
+    use super::owned_enum_vector_schemas_declared;
+    #[test]
+    fn enum_schema_selection_requires_the_exact_generated_full_line() {
+        assert!(owned_enum_vector_schemas_declared(
+            "@__oxid_owned_enum_vectors = constant i1 true\n"
+        ));
+        for text in [
+            "; @__oxid_owned_enum_vectors = constant i1 true",
+            " @__oxid_owned_enum_vectors = constant i1 true",
+            "@__oxid_owned_enum_vectors = constant i1 true, align 1",
+            "@__oxid_owned_enum_vectors = constant i1 false",
+            "!0 = !DIFile(filename: \"@__oxid_owned_enum_vectors = constant i1 true\", directory: \"\")",
+            "@s = private constant [64 x i8] c\"\\0A@__oxid_owned_enum_vectors = constant i1 true\\0A\"",
+        ] { assert!(!owned_enum_vector_schemas_declared(text), "{text}"); }
+    }
+}
+
+#[cfg(test)]
+mod windows_linker_argument_tests {
+    use super::*;
+
+    #[test]
+    fn windows_invokes_the_exact_absolute_unicode_linker_without_a_driver_search_flag() {
+        let root = std::env::temp_dir().join("Oxid linker 工具 with spaces");
+        let clang = root.join("clang.exe");
+        let linker = root.join("lld-link.exe");
+        let program = root.join("program.obj");
+        let runtime = root.join("runtime.obj");
+        let output = root.join("output 遷移.exe");
+        assert!(linker.is_absolute());
+        let arguments =
+            windows_link_args(program.as_os_str(), runtime.as_os_str(), output.as_os_str());
+        let (selected, arguments) = link_tool_and_args(&clang, &linker, true, arguments);
+        assert_eq!(selected, linker);
+        let mut expected: Vec<OsString> = [
+            "/Brepro",
+            "/DYNAMICBASE",
+            "/HIGHENTROPYVA",
+            "/NXCOMPAT",
+            "/SUBSYSTEM:CONSOLE",
+            "/STACK:8388608",
+            "/OPT:REF",
+            "/MACHINE:X64",
+            "/DEFAULTLIB:libcmt",
+            "/DEFAULTLIB:oldnames",
+            "/DEFAULTLIB:kernel32",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        expected.push(program.into_os_string());
+        expected.push(runtime.into_os_string());
+        let mut destination = OsString::from("/OUT:");
+        destination.push(output);
+        expected.push(destination);
+        assert_eq!(arguments, expected);
+        let absent = root.join("absent installation").join("lld-link.exe");
+        assert_eq!(
+            link_tool_and_args(&clang, &absent, true, Vec::new()).0,
+            absent
+        );
+    }
+
+    #[test]
+    fn unix_keeps_the_clang_driver_and_unchanged_ld_path_argument() {
+        let root = std::env::temp_dir().join("LLVM 工具 with spaces");
+        let clang = root.join("clang-19");
+        let linker = root.join("ld.lld");
+        let original = vec![OsString::from("-pie"), OsString::from("program.o")];
+        let (selected, arguments) = link_tool_and_args(&clang, &linker, false, original.clone());
+        assert_eq!(selected, clang);
+        assert_eq!(&arguments[..original.len()], original.as_slice());
+        let mut expected = OsString::from("--ld-path=");
+        expected.push(linker);
+        assert_eq!(arguments.last(), Some(&expected));
+        assert_eq!(arguments.len(), original.len() + 1);
+    }
+}
+
+#[cfg(test)]
+mod record_vector_selector_tests {
+    use super::record_vector_schemas_declared;
+
+    #[test]
+    fn record_vector_selector_requires_a_real_global_definition_line() {
+        for module in [
+            "@__oxid_record_vector_schema_count = constant i32 1, align 4\n",
+            "; module\n@__oxid_record_vector_schema_count = constant i32 4096, align 4\n!0 = !{}\n",
+        ] {
+            assert!(record_vector_schemas_declared(module), "{module}");
+        }
+    }
+    #[test]
+    fn record_vector_selector_rejects_debug_filenames_comments_and_declarations() {
+        for module in [
+            "!5 = !DIFile(filename: \"@__oxid_record_vector_schema_count = constant.ox\", directory: \".\")\n",
+            "!5 = !DIFile(filename: \"@__oxid_record_vector_schema_count = constant i32 1.ox\", directory: \".\")\n",
+            "; @__oxid_record_vector_schema_count = constant i32 1\n",
+            "@__oxid_record_vector_schema_count = external constant i32\n",
+            "@__oxid_record_vector_schema_count = global i32 1\n",
+        ] { assert!(!record_vector_schemas_declared(module),"{module}"); }
+    }
 }

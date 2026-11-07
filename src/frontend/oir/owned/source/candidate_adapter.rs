@@ -110,6 +110,21 @@ fn frames(program: &SourceProgram, sources: &SourceMap) -> String {
 
 fn scalar_type(ty: hir::Ty) -> String {
     json_string(match ty {
+        hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128
+        | hir::Ty::Char
+        | hir::Ty::F32
+        | hir::Ty::F64 => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::Bool => "bool",
         hir::Ty::I32 => "i32",
@@ -122,7 +137,10 @@ fn value_type(ty: ValueTy) -> String {
         ValueTy::Scalar(ty) => object([("mode", json_string("scalar")), ("type", scalar_type(ty))]),
         ValueTy::Owned(aggregate) => object([
             ("mode", json_string("owned")),
-            ("record", record_id(aggregate).0.to_string()),
+            (
+                "record",
+                record_id(aggregate).map_or_else(|| "null".into(), |id| id.0.to_string()),
+            ),
         ]),
     }
 }
@@ -150,6 +168,10 @@ fn field_id(value: FieldId) -> String {
 
 fn access_base(base: AccessBase) -> String {
     match base {
+        AccessBase::Loan(id) => object([
+            ("mode", json_string("local-reference")),
+            ("id", id.0.to_string()),
+        ]),
         AccessBase::Owner(id) => object([("mode", json_string("owner")), ("id", id.0.to_string())]),
         AccessBase::Parameter(id) => {
             object([("mode", json_string("reference")), ("id", id.0.to_string())])
@@ -180,7 +202,30 @@ fn call_result(value: CallResult) -> String {
 
 fn rvalue(value: &Rvalue) -> String {
     match value {
-        Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } => {
+        Rvalue::Bitwise { .. }
+        | Rvalue::BitNot { .. }
+        | Rvalue::Integer { .. }
+        | Rvalue::Character(_)
+        | Rvalue::CharacterConvert { .. }
+        | Rvalue::Float { .. }
+        | Rvalue::FloatConvert { .. }
+        | Rvalue::FloatNegate { .. }
+        | Rvalue::FloatArithmetic { .. }
+        | Rvalue::Integer128 { .. }
+        | Rvalue::CheckedInteger { .. }
+        | Rvalue::CheckedNegateInteger { .. }
+        | Rvalue::CheckedIntegerCast { .. } => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
+        Rvalue::I64(_)
+        | Rvalue::WidenI64 { .. }
+        | Rvalue::CheckedI64ToI32 { .. }
+        | Rvalue::CheckedI64ToU8 { .. }
+        | Rvalue::CheckedNegateI64 { .. }
+        | Rvalue::CheckedI64 { .. } => {
+            panic!("i64 is outside this retained narrow fixture or observer")
+        }
+        Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. } | Rvalue::U8(_) => {
             unreachable!("u8 is outside this predecessor fixture or observation domain")
         }
         Rvalue::Load(place) => object([
@@ -276,7 +321,14 @@ fn scalar_statement(value: &Statement) -> String {
 
 fn instruction(value: &OwnedInstruction) -> String {
     match value {
-        OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => {
+        OwnedInstruction::OwnedVector { .. } => {
+            object([("unsupported", json_string("owned-vector"))])
+        }
+        OwnedInstruction::PrepareBorrowRange { .. }
+        | OwnedInstruction::Experimental { .. }
+        | OwnedInstruction::Vector { .. }
+        | OwnedInstruction::ReadStdin { .. }
+        | OwnedInstruction::WriteStdout { .. } => {
             unreachable!("builtin effect source gate")
         }
         OwnedInstruction::ConstructEnum { .. }
@@ -286,7 +338,11 @@ fn instruction(value: &OwnedInstruction) -> String {
             unreachable!("enum source gate")
         }
         // This frozen scalar-record observer is not the composition qualification path.
-        OwnedInstruction::ConstructComposite { .. }
+        OwnedInstruction::CopyInitialize { .. }
+        | OwnedInstruction::CopyIndexInitialize { .. }
+        | OwnedInstruction::CopyIndexWrite { .. }
+        | OwnedInstruction::DestructureRecord { .. }
+        | OwnedInstruction::ConstructComposite { .. }
         | OwnedInstruction::ReadProjection { .. }
         | OwnedInstruction::WriteProjection { .. }
         | OwnedInstruction::ProjectionLength { .. }
@@ -356,6 +412,14 @@ fn instruction(value: &OwnedInstruction) -> String {
             ("base", access_base(*base)),
             ("field", field_id(*field)),
             ("value", operand(*value)),
+        ]),
+        OwnedInstruction::AcquireLocalBorrow(id) => object([
+            ("operation", json_string("AcquireLocalBorrow")),
+            ("loan", id.0.to_string()),
+        ]),
+        OwnedInstruction::ReleaseLocalBorrow(id) => object([
+            ("operation", json_string("ReleaseLocalBorrow")),
+            ("loan", id.0.to_string()),
         ]),
         OwnedInstruction::OpenCall(id) => object([
             ("operation", json_string("OpenCall")),
@@ -487,7 +551,10 @@ fn raw_function(value: &RawOwnedFunction) -> String {
                                         ("mode", borrow_kind(reference.kind)),
                                         (
                                             "record",
-                                            borrowed_record_id(reference.referent()).0.to_string(),
+                                            borrowed_record_id(reference.referent()).map_or_else(
+                                                || "null".into(),
+                                                |id| id.0.to_string(),
+                                            ),
                                         ),
                                     ]),
                                 )
@@ -536,7 +603,11 @@ fn raw_function(value: &RawOwnedFunction) -> String {
             array(value.owners.iter().enumerate().map(|(id, owner)| {
                 object([
                     ("id", id.to_string()),
-                    ("record", record_id(owner.aggregate()).0.to_string()),
+                    (
+                        "record",
+                        record_id(owner.aggregate())
+                            .map_or_else(|| "null".into(), |id| id.0.to_string()),
+                    ),
                     ("span", span(owner.span)),
                     ("kind", owner_kind(owner.kind)),
                 ])
@@ -549,7 +620,8 @@ fn raw_function(value: &RawOwnedFunction) -> String {
                     ("id", id.to_string()),
                     (
                         "record",
-                        borrowed_record_id(reference.referent()).0.to_string(),
+                        borrowed_record_id(reference.referent())
+                            .map_or_else(|| "null".into(), |id| id.0.to_string()),
                     ),
                     ("mode", borrow_kind(reference.kind)),
                     ("position", reference.position.to_string()),
@@ -562,11 +634,23 @@ fn raw_function(value: &RawOwnedFunction) -> String {
             array(value.loans.iter().enumerate().map(|(id, loan)| {
                 object([
                     ("id", id.to_string()),
-                    ("call", loan.call.0.to_string()),
-                    ("argument", loan.argument.to_string()),
+                    (
+                        "call",
+                        loan.call_binding()
+                            .map_or_else(|| "null".into(), |(call, _)| call.0.to_string()),
+                    ),
+                    (
+                        "argument",
+                        loan.call_binding()
+                            .map_or_else(|| "null".into(), |(_, argument)| argument.to_string()),
+                    ),
                     ("authority", access_base(loan.authority)),
                     ("mode", borrow_kind(loan.kind)),
-                    ("record", borrowed_record_id(loan.referent()).0.to_string()),
+                    (
+                        "record",
+                        borrowed_record_id(loan.referent())
+                            .map_or_else(|| "null".into(), |id| id.0.to_string()),
+                    ),
                     ("span", span(loan.span)),
                 ])
             })),
@@ -1099,16 +1183,24 @@ mod candidate_mutations;
 #[path = "candidate_native.rs"]
 mod candidate_native;
 
-fn record_id(aggregate: AggregateTy) -> RecordId {
+fn record_id(aggregate: AggregateTy) -> Option<RecordId> {
     match aggregate {
-        AggregateTy::Record(record) => record,
-        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => panic!("source aggregate gate"),
+        AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => None,
+        AggregateTy::Record(record) => Some(record),
+        AggregateTy::FixedArray(_)
+        | AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::File
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_) => {
+            panic!("source aggregate gate")
+        }
     }
 }
 
-fn borrowed_record_id(referent: BorrowedTy) -> RecordId {
+fn borrowed_record_id(referent: BorrowedTy) -> Option<RecordId> {
     match referent {
         BorrowedTy::Exact(aggregate) => record_id(aggregate),
-        BorrowedTy::ScalarSlice(_) => panic!("source slice gate"),
+        BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => panic!("source slice gate"),
     }
 }

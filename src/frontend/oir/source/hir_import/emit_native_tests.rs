@@ -1,6 +1,11 @@
 //! Opt-in artifact export only. External tools run in the bounded Python driver.
 //! This remains a child of the private text tests; no production entry is added.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use super::*;
 use crate::frontend::oir::Scalar;
 use std::{fs, io::Write, path::Path};

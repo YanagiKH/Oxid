@@ -720,7 +720,9 @@ fn statement_kind(
                 else_block: otherwise,
             }
         }
-        ast::StmtKind::FieldAssign { .. }
+        ast::StmtKind::ForRange { .. }
+        | ast::StmtKind::DestructureRecord { .. }
+        | ast::StmtKind::FieldAssign { .. }
         | ast::StmtKind::IndexAssign { .. }
         | ast::StmtKind::Match { .. } => return Err(Failure::Shape),
     })
@@ -737,6 +739,13 @@ fn expression_kind(
     argument: &mut usize,
 ) -> Result<hir::ExprKind, Failure> {
     Ok(match kind {
+        ast::ExprKind::GenericVariant { .. } => return Err(Failure::Shape),
+        ast::ExprKind::Bitwise { .. }
+        | ast::ExprKind::BitNot { .. }
+        | ast::ExprKind::I64Number { .. }
+        | ast::ExprKind::Character(_)
+        | ast::ExprKind::FloatNumber { .. }
+        | ast::ExprKind::IntegerNumber { .. } => return Err(Failure::Shape),
         ast::ExprKind::Number { .. } => hir::ExprKind::I32(mapping.resolution(reference)?),
         ast::ExprKind::Bool(value) => hir::ExprKind::Bool(*value),
         ast::ExprKind::Unit => hir::ExprKind::Unit,
@@ -823,8 +832,10 @@ fn expression_kind(
         | ast::ExprKind::StructLiteral { .. }
         | ast::ExprKind::FieldRead { .. }
         | ast::ExprKind::ArrayLiteral { .. }
+        | ast::ExprKind::ByteString { .. }
         | ast::ExprKind::IndexRead { .. }
-        | ast::ExprKind::ArrayLength { .. } => return Err(Failure::Shape),
+        | ast::ExprKind::ArrayLength { .. }
+        | ast::ExprKind::Borrow { .. } => return Err(Failure::Shape),
     })
 }
 

@@ -196,7 +196,7 @@ jobs:
             binary: target/release/oxid
             artifact: macos-x86_64
           - name: macOS arm64
-            os: macos-14
+            os: macos-15
             binary: target/release/oxid
             artifact: macos-aarch64
     runs-on: ${{ matrix.os }}
@@ -985,7 +985,7 @@ jobs:
           - {name: Linux x86_64, os: ubuntu-latest, artifact: linux-x86_64}
           - {name: Windows x86_64, os: windows-latest, artifact: windows-x86_64}
           - {name: macOS x86_64, os: macos-15-intel, artifact: macos-x86_64}
-          - {name: macOS arm64, os: macos-14, artifact: macos-arm64}
+          - {name: macOS arm64, os: macos-15, artifact: macos-arm64}
         shard: [{"name": "comparison-seal", "minutes": 150}, {"name": "remaining-controls", "minutes": 100}]
     runs-on: ${{ matrix.host.os }}
     timeout-minutes: ${{ matrix.shard.minutes }}
@@ -1151,7 +1151,7 @@ jobs:
             os: macos-15-intel
             artifact: macos-x86_64
           - name: macOS arm64
-            os: macos-14
+            os: macos-15
             artifact: macos-arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 100

@@ -447,7 +447,12 @@ fn direct_call_return_into_merge_executes_the_selected_incoming_value() {
 
 // This is mandatory in the pinned Linux native job, explicitly ignored only
 // by ordinary toolchain-free host suites. Missing LLVM in an explicit run fails.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run in the native CI job"]
 fn raw_bool_merge_uses_real_llvm() {

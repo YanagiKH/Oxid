@@ -1,6 +1,6 @@
 //! Checked sum declarations, integrated by the combined declaration facade.
 //! Finite owned alternatives use independently checked maximum-alternative
-//! layouts. Stored enum fields and enum borrows remain excluded. The facade
+//! layouts. Enum fields use joint nominal layouts; enum borrows stay excluded. The facade
 //! recomputes record and enum inventory before retained allocation.
 
 use super::{
@@ -94,12 +94,24 @@ impl EnumDecl {
     }
     pub(in crate::frontend::oir) fn layout(&self) -> Layout {
         Layout {
-            size: self.size as usize,
-            align: 4,
+            // Layout admission caps size at 1 MiB. A private high bit retains
+            // alignment without enlarging this frozen declaration carrier.
+            size: (self.size & 0x001f_ffff) as usize,
+            align: if self.size & 0x4000_0000 != 0 {
+                16
+            } else if self.size & 0x8000_0000 != 0 {
+                8
+            } else {
+                4
+            },
         }
     }
     pub(in crate::frontend::oir) fn width(&self) -> usize {
         self.width as usize
+    }
+
+    pub(in crate::frontend::oir) fn has_enum_record_nesting(&self) -> bool {
+        self.size & 0x0020_0000 != 0
     }
 }
 
@@ -118,11 +130,57 @@ enum PayloadSlot {
     Record(u32),
     Enum(u32),
     Array(super::FixedArrayTy),
+    ByteBuf,
+    File,
+    Vector(hir::Ty),
+    RecordVector(u32),
+    AlignedScalar(hir::Ty),
+    AlignedRecord(u32),
+    AlignedEnum(u32),
+    AlignedArray(super::FixedArrayTy),
+    DoubleAlignedScalar(hir::Ty),
+    DoubleAlignedRecord(u32),
+    DoubleAlignedEnum(u32),
+    DoubleAlignedArray(super::FixedArrayTy),
+    DoubleAlignedByteBuf,
+    DoubleAlignedFile,
+    DoubleAlignedVector(hir::Ty),
+    DoubleAlignedRecordVector(u32),
+    OwnedRecordVector(u32),
+    DoubleAlignedOwnedRecordVector(u32),
+    OwnedEnumVector(u32),
+    DoubleAlignedOwnedEnumVector(u32),
 }
+#[cfg(test)]
+#[path = "owned_enum_vector_payload_tests.rs"]
+mod owned_enum_vector_payload_tests;
 impl PayloadSlot {
-    fn check(ty: ValueTy) -> Result<Self, DeclarationError> {
+    fn check(ty: ValueTy, alignment: usize) -> Result<Self, DeclarationError> {
+        Self::check_domain::<false>(ty, alignment)
+    }
+
+    fn check_domain<const OWNED: bool>(
+        ty: ValueTy,
+        alignment: usize,
+    ) -> Result<Self, DeclarationError> {
         use super::AggregateTy;
-        Ok(match ty {
+        let payload = match ty {
+            ValueTy::Owned(AggregateTy::OwnedRecordVector(id)) => {
+                if !OWNED {
+                    return Err(DeclarationError::TypeMismatch);
+                }
+                Self::OwnedRecordVector(
+                    u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+                )
+            }
+            ValueTy::Owned(AggregateTy::OwnedEnumVector(id)) => {
+                if !OWNED {
+                    return Err(DeclarationError::TypeMismatch);
+                }
+                Self::OwnedEnumVector(
+                    u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?,
+                )
+            }
             ValueTy::Scalar(ty) => Self::Scalar(ty),
             ValueTy::Owned(AggregateTy::Record(id)) => Self::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
@@ -131,15 +189,103 @@ impl PayloadSlot {
                 Self::Enum(u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?)
             }
             ValueTy::Owned(AggregateTy::FixedArray(array)) => Self::Array(array),
-        })
+            ValueTy::Owned(AggregateTy::ByteBuf) => Self::ByteBuf,
+            ValueTy::Owned(AggregateTy::File) => Self::File,
+            ValueTy::Owned(AggregateTy::RecordVector(id)) => Self::RecordVector(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
+            ValueTy::Owned(AggregateTy::Vector(element)) => {
+                super::check_vector_element(element)?;
+                Self::Vector(element)
+            }
+        };
+        match alignment {
+            4 if !matches!(
+                payload,
+                Self::ByteBuf
+                    | Self::File
+                    | Self::Vector(_)
+                    | Self::RecordVector(_)
+                    | Self::OwnedRecordVector(_)
+                    | Self::OwnedEnumVector(_)
+            ) =>
+            {
+                Ok(payload)
+            }
+            8 => Ok(match payload {
+                Self::Scalar(ty) => Self::AlignedScalar(ty),
+                Self::Record(id) => Self::AlignedRecord(id),
+                Self::Enum(id) => Self::AlignedEnum(id),
+                Self::Array(array) => Self::AlignedArray(array),
+                Self::ByteBuf => Self::ByteBuf,
+                Self::File => Self::File,
+                Self::Vector(element) => Self::Vector(element),
+                Self::RecordVector(id) => Self::RecordVector(id),
+                Self::OwnedRecordVector(id) => Self::OwnedRecordVector(id),
+                Self::OwnedEnumVector(id) => Self::OwnedEnumVector(id),
+                _ => unreachable!("fresh compact payload"),
+            }),
+            16 => Ok(match payload {
+                Self::Scalar(ty) => Self::DoubleAlignedScalar(ty),
+                Self::Record(id) => Self::DoubleAlignedRecord(id),
+                Self::Enum(id) => Self::DoubleAlignedEnum(id),
+                Self::Array(array) => Self::DoubleAlignedArray(array),
+                Self::ByteBuf => Self::DoubleAlignedByteBuf,
+                Self::File => Self::DoubleAlignedFile,
+                Self::Vector(element) => Self::DoubleAlignedVector(element),
+                Self::RecordVector(id) => Self::DoubleAlignedRecordVector(id),
+                Self::OwnedRecordVector(id) => Self::DoubleAlignedOwnedRecordVector(id),
+                Self::OwnedEnumVector(id) => Self::DoubleAlignedOwnedEnumVector(id),
+                _ => unreachable!("fresh compact payload"),
+            }),
+            _ => Err(DeclarationError::LayoutOverflow),
+        }
     }
     fn value(self) -> ValueTy {
         use super::{AggregateTy, RecordId};
         match self {
-            Self::Scalar(ty) => ValueTy::Scalar(ty),
-            Self::Record(id) => ValueTy::Owned(AggregateTy::Record(RecordId(id as usize))),
-            Self::Enum(id) => ValueTy::Owned(AggregateTy::Enum(EnumId(id as usize))),
-            Self::Array(array) => ValueTy::Owned(AggregateTy::FixedArray(array)),
+            Self::Scalar(ty) | Self::AlignedScalar(ty) | Self::DoubleAlignedScalar(ty) => {
+                ValueTy::Scalar(ty)
+            }
+            Self::Record(id) | Self::AlignedRecord(id) | Self::DoubleAlignedRecord(id) => {
+                ValueTy::Owned(AggregateTy::Record(RecordId(id as usize)))
+            }
+            Self::Enum(id) | Self::AlignedEnum(id) | Self::DoubleAlignedEnum(id) => {
+                ValueTy::Owned(AggregateTy::Enum(EnumId(id as usize)))
+            }
+            Self::Array(array) | Self::AlignedArray(array) | Self::DoubleAlignedArray(array) => {
+                ValueTy::Owned(AggregateTy::FixedArray(array))
+            }
+            Self::ByteBuf | Self::DoubleAlignedByteBuf => ValueTy::Owned(AggregateTy::ByteBuf),
+            Self::File | Self::DoubleAlignedFile => ValueTy::Owned(AggregateTy::File),
+            Self::RecordVector(id) | Self::DoubleAlignedRecordVector(id) => {
+                ValueTy::Owned(AggregateTy::RecordVector(RecordId(id as usize)))
+            }
+            Self::OwnedRecordVector(id) | Self::DoubleAlignedOwnedRecordVector(id) => {
+                ValueTy::Owned(AggregateTy::OwnedRecordVector(RecordId(id as usize)))
+            }
+            Self::OwnedEnumVector(id) | Self::DoubleAlignedOwnedEnumVector(id) => {
+                ValueTy::Owned(AggregateTy::OwnedEnumVector(EnumId(id as usize)))
+            }
+            Self::Vector(element) | Self::DoubleAlignedVector(element) => {
+                ValueTy::Owned(AggregateTy::Vector(element))
+            }
+        }
+    }
+    fn offset(self) -> usize {
+        match self {
+            Self::Scalar(_) | Self::Record(_) | Self::Enum(_) | Self::Array(_) => 4,
+            Self::DoubleAlignedScalar(_)
+            | Self::DoubleAlignedRecord(_)
+            | Self::DoubleAlignedEnum(_)
+            | Self::DoubleAlignedArray(_)
+            | Self::DoubleAlignedByteBuf
+            | Self::DoubleAlignedFile
+            | Self::DoubleAlignedVector(_)
+            | Self::DoubleAlignedRecordVector(_)
+            | Self::DoubleAlignedOwnedRecordVector(_)
+            | Self::DoubleAlignedOwnedEnumVector(_) => 16,
+            _ => 8,
         }
     }
 }
@@ -169,7 +315,7 @@ impl VariantDecl {
     }
     /// Nullary variants have no payload access, including to inactive bytes.
     pub(in crate::frontend::oir) fn payload_offset(&self) -> Option<usize> {
-        self.payload.map(|_| 4)
+        self.payload.map(PayloadSlot::offset)
     }
 }
 
@@ -183,6 +329,38 @@ pub(in crate::frontend::oir) struct EnumDeclarations {
 }
 
 impl EnumDeclarations {
+    /// Actual flat retained payload, independent of requested EnumUsage.
+    pub(super) fn retained_dynamic_bytes(&self) -> Result<usize, DeclarationError> {
+        self.enums
+            .capacity()
+            .checked_mul(size_of::<EnumDecl>())
+            .zip(
+                self.variants
+                    .capacity()
+                    .checked_mul(size_of::<VariantDecl>()),
+            )
+            .and_then(|(enums, variants)| enums.checked_add(variants))
+            .ok_or(DeclarationError::LayoutOverflow)
+    }
+
+    pub(super) const fn retained_query_control_bytes() -> usize {
+        size_of::<RetainedQueryControls>()
+    }
+
+    pub(super) fn mark_joint_shapes(&mut self, shapes: &[u8]) -> Result<(), DeclarationError> {
+        if shapes.len() != self.enums.len()
+            || shapes.iter().any(|shape| shape & !6 != 0 || shape & 2 == 0)
+        {
+            return Err(DeclarationError::TypeMismatch);
+        }
+        for (declaration, shape) in self.enums.iter_mut().zip(shapes) {
+            if shape & 4 != 0 {
+                declaration.size |= 0x0020_0000;
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::frontend::oir) fn check(
         raw: &[RawEnumDecl],
         sources: &SourceMap,
@@ -207,7 +385,15 @@ impl EnumDeclarations {
         sources: &SourceMap,
         existing: DeclarationUsage,
     ) -> Result<PreparedEnums<'a>, EnumDeclarationError> {
-        prepare_shapes(raw, sources, existing, Limits::DEFAULT, true)
+        Self::prepare_owned_domain::<false>(raw, sources, existing)
+    }
+
+    pub(super) fn prepare_owned_domain<'a, const OWNED: bool>(
+        raw: &'a [RawEnumDecl],
+        sources: &SourceMap,
+        existing: DeclarationUsage,
+    ) -> Result<PreparedEnums<'a>, EnumDeclarationError> {
+        prepare_shapes_domain::<OWNED>(raw, sources, existing, Limits::DEFAULT, true)
     }
 
     pub(in crate::frontend::oir) fn usage(&self) -> EnumUsage {
@@ -298,6 +484,16 @@ impl EnumDeclarations {
     }
 }
 
+struct RetainedQueryControls {
+    receiver: &'static EnumDeclarations,
+    capacities: [usize; 2],
+    products: [Option<usize>; 2],
+    paired: Option<(usize, usize)>,
+    checked_total: Option<usize>,
+    returned: Result<usize, DeclarationError>,
+    caller_returned: Result<usize, DeclarationError>,
+}
+
 /// Unforgeable allocation-free admission token. Retaining the immutable raw
 /// borrow prevents changing identities, spans, payloads or lengths after check.
 #[derive(Debug)]
@@ -311,8 +507,48 @@ impl PreparedEnums<'_> {
         self.usage
     }
 
+    pub(super) fn with_joint_layouts(
+        mut self,
+        summaries: &[super::ContainmentSummary],
+        limit: usize,
+    ) -> Result<Self, EnumDeclarationError> {
+        if summaries.len() != self.raw.len() {
+            return Err(DeclarationError::TypeMismatch.into());
+        }
+        self.usage.layout_bytes = 0;
+        for summary in summaries {
+            self.usage.layout_bytes = super::limited_add(
+                self.usage.layout_bytes,
+                summary.layout.size,
+                limit,
+                "declaration layout bytes",
+            )?;
+        }
+        Ok(self)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn with_owned_layouts(
+        self,
+        records: &[super::ContainmentSummary],
+        record_bytes: usize,
+        limit: usize,
+        table_bytes: usize,
+        table_limit: usize,
+        allocator: &mut Allocator,
+    ) -> Result<(Self, Vec<super::ContainmentSummary>), EnumDeclarationError> {
+        self.with_owned_layouts_domain::<false>(
+            records,
+            record_bytes,
+            limit,
+            table_bytes,
+            table_limit,
+            allocator,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn with_owned_layouts_domain<const OWNED: bool>(
         mut self,
         records: &[super::ContainmentSummary],
         record_bytes: usize,
@@ -332,7 +568,7 @@ impl PreparedEnums<'_> {
             table_limit,
             "owned enum declaration scratch bytes",
         )?;
-        let summaries = owned_summaries(self.raw, records, limit, allocator)?;
+        let summaries = owned_summaries_domain::<OWNED>(self.raw, records, limit, allocator)?;
         self.usage.layout_bytes = 0;
         for summary in &summaries {
             self.usage.layout_bytes = super::limited_add(
@@ -363,6 +599,14 @@ impl PreparedEnums<'_> {
         allocator: &mut Allocator,
         summaries: &[super::ContainmentSummary],
     ) -> Result<EnumDeclarations, EnumDeclarationError> {
+        self.finish_owned_domain::<false>(allocator, summaries)
+    }
+
+    pub(super) fn finish_owned_domain<const OWNED: bool>(
+        self,
+        allocator: &mut Allocator,
+        summaries: &[super::ContainmentSummary],
+    ) -> Result<EnumDeclarations, EnumDeclarationError> {
         let mut enums = Vec::new();
         let mut variants = Vec::new();
         if !self.raw.is_empty() {
@@ -373,11 +617,14 @@ impl PreparedEnums<'_> {
         }
         for declaration in self.raw {
             let variant_start = variants.len();
+            let layout = summaries
+                .get(declaration.id.0)
+                .map_or_else(|| scalar_enum_layout(declaration), |s| s.layout);
             for variant in &declaration.variants {
                 variants.push(VariantDecl {
                     id: variant.id,
-                    payload: value_payload(variant)?
-                        .map(PayloadSlot::check)
+                    payload: value_payload_domain::<OWNED>(variant)?
+                        .map(|ty| PayloadSlot::check_domain::<OWNED>(ty, layout.align))
                         .transpose()?,
                     span: variant.span,
                 });
@@ -389,8 +636,15 @@ impl PreparedEnums<'_> {
                     .map_err(|_| DeclarationError::LayoutOverflow)?,
                 variant_end: u32::try_from(variants.len())
                     .map_err(|_| DeclarationError::LayoutOverflow)?,
-                size: u32::try_from(summaries.get(declaration.id.0).map_or(8, |s| s.layout.size))
-                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                size: u32::try_from(layout.size)
+                    .ok()
+                    .filter(|size| *size < 0x4000_0000)
+                    .ok_or(DeclarationError::LayoutOverflow)?
+                    | match layout.align {
+                        16 => 0x4000_0000,
+                        8 => 0x8000_0000,
+                        _ => 0,
+                    },
                 width: u32::try_from(summaries.get(declaration.id.0).map_or(2, |s| s.width))
                     .map_err(|_| DeclarationError::LayoutOverflow)?,
             });
@@ -436,21 +690,42 @@ fn scalar_payload(variant: &RawVariantDecl) -> Result<Option<hir::Ty>, EnumDecla
     match variant.payload {
         None => Ok(None),
         Some(ParameterTy::Value(ValueTy::Scalar(
-            ty @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit),
+            ty @ (hir::Ty::Bool
+            | hir::Ty::I32
+            | hir::Ty::Unit
+            | hir::Ty::I64
+            | hir::Ty::U8
+            | hir::Ty::I8
+            | hir::Ty::I16
+            | hir::Ty::U16
+            | hir::Ty::U32
+            | hir::Ty::U64
+            | hir::Ty::Isize
+            | hir::Ty::Usize
+            | hir::Ty::I128
+            | hir::Ty::U128
+            | hir::Ty::Char
+            | hir::Ty::F32
+            | hir::Ty::F64),
         ))) => Ok(Some(ty)),
         Some(_) => Err(EnumDeclarationError::NonScalarPayload(variant.id)),
     }
 }
 
 fn value_payload(variant: &RawVariantDecl) -> Result<Option<ValueTy>, EnumDeclarationError> {
+    value_payload_domain::<false>(variant)
+}
+
+fn value_payload_domain<const OWNED: bool>(
+    variant: &RawVariantDecl,
+) -> Result<Option<ValueTy>, EnumDeclarationError> {
     match variant.payload {
         None => Ok(None),
-        Some(ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8)))
-        | Some(ParameterTy::Reference { .. }) => {
+        Some(ParameterTy::Reference { .. }) => {
             Err(EnumDeclarationError::NonScalarPayload(variant.id))
         }
         Some(ParameterTy::Value(ty)) => {
-            PayloadSlot::check(ty)?;
+            PayloadSlot::check_domain::<OWNED>(ty, 8)?;
             Ok(Some(ty))
         }
     }
@@ -472,7 +747,17 @@ fn prepare_shapes<'a>(
     limits: Limits,
     owned: bool,
 ) -> Result<PreparedEnums<'a>, EnumDeclarationError> {
-    let usage = preflight_counts(
+    prepare_shapes_domain::<false>(raw, sources, existing, limits, owned)
+}
+
+fn prepare_shapes_domain<'a, const OWNED: bool>(
+    raw: &'a [RawEnumDecl],
+    sources: &SourceMap,
+    existing: DeclarationUsage,
+    limits: Limits,
+    owned: bool,
+) -> Result<PreparedEnums<'a>, EnumDeclarationError> {
+    let mut usage = preflight_counts(
         raw.iter().map(|declaration| declaration.variants.len()),
         existing,
         limits,
@@ -493,7 +778,7 @@ fn prepare_shapes<'a>(
             }
             super::check_span(sources, variant.span)?;
             if owned {
-                if matches!(value_payload(variant)?, Some(ValueTy::Owned(super::AggregateTy::Enum(child))) if child == declaration.id)
+                if matches!(value_payload_domain::<OWNED>(variant)?, Some(ValueTy::Owned(super::AggregateTy::Enum(child))) if child == declaration.id)
                 {
                     // This directly recursive shape was already invalid in
                     // scalar-only admission. Reject it before any new layout
@@ -504,8 +789,37 @@ fn prepare_shapes<'a>(
                 scalar_payload(variant)?;
             }
         }
+        if scalar_enum_layout(declaration).size > 8 {
+            usage.layout_bytes = super::limited_add(
+                usage.layout_bytes,
+                scalar_enum_layout(declaration).size - 8,
+                limits.bounded().layout_bytes,
+                "declaration layout bytes",
+            )?;
+            super::limited_add(
+                existing.layout_bytes,
+                usage.layout_bytes,
+                limits.bounded().layout_bytes,
+                "declaration layout bytes",
+            )?;
+        }
     }
     Ok(PreparedEnums { raw, usage })
+}
+
+fn scalar_enum_layout(declaration: &RawEnumDecl) -> Layout {
+    if declaration.variants.iter().any(|variant| {
+        matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Scalar(ty))) if ty.quad_integer())
+    }) {
+        return Layout { size: 32, align: 16 };
+    }
+    if declaration.variants.iter().any(|variant| {
+        matches!(variant.payload, Some(ParameterTy::Value(ValueTy::Scalar(ty))) if ty.integer_bits() == Some(64) || ty == hir::Ty::F64)
+    }) {
+        Layout { size: 16, align: 8 }
+    } else {
+        Layout { size: 8, align: 4 }
+    }
 }
 
 /// Independent bounded DFS over enum edges. Records cannot contain enums, so
@@ -534,6 +848,15 @@ fn owned_summaries(
     limit: usize,
     allocator: &mut Allocator,
 ) -> Result<Vec<super::ContainmentSummary>, EnumDeclarationError> {
+    owned_summaries_domain::<false>(raw, records, limit, allocator)
+}
+
+fn owned_summaries_domain<const OWNED: bool>(
+    raw: &[RawEnumDecl],
+    records: &[super::ContainmentSummary],
+    limit: usize,
+    allocator: &mut Allocator,
+) -> Result<Vec<super::ContainmentSummary>, EnumDeclarationError> {
     use super::{AggregateTy, ContainmentSummary, MAX_CONTAINMENT_DEPTH};
     let mut summaries = Vec::new();
     allocator.vector_exact(&mut summaries, raw.len(), "owned enum layout summaries")?;
@@ -556,7 +879,9 @@ fn owned_summaries(
         while let Some(&(id, next)) = stack.last() {
             if let Some(variant) = raw[id].variants.get(next) {
                 stack.last_mut().unwrap().1 += 1;
-                if let Some(ValueTy::Owned(AggregateTy::Enum(child))) = value_payload(variant)? {
+                if let Some(ValueTy::Owned(AggregateTy::Enum(child))) =
+                    value_payload_domain::<OWNED>(variant)?
+                {
                     let status = *state
                         .get(child.0)
                         .ok_or(DeclarationError::InvalidEnumId(child))?;
@@ -581,14 +906,14 @@ fn owned_summaries(
                 }
                 continue;
             }
-            let (mut bytes, mut width, mut depth) = (4usize, 1usize, 1usize);
+            let (mut bytes, mut width, mut depth, mut alignment) = (4usize, 1usize, 1usize, 4usize);
             for variant in &raw[id].variants {
-                let child = match value_payload(variant)? {
+                let child = match value_payload_domain::<OWNED>(variant)? {
                     None => continue,
                     Some(ValueTy::Scalar(ty)) => ContainmentSummary {
                         layout: Layout::scalar(ty),
                         width: 1,
-                        depth: 0,
+                        depth_and_packed: ContainmentSummary::pack(0, 0)?,
                     },
                     Some(ValueTy::Owned(AggregateTy::Record(record))) => *records
                         .get(record.0)
@@ -599,14 +924,50 @@ fn owned_summaries(
                     Some(ValueTy::Owned(AggregateTy::FixedArray(array))) => ContainmentSummary {
                         layout: array.layout()?,
                         width: array.length().max(1),
-                        depth: 0,
+                        depth_and_packed: ContainmentSummary::pack(0, 0)?,
                     },
+                    Some(ValueTy::Owned(AggregateTy::File)) => ContainmentSummary {
+                        layout: Layout { size: 16, align: 8 },
+                        width: 2,
+                        depth_and_packed: ContainmentSummary::pack(0, 0)?,
+                    },
+                    Some(ValueTy::Owned(AggregateTy::ByteBuf)) => ContainmentSummary {
+                        layout: Layout { size: 16, align: 8 },
+                        width: 3,
+                        depth_and_packed: ContainmentSummary::pack(0, 0)?,
+                    },
+                    Some(ValueTy::Owned(
+                        AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_),
+                    )) => {
+                        if !OWNED {
+                            return Err(DeclarationError::TypeMismatch.into());
+                        }
+                        ContainmentSummary {
+                            layout: Layout { size: 16, align: 8 },
+                            width: 3,
+                            depth_and_packed: ContainmentSummary::pack(0, 0)?,
+                        }
+                    }
+                    Some(ValueTy::Owned(AggregateTy::RecordVector(_))) => ContainmentSummary {
+                        layout: Layout { size: 16, align: 8 },
+                        width: 3,
+                        depth_and_packed: ContainmentSummary::pack(0, 16)?,
+                    },
+                    Some(ValueTy::Owned(AggregateTy::Vector(element))) => {
+                        super::check_vector_element(element)?;
+                        ContainmentSummary {
+                            layout: Layout { size: 16, align: 8 },
+                            width: 3,
+                            depth_and_packed: ContainmentSummary::pack(0, 0)?,
+                        }
+                    }
                 };
                 bytes = bytes.max(child.layout.size);
+                alignment = alignment.max(child.layout.align);
                 width = width.max(child.width);
                 depth = depth.max(
                     child
-                        .depth
+                        .depth()
                         .checked_add(1)
                         .ok_or(DeclarationError::LayoutOverflow)?,
                 );
@@ -616,16 +977,19 @@ fn owned_summaries(
             }
             let size = super::align_up(
                 bytes
-                    .checked_add(4)
+                    .checked_add(super::align_up(4, alignment)?)
                     .ok_or(DeclarationError::LayoutOverflow)?,
-                4,
+                alignment,
             )?;
             super::limited_add(0, size, limit, "declaration layout bytes")?;
             let width = super::limited_add(width, 1, limit, "enum expanded width")?;
             summaries[id] = ContainmentSummary {
-                layout: Layout { size, align: 4 },
+                layout: Layout {
+                    size,
+                    align: alignment,
+                },
                 width,
-                depth,
+                depth_and_packed: ContainmentSummary::pack(depth, bytes)?,
             };
             state[id] = 2;
             stack.pop();
@@ -770,6 +1134,28 @@ mod tests {
         assert_eq!(table.variants.capacity(), 0);
         assert_eq!(allocator.attempts, 0);
         assert!(!allocator.observer_trace_overflow);
+    }
+
+    #[test]
+    fn owned_vector_type_retained_facade_query_observes_actual_enum_and_variant_capacity() {
+        let (sources, span) = source();
+        let raw = [raw_enum(0, &[None, Some(hir::Ty::I32)], span)];
+        let mut table = check(&raw, &sources).unwrap();
+        let before = table.retained_dynamic_bytes().unwrap();
+        let capacity = table.enums.capacity();
+        table.enums.try_reserve_exact(capacity + 3).unwrap();
+        let after_enums = table.retained_dynamic_bytes().unwrap();
+        assert_eq!(
+            after_enums - before,
+            (table.enums.capacity() - capacity) * size_of::<EnumDecl>()
+        );
+        let capacity = table.variants.capacity();
+        table.variants.try_reserve_exact(capacity + 5).unwrap();
+        let after_variants = table.retained_dynamic_bytes().unwrap();
+        assert_eq!(
+            after_variants - after_enums,
+            (table.variants.capacity() - capacity) * size_of::<VariantDecl>()
+        );
     }
 
     #[test]

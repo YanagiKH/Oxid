@@ -44,6 +44,55 @@ fn minimal() -> (SourceMap, Program) {
         },
     )
 }
+
+#[test]
+fn raw_byte_constants_require_exact_types_ids_and_valid_source_spans() {
+    let (sources, mut program) = minimal();
+    let function = &mut program.functions[0];
+    let span = function.span;
+    function.result = hir::Ty::U8;
+    function.param_count = 0;
+    function.locals[0].ty = hir::Ty::U8;
+    function.locals[0].kind = LocalKind::Temporary;
+    function.blocks[0]
+        .statements
+        .push(Statement::Assign(Assign {
+            destination: LocalId(0),
+            value: Rvalue::U8(255),
+            span,
+        }));
+    for ty in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
+        let mut invalid = program.clone();
+        invalid.functions[0].locals[0].ty = ty;
+        assert_eq!(
+            verify::verify(invalid, &sources).unwrap_err().kind,
+            FailureKind::TypeMismatch
+        );
+    }
+    let mut invalid = program.clone();
+    let Statement::Assign(assign) = &mut invalid.functions[0].blocks[0].statements[0] else {
+        unreachable!()
+    };
+    assign.destination = LocalId(1);
+    assert_eq!(
+        verify::verify(invalid, &sources).unwrap_err().kind,
+        FailureKind::InvalidLocal
+    );
+    let mut invalid = program.clone();
+    let Statement::Assign(assign) = &mut invalid.functions[0].blocks[0].statements[0] else {
+        unreachable!()
+    };
+    assign.span.start = 1;
+    assert_eq!(
+        verify::verify(invalid, &sources).unwrap_err().kind,
+        FailureKind::InvalidSpan
+    );
+    let witness = verify::verify(program, &sources).unwrap();
+    assert_eq!(
+        execute::run(&witness, hir::DefId(0)).unwrap(),
+        Scalar::U8(255)
+    );
+}
 #[test]
 fn actual_typed_program_reaches_verified_oir() {
     let (sources, typed) = checked("fn identity(x: bool) -> bool { return x; }");

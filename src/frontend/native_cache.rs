@@ -1,6 +1,7 @@
 //! Opt-in cache of the verified LLVM program object, never a final executable.
 //! The C runtime and SDK link still execute on every build. Cache entries are
 //! immutable, bounded blobs; a reader copies and hashes the same opened bytes.
+use super::build_config::NativeBuildSettings;
 use sha2::{Digest, Sha256};
 use std::{
     ffi::OsString,
@@ -73,8 +74,9 @@ fn same_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
 }
 
 fn object_header(bytes: &[u8]) -> bool {
-    bytes.len() >= 64 && &bytes[..7] == b"\x7fELF\x02\x01\x01" && bytes[16..20] == [1, 0, 62, 0]
-    // ET_REL, EM_X86_64
+    bytes.len() >= 64 && &bytes[..7] == b"\x7fELF\x02\x01\x01"
+        && bytes[16..18]==[1,0] // ET_REL
+        && bytes[18..20]==NativeBuildSettings::elf_machine().to_le_bytes()
 }
 
 fn digest_file(path: &Path, limit: u64) -> std::io::Result<([u8; 32], u64)> {
@@ -206,7 +208,7 @@ impl Cache {
         input.read_exact(&mut prefix)?;
         if !object_header(&prefix) {
             return Err(std::io::Error::other(
-                "native compiler did not emit an x86_64 relocatable object",
+                "native compiler did not emit a relocatable object for this host",
             ));
         }
         let mut output = OpenOptions::new()
@@ -255,18 +257,33 @@ pub(super) fn fingerprint(
     environment: &Environment,
     cwd: &Path,
 ) -> Option<[u8; 32]> {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     {
         linux::fingerprint(module, tools, args, environment, cwd)
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )))]
     {
         let _ = (module, tools, args, environment, cwd);
         None
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 mod linux {
     use super::*;
     use std::{
@@ -288,7 +305,9 @@ mod linux {
         let mut file = regular(path).ok()?;
         let mut header = [0u8; 64];
         file.read_exact(&mut header).ok()?;
-        if &header[..7] != b"\x7fELF\x02\x01\x01" || header[18..20] != [62, 0] {
+        if &header[..7] != b"\x7fELF\x02\x01\x01"
+            || header[18..20] != NativeBuildSettings::elf_machine().to_le_bytes()
+        {
             return None;
         }
         let offset = u64::from_le_bytes(header[32..40].try_into().ok()?);
@@ -323,7 +342,7 @@ mod linux {
                 return None;
             }
             let path = PathBuf::from(OsStr::from_bytes(&value));
-            if !path.is_absolute() || path.file_name()? != "ld-linux-x86-64.so.2" {
+            if !path.is_absolute() || path.file_name()? != NativeBuildSettings::elf_interpreter() {
                 return None;
             }
             found = Some(path);
@@ -470,7 +489,8 @@ mod tests {
         fn object(&self) -> PathBuf {
             let mut bytes = vec![0u8; 128];
             bytes[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
-            bytes[16..20].copy_from_slice(&[1, 0, 62, 0]);
+            bytes[16..18].copy_from_slice(&[1, 0]);
+            bytes[18..20].copy_from_slice(&NativeBuildSettings::elf_machine().to_le_bytes());
             bytes[64..].fill(42);
             let path = self.0.join("program.o");
             fs::write(&path, bytes).unwrap();
@@ -488,6 +508,33 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn native_cache_requires_the_host_machine_and_little_endian_elf64_objects() {
+        let mut header = [0; 64];
+        header[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
+        header[16..18].copy_from_slice(&[1, 0]);
+        let expected = if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            183
+        } else {
+            62
+        };
+        for machine in [0u16, 3, 40, 62, 183, 243] {
+            header[18..20].copy_from_slice(&machine.to_le_bytes());
+            assert_eq!(
+                object_header(&header),
+                machine == expected,
+                "machine {machine}"
+            );
+        }
+        header[18..20].copy_from_slice(&expected.to_le_bytes());
+        for (offset, value) in [(4, 1), (5, 2), (6, 0), (16, 2), (16, 3)] {
+            let mut invalid = header;
+            invalid[offset] = value;
+            assert!(!object_header(&invalid), "ELF header byte {offset}={value}");
+        }
+        assert!(!object_header(&header[..63]));
     }
 
     #[test]
@@ -622,7 +669,12 @@ mod tests {
         assert!(Cache::new(&fixture.0, [5; 32]).is_err());
     }
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
     fn scripts_and_loader_injections_are_ineligible_for_reuse() {
         let fixture = Fixture::new();

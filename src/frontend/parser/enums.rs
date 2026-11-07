@@ -108,6 +108,12 @@ pub(super) fn reserve<T>(
 }
 
 impl Parser<'_> {
+    pub(super) fn wide_scalars_enabled(&self) -> bool {
+        self.mode.owned()
+            && self.enums == EnumSyntaxPolicy::Enabled
+            && self.std_imports == StdImportPolicy::Enabled
+    }
+
     pub(super) fn enums_enabled(&self) -> bool {
         self.mode.owned() && self.enums.enabled()
     }
@@ -162,6 +168,10 @@ impl Parser<'_> {
                 .tokens
                 .get(index + 1)
                 .is_some_and(|next| next.kind == Kind::Colon && colon.span.end == next.span.start)
+            && !self.tokens[index + 2..]
+                .iter()
+                .find(|token| token.kind != Kind::Trivia)
+                .is_some_and(|token| token.kind == Kind::Less)
     }
     fn enum_error(&self, message: &'static str) -> Box<Diagnostic> {
         self.diagnostic("E0100", "parse", message, Some(self.peek().span))
@@ -173,6 +183,7 @@ impl Parser<'_> {
         self.node()?;
         let start = self.bump().span;
         let name = self.expect(Kind::Ident, "expected enum name")?.span;
+        self.generic_parameters(name)?;
         self.expect(Kind::LBrace, "expected enum variants `{`")?;
         let mut variants = Vec::new();
         if self.peek().kind == Kind::RBrace {
@@ -236,21 +247,62 @@ impl Parser<'_> {
                 self.bump();
                 (ScalarTypeSyntax::Bool, start.end)
             }
+            Kind::Ident if self.wide_scalars_enabled() && self.source.text_at(start) == "char" => {
+                self.bump();
+                (ScalarTypeSyntax::Char, start.end)
+            }
             Kind::Ident if self.source.text_at(start) == "i32" => {
                 self.bump();
                 (ScalarTypeSyntax::I32, start.end)
             }
+            Kind::Ident
+                if self.wide_scalars_enabled()
+                    && FloatTypeSyntax::from_spelling(self.source.text_at(start)).is_some() =>
+            {
+                let kind = FloatTypeSyntax::from_spelling(self.source.text_at(start)).unwrap();
+                self.bump();
+                (ScalarTypeSyntax::Float(kind), start.end)
+            }
+            Kind::Ident if self.wide_scalars_enabled() && self.source.text_at(start) == "i64" => {
+                self.bump();
+                (ScalarTypeSyntax::I64, start.end)
+            }
+            Kind::Ident
+                if self.wide_scalars_enabled()
+                    && IntegerTypeSyntax::from_spelling(self.source.text_at(start)).is_some() =>
+            {
+                let kind = IntegerTypeSyntax::from_spelling(self.source.text_at(start)).unwrap();
+                self.bump();
+                (ScalarTypeSyntax::Integer(kind), start.end)
+            }
             Kind::Ident if self.source.text_at(start) != "u8" => {
                 let (path, span) = self.item_path("expected enum payload type", true)?;
-                let kind = match path {
-                    ItemPath::Unqualified(_) => ScalarTypeSyntax::Name,
-                    ItemPath::Absolute(path) => {
-                        ScalarTypeSyntax::Absolute(u32::try_from(path.0).map_err(|_| {
-                            reserve_error(start, "enum payload path index overflow")
-                        })?)
-                    }
-                };
-                (kind, span.end)
+                if self.peek().kind == Kind::Less {
+                    let id = self.type_arguments(
+                        path,
+                        span,
+                        GenericArgumentContext::Type,
+                        self.peek().span.start,
+                        0,
+                    )?;
+                    let id = u32::try_from(id.0).map_err(|_| {
+                        reserve_error(start, "generic type application index overflow")
+                    })?;
+                    (
+                        ScalarTypeSyntax::Applied(id),
+                        self.generic_calls[id as usize].span.end,
+                    )
+                } else {
+                    let kind = match path {
+                        ItemPath::Unqualified(_) => ScalarTypeSyntax::Name,
+                        ItemPath::Absolute(path) => {
+                            ScalarTypeSyntax::Absolute(u32::try_from(path.0).map_err(|_| {
+                                reserve_error(start, "enum payload path index overflow")
+                            })?)
+                        }
+                    };
+                    (kind, span.end)
+                }
             }
             _ if self.arrays_enabled() && self.array_punctuation("[") => {
                 let (array, end) = self.array_type()?;
@@ -303,7 +355,7 @@ impl Parser<'_> {
                 .expect(Kind::Ident, "expected path segment after `::`")?
                 .span;
             self.path_segment(&mut length, segment)?;
-            if !self.double_colon() {
+            if !self.double_colon() || self.type_arguments_ahead() {
                 break segment.end;
             }
         };

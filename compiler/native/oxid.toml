@@ -1,0 +1,13 @@
+[project]
+name = "oxid-scalar-compiler"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[build]
+entry-mode = "process"
+reproducible = true
+
+[execution]
+policy = "hosted"
+heap-limit = 67108864

@@ -431,7 +431,12 @@ fn unresolved_negated_names_and_calls_keep_eager_resolution_order() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn retain_output(path: &std::path::Path, name: &str, output: &Output) {
     fs::write(path.join(format!("{name}.stdout")), &output.stdout).unwrap();
     fs::write(path.join(format!("{name}.stderr")), &output.stderr).unwrap();
@@ -442,7 +447,12 @@ fn retain_output(path: &std::path::Path, name: &str, output: &Output) {
     .unwrap();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn native_parity_without_sources(source: &str) {
     let fixture = Fixture::new(source);
     let reference = fixture.typed("run", false);
@@ -494,7 +504,12 @@ fn native_parity_without_sources(source: &str) {
     assert_eq!(native.stderr, reference.stderr, "{source}");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM/Clang/LLD 19.1.7; run the public unary source native gate explicitly"]
 fn public_unary_source_free_native_scalar_owned_loops_calls_and_joins() {

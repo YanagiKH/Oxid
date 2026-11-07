@@ -1,10 +1,20 @@
 //! Immutable, witness-bound consumer accounting. This is not a safety witness.
 //! Only this module constructs plans; consumers retrieve their witness from it.
-use super::{storage::*, verified::VerifiedOwnedProgram, *};
+use super::{
+    storage::*,
+    verified::{PlanWitness, VerifiedOwnedProgram},
+    *,
+};
 use std::mem::size_of;
 
 #[path = "native_storage.rs"]
 pub(super) mod native_storage;
+
+#[path = "native_vector_layout.rs"]
+pub(super) mod native_vector_layout;
+
+#[path = "owned_vector_plan.rs"]
+mod owned_vector_accounting;
 
 pub(super) const ENUM_VALUE_COST: usize = 3;
 pub(super) const MATCH_DISPATCH_COST: usize = 1;
@@ -124,25 +134,79 @@ impl FunctionPlan {
     }
 }
 #[derive(Debug)]
-pub(super) struct ExecutionPlan<'a> {
-    witness: &'a VerifiedOwnedProgram,
+pub(super) struct ExecutionPlan<'a, W: PlanWitness = VerifiedOwnedProgram> {
+    witness: &'a W,
     functions: Vec<FunctionPlan>,
-    metadata_bytes: usize,
+    metadata_bytes: u32,
+    dynamic_resources: bool,
+    wide_scalars: bool,
+    integer_extension: u8,
+    scalar_mode: u8,
 }
-impl<'a> ExecutionPlan<'a> {
-    pub fn build(witness: &'a VerifiedOwnedProgram) -> Result<Self, AdmissionFailure> {
+const _: () = assert!(
+    size_of::<ExecutionPlan<'_>>()
+        == size_of::<&VerifiedOwnedProgram>() + size_of::<Vec<FunctionPlan>>() + size_of::<usize>()
+);
+impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
+    pub(super) fn uses_owned_vectors(&self) -> bool {
+        self.witness.uses_owned_vectors()
+    }
+    pub(super) fn uses_checked_copies(&self) -> bool {
+        self.integer_extension & 128 != 0
+    }
+    pub(super) fn uses_record_vectors(&self) -> bool {
+        self.scalar_mode & 2 != 0
+    }
+    pub(super) fn uses_vectors(&self) -> bool {
+        self.integer_extension & 32 != 0
+    }
+    pub(super) fn uses_typed_ranges(&self) -> bool {
+        self.integer_extension & 64 != 0
+    }
+    pub(super) fn uses_enum_record_nesting(&self) -> bool {
+        self.integer_extension & 16 != 0
+    }
+    pub(super) fn uses_wide_scalars(&self) -> bool {
+        self.wide_scalars
+    }
+    pub(super) fn uses_integer_extension(&self) -> bool {
+        self.integer_extension & 1 != 0
+    }
+    pub(super) fn uses_characters(&self) -> bool {
+        self.integer_extension & 8 != 0
+    }
+    pub(super) fn uses_floats(&self) -> bool {
+        self.integer_extension & 4 != 0
+    }
+    pub(super) fn uses_bitwise(&self) -> bool {
+        self.integer_extension & 2 != 0
+    }
+    pub(super) fn uses_quad_scalars(&self) -> bool {
+        self.scalar_mode & 1 != 0
+    }
+    pub(super) fn native_scalar_bytes(&self) -> usize {
+        if self.uses_quad_scalars() {
+            16
+        } else {
+            8
+        }
+    }
+    pub(super) fn uses_dynamic_resources(&self) -> bool {
+        self.dynamic_resources
+    }
+    pub fn build(witness: &'a W) -> Result<Self, AdmissionFailure> {
         Self::build_with_limit(witness, MAX_PLAN_BYTES)
     }
     /// Test-only lower admission limit; it never raises the production ceiling
     /// or constructs execution authority independently of the supplied witness.
     #[cfg(test)]
     pub(super) fn build_with_test_limit(
-        witness: &'a VerifiedOwnedProgram,
+        witness: &'a W,
         limit: usize,
     ) -> Result<Self, AdmissionFailure> {
         Self::build_with_limit(witness, limit.min(MAX_PLAN_BYTES))
     }
-    pub fn witness(&self) -> &'a VerifiedOwnedProgram {
+    pub fn witness(&self) -> &'a W {
         self.witness
     }
     pub fn function(&self, id: hir::DefId) -> &FunctionPlan {
@@ -152,7 +216,7 @@ impl<'a> ExecutionPlan<'a> {
         &self.functions
     }
     pub fn metadata_bytes(&self) -> usize {
-        self.metadata_bytes
+        self.metadata_bytes as usize
     }
     /// Scratch never extends a language owner's nominal extent. It exists only
     /// in the independently verified canonical input activation.
@@ -181,13 +245,119 @@ impl<'a> ExecutionPlan<'a> {
         let start = end.checked_sub(builtins::OUTPUT_SCRATCH_BYTES)?;
         Some(start..end)
     }
+    /// The packed record staging area is outside every language owner extent.
+    pub(super) fn record_vector_scratch_range(
+        &self,
+        function: hir::DefId,
+    ) -> Option<std::ops::Range<usize>> {
+        let f = self.witness.functions().get(function.0)?;
+        let length =
+            native_vector_layout::record_scratch_bytes(self.witness.declarations(), f).ok()?;
+        if length == 0 {
+            return None;
+        }
+        let end = self.functions.get(function.0)?.usage.payload_bytes;
+        Some(end.checked_sub(length)?..end)
+    }
     pub fn owner_width(&self, f: hir::DefId, o: OwnerPlaceId) -> usize {
         width(self.witness, &self.witness.functions()[f.0], o)
+    }
+    /// Only the sealed one-block binary primitives may prepay their immediate
+    /// return. Ordinary source wrappers keep their ordinary return checks.
+    pub(super) fn binary_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        [Function::ReadSome, Function::WriteSome, Function::ArgBytes]
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation) == Some(function))
+            .then(|| {
+                let terminator = self.witness.functions()[function.0].blocks[0]
+                    .terminator
+                    .as_ref()
+                    .expect("sealed binary return");
+                self.terminator_cost(function, &terminator.kind)
+            })
+    }
+    pub(super) fn has_binary_delivery(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        [Function::ReadSome, Function::WriteSome, Function::ArgBytes]
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation).is_some())
+    }
+    pub(super) fn file_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        Function::ALL
+            .into_iter()
+            .filter(|operation| operation.is_file())
+            .any(|operation| self.witness.experimental_function(operation) == Some(function))
+            .then(|| {
+                let term = self.witness.functions()[function.0].blocks[0]
+                    .terminator
+                    .as_ref()
+                    .expect("sealed file return");
+                self.terminator_cost(function, &term.kind)
+            })
+    }
+    pub(super) fn has_program_arguments(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        [Function::ArgCount, Function::ArgBytes]
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation).is_some())
+    }
+    pub(super) fn has_file_delivery(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        Function::ALL
+            .into_iter()
+            .filter(|operation| operation.is_file())
+            .any(|operation| self.witness.experimental_function(operation).is_some())
+    }
+    pub(super) fn has_file_seek(&self) -> bool {
+        self.witness
+            .experimental_function(
+                crate::frontend::builtin_catalog::experimental::Function::SeekAbsolute,
+            )
+            .is_some()
+    }
+
+    /// The exact canonical new-domain primitive prepays its statement and
+    /// immediate ordinary return as one delivery transaction. Consumers must
+    /// admit the original fuel/source/value/output ranges before debiting it.
+    pub(super) fn owned_vector_delivery_cost(
+        &self,
+        function: hir::DefId,
+        operation: crate::frontend::builtin_catalog::owned_vector::Function,
+    ) -> Option<usize> {
+        if self.witness.owned_vector_operation(function) != Some(operation) {
+            return None;
+        }
+        let f = self.witness.functions().get(function.0)?;
+        let terminator = f.blocks.first()?.terminator.as_ref()?;
+        // The independent canonical checker and shared shape proof guarantee
+        // this primitive's one-block immediate return and finite checked cost.
+        Some(4 + self.terminator_cost(function, &terminator.kind))
     }
     pub fn statement_cost(&self, f: hir::DefId, instruction: &OwnedInstruction) -> usize {
         // Build preflights every cost with checked arithmetic before this read-only fast path.
         match instruction {
             // The consumer charges the validated capacity and each I/O attempt.
+            OwnedInstruction::Vector { operation, .. }
+                if operation.record_id().is_some()
+                    && matches!(
+                        operation.operation(),
+                        crate::frontend::builtin_catalog::vector::Operation::TryPush
+                            | crate::frontend::builtin_catalog::vector::Operation::TryResize
+                    ) =>
+            {
+                4 + (2 * MAX_CONTAINMENT_DEPTH + 3)
+                    * self
+                        .witness
+                        .aggregate_width(AggregateTy::Record(
+                            operation.record_id().expect("checked record key"),
+                        ))
+                        .expect("checked Copy record")
+            }
+            OwnedInstruction::Experimental { .. }
+            | OwnedInstruction::Vector { .. }
+            | OwnedInstruction::OwnedVector { .. } => 4,
             OwnedInstruction::ReadStdin { .. } | OwnedInstruction::WriteStdout { .. } => 0,
             OwnedInstruction::ConstructEnum { .. } | OwnedInstruction::ConsumeVariant { .. } => {
                 ENUM_VALUE_COST
@@ -206,8 +376,18 @@ impl<'a> ExecutionPlan<'a> {
             | OwnedInstruction::ConstructComposite { destination, .. } => {
                 1 + self.owner_width(f, *destination)
             }
+            OwnedInstruction::CopyInitialize { source, .. } => 1 + 2 * self.owner_width(f, *source),
+            OwnedInstruction::CopyIndexWrite { source, .. } => {
+                1 + (2 * MAX_CONTAINMENT_DEPTH + 3) * self.owner_width(f, *source)
+            }
+            OwnedInstruction::CopyIndexInitialize { destination, .. } => {
+                1 + (2 * MAX_CONTAINMENT_DEPTH + 3) * self.owner_width(f, *destination)
+            }
             OwnedInstruction::MoveInitialize { source, .. }
             | OwnedInstruction::PrepareOwned { source, .. } => 1 + self.owner_width(f, *source),
+            OwnedInstruction::DestructureRecord { source, fields } => {
+                1 + 2 * self.owner_width(f, *source) + fields.len()
+            }
             OwnedInstruction::Replace { source, .. } => 1 + 2 * self.owner_width(f, *source),
             OwnedInstruction::OpenCall(c) => 1 + self.function(f).call(*c).owned_len,
             _ => 1,
@@ -242,15 +422,188 @@ impl<'a> ExecutionPlan<'a> {
             _ => 1,
         }
     }
-    fn build_with_limit(
-        witness: &'a VerifiedOwnedProgram,
-        limit: usize,
+    fn build_with_limit(witness: &'a W, limit: usize) -> Result<Self, AdmissionFailure> {
+        Self::build_with_budgets(witness, limit, budget::Limits::DEFAULT.work)
+    }
+
+    #[cfg(test)]
+    pub(super) fn build_with_test_budgets(
+        witness: &'a W,
+        metadata: usize,
+        work: usize,
     ) -> Result<Self, AdmissionFailure> {
+        Self::build_with_budgets(witness, metadata, work)
+    }
+
+    #[cfg(test)]
+    pub(super) fn compiler_work_request(witness: &W) -> Result<usize, AdmissionFailure> {
+        Ok(
+            owned_vector_accounting::requested(witness, budget::Limits::DEFAULT.work)?
+                .map_or(0, |request| request.work),
+        )
+    }
+
+    fn build_with_budgets(
+        witness: &'a W,
+        limit: usize,
+        work_limit: usize,
+    ) -> Result<Self, AdmissionFailure> {
+        let extension = owned_vector_accounting::requested(witness, work_limit)?;
         let functions = witness.functions();
-        let mut metadata_bytes = mul(functions.len(), size_of::<FunctionPlan>())?;
+        let wide_type = |ty: hir::Ty| {
+            ty == hir::Ty::Char
+                || ty == hir::Ty::I64
+                || ty.floating()
+                || ty.extended_integer().is_some()
+        };
+        let wide_scalars = functions.iter().any(|function| {
+            matches!(function.result, ValueTy::Scalar(ty) if wide_type(ty))
+                || function.locals.iter().any(|local| wide_type(local.ty))
+                || function.places.iter().any(|place| wide_type(place.ty))
+        });
+        let quad_scalars = functions.iter().any(|function| {
+            matches!(function.result, ValueTy::Scalar(ty) if ty.quad_integer())
+                || function.locals.iter().any(|local| local.ty.quad_integer())
+                || function.places.iter().any(|place| place.ty.quad_integer())
+                || function.owners.iter().any(|owner| matches!(owner.aggregate(), AggregateTy::FixedArray(array) if array.element().quad_integer()))
+        }) || witness.declarations().records().iter().any(|record| record.layout().align() == 16)
+           || witness.declarations().enums().enums().iter().any(|enumeration| enumeration.layout().align() == 16);
+        let integer_extension = functions.iter().any(|function| {
+            matches!(function.result, ValueTy::Scalar(ty) if ty.extended_integer().is_some())
+                || function
+                    .locals
+                    .iter()
+                    .any(|local| local.ty.extended_integer().is_some())
+                || function
+                    .places
+                    .iter()
+                    .any(|place| place.ty.extended_integer().is_some())
+                || function
+                    .blocks
+                    .iter()
+                    .flat_map(|block| &block.statements)
+                    .any(|statement| {
+                        matches!(
+                            statement.kind,
+                            OwnedInstruction::Scalar(Statement::Assign(Assign {
+                                value: Rvalue::Integer { .. }
+                                    | Rvalue::Integer128 { .. }
+                                    | Rvalue::CheckedInteger { .. }
+                                    | Rvalue::CheckedNegateInteger { .. }
+                                    | Rvalue::CheckedIntegerCast { .. },
+                                ..
+                            }))
+                        )
+                    })
+        });
+        let characters = functions.iter().any(|f| {
+            f.result == ValueTy::Scalar(hir::Ty::Char)
+                || f.locals.iter().any(|l| l.ty == hir::Ty::Char)
+                || f.places.iter().any(|p| p.ty == hir::Ty::Char)
+        });
+        let floats = functions.iter().any(|f| {
+            matches!(f.result, ValueTy::Scalar(ty) if ty.floating())
+                || f.locals.iter().any(|l| l.ty.floating())
+                || f.places.iter().any(|p| p.ty.floating())
+        });
+        let bitwise = functions
+            .iter()
+            .flat_map(|f| &f.blocks)
+            .flat_map(|b| &b.statements)
+            .any(|s| {
+                matches!(
+                    s.kind,
+                    OwnedInstruction::Scalar(Statement::Assign(Assign {
+                        value: Rvalue::Bitwise { .. } | Rvalue::BitNot { .. },
+                        ..
+                    }))
+                )
+            });
+        let scalar_bytes = if quad_scalars {
+            size_of::<Option<RuntimeValue>>()
+        } else if wide_scalars {
+            size_of::<Option<RuntimeScalar>>()
+        } else {
+            size_of::<Option<Scalar>>()
+        };
+        let record_vectors = witness.declarations().has_record_vector_declarations()
+            || functions.iter().any(|f| {
+                f.owners
+                    .iter()
+                    .any(|owner| matches!(owner.aggregate(), AggregateTy::RecordVector(_)))
+                    || f.references.iter().any(|reference| {
+                        matches!(
+                            reference.referent(),
+                            BorrowedTy::RecordSlice(_)
+                                | BorrowedTy::Exact(AggregateTy::RecordVector(_))
+                        )
+                    })
+                    || f.loans.iter().any(|loan| {
+                        matches!(
+                            loan.referent(),
+                            BorrowedTy::RecordSlice(_)
+                                | BorrowedTy::Exact(AggregateTy::RecordVector(_))
+                        )
+                    })
+            });
+        let vectors = record_vectors
+            || witness.declarations().has_vector_declarations()
+            || functions.iter().any(|f| {
+                f.owners.iter().any(|o| {
+                    matches!(
+                        o.aggregate(),
+                        AggregateTy::Vector(_) | AggregateTy::RecordVector(_)
+                    )
+                }) || f.references.iter().any(|r| {
+                    matches!(
+                        r.referent(),
+                        BorrowedTy::Exact(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
+                    )
+                }) || f.loans.iter().any(|l| {
+                    matches!(
+                        l.referent(),
+                        BorrowedTy::Exact(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))
+                    )
+                }) || f
+                    .blocks
+                    .iter()
+                    .flat_map(|b| &b.statements)
+                    .any(|s| matches!(s.kind, OwnedInstruction::Vector { .. }))
+            });
+        let typed_ranges = functions.iter().any(|f| {
+            f.blocks
+                .iter()
+                .flat_map(|b| &b.statements)
+                .any(|s| match s.kind {
+                    OwnedInstruction::PrepareBorrowRange { loan, .. } => {
+                        matches!(f.loans[loan.0].referent(),
+                            BorrowedTy::ScalarSlice(ty) if ty != hir::Ty::U8)
+                    }
+                    _ => false,
+                })
+        });
+        let mut dynamic_resources = witness.uses_owned_vectors()
+            || vectors
+            || witness.has_experimental_operations()
+            || witness.declarations().has_resource_declarations();
+        let mut metadata_bytes = add(
+            extension.map_or(0, |request| request.metadata_bytes),
+            mul(functions.len(), size_of::<FunctionPlan>())?,
+        )?;
         let mut largest_frame = 0;
         // Complete ALL metadata-length and activation-cost preflights before any allocation.
         for f in functions {
+            dynamic_resources |= f.references.iter().any(|reference| {
+                matches!(
+                    reference.referent(),
+                    BorrowedTy::Exact(
+                        AggregateTy::ByteBuf
+                            | AggregateTy::File
+                            | AggregateTy::Vector(_)
+                            | AggregateTy::RecordVector(_)
+                    )
+                )
+            });
             metadata_bytes = add(metadata_bytes, mul(f.owners.len(), size_of::<usize>())?)?;
             metadata_bytes = add(metadata_bytes, mul(f.calls.len(), size_of::<CallPlan>())?)?;
             for c in &f.calls {
@@ -265,15 +618,18 @@ impl<'a> ExecutionPlan<'a> {
                     )?;
                 }
             }
-            largest_frame = largest_frame.max(usage(witness, f)?.expanded_cells);
+            largest_frame = largest_frame.max(usage(witness, f, scalar_bytes)?.expanded_cells);
         }
         // Conservative maxima preflight all operation-cost additions before reservation.
         for f in functions {
-            let u = usage(witness, f)?;
-            add(
+            let u = usage(witness, f, scalar_bytes)?;
+            let return_upper = add(
                 add(add(add(1, mul(2, u.owner_cells)?)?, u.loans)?, u.calls)?,
                 u.references,
             )?;
+            if witness.owned_vector_operation(f.id).is_some() {
+                add(return_upper, 4)?;
+            }
             for c in &f.calls {
                 let n = c.arguments.len();
                 add(
@@ -286,13 +642,33 @@ impl<'a> ExecutionPlan<'a> {
             return Err(AdmissionFailure::new("owned plan bytes", None));
         }
         let mut plans = reserve(functions.len())?;
+        owned_vector_accounting::admit_capacity::<FunctionPlan>(
+            extension.is_some(),
+            &mut metadata_bytes,
+            plans.capacity(),
+            functions.len(),
+            limit,
+        )?;
         for f in functions {
-            let current_usage = usage(witness, f)?;
+            let current_usage = usage(witness, f, scalar_bytes)?;
             let mut owner_offsets = reserve(f.owners.len())?;
+            owned_vector_accounting::admit_capacity::<usize>(
+                extension.is_some(),
+                &mut metadata_bytes,
+                owner_offsets.capacity(),
+                f.owners.len(),
+                limit,
+            )?;
             let mut next = 0;
             for owner in &f.owners {
+                dynamic_resources |= matches!(
+                    owner.aggregate(),
+                    AggregateTy::ByteBuf
+                        | AggregateTy::File
+                        | AggregateTy::Vector(_)
+                        | AggregateTy::RecordVector(_)
+                );
                 let layout = witness
-                    .declarations()
                     .aggregate_layout(owner.aggregate())
                     .expect("verified record");
                 next = align(next, layout.align())?;
@@ -312,8 +688,29 @@ impl<'a> ExecutionPlan<'a> {
                 .filter(|a| matches!(a, ArgumentSlot::Borrow(_)))
                 .count();
             let mut calls = reserve(f.calls.len())?;
+            owned_vector_accounting::admit_capacity::<CallPlan>(
+                extension.is_some(),
+                &mut metadata_bytes,
+                calls.capacity(),
+                f.calls.len(),
+                limit,
+            )?;
             let mut owned_stages = reserve(owned_count)?;
+            owned_vector_accounting::admit_capacity::<OwnerPlaceId>(
+                extension.is_some(),
+                &mut metadata_bytes,
+                owned_stages.capacity(),
+                owned_count,
+                limit,
+            )?;
             let mut borrowed_loans = reserve(borrow_count)?;
+            owned_vector_accounting::admit_capacity::<LoanId>(
+                extension.is_some(),
+                &mut metadata_bytes,
+                borrowed_loans.capacity(),
+                borrow_count,
+                limit,
+            )?;
             let mut argument_start = 0;
             for c in &f.calls {
                 let (owned_start, borrow_start) = (owned_stages.len(), borrowed_loans.len());
@@ -346,10 +743,29 @@ impl<'a> ExecutionPlan<'a> {
                 borrowed_loans,
             });
         }
-        let result = Self {
+        let mut result = Self {
             witness,
             functions: plans,
-            metadata_bytes,
+            // The independently checked production ceiling is 32 MiB. Packing
+            // this total and the cached policy keeps the original facade size.
+            metadata_bytes: u32::try_from(metadata_bytes)
+                .map_err(|_| AdmissionFailure::new("owned plan bytes", None))?,
+            dynamic_resources,
+            wide_scalars,
+            integer_extension: u8::from(integer_extension)
+                | (u8::from(bitwise) << 1)
+                | (u8::from(floats) << 2)
+                | (u8::from(characters) << 3)
+                | (u8::from(
+                    witness
+                        .declarations()
+                        .records()
+                        .iter()
+                        .any(|record| record.has_enum_record_nesting()),
+                ) << 4)
+                | (u8::from(vectors) << 5)
+                | (u8::from(typed_ranges) << 6),
+            scalar_mode: u8::from(quad_scalars) | (u8::from(record_vectors) << 1),
         };
         // Sum the maximal components, rather than trusting an unchecked cost expression.
         for f in functions {
@@ -359,7 +775,26 @@ impl<'a> ExecutionPlan<'a> {
                 u.references,
             )?;
             for owner in 0..f.owners.len() {
-                add(1, mul(2, result.owner_width(f.id, OwnerPlaceId(owner)))?)?;
+                add(
+                    4,
+                    mul(
+                        2 * MAX_CONTAINMENT_DEPTH + 3,
+                        result.owner_width(f.id, OwnerPlaceId(owner)),
+                    )?,
+                )?;
+            }
+            for statement in f.blocks.iter().flat_map(|block| &block.statements) {
+                // The existing complete operation-cost walk also derives the
+                // final closed policy bit. No second discovery scan or carrier.
+                if matches!(statement.kind, OwnedInstruction::CopyInitialize { .. }) {
+                    result.integer_extension |= 128;
+                }
+                if let OwnedInstruction::DestructureRecord { source, fields } = &statement.kind {
+                    add(
+                        add(1, mul(2, result.owner_width(f.id, *source))?)?,
+                        fields.len(),
+                    )?;
+                }
             }
             for c in &f.calls {
                 let mut cost = add(1, c.arguments.len())?;
@@ -381,15 +816,15 @@ impl<'a> ExecutionPlan<'a> {
         Ok(result)
     }
 }
-fn width(witness: &VerifiedOwnedProgram, f: &RawOwnedFunction, o: OwnerPlaceId) -> usize {
+fn width<W: PlanWitness>(witness: &W, f: &RawOwnedFunction, o: OwnerPlaceId) -> usize {
     witness
-        .declarations()
         .aggregate_width(f.owners[o.0].aggregate())
         .expect("verified record")
 }
-fn usage(
-    witness: &VerifiedOwnedProgram,
+fn usage<W: PlanWitness>(
+    witness: &W,
     f: &RawOwnedFunction,
+    scalar_bytes: usize,
 ) -> Result<FrameUsage, AdmissionFailure> {
     let mut scratch_bytes = 0;
     if witness.builtin_function() == Some(f.id) {
@@ -398,14 +833,15 @@ fn usage(
     if witness.builtin_output_function() == Some(f.id) {
         scratch_bytes = add(scratch_bytes, builtins::OUTPUT_SCRATCH_BYTES)?;
     }
-    frame_usage(witness.declarations(), f, scratch_bytes)
+    frame_usage(witness, f, scratch_bytes, scalar_bytes)
 }
 
 /// Physical accounting over declarations established by the plan's witness.
-fn frame_usage(
-    declarations: &Declarations,
+fn frame_usage<W: PlanWitness>(
+    witness: &W,
     f: &RawOwnedFunction,
     scratch_bytes: usize,
+    scalar_bytes: usize,
 ) -> Result<FrameUsage, AdmissionFailure> {
     let mut u = FrameUsage {
         scalar_slots: add(f.locals.len(), f.places.len())?,
@@ -419,24 +855,25 @@ fn frame_usage(
         u.arguments = add(u.arguments, c.arguments.len())?;
     }
     for owner in &f.owners {
-        let layout = declarations
+        let layout = witness
             .aggregate_layout(owner.aggregate())
             .expect("verified record");
         u.owner_cells = add(
             u.owner_cells,
-            declarations
+            witness
                 .aggregate_width(owner.aggregate())
                 .expect("verified record"),
         )?;
         u.payload_bytes = add(align(u.payload_bytes, layout.align())?, layout.size())?;
     }
     u.payload_bytes = add(u.payload_bytes, scratch_bytes)?;
+    u.payload_bytes = add(
+        u.payload_bytes,
+        native_vector_layout::record_scratch_bytes(witness.declarations(), f)?,
+    )?;
     u.expanded_cells = add(add(u.scalar_slots, u.arguments)?, u.owner_cells)?;
     u.reference_bytes = add(
-        mul(
-            add(u.scalar_slots, u.arguments)?,
-            size_of::<Option<Scalar>>(),
-        )?,
+        mul(add(u.scalar_slots, u.arguments)?, scalar_bytes)?,
         u.payload_bytes,
     )?;
     for (count, cells, bytes) in [
@@ -450,31 +887,84 @@ fn frame_usage(
     }
     u.native_bytes = add(
         add(
-            mul(add(u.scalar_slots, u.arguments)?, 8)?,
+            mul(
+                add(u.scalar_slots, u.arguments)?,
+                if scalar_bytes == size_of::<Option<RuntimeValue>>() {
+                    16
+                } else {
+                    8
+                },
+            )?,
             mul(add(u.references, u.loans)?, 8)?,
         )?,
-        align(u.payload_bytes, 4)?,
+        align(u.payload_bytes, native_owner_alignment_for(witness, f))?,
     )?;
     // Slice descriptors add native-only i32 length slots. The reference consumer
     // derives length from validated whole-owner provenance and stores no sidecar.
     let slice_references = f
         .references
         .iter()
-        .filter(|r| matches!(r.referent(), BorrowedTy::ScalarSlice(_)))
+        .filter(|r| {
+            matches!(
+                r.referent(),
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+            )
+        })
         .count();
     let slice_loans = f
         .loans
         .iter()
-        .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_)))
+        .filter(|l| {
+            matches!(
+                l.referent(),
+                BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+            )
+        })
         .count();
     u.native_bytes = add(u.native_bytes, mul(add(slice_references, slice_loans)?, 4)?)?;
+    if scalar_bytes == size_of::<Option<RuntimeValue>>() {
+        u.native_bytes = add(u.native_bytes, 32)?;
+    }
+    u.native_bytes = add(
+        u.native_bytes,
+        native_vector_layout::frame_bytes_with_witness(witness, f)?,
+    )?;
     Ok(u)
+}
+
+pub(super) fn native_owner_alignment(declarations: &Declarations, f: &RawOwnedFunction) -> usize {
+    owner_alignment(f, |aggregate| declarations.aggregate_layout(aggregate))
+}
+
+pub(super) fn native_owner_alignment_for<W: PlanWitness>(
+    witness: &W,
+    f: &RawOwnedFunction,
+) -> usize {
+    owner_alignment(f, |aggregate| witness.aggregate_layout(aggregate))
+}
+
+fn owner_alignment(
+    f: &RawOwnedFunction,
+    layout: impl Fn(AggregateTy) -> Result<Layout, DeclarationError>,
+) -> usize {
+    f.owners
+        .iter()
+        .map(|owner| {
+            layout(owner.aggregate())
+                .expect("verified owner layout")
+                .align()
+        })
+        .max()
+        .unwrap_or(4)
+        .max(4)
 }
 
 pub(super) fn instruction_span(statement: &OwnedStatement) -> Span {
     match &statement.kind {
         OwnedInstruction::Scalar(s) => s.span(),
-        OwnedInstruction::ReadIndex { .. }
+        OwnedInstruction::CopyIndexInitialize { .. }
+        | OwnedInstruction::CopyIndexWrite { .. }
+        | OwnedInstruction::ReadIndex { .. }
         | OwnedInstruction::WriteIndex { .. }
         | OwnedInstruction::ArrayLength { .. } => statement.primary_span(),
         _ => statement.span,
@@ -527,14 +1017,15 @@ mod tests {
             Option<ValueTy> => 16,
             ParameterTy => 24,
             Option<ParameterTy> => 24,
-            RawOwnedProgram => 56 + size_of::<Vec<RawEnumDecl>>(),
+            RawOwnedProgram => 56 + size_of::<Vec<RawEnumDecl>>()
+                + super::super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH,
             RawOwnedFunction => 248 + size_of::<Vec<MatchDecl>>(),
             MatchDecl => 56,
             MatchArm => 32,
             shape::MatchBlockRole => 24,
             OwnerDecl => 56,
             ReferenceDecl => 48,
-            LoanDecl => 96,
+            LoanDecl => 104,
             CallDecl => 96,
             OwnedInstruction => 128,
             OwnedStatement => 208,
