@@ -6,6 +6,18 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+fn package_source_host() -> bool {
+    cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    ))
+}
 struct Package(PathBuf);
 impl Package {
     fn new(source: &str) -> Self {
@@ -89,7 +101,7 @@ fn opaque() -> Package {
 }
 fn opaque_acceptance(engine: &str) {
     let p = opaque();
-    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+    if !package_source_host() {
         p.reject("E0006");
         return;
     }
@@ -202,7 +214,7 @@ fn owned_enum_type_ownership_coverage_and_cycle_rejections() {
         .run("interpreter", 0);
     let p = opaque();
     p.source("use crate::lib::model::good;use crate::lib::model::Outcome;fn main()->i32{let e=good();match e{Outcome::Value(p)=>{return p.left;},Outcome::Error(code)=>{return code;},}}");
-    p.reject(if cfg!(any(target_os = "linux", target_os = "macos")) {
+    p.reject(if package_source_host() {
         "E0206"
     } else {
         "E0006"
@@ -240,7 +252,7 @@ fn identity_graph(separate_roots: bool) -> Package {
 #[test]
 fn owned_enum_package_diamond_shares_nominal_payload_identity() {
     let package = identity_graph(false);
-    if cfg!(any(target_os = "linux", target_os = "macos")) {
+    if package_source_host() {
         package.run("interpreter", 42);
     } else {
         package.reject("E0006");
@@ -250,7 +262,7 @@ fn owned_enum_package_diamond_shares_nominal_payload_identity() {
 #[test]
 fn owned_enum_same_name_and_source_at_distinct_roots_do_not_share_identity() {
     let package = identity_graph(true);
-    package.reject(if cfg!(any(target_os = "linux", target_os = "macos")) {
+    package.reject(if package_source_host() {
         "E0300"
     } else {
         "E0006"
@@ -263,7 +275,7 @@ fn owned_enum_same_name_and_source_at_distinct_roots_do_not_share_identity() {
 fn owned_enum_qualified_dependency_payload_uses_its_declaring_package() {
     let package = opaque();
     package.source("enum Envelope{Nested(crate::lib::model::Outcome)} fn main()->i32{let outer=Envelope::Nested(crate::lib::model::good());match outer{Envelope::Nested(inner)=>{match inner{crate::lib::model::Outcome::Value(packet)=>{return crate::lib::model::packet_value(packet);},crate::lib::model::Outcome::Error(code)=>{return code;},}}}}");
-    if cfg!(any(target_os = "linux", target_os = "macos")) {
+    if package_source_host() {
         package.run("interpreter", 42);
     } else {
         package.reject("E0006");

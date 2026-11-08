@@ -1447,7 +1447,16 @@ fn qualified_completion_handles_import_holes_and_never_guesses_literal_or_member
     p.unchanged();
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn qualified_completion_reads_unsaved_modules_nested_privacy_and_close_restores_disk() {
     let p = Project::new();
@@ -1558,7 +1567,16 @@ fn qualified_completion_reads_unsaved_modules_nested_privacy_and_close_restores_
     p.unchanged();
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    all(
+        windows,
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
 #[test]
 fn qualified_completion_uses_only_direct_dependencies_and_preserves_the_saved_lock() {
     let p = Project::new();
@@ -1943,9 +1961,17 @@ fn record_field_completion_uses_direct_dependency_identity_and_closes_import_ali
     let mut c = Client::spawn(&p, false);
     c.initialize(&p);
     c.open(&path, text);
-    // Direct dependencies use the package policy; Windows module support
-    // alone does not qualify loading a dependency package graph.
-    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+    // Direct dependencies exercise package admission and retained editor overlays.
+    if !cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            windows,
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
         let mut position = position_at(text, "point.");
         position["character"] = json!(position["character"].as_u64().unwrap() + 6);
         let response = c.request(
@@ -1957,17 +1983,6 @@ fn record_field_completion_uses_direct_dependency_identity_and_closes_import_ali
             .as_str()
             .unwrap()
             .contains("source policy"));
-        if cfg!(all(
-            target_os = "windows",
-            target_arch = "x86_64",
-            target_pointer_width = "64",
-            target_endian = "little"
-        )) {
-            assert_eq!(
-                response["error"]["message"],
-                "package source policy is qualified only on Linux or macOS"
-            );
-        }
         assert!(response.get("result").is_none());
     } else {
         assert_eq!(

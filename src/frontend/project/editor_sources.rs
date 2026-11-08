@@ -82,7 +82,8 @@ impl<'a> QuerySources<'a> {
                 .unwrap_or(&specs[0].entry)
                 .to_str()
                 .expect("validated source path");
-            ProjectSources::load_with_syntax_inputs(
+            #[cfg(not(windows))]
+            let project = ProjectSources::load_with_syntax_inputs(
                 entry,
                 ProjectLimits::default(),
                 parser::SourceMode::ProjectCandidate,
@@ -91,8 +92,15 @@ impl<'a> QuerySources<'a> {
                 ProjectEnumSyntax::Enabled,
                 None,
                 Some(overlay),
-            )
-            .map(Self::Single)
+            );
+            #[cfg(windows)]
+            let project = ProjectSources::load_local_package_entry(
+                &specs[0],
+                Path::new(entry),
+                ProjectLimits::default(),
+                Some(overlay),
+            );
+            project.map(Self::Single)
         } else {
             packages::PackageSources::load_syntax_with_editor(
                 specs,
@@ -147,15 +155,21 @@ impl<S: ModuleSyntax> SourceSetBuilder<'_, S> {
         child: &mut filesystem::VerifiedChild,
         path: &Path,
         display: &str,
-        origin: Span,
+        origin: Option<Span>,
         overlay: Option<&SourceOverlay<'_>>,
     ) -> Result<String, Box<Diagnostic>> {
-        child.validate(origin)?;
+        match origin {
+            Some(span) => child.validate(span)?,
+            None => child.validate_at(None)?,
+        }
         let result = match overlay.and_then(|buffers| buffers.text(path)) {
-            Some(text) => self.read_overlay_source(text, Some(origin)),
-            None => self.read_open_source(&mut child.file, display, Some(origin)),
+            Some(text) => self.read_overlay_source(text, origin),
+            None => self.read_open_source(&mut child.file, display, origin),
         }?;
-        child.validate(origin)?;
+        match origin {
+            Some(span) => child.validate(span)?,
+            None => child.validate_at(None)?,
+        }
         Ok(result)
     }
 

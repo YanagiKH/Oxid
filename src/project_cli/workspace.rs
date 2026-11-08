@@ -54,25 +54,32 @@ fn member_path(value: &str) -> Result<(), String> {
 
 fn member_directory(root: &Path, value: &str) -> Result<PathBuf, String> {
     member_path(value)?;
-    let mut path = root.to_path_buf();
-    if value != "." {
-        for part in value.split('/') {
-            path.push(part);
-            let metadata = fs::symlink_metadata(&path)
-                .map_err(|error| format!("cannot inspect workspace member {value}: {error}"))?;
-            if !metadata.file_type().is_dir() {
-                return Err(format!(
+    #[cfg(windows)]
+    {
+        frontend::verify_windows_workspace_member(root, value)
+    }
+    #[cfg(not(windows))]
+    {
+        let mut path = root.to_path_buf();
+        if value != "." {
+            for part in value.split('/') {
+                path.push(part);
+                let metadata = fs::symlink_metadata(&path)
+                    .map_err(|error| format!("cannot inspect workspace member {value}: {error}"))?;
+                if !metadata.file_type().is_dir() {
+                    return Err(format!(
                     "workspace member {value} must use ordinary directories without symbolic links"
                 ));
+                }
             }
         }
+        let canonical = fs::canonicalize(&path)
+            .map_err(|error| format!("cannot open workspace member {value}: {error}"))?;
+        if !canonical.starts_with(root) {
+            return Err(format!("workspace member {value} escapes its workspace"));
+        }
+        Ok(canonical)
     }
-    let canonical = fs::canonicalize(&path)
-        .map_err(|error| format!("cannot open workspace member {value}: {error}"))?;
-    if !canonical.starts_with(root) {
-        return Err(format!("workspace member {value} escapes its workspace"));
-    }
-    Ok(canonical)
 }
 
 pub(super) fn discover() -> Result<Option<Workspace>, String> {

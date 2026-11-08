@@ -636,6 +636,24 @@ fn environment_block(
     }
     Ok(block)
 }
+
+fn capture_drain_error(
+    error: String,
+    phase: &'static str,
+    started: Instant,
+    stdout: (usize, bool),
+    stderr: (usize, bool),
+) -> String {
+    format!(
+        "{error}; phase={phase}; elapsed_ms={}; stdout_bytes={}; stderr_bytes={}; stdout_eof={}; stderr_eof={}",
+        started.elapsed().as_millis(),
+        stdout.0,
+        stderr.0,
+        stdout.1,
+        stderr.1
+    )
+}
+
 fn capture(
     program: &Path,
     arguments: &[OsString],
@@ -728,8 +746,24 @@ fn capture(
     drop(input);
     let (mut output, mut errors) = (Vec::new(), Vec::new());
     loop {
-        stdout.drain(&mut output, deadline)?;
-        stderr.drain(&mut errors, deadline)?;
+        stdout.drain(&mut output, deadline).map_err(|error| {
+            capture_drain_error(
+                error,
+                "main-loop-stdout",
+                started,
+                (output.len(), stdout.eof),
+                (errors.len(), stderr.eof),
+            )
+        })?;
+        stderr.drain(&mut errors, deadline).map_err(|error| {
+            capture_drain_error(
+                error,
+                "main-loop-stderr",
+                started,
+                (output.len(), stdout.eof),
+                (errors.len(), stderr.eof),
+            )
+        })?;
         let wait = unsafe { WaitForSingleObject(child.process.0, 0) };
         if wait == WAIT_OBJECT_0 {
             let mut code = 0;
@@ -741,8 +775,24 @@ fn capture(
                 .checked_add(CLEANUP_TIMEOUT)
                 .ok_or("probe cleanup overflow")?;
             while !stdout.eof || !stderr.eof {
-                stdout.drain(&mut output, cleanup)?;
-                stderr.drain(&mut errors, cleanup)?;
+                stdout.drain(&mut output, cleanup).map_err(|error| {
+                    capture_drain_error(
+                        error,
+                        "post-termination-stdout",
+                        started,
+                        (output.len(), stdout.eof),
+                        (errors.len(), stderr.eof),
+                    )
+                })?;
+                stderr.drain(&mut errors, cleanup).map_err(|error| {
+                    capture_drain_error(
+                        error,
+                        "post-termination-stderr",
+                        started,
+                        (output.len(), stdout.eof),
+                        (errors.len(), stderr.eof),
+                    )
+                })?;
                 if stdout.eof && stderr.eof {
                     break;
                 }
@@ -920,6 +970,138 @@ pub(super) fn probe(report: &mut Report) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{io::Write, os::windows::io::FromRawHandle, sync::mpsc, thread::JoinHandle};
+
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn DisconnectNamedPipe(pipe: RawHandle) -> i32;
+    }
+
+    struct RawPipeWriter {
+        pipe: Option<Pipe>,
+        release: Option<mpsc::Sender<()>>,
+        thread: Option<JoinHandle<()>>,
+    }
+
+    impl Drop for RawPipeWriter {
+        fn drop(&mut self) {
+            // Disconnect and close the server before considering a join. This
+            // also releases a client blocked in WriteFile during an assertion
+            // failure; dropping the channel releases its later close handshake.
+            if let Some(pipe) = self.pipe.take() {
+                // SAFETY: This is our live, uniquely owned server handle. The
+                // test is finished with its data; unread bytes may be discarded.
+                unsafe {
+                    DisconnectNamedPipe(pipe.reader.0);
+                }
+                drop(pipe);
+            }
+            self.release.take();
+            if let Some(thread) = self.thread.take() {
+                let deadline = Instant::now() + CLEANUP_TIMEOUT;
+                while !thread.is_finished() && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                // Never join a blocked or unscheduled writer on an error path.
+                // The thread owns its File and bytes even if cleanup must detach.
+                if thread.is_finished() {
+                    let _ = thread.join();
+                }
+            }
+        }
+    }
+
+    fn raw_pipe_limit(length: usize) -> Result<(), String> {
+        let deadline = Instant::now() + TOOL_TIMEOUT;
+        let mut pipe = Pipe::new()?;
+        let writer = std::mem::ManuallyDrop::new(pipe.writer.take().unwrap());
+        // SAFETY: Pipe::new opened this synchronous write handle. Taking it
+        // removes the sole owner from Pipe, and ManuallyDrop suppresses that
+        // owner's CloseHandle. File receives ownership exactly once.
+        let mut file = unsafe { fs::File::from_raw_handle(writer.0) };
+        let expected = (0..length).map(|index| index as u8).collect::<Vec<_>>();
+        let payload = expected.clone();
+        let (written_sender, written_receiver) = mpsc::channel();
+        let (release_sender, release_receiver) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            // One blocking write_all exceeds the pipe's 4096-byte buffer. The
+            // real reader must make progress for this operation to complete.
+            let result = file.write_all(&payload).map_err(|error| error.to_string());
+            let success = result.is_ok();
+            let _ = written_sender.send(result);
+            if success {
+                let _ = release_receiver.recv_timeout(TOOL_TIMEOUT);
+            }
+            drop(file);
+        });
+        let mut writer = RawPipeWriter {
+            pipe: Some(pipe),
+            release: Some(release_sender),
+            thread: Some(thread),
+        };
+        let mut output = Vec::new();
+        let rejection = loop {
+            match writer.pipe.as_mut().unwrap().drain(&mut output, deadline) {
+                Err(error) => break Some(error),
+                Ok(()) if output.len() == length => break None,
+                Ok(()) if writer.pipe.as_ref().unwrap().eof => {
+                    return Err("raw pipe closed before its complete output".into());
+                }
+                Ok(()) => std::thread::sleep(Duration::from_millis(1)),
+            }
+        };
+        if length == OUTPUT_LIMIT {
+            if let Some(error) = rejection {
+                return Err(error);
+            }
+            if output != expected || writer.pipe.as_ref().unwrap().eof {
+                return Err("raw pipe did not preserve its exact limit with an open writer".into());
+            }
+        } else if !rejection.is_some_and(|error| error.contains("exceeded 65536"))
+            || output.len() > OUTPUT_LIMIT
+            || output.as_slice() != &expected[..output.len()]
+        {
+            return Err(
+                "raw pipe did not refuse the extra byte before appending past its limit".into(),
+            );
+        }
+        written_receiver
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .map_err(|error| format!("raw pipe writer did not complete: {error}"))??;
+        if length == OUTPUT_LIMIT {
+            // The writer has finished its bytes but is held open by a channel.
+            // An empty NOWAIT read must return without marking that pipe EOF.
+            writer.pipe.as_mut().unwrap().drain(&mut output, deadline)?;
+            if output != expected || writer.pipe.as_ref().unwrap().eof {
+                return Err("raw pipe treated an empty open writer as EOF".into());
+            }
+        }
+        writer.release.take().unwrap().send(()).map_err(|error| {
+            format!("raw pipe writer closed before its release handshake: {error}")
+        })?;
+        while !writer.pipe.as_ref().unwrap().eof {
+            writer.pipe.as_mut().unwrap().drain(&mut output, deadline)?;
+            if !writer.pipe.as_ref().unwrap().eof {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        while !writer.thread.as_ref().unwrap().is_finished() {
+            if Instant::now() >= deadline {
+                return Err("raw pipe writer did not finish before its deadline".into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        writer
+            .thread
+            .take()
+            .unwrap()
+            .join()
+            .map_err(|_| "raw pipe writer panicked")?;
+        if length == OUTPUT_LIMIT && output != expected {
+            return Err("raw pipe bytes changed while reaching EOF".into());
+        }
+        Ok(())
+    }
 
     fn powershell(script: &str, timeout: Duration) -> Result<Output, String> {
         let system = std::env::var_os("SystemRoot").ok_or("SystemRoot is unavailable")?;
@@ -939,12 +1121,26 @@ mod tests {
 
     #[test]
     fn byte_pipe_capture_remains_nonblocking_in_a_multithreaded_process() {
-        let background = std::thread::spawn(|| std::thread::sleep(Duration::from_millis(500)));
-        let result = powershell(
-            "Start-Sleep -Milliseconds 200; [Console]::OpenStandardOutput().WriteByte(26)",
-            TOOL_TIMEOUT,
-        );
-        background.join().unwrap();
+        let result = std::thread::scope(|scope| {
+            let (ready_sender, ready_receiver) = std::sync::mpsc::sync_channel(0);
+            let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
+            let background = scope.spawn(move || {
+                ready_sender.send(()).unwrap();
+                let _ = release_receiver.recv();
+            });
+            // Keep another thread alive through setup and cold child startup.
+            // Channel drop and scoped joining also release it during unwinding.
+            ready_receiver.recv_timeout(RUN_TIMEOUT).unwrap();
+            assert!(!background.is_finished());
+            let result = powershell(
+                "[Console]::OpenStandardOutput().WriteByte(26)",
+                TOOL_TIMEOUT,
+            );
+            assert!(!background.is_finished());
+            drop(release_sender);
+            background.join().unwrap();
+            result
+        });
         let output = result.unwrap();
         assert_eq!(output.stdout, [26]);
         assert!(output.stderr.is_empty(), "{output:?}");
@@ -952,6 +1148,8 @@ mod tests {
 
     #[test]
     fn capture_keeps_the_inclusive_per_stream_limit() {
+        raw_pipe_limit(OUTPUT_LIMIT).unwrap();
+        raw_pipe_limit(OUTPUT_LIMIT + 1).unwrap();
         let output = powershell(
             "$b = New-Object byte[] 65536; [Console]::OpenStandardOutput().Write($b,0,$b.Length)",
             TOOL_TIMEOUT,
