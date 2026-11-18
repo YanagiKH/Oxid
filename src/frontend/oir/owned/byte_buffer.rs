@@ -16,6 +16,7 @@ mod owned_vectors;
 #[path = "vector_resources.rs"]
 mod vectors;
 pub(super) use files::{FileAccess, FileDescriptor, OpenValue};
+pub(in crate::frontend::oir::owned) use owned_vectors::borrow_control_bytes as owned_vector_borrow_control_bytes;
 pub(in crate::frontend::oir::owned) use owned_vectors::control_bytes as owned_vector_control_bytes;
 pub(in crate::frontend::oir::owned) use owned_vectors::OwnedVectorDescriptor;
 pub(in crate::frontend::oir::owned) use vectors::{

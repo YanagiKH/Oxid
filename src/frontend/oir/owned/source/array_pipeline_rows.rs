@@ -482,6 +482,7 @@ impl fmt::Display for HirStatement<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use source_hir::StmtKind as S;
         match self.0 {
+            S::BorrowElementLet { .. } => Err(fmt::Error),
             S::BorrowLet {
                 binding,
                 kind,
@@ -1045,7 +1046,7 @@ impl fmt::Display for Instruction<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OwnedInstruction as I;
         match self.0 {
-            I::OwnedVector { .. } => Err(fmt::Error),
+            I::AcquireLocalElementBorrow { .. } | I::OwnedVector { .. } => Err(fmt::Error),
             I::AcquireLocalBorrow(id) => write!(f, "[\"acquire-local-borrow\",{}]", id.0),
             I::ReleaseLocalBorrow(id) => write!(f, "[\"release-local-borrow\",{}]", id.0),
             I::CopyInitialize { .. } | I::CopyIndexInitialize { .. } | I::CopyIndexWrite { .. } => {

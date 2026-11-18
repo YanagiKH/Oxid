@@ -23,6 +23,45 @@ struct EmitterCarriers {
     selected_slots: [Option<OwnedVectorRootSlot>; 2],
     storage_keys: [u32; 2],
 }
+#[allow(dead_code)]
+struct ElementBorrowEmitterCarriers {
+    plan: *const (),
+    function: &'static RawOwnedFunction,
+    loan: LoanId,
+    index: Operand,
+    record: RecordId,
+    nominal: Option<RecordId>,
+    element: owned_record_codec::Element<'static>,
+    checked: Result<owned_record_codec::Element<'static>, owned_record_codec::bounds::ShapeFailure>,
+    view: Option<owned_record_codec::bounds::CheckedElementView<'static>>,
+    key: u32,
+    names: [String; 5],
+    formatting: [FormatCallsiteBacking<8>; 5],
+    writes: [std::fmt::Result; 5],
+    selected_slot: usize,
+}
+pub(super) const fn element_borrow_emitter_bytes() -> usize {
+    size_of::<ElementBorrowEmitterCarriers>() + 5 * NAME_BYTES
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct ElementBorrowRuntimeControls {
+    heap: *mut (),
+    descriptor: *const (),
+    fuel: *mut u64,
+    output: *mut *mut u8,
+    schema: *const (),
+    node: *mut (),
+    record: u32,
+    index: i32,
+    controls: [(*const (), usize); 3],
+    work: u64,
+    remaining: u64,
+    status: i32,
+    offset: usize,
+}
+pub(super) const ELEMENT_BORROW_RUNTIME_BYTES: usize = size_of::<ElementBorrowRuntimeControls>();
+
 pub(super) const fn control_bytes() -> usize {
     size_of::<EmitterCarriers>()
         + 12 * NAME_BYTES
@@ -94,6 +133,47 @@ declare i32 @oxid_owned_vector_take(ptr, ptr, i32, ptr, ptr)\n\
 declare i32 @oxid_owned_vector_release(ptr, ptr, i32)\n",
     )
     .unwrap();
+}
+
+pub(super) fn element_borrow_declaration(out: &mut Emission) {
+    out.write_str("declare i32 @oxid_owned_vector_borrow_record(ptr, ptr, i32, i32, ptr, ptr)\n")
+        .unwrap();
+}
+
+pub(super) fn borrow_record<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
+    name: &str,
+    loan: LoanId,
+    index: Operand,
+    diagnostics: &Diagnostics,
+    span: Span,
+    out: &mut Emission,
+) {
+    let plan = storage.execution();
+    let f = storage.raw();
+    let record = shape::local_record_element(f, loan).expect("verified local owned record element");
+    let element = plan
+        .witness()
+        .elements()
+        .expect("sealed owning bounds")
+        .element(record)
+        .expect("checked record element");
+    let key = element.storage_key();
+    let pointer = base_pointer(out, f, &format!("{name}_vector"), f.loans[loan.0].authority);
+    let ordinal = load_operand(out, f, &format!("{name}_index"), index);
+    fuel_scope(out);
+    writeln!(out, "  %{name}_heap = call ptr @__oxid_owned_vector_heap()").unwrap();
+    writeln!(out, "  %{name}_status = call i32 @oxid_owned_vector_borrow_record(ptr %{name}_heap, ptr {pointer}, i32 {key}, i32 {ordinal}, ptr %fuel, ptr %vector_index_pointer)").unwrap();
+    experimental::status(
+        out,
+        diagnostics,
+        name,
+        &format!("%{name}_status"),
+        "bounds_ok",
+        span,
+        true,
+    );
+    writeln!(out, "  %{name}_element = load ptr, ptr %vector_index_pointer, align 8\n  store ptr %{name}_element, ptr %r{}, align 8", storage.loan_slot(loan)).unwrap();
 }
 
 #[allow(clippy::too_many_arguments)]

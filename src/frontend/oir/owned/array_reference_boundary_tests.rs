@@ -347,7 +347,8 @@ fn unit2c_exact_reference_resources_and_all_allocation_hooks() {
         let slots = n + 1;
         let cells = slots + n.max(1) + 4;
         let payload_bytes = n.max(1) * if ty == hir::Ty::I32 { 4 } else { 1 };
-        let bytes = 272 + 8 + 8 * slots + payload_bytes + 32;
+        let bytes =
+            element_loan_budget_oracle::SCALAR_VM + 272 + 8 + 8 * slots + payload_bytes + 32;
         let exact = Limits {
             frames: 1,
             slots,

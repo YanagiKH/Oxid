@@ -186,8 +186,12 @@ fn source_owner_classes_have_exact_lowered_live_cell_and_byte_seams() {
     // Physical-view census: mainX42/readX11/relayX10, D320/88/72.
     // The read path now maximizes cells53 and active bytes408; owners and
     // all call argument snapshots remain allocated in each frame.
-    let bytes = 2 * size_of::<Frame>() + size_of::<Scalar>() + 320 + 88;
-    assert_eq!(bytes, 960);
+    let bytes = element_loan_budget_oracle::SCALAR_VM
+        + 2 * size_of::<Frame>()
+        + size_of::<Scalar>()
+        + 320
+        + 88;
+    assert_eq!(bytes, 12_192);
     let limits = Limits {
         frames: 2,
         cells: 53,
@@ -227,8 +231,13 @@ fn source_frozen_batch_has_exact_lowered_frame_cell_and_byte_seams() {
     // main S26 A6 P32 O8 L3 C5 => X148, D1056; dispatch S4 A2 R1 L1
     // C1 => X32, D256; commit S10 R1 => X20, D160. Peak is200/1472.
     let case = source::checked(source::BATCH);
-    let bytes = 3 * size_of::<Frame>() + size_of::<Scalar>() + 1056 + 256 + 160;
-    assert_eq!(bytes, 2296);
+    let bytes = element_loan_budget_oracle::SCALAR_VM
+        + 3 * size_of::<Frame>()
+        + size_of::<Scalar>()
+        + 1056
+        + 256
+        + 160;
+    assert_eq!(bytes, 13_528);
     let limits = Limits {
         frames: 3,
         cells: 200,
@@ -292,8 +301,10 @@ fn production_requested_byte_cap_is_masked_by_the_expanded_cell_cap() {
         ),
         (32, 80, 112, 16)
     );
-    let upper =
-        plan::MAX_FRAMES * size_of::<Frame>() + size_of::<Scalar>() + 8 * plan::MAX_EXPANDED_CELLS;
-    assert_eq!(upper, 1_878_536);
+    let upper = element_loan_budget_oracle::SCALAR_VM
+        + plan::MAX_FRAMES * size_of::<Frame>()
+        + size_of::<Scalar>()
+        + 8 * plan::MAX_EXPANDED_CELLS;
+    assert_eq!(upper, 1_889_768);
     assert!(upper < plan::MAX_REFERENCE_BYTES);
 }

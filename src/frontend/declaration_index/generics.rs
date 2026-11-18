@@ -367,7 +367,53 @@ struct VectorFrame {
 }
 const VECTOR_FRAME_BYTES: usize = size_of::<VectorFrame>();
 
+// Local element reference checking owns no new retained generic rows. Its
+// separate scratch request covers recursion into the index expression and
+// whole-vector source-flow admission, including both return transports.
+#[allow(dead_code)]
+struct LocalElementBorrowCarriers {
+    receiver: &'static mut Walker<'static, 'static>,
+    mutable: bool,
+    forwarded: bool,
+    spans: [Span; 2],
+    index: ExprId,
+    selected_place: (usize, Type),
+    place_return: Result<(usize, Type), Box<Diagnostic>>,
+    element: Element,
+    ordinal: Type,
+    expression_return: Result<Type, Box<Diagnostic>>,
+    place: ast::BorrowPlace,
+    argument: Argument,
+    reference: Type,
+    argument_return: Result<Type, Box<Diagnostic>>,
+    result: Result<Type, Box<Diagnostic>>,
+    caller_result: Result<Type, Box<Diagnostic>>,
+    checked_scratch: [Option<usize>; 2],
+    admission: Result<(), Box<Diagnostic>>,
+}
+const LOCAL_ELEMENT_BORROW_BYTES: usize = size_of::<LocalElementBorrowCarriers>();
+
 impl Storage {
+    fn enter_element_borrow(&mut self, at: Span) -> Result<(), Box<Diagnostic>> {
+        if self
+            .live_after(LOCAL_ELEMENT_BORROW_BYTES)
+            .is_none_or(|bytes| bytes > MAX_STORAGE)
+        {
+            return Err(exhausted(at));
+        }
+        self.constructor_scratch = self
+            .constructor_scratch
+            .checked_add(LOCAL_ELEMENT_BORROW_BYTES)
+            .ok_or_else(|| exhausted(at))?;
+        Ok(())
+    }
+    fn leave_element_borrow(&mut self, at: Span) -> Result<(), Box<Diagnostic>> {
+        self.constructor_scratch = self
+            .constructor_scratch
+            .checked_sub(LOCAL_ELEMENT_BORROW_BYTES)
+            .ok_or_else(|| bad(at))?;
+        Ok(())
+    }
     fn enter_vector(&mut self, at: Span) -> Result<(), Box<Diagnostic>> {
         if self
             .live_after(VECTOR_FRAME_BYTES)
@@ -2043,7 +2089,7 @@ impl<'a, 's> Walker<'a, 's> {
                     };
                     if !matches!(
                         self.program.expressions[init.0].kind,
-                        ExprKind::Borrow { .. }
+                        ExprKind::Borrow { .. } | ExprKind::BorrowElement { .. }
                     ) {
                         ty.value(statement.span)?;
                     } else if *mutable {
@@ -2337,6 +2383,60 @@ impl<'a, 's> Walker<'a, 's> {
                     Some(&syntax.arguments),
                     expression.span,
                 )?
+            }
+            ExprKind::BorrowElement {
+                mutable,
+                name,
+                forwarded,
+                index,
+            } => {
+                let (mutable, name, forwarded, index, span) =
+                    (*mutable, *name, *forwarded, *index, expression.span);
+                self.storage.enter_element_borrow(span)?;
+                let result = (|| {
+                    let (_, target) = self.place(name)?;
+                    let element = match target {
+                        Type::Value(Value::Vector(element))
+                        | Type::Reference {
+                            value: Value::Vector(element),
+                            ..
+                        } if matches!(
+                            element,
+                            Element::OwnedRecordApplication(_) | Element::OwnedConcreteRecord(_)
+                        ) =>
+                        {
+                            element
+                        }
+                        _ => return Err(error(
+                            "local element references require a concrete non-Copy record vector",
+                            span,
+                        )),
+                    };
+                    let ordinal = self.expression(index)?;
+                    self.expect(ordinal, Type::scalar(Ty::I32), span)?;
+                    let place = if forwarded {
+                        ast::BorrowPlace::ForwardedParameter {
+                            name,
+                            star_span: span,
+                        }
+                    } else {
+                        ast::BorrowPlace::OwnerName(name)
+                    };
+                    let Type::Reference { kind, .. } = self.argument(&Argument::Borrow {
+                        mutable,
+                        place,
+                        span,
+                    })?
+                    else {
+                        return Err(bad(span));
+                    };
+                    Ok(Type::Reference {
+                        value: element.value(),
+                        kind,
+                    })
+                })();
+                self.storage.leave_element_borrow(span)?;
+                result?
             }
             ExprKind::Borrow {
                 mutable,

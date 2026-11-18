@@ -533,3 +533,51 @@ fn owned_vector_native_file_callers_release_success_and_error_paths() {
         }
     }
 }
+
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[test]
+#[ignore = "requires a C11 compiler on a supported POSIX host"]
+fn owning_record_element_real_c_lookup_prepays_exact_work_and_refuses_poisoned_nonselected_cells() {
+    let root = std::env::temp_dir().join(format!("oxid-record-element-c-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let source = root.join("lookup.c");
+    std::fs::write(
+        &source,
+        include_str!("../../../../native/owned_record_element_borrow_test.c"),
+    )
+    .unwrap();
+    for optimization in ["-O0", "-O2"] {
+        let output = root.join(format!("lookup{}", &optimization[1..]));
+        let compiled =
+            std::process::Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
+                .args([
+                    "-std=c11",
+                    optimization,
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-I",
+                ])
+                .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("native"))
+                .arg(&source)
+                .arg("-o")
+                .arg(&output)
+                .output()
+                .unwrap();
+        assert!(
+            compiled.status.success(),
+            "{}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        let ran = std::process::Command::new(output).output().unwrap();
+        assert!(ran.status.success(), "{ran:?}");
+        assert!(ran.stdout.is_empty());
+        assert!(ran.stderr.is_empty());
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -126,14 +126,12 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             .checked_add(16)
             .filter(|end| *end <= extent.end)
             .ok_or_else(|| bad("owned vector view extent", span))?;
-        let place = VectorPlace {
+        let place = VectorPlace(super::experimental::BufferPlace::Activation {
             frame: index(root.frame, span)?,
             bytes: start..end,
-        };
-        let value = byte_buffer::OwnedVectorDescriptor::decode(
-            &self.frames[place.frame].payload[place.bytes.clone()],
-        )
-        .map_err(|failure| heap_failure(failure, span))?;
+        });
+        let value = byte_buffer::OwnedVectorDescriptor::decode(self.resource_bytes(&place.0))
+            .map_err(|failure| heap_failure(failure, span))?;
         Ok((place, value))
     }
 
@@ -209,7 +207,8 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     }
 
     fn put_owned_vector(&mut self, place: VectorPlace, value: &byte_buffer::OwnedVectorDescriptor) {
-        self.frames[place.frame].payload[place.bytes].copy_from_slice(&value.encoding());
+        self.resource_bytes_mut(&place.0)
+            .copy_from_slice(&value.encoding());
     }
 
     pub(super) fn owned_vector_delivery(

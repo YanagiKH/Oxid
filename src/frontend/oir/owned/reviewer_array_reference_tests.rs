@@ -696,7 +696,7 @@ fn independent_unit2c_exact_resources_and_allocation_topology() {
                 frames: 2,
                 slots: 5,
                 cells: 66 + 7 * w,
-                bytes: 1032 + b + a,
+                bytes: element_loan_budget_oracle::SCALAR_VM + 1032 + b + a,
                 ..Limits::default()
             };
             for defect in 0..5 {

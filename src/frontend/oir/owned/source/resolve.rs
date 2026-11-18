@@ -1566,7 +1566,7 @@ fn resolve_index_impl(
                     {
                         if matches!(
                             sources.ast(module)?.expressions[init.0].kind,
-                            ast::ExprKind::Borrow { .. }
+                            ast::ExprKind::Borrow { .. } | ast::ExprKind::BorrowElement { .. }
                         ) {
                             index.instantiated_parameter(DefId(id), ty, work)?;
                         } else {
@@ -2641,7 +2641,55 @@ impl<'a> Resolver<'_, 'a> {
                     annotation,
                     init,
                 } => {
-                    if let ast::ExprKind::Borrow {
+                    if let ast::ExprKind::BorrowElement {
+                        mutable: exclusive,
+                        name: target,
+                        forwarded,
+                        index,
+                    } = &self.ast.expressions[init.0].kind
+                    {
+                        if *mutable {
+                            return Err(error(
+                                "E0304",
+                                format_args!("reference bindings cannot be reassigned"),
+                                *name,
+                            ));
+                        }
+                        let root = self.lookup(*target)?;
+                        let index = self.expression(*index)?;
+                        let annotation = annotation
+                            .map(|ty| {
+                                self.index.instantiated_parameter(
+                                    self.context.function(),
+                                    ty,
+                                    self.work,
+                                )
+                            })
+                            .transpose()?;
+                        let local = self.bind(*name, None, false, BodyBlockId(block.0), None)?;
+                        if self.storage.paid.is_none() {
+                            scopes
+                                .last_mut()
+                                .expect("active body scope")
+                                .push(self.text(*name));
+                        }
+                        StmtKind::BorrowElementLet {
+                            binding: local,
+                            kind: if *exclusive {
+                                BorrowKind::Exclusive
+                            } else {
+                                BorrowKind::Shared
+                            },
+                            place: if *forwarded {
+                                BorrowPlace::Forwarded(root)
+                            } else {
+                                BorrowPlace::Owner(root)
+                            },
+                            index,
+                            borrow_span: self.ast.expressions[init.0].span,
+                            annotation,
+                        }
+                    } else if let ast::ExprKind::Borrow {
                         mutable: exclusive,
                         name: target,
                         forwarded,
@@ -3118,7 +3166,7 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
-            ast::ExprKind::Borrow { .. } => {
+            ast::ExprKind::Borrow { .. } | ast::ExprKind::BorrowElement { .. } => {
                 return Err(error(
                     "E0300",
                     format_args!("reference initializer requires a local declaration"),

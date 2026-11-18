@@ -24,6 +24,8 @@ mod integer128;
 #[path = "execute_integers.rs"]
 mod integers;
 
+#[path = "execute_element_loans.rs"]
+mod element_loans;
 #[path = "execute_experimental.rs"]
 mod experimental;
 #[path = "execute_owned_vector.rs"]
@@ -723,6 +725,11 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
         field: FieldId,
         span: Span,
     ) -> Result<V> {
+        if self.plan.has_local_record_element_loans() {
+            if let Some((place, ty)) = self.element_field_place(frame, base, key, field, span)? {
+                return V::decode(self.resource_bytes(&place), 0, ty, span);
+            }
+        }
         let (offset, ty) = self.accessed_field(frame, base, key, field, span)?;
         V::decode(&self.frames[key.frame as usize].payload, offset, ty, span)
     }
@@ -916,6 +923,11 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
         Err(bad("projected view provenance", span))
     }
     fn checked_handle_view(&self, handle: ReferenceHandle, span: Span) -> Result<AggregateTy> {
+        if self.plan.has_local_record_element_loans() {
+            if let Some(aggregate) = self.checked_element_view(handle, span)? {
+                return Ok(aggregate);
+            }
+        }
         let actual = handle
             .view
             .aggregate
@@ -1023,7 +1035,14 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 return Err(bad("view root type", span));
             }
             if !scalar_slice {
-                self.view_extent(handle.root, handle.view, span)?;
+                let frame_index = index(handle.permission.frame, span)?;
+                let current = AccessBase::Loan(LoanId(index(handle.permission.loan, span)?));
+                if self
+                    .staged_element_extent(frame_index, current, handle.root, handle.view, span)?
+                    .is_none()
+                {
+                    self.view_extent(handle.root, handle.view, span)?;
+                }
             }
             match declaration.authority {
                 AccessBase::Owner(owner) => {
@@ -1270,11 +1289,15 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 .map_err(|_| bad("projection layout", span))?
                 .size(),
         };
-        let extent = self.owner_extent(key, span)?;
-        relative
-            .checked_add(size)
-            .filter(|end| *end <= extent.len())
-            .ok_or_else(|| bad("projection extent", span))?;
+        if self.has_element_base(frame, base, key, span)? {
+            self.resource_place(frame, base, key, relative as u64, size, span)?;
+        } else {
+            let extent = self.owner_extent(key, span)?;
+            relative
+                .checked_add(size)
+                .filter(|end| *end <= extent.len())
+                .ok_or_else(|| bad("projection extent", span))?;
+        }
         Ok((key, ty, relative))
     }
     fn projection_leaf(
@@ -1941,7 +1964,13 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 AggregateSlot::try_from_aggregate(projected)
                     .map_err(|_| bad("loan view descriptor", span))?,
             );
-            actual = self.view_extent(root, view, span)?;
+            actual = if let Some(actual) =
+                self.staged_element_extent(frame, descriptor.authority, root, view, span)?
+            {
+                actual
+            } else {
+                self.view_extent(root, view, span)?
+            };
         }
         self.plan
             .witness()
@@ -3033,6 +3062,18 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 let (key, ty, relative) =
                     self.projection_base(frame, *base, Access::Read, path, span)?;
                 if let (ValueTy::Owned(AggregateTy::Vector(element)), Some(index)) = (ty, *index) {
+                    if self.has_element_base(frame, *base, key, span)? {
+                        return self.element_vector_read(
+                            frame,
+                            *destination,
+                            *base,
+                            key,
+                            element,
+                            relative,
+                            index,
+                            span,
+                        );
+                    }
                     return self.vector_projection_read(
                         frame,
                         *destination,
@@ -3047,7 +3088,7 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 if f.locals.get(destination.0).map(|local| local.ty) != Some(leaf.ty) {
                     return Err(bad("projection read type", span));
                 }
-                let value = self.load_leaf(key, leaf, span)?;
+                let value = self.read_access_leaf(frame, *base, key, leaf, span)?;
                 self.write(frame, *destination, value, span)?;
                 #[cfg(test)]
                 if let Some(ordinal) = _ordinal {
@@ -3063,6 +3104,11 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 let (key, ty, relative) =
                     self.projection_base(frame, *base, Access::Write, path, span)?;
                 if let (ValueTy::Owned(AggregateTy::Vector(element)), Some(index)) = (ty, *index) {
+                    if self.has_element_base(frame, *base, key, span)? {
+                        return self.element_vector_write(
+                            frame, *base, key, element, relative, index, *value, span,
+                        );
+                    }
                     return self.vector_projection_write(
                         frame, key, element, relative, index, *value, span,
                     );
@@ -3077,7 +3123,7 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     return Err(bad("projection write type", span));
                 }
                 let (leaf, _ordinal) = self.projection_leaf(frame, ty, relative, *index, span)?;
-                self.store_leaf(key, leaf, value, span)?;
+                self.write_access_leaf(frame, *base, key, leaf, value, span)?;
                 #[cfg(test)]
                 if let Some(ordinal) = _ordinal {
                     self.record_event(Event::WriteIndex(key, ordinal, value));
@@ -3097,6 +3143,17 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     self.projection_base(frame, *base, Access::Read, path, span)?;
                 if let ValueTy::Owned(aggregate) = ty {
                     if let Some(element) = super::vector_type::VectorTy::from_aggregate(aggregate) {
+                        if self.has_element_base(frame, *base, _key, span)? {
+                            return self.element_vector_length(
+                                frame,
+                                *destination,
+                                *base,
+                                _key,
+                                element,
+                                relative,
+                                span,
+                            );
+                        }
                         return self.vector_projection_length(
                             frame,
                             *destination,
@@ -3181,7 +3238,9 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     return Err(bad("array read type", span));
                 }
                 let ordinal = array_index(self.read(frame, *index)?, array, span)?;
-                let value = self.load_leaf(
+                let value = self.read_access_leaf(
+                    frame,
+                    *base,
                     key,
                     ScalarLeaf {
                         offset: relative
@@ -3212,7 +3271,9 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     return Err(bad("array write type", span));
                 }
                 let ordinal = array_index(self.read(frame, *index)?, array, span)?;
-                self.store_leaf(
+                self.write_access_leaf(
+                    frame,
+                    *base,
                     key,
                     ScalarLeaf {
                         offset: relative
@@ -3441,11 +3502,20 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     },
                 )?;
                 let value = self.read(frame, *value)?;
-                let (offset, ty) = self.accessed_field(frame, *base, key, *field, span)?;
-                if ty != value.ty() {
-                    return Err(bad("field value type", span));
+                if let Some((place, ty)) =
+                    self.element_field_place(frame, *base, key, *field, span)?
+                {
+                    if ty != value.ty() {
+                        return Err(bad("field value type", span));
+                    }
+                    value.encode(self.resource_bytes_mut(&place), 0, span)?;
+                } else {
+                    let (offset, ty) = self.accessed_field(frame, *base, key, *field, span)?;
+                    if ty != value.ty() {
+                        return Err(bad("field value type", span));
+                    }
+                    value.encode(&mut self.frames[key.frame as usize].payload, offset, span)?;
                 }
-                value.encode(&mut self.frames[key.frame as usize].payload, offset, span)?;
                 #[cfg(test)]
                 self.record_event(Event::WriteField(key, *field, value));
             }
@@ -3492,6 +3562,9 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 self.frames[frame].calls[call.0].next_argument += 1;
             }
             OwnedInstruction::AcquireLocalBorrow(loan) => self.acquire(frame, *loan, span)?,
+            OwnedInstruction::AcquireLocalElementBorrow { loan, index } => {
+                self.acquire_element(frame, *loan, *index, span)?;
+            }
             OwnedInstruction::ReleaseLocalBorrow(loan) => {
                 let handle = self.reference_from_loan(frame, *loan, span)?;
                 self.release(handle.permission, span)?;
@@ -4644,6 +4717,10 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
                     owned_vector::control_bytes::<V, W>()
                 } else {
                     0
+                } + if plan.has_local_record_element_loans() {
+                    element_loans::control_bytes::<V, W>()
+                } else {
+                    0
                 } + if plan.has_program_arguments() {
                     plan::add(
                         crate::program_arguments::control_bytes(),
@@ -4655,6 +4732,13 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
             )?,
         )
         .and_then(|bytes| plan::add(bytes, values::control_bytes::<V>()))
+        .and_then(|bytes| plan::add(bytes, element_loans::shared_adapter_control_bytes::<V, W>()))
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                plan::element_loan_accounting::query_control_bytes::<W>(),
+            )
+        })
         .and_then(|bytes| {
             plan::add(
                 bytes,

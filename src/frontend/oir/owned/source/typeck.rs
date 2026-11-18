@@ -3790,6 +3790,7 @@ fn check_body(
         }
         let root = match statement.kind {
             StmtKind::BorrowLet { .. } => None,
+            StmtKind::BorrowElementLet { index, .. } => Some(index),
             StmtKind::Match { .. } => None,
             StmtKind::ForRange { start, end, .. } => {
                 for root in [start, end] {
@@ -3947,6 +3948,63 @@ fn check_body(
                     combined: FlowSummary::new(false, false, false, false),
                 });
                 continue;
+            }
+            StmtKind::BorrowElementLet {
+                binding,
+                kind,
+                place,
+                index,
+                borrow_span,
+                annotation,
+            } => {
+                if expressions[index.0] != Some(ValueTy::Scalar(Ty::I32)) {
+                    return Err(error(
+                        "E0300",
+                        "element reference index must be i32",
+                        function.expressions[index.0].span,
+                    ));
+                }
+                let whole = borrow_type(function, kind, place, borrow_span, &bindings)?;
+                let ParameterTy::Reference {
+                    referent: BorrowedTy::Exact(AggregateTy::OwnedRecordVector(record)),
+                    ..
+                } = whole
+                else {
+                    return Err(error(
+                        "E0300",
+                        "local element references require a concrete non-Copy record vector",
+                        borrow_span,
+                    ));
+                };
+                if program.admission() != SourceAdmission::OwnedVectorPipeline
+                    || !program.index().is_owned_vector_candidate_pipeline()
+                {
+                    return Err(error(
+                        "E0300",
+                        "local element references require checked owned vector source",
+                        borrow_span,
+                    ));
+                }
+                let actual = ParameterTy::Reference {
+                    referent: BorrowedTy::Exact(AggregateTy::Record(record)),
+                    kind,
+                };
+                if annotation.is_some_and(|expected| expected != actual) {
+                    return Err(error(
+                        "E0300",
+                        "reference annotation does not match its initializer",
+                        borrow_span,
+                    ));
+                }
+                bindings[binding.0] = Some(actual);
+                #[cfg(test)]
+                program
+                    .work()
+                    .observe(crate::frontend::declaration_index::Observation::Binding {
+                        function: function.id,
+                        origin: function.bindings[binding.0].span,
+                        ty: actual,
+                    });
             }
             StmtKind::BorrowLet {
                 binding,

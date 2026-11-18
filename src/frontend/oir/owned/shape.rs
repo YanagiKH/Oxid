@@ -27,6 +27,35 @@ pub(super) struct Shape {
     pub calls: Vec<CallSites>,
     acquisitions: Vec<Option<Site>>,
 }
+
+/// This relationship is admitted only at an indexed local acquisition site.
+/// Same-sized records, old Copy vectors and an arbitrary offset are insufficient.
+pub(super) fn local_record_element(f: &RawOwnedFunction, id: LoanId) -> Option<RecordId> {
+    let row = f.loans.get(id.0)?;
+    if row.region != LoanRegion::Local || !row.projection.is_empty() {
+        return None;
+    }
+    let (BorrowedTy::Exact(AggregateTy::OwnedRecordVector(actual)), _) =
+        base(f, row.authority, row.span).ok()?
+    else {
+        return None;
+    };
+    let BorrowedTy::Exact(AggregateTy::Record(expected)) = row.referent() else {
+        return None;
+    };
+    (actual == expected).then_some(expected)
+}
+pub(super) fn local_record_element_index(f: &RawOwnedFunction, id: LoanId) -> Option<Operand> {
+    f.blocks
+        .iter()
+        .flat_map(|block| &block.statements)
+        .find_map(|statement| match statement.kind {
+            OwnedInstruction::AcquireLocalElementBorrow { loan, index } if loan == id => {
+                Some(index)
+            }
+            _ => None,
+        })
+}
 impl Shape {
     pub(super) fn acquisition_cause(
         &self,
@@ -35,7 +64,7 @@ impl Shape {
     ) -> Result<Span, OwnedFailure> {
         let instruction = self.acquisitions.get(loan.0).and_then(|site| *site)
             .and_then(|site| f.blocks.get(site.block)?.statements.get(site.statement))
-            .filter(|i| matches!(i.kind, OwnedInstruction::PrepareBorrow { loan: actual, .. } | OwnedInstruction::PrepareBorrowRange { loan: actual, .. } | OwnedInstruction::AcquireLocalBorrow(actual) if actual == loan))
+            .filter(|i| matches!(i.kind, OwnedInstruction::PrepareBorrow { loan: actual, .. } | OwnedInstruction::PrepareBorrowRange { loan: actual, .. } | OwnedInstruction::AcquireLocalBorrow(actual) | OwnedInstruction::AcquireLocalElementBorrow { loan: actual, .. } if actual == loan))
             .ok_or_else(|| bad(Malformed::CanonicalSite, f.span))?;
         Ok(instruction.cause_span())
     }
@@ -615,8 +644,14 @@ pub(super) fn check_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
                 _ => return Err(bad(Malformed::Type, l.span)),
             }
         };
-        d.check_borrowed_view(record, l.referent())
-            .map_err(|error| query_failure(error, Malformed::Type, l.span))?;
+        if let Some(element) = local_record_element(f, LoanId(id)) {
+            if d.local_record_element(AggregateTy::OwnedRecordVector(element))? != element {
+                return Err(bad(Malformed::Type, l.span));
+            }
+        } else {
+            d.check_borrowed_view(record, l.referent())
+                .map_err(|error| query_failure(error, Malformed::Type, l.span))?;
+        }
         if let AccessBase::Owner(o) = l.authority {
             if !matches!(
                 owner(f, o, l.span)?.kind,
@@ -1270,6 +1305,9 @@ pub(super) fn check_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
                     )?;
                 }
                 OwnedInstruction::AcquireLocalBorrow(l) => {
+                    if local_record_element(f, *l).is_some() {
+                        return Err(bad(Malformed::Type, s));
+                    }
                     let declaration = loan(f, *l, s)?;
                     if declaration.region != LoanRegion::Local {
                         return Err(bad(Malformed::Binding, s));
@@ -1277,6 +1315,14 @@ pub(super) fn check_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
                     if declaration.span != s {
                         return Err(bad(Malformed::CanonicalSite, s));
                     }
+                    slot(&mut acquisitions, l.0, site, s)?;
+                }
+                OwnedInstruction::AcquireLocalElementBorrow { loan: l, index } => {
+                    let declaration = loan(f, *l, s)?;
+                    if local_record_element(f, *l).is_none() || declaration.span != s {
+                        return Err(bad(Malformed::Type, s));
+                    }
+                    equal(operand(f, *index, sources)?, hir::Ty::I32, s)?;
                     slot(&mut acquisitions, l.0, site, s)?;
                 }
                 OwnedInstruction::ReleaseLocalBorrow(l) => {

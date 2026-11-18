@@ -30,6 +30,10 @@ int32_t oxid_owned_vector_len(oxid_byte_heap *, const oxid_owned_vector *,
     uint32_t record, uint64_t *fuel, int32_t *);
 int32_t oxid_owned_vector_capacity(oxid_byte_heap *, const oxid_owned_vector *,
     uint32_t record, uint64_t *fuel, int32_t *);
+/* A lexical loan is proved by the sealed caller; this checks the real cell
+ * and all active ownership before publishing its initialized address. */
+int32_t oxid_owned_vector_borrow_record(oxid_byte_heap *, const oxid_owned_vector *,
+    uint32_t record, int32_t index, uint64_t *fuel, uint8_t **);
 int32_t oxid_owned_vector_reserve(oxid_byte_heap *, oxid_owned_vector *,
     uint32_t record, int32_t additional, uint64_t *fuel);
 int32_t oxid_owned_vector_push_reserved(oxid_byte_heap *, oxid_owned_vector *,

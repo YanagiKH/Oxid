@@ -193,7 +193,10 @@ fn byte_storage_resource_width_and_payload_are_exact_before_frame_allocation() {
                 ),
                 (scalars, 2 * width, payload, cells, physical)
             );
-            let bytes = size_of::<Frame>() + size_of::<Scalar>() + physical;
+            let bytes = element_loan_budget_oracle::SCALAR_VM
+                + size_of::<Frame>()
+                + size_of::<Scalar>()
+                + physical;
             let limits = Limits {
                 frames: 1,
                 cells,
@@ -534,7 +537,11 @@ fn byte_storage_maximum_owned_and_borrowed_arguments_use_full_scratch() {
             let limits = Limits {
                 frames: 2,
                 cells: root_cells + child_cells,
-                bytes: 2 * size_of::<Frame>() + size_of::<Scalar>() + root_bytes + child_bytes,
+                bytes: element_loan_budget_oracle::SCALAR_VM
+                    + 2 * size_of::<Frame>()
+                    + size_of::<Scalar>()
+                    + root_bytes
+                    + child_bytes,
                 ..Default::default()
             };
             for (short, name) in [
