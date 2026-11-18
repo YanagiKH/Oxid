@@ -349,6 +349,10 @@ fn lower_array_consumer<'s>(
 }
 
 impl SourceProgram {
+    pub(in crate::frontend::oir) fn has_file_delivery(&self) -> bool {
+        self.witness.has_file_delivery()
+    }
+
     /// Tests may vary presentation paths while retaining the ordinary owned
     /// source producer and verifier. No new production witness access exists.
     #[cfg(test)]

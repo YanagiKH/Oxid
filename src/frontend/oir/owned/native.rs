@@ -845,7 +845,11 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         target_pointer_width = "64",
         target_endian = "little"
     ))]
-    let emitter_transient = add(emitter_transient, windows_file::control_bytes())?;
+    let emitter_transient = if plan.has_file_delivery() {
+        add(emitter_transient, windows_file::control_bytes())?
+    } else {
+        emitter_transient
+    };
     let emission_metadata = add(
         add(
             add(
@@ -874,7 +878,7 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         target_pointer_width = "64",
         target_endian = "little"
     ))]
-    if !windows_file::allowed(witness, id) {
+    if plan.has_file_delivery() && !windows_file::allowed(witness, id) {
         return Err(reject("Windows native File programs support only File byte I/O, byte arrays/slices and their standard status enums", None));
     }
     let selected = R::build(&plan, id)?;

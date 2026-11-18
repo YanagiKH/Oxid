@@ -304,11 +304,7 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }
     pub(super) fn has_file_delivery(&self) -> bool {
-        use crate::frontend::builtin_catalog::experimental::Function;
-        Function::ALL
-            .into_iter()
-            .filter(|operation| operation.is_file())
-            .any(|operation| self.witness.experimental_function(operation).is_some())
+        self.witness.has_file_delivery()
     }
     pub(super) fn has_file_seek(&self) -> bool {
         self.witness
