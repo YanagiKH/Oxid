@@ -899,6 +899,16 @@ class CiTriggerPolicyTests(unittest.TestCase):
         python = (REPO / '.github/workflows/python-native.yml').read_text(encoding='utf-8')
         require_release_python_gate(self.release, python)
 
+    def test_release_checks_the_installed_archive_before_upload(self):
+        package = block(self.release, 'package', 2)
+        step = (
+            '      - name: Install the archive and run an Oxid project\n'
+            '        run: python -B scripts/verify_release_install.py "dist/${{ matrix.asset }}"\n\n'
+        )
+        self.assertEqual(package.count(step), 1)
+        self.assertLess(package.index('      - name: Package runtime and checksum'), package.index(step))
+        self.assertLess(package.index(step), package.index('      - name: Upload release asset'))
+
     def test_release_python_gate_rejects_missing_bypassed_or_external_qualification(self):
         python = (REPO / '.github/workflows/python-native.yml').read_text(encoding='utf-8')
         gate = ('  verify-python-native:\n'
