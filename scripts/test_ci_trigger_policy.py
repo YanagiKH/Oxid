@@ -31,6 +31,62 @@ def block(source, key, indent=0):
     return matches[0].strip()
 
 
+def require_release_python_gate(release, python):
+    """Require same-revision qualification and ordinary success propagation."""
+    for key, workflow in (('verify', 'ci.yml'),
+                          ('verify-python-native', 'python-native.yml')):
+        gate = block(release, key, 2)
+        expected = f'needs: readiness\n    uses: ./.github/workflows/{workflow}'
+        if gate != expected:
+            raise AssertionError('release qualification must call the local workflow after readiness')
+
+    for key, expected in (('package', '[verify, verify-python-native]'),
+                          ('publish', '[package, verify, verify-python-native]')):
+        job = block(release, key, 2)
+        if re.findall(r'^(?:    )?needs: (.+)$', job, re.MULTILINE) != [expected]:
+            raise AssertionError('release artifacts and publication require both qualification jobs')
+        conditions = re.findall(r'^(?:    )?if: (.+)$', job, re.MULTILINE)
+        wanted = ["startsWith(github.ref, 'refs/tags/v')"] if key == 'publish' else []
+        if conditions != wanted or 'continue-on-error:' in job:
+            raise AssertionError('release qualification failure must prevent packaging and publication')
+
+    if block(python, 'workflow_call', 2) != '':
+        raise AssertionError('Python qualification must be reusable without revision overrides')
+    native = block(python, 'python-native', 2)
+    if re.search(r'(?m)^(?:    )?if:|continue-on-error:', native):
+        raise AssertionError('Python qualification must be mandatory')
+    checkout = ('      - uses: actions/checkout@v4\n'
+                '        with:\n'
+                '          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n')
+    if native.count('actions/checkout@') != 1 or checkout not in native:
+        raise AssertionError('Python qualification must check out the caller commit')
+    required = {
+        'Build both current compiler profiles': (
+            'cargo build --locked 2>&1 | tee "$RUNNER_TEMP/python-native/build-debug.log"',
+            'cargo build --release --locked 2>&1 | tee "$RUNNER_TEMP/python-native/build-release.log"',
+        ),
+        'Verify Python package controls': (
+            'python3 -B scripts/test_python_native_package.py 2>&1 | tee "$RUNNER_TEMP/python-native/controls.log"',
+        ),
+        'Verify real wheel sdist installation and native calls': (
+            'python3 -B scripts/verify_python_native_package.py \\',
+            '  --output "$RUNNER_TEMP/python-native/qualification" \\',
+            '  2>&1 | tee "$RUNNER_TEMP/python-native/qualification.log"',
+        ),
+    }
+    for name, commands in required.items():
+        steps = re.findall(rf'^      - name: {re.escape(name)}\n(.*?)(?=^      - |\Z)',
+                           native, re.MULTILINE | re.DOTALL)
+        if len(steps) != 1 or re.search(r'(?m)^        if:|continue-on-error:', steps[0]):
+            raise AssertionError('Python native build and package checks must not be skipped')
+        run = re.search(r'^        run: \|\n((?:          .*\n?)+)', steps[0], re.MULTILINE)
+        expected = ['set -euo pipefail', *commands]
+        if run is None or [line[10:] for line in run.group(1).splitlines()] != expected:
+            raise AssertionError('Python native commands must execute with failure propagation')
+    if '          OXID: ${{ github.workspace }}/target/release/oxid\n' not in native:
+        raise AssertionError('Python packages must use the current release compiler')
+
+
 SCALAR_REPLAY = ('scripts/verify_scalar_library_compatibility.py',
                  (63079, '29c1d76604adfeddf2006213922ceb59947f7a193454ffb542df2ba0f7597119'))
 REGISTRY_REPLAY = ('scripts/verify_registry_compatibility.py',
@@ -54,7 +110,7 @@ GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility
 GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
 WINDOWS_LOCAL_PACKAGE_REPLAY = 'scripts/verify_windows_local_package_compatibility.py'
 WINDOWS_LOCAL_PACKAGE_PARENT = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
-WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = 'f89b5e5eef3162e7ca56f150f6455eb8f64e3f99'
+WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = '4ec7cbdee35774e6112421736c7c921f398e5d3b'
 GENERIC_OWNED_VECTOR_POLICY = (GENERIC_OWNED_VECTOR_REPLAY,
     (43357, '8e80cbdb0b42e01dd4e125d36215dc94ff37422a0e10786216ec02ad66831ad0'))
 OWNED_ENUM_VECTOR_POLICY = (OWNED_ENUM_VECTOR_REPLAY,
@@ -831,7 +887,7 @@ class CiTriggerPolicyTests(unittest.TestCase):
         for workflow in (self.ci, self.release, self.historical):
             self.assertNotRegex(workflow, r'(?m)^\s*(?:concurrency|cancel-in-progress):')
 
-    def test_release_requires_readiness_then_full_reusable_ci_before_packaging(self):
+    def test_release_requires_readiness_then_both_reusable_workflows_before_publication(self):
         readiness = block(self.release, 'readiness', 2)
         self.assertIn('scripts/check_release_gates.py --release-tag "$RELEASE_TAG"', readiness)
         self.assertIn("if: github.ref_type == 'tag'", readiness)
@@ -840,9 +896,63 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertEqual(re.findall(r'^(?:    )?needs: (.+)$', verify, re.MULTILINE), ['readiness'])
         self.assertIn('uses: ./.github/workflows/ci.yml', verify)
         self.assertNotRegex(verify, r'(?m)^    if:|continue-on-error:')
-        package = block(self.release, 'package', 2)
-        self.assertEqual(re.findall(r'^    needs: (.+)$', package, re.MULTILINE), ['verify'])
-        self.assertNotRegex(package, r'(?m)^    if:')
+        python = (REPO / '.github/workflows/python-native.yml').read_text(encoding='utf-8')
+        require_release_python_gate(self.release, python)
+
+    def test_release_python_gate_rejects_missing_bypassed_or_external_qualification(self):
+        python = (REPO / '.github/workflows/python-native.yml').read_text(encoding='utf-8')
+        gate = ('  verify-python-native:\n'
+                '    needs: readiness\n'
+                '    uses: ./.github/workflows/python-native.yml\n\n')
+        mutations = (
+            (gate, ''),
+            ('uses: ./.github/workflows/python-native.yml',
+             'uses: YanagiKH/Oxid/.github/workflows/python-native.yml@main'),
+            (gate, gate.replace('needs: readiness', 'needs: verify')),
+            (gate, gate.replace('    needs:', '    if: false\n    needs:')),
+            (gate, gate.replace('    needs:', '    continue-on-error: true\n    needs:')),
+            ('needs: [verify, verify-python-native]', 'needs: verify'),
+            ('needs: [verify, verify-python-native]', 'needs: verify-python-native'),
+            ('needs: [package, verify, verify-python-native]', 'needs: package'),
+            ('needs: [package, verify, verify-python-native]', 'needs: [package, verify]'),
+            ('needs: [package, verify, verify-python-native]', 'needs: [package, verify-python-native]'),
+            ("if: startsWith(github.ref, 'refs/tags/v')", 'if: always()'),
+            ('    name: Package ${{ matrix.asset }}',
+             '    name: Package ${{ matrix.asset }}\n    if: always()'),
+        )
+        for before, after in mutations:
+            changed = self.release.replace(before, after, 1)
+            with self.subTest(before=before, after=after):
+                self.assertNotEqual(changed, self.release, 'mutation must reach the release workflow')
+                with self.assertRaises(AssertionError):
+                    require_release_python_gate(changed, python)
+
+    def test_reusable_python_gate_rejects_revision_drift_skips_and_hidden_failure(self):
+        python = (REPO / '.github/workflows/python-native.yml').read_text(encoding='utf-8')
+        mutations = (
+            ('  workflow_call:\n', ''),
+            ('          ref: ${{ github.event.pull_request.head.sha || github.sha }}',
+             '          ref: main'),
+            ('    runs-on: ubuntu-latest', '    if: false\n    runs-on: ubuntu-latest'),
+            ('      - name: Verify real wheel sdist installation and native calls\n',
+             '      - name: Verify real wheel sdist installation and native calls\n        if: false\n'),
+            ('      - name: Build both current compiler profiles\n        run: |\n          set -euo pipefail',
+             '      - name: Build both current compiler profiles\n        run: |\n          set -eu'),
+            ('cargo build --release --locked', 'echo cargo build --release --locked'),
+            ('scripts/test_python_native_package.py', 'scripts/test_python_native_package.py --list'),
+            ('python3 -B scripts/verify_python_native_package.py',
+             'echo python3 -B scripts/verify_python_native_package.py'),
+            ('2>&1 | tee "$RUNNER_TEMP/python-native/qualification.log"',
+             '2>&1 | tee "$RUNNER_TEMP/python-native/qualification.log" || true'),
+            ('          OXID: ${{ github.workspace }}/target/release/oxid',
+             '          OXID: /tmp/previous-oxid'),
+        )
+        for before, after in mutations:
+            changed = python.replace(before, after, 1)
+            with self.subTest(before=before, after=after):
+                self.assertNotEqual(changed, python, 'mutation must reach the Python workflow')
+                with self.assertRaises(AssertionError):
+                    require_release_python_gate(self.release, changed)
 
     def test_copy_record_debugging_executes_on_both_linux_architectures_and_retains_binaries(self):
         for job in ('native-projects', 'linux-arm64-native'):
@@ -886,6 +996,11 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertNotRegex(replay, r'(?m)^    if:|continue-on-error:')
         historical = block(self.historical, 'quality-and-repository', 2)
         self.assertIn('ref: 9ff8ef90a26f003f4616838dfc186fa3bfb6845c', historical)
+        self.assertIn("- name: Install Python for the frozen script suite\n"
+                      "        uses: actions/setup-python@v5\n"
+                      "        with:\n"
+                      "          python-version: '3.12'\n\n"
+                      "      - name: Test feature status metadata validation", historical)
         self.assertIn('historical-script-controller/run_historical_script_tests.py', historical)
         self.assertIn('--archive "$RUNNER_TEMP/historical-script-controller/typed-project-unit2-evidence.zip"', historical)
         self.assertIn('name: historical-script-replay', historical)

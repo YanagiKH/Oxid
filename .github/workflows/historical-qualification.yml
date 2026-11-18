@@ -59,6 +59,12 @@ jobs:
             --cargo "$(rustup which cargo)" --rustc "$(rustup which rustc)" \
             --output "$RUNNER_TEMP/typed-project-unit2-results"
 
+      # The frozen tests expect pathlib's pre-3.14 error propagation.
+      - name: Install Python for the frozen script suite
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Test feature status metadata validation
         env:
           GITHUB_TOKEN: ${{ github.token }}

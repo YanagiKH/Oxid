@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 PREDECESSOR_POLICY = 'scripts/verify_generic_owned_vector_compatibility.py'
 PREDECESSOR_POLICY_PIN = (43357, '8e80cbdb0b42e01dd4e125d36215dc94ff37422a0e10786216ec02ad66831ad0')
-REVIEWED_SOURCE_HEAD = 'f89b5e5eef3162e7ca56f150f6455eb8f64e3f99'
+REVIEWED_SOURCE_HEAD = '4ec7cbdee35774e6112421736c7c921f398e5d3b'
 # Reviewed source identity only; Windows runtime qualification remains separate.
 PINS_PROVISIONAL = False
 # The inherited observer and its derived bytes are already frozen unchanged.
@@ -84,8 +84,7 @@ REVIEWED_INPUTS = {'src/frontend/driver.rs': (103954, 'ed53ec43697679153f55ccb8f
                                       '36d29ba7b66045e2fb586d431b076ad3fea5cd95d97cf02008e48c4219b84034'),
  'tests/typed_windows_modules.rs': (26750, 'fe9eceb3fbd8b4326dc9ffe011f3eed9373030a4ffb45d7159c7c4110ae1f363'),
  'tests/typed_workspace.rs': (49944, '2cfd7008827704025c535a9294b0b79671092e732661a40ab7d9957f603a900c'),
- 'src/frontend/native/doctor_windows.rs': (37408,
-                                           '0744258a20ece447a58be19c94eed8193416fe94ada73a05c83e5af5a201ffb2'),
+ 'src/frontend/native/doctor_windows.rs': (44977, 'deba2ef1f28ebf7a6a3fb78ff22d080770067b5c8a969ef8381141c838931c2a'),
  'tests/hosted_execution.rs': (31926, 'ff2729af21346faaa09d67fb205398fff04b7097cdf6dd2e34dbd3da38c43640'),
  'tests/owned_enum_payloads.rs': (14583, 'cf47f46203d8db19c565fb78964a03612e87b3df097d61a382cc89ef0e33dedc')}
 
@@ -787,16 +786,17 @@ REVIEWED_DIRECTIVES = {'src/frontend/driver.rs': {'attributes': ((b'#[derive(Clo
                                           1),
                                          (b'env!("CARGO_BIN_EXE_oxid")', 1))},
  'src/frontend/native/doctor_windows.rs': {'attributes': ((b'#[repr(C)]', 6),
-                                                          (b'#[link(name = "Kernel32")]', 1),
-                                                          (b'#[repr(align(16))]', 1),
-                                                          (b'#[cfg(test)]', 1),
-                                                          (b'#[test]', 5),
-                                                          (b'#[link(name = "Shell32")]', 1),
-                                                          (b'#[link(name = "Kernel32")]', 1)),
-                                           'build_script': None,
-                                           'c_preprocessor': (),
-                                           'legacy': ([], []),
-                                           'macros': ()},
+                (b'#[link(name = "Kernel32")]', 1),
+                (b'#[repr(align(16))]', 1),
+                (b'#[cfg(test)]', 1),
+                (b'#[link(name = "Kernel32")]', 1),
+                (b'#[test]', 5),
+                (b'#[link(name = "Shell32")]', 1),
+                (b'#[link(name = "Kernel32")]', 1)),
+ 'build_script': None,
+ 'c_preprocessor': (),
+ 'legacy': ([], []),
+ 'macros': ()},
  'tests/hosted_execution.rs': {'attributes': ((b'#[cfg(all(\n    target_os = "linux",\n    target_pointer_w'
                                                b'idth = "64",\n    target_endian = "little",\n    any(targe'
                                                b't_arch = "x86_64", target_arch = "aarch64")\n))]',
