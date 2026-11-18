@@ -53,7 +53,6 @@ fn success(output: Output, expected: &[u8]) {
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 fn source() -> String {
-    let payload: String = (0..=255).map(|byte| format!("\\x{byte:02X}")).collect();
     r#"
 use std::fs::File;use std::fs::OpenResult;use std::fs::FileStatus;
 use std::fs::create;use std::fs::open_read;use std::fs::read_some;use std::fs::write_some;
@@ -65,18 +64,27 @@ fn store(file:&mut File,bytes:&[u8])->bool{
         match result{WriteSomeStatus::Written(n)=>{if n<=0{return false;}offset=offset+n;},WriteSomeStatus::Error(code)=>{return false;},}
     }return true;
 }
-fn check(file:&mut File,expected:&[u8])->i32{
+fn write_all_bytes(file:&mut File)->bool{
+    let mut bytes=b"xxxxxxxx";let mut offset=0;
+    while offset<256{
+        let mut i=0;while i<bytes.len(){
+            let value=offset+i;bytes[i]=value.to_u8_checked();i=i+1;
+        }
+        if !store(&mut *file,&bytes){return false;}offset=offset+bytes.len();
+    }return true;
+}
+fn check(file:&mut File)->i32{
     let mut bytes=b"xxx";let mut offset=0;
     while true{let result=read_some(&mut *file,&mut bytes);
-        match result{ReadSomeStatus::Data(n)=>{let mut i=0;while i<n{if offset>=expected.len()||bytes[i]!=expected[offset]{return -10;}i=i+1;offset=offset+1;}},
+        match result{ReadSomeStatus::Data(n)=>{let mut i=0;while i<n{if offset>=256||bytes[i]!=offset.to_u8_checked(){return -10;}i=i+1;offset=offset+1;}},
             ReadSomeStatus::Eof=>{return offset;},ReadSomeStatus::Error(code)=>{return -11;},}
     }return -12;
 }
 fn main()->i32{
-    let path=b"資料-😀.bin";let expected=b"__PAYLOAD__";
+    let path=b"資料-😀.bin";
     let opened=create(&path);
     match opened{OpenResult::Opened(value)=>{let mut file=value;
-        if !store(&mut file,&expected){return -1;}
+        if !write_all_bytes(&mut file){return -1;}
         let synced=sync_all(&mut file);match synced{FileStatus::Ok=>{},FileStatus::Error(code)=>{return -2;},}
         let closed=close(&mut file);match closed{FileStatus::Ok=>{},FileStatus::Error(code)=>{return -3;},}
         let again=close(&mut file);match again{FileStatus::Ok=>{},FileStatus::Error(code)=>{return -4;},}
@@ -84,10 +92,10 @@ fn main()->i32{
     let input=open_read(&path);
     match input{OpenResult::Opened(value)=>{let mut file=value;
         let invalid=seek_absolute(&mut file,-1i64);match invalid{FileStatus::Ok=>{return -8;},FileStatus::Error(code)=>{if code!=22{return -9;}},}
-        return check(&mut file,&expected);
+        return check(&mut file);
     },OpenResult::Error(code)=>{return -13;},OpenResult::MemoryLimit=>{return -14;},OpenResult::AllocationFailed=>{return -15;},}
 }
-"#.replace("__PAYLOAD__", &payload)
+"#.to_owned()
 }
 
 #[test]

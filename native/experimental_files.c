@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #if defined(_WIN32)
 #include <io.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
