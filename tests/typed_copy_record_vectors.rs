@@ -441,7 +441,6 @@ fn vector_ownership_mutability_and_live_slice_loans_remain_exclusive() {
 fn element_and_field_references_cannot_be_stored_or_returned() {
     for (body, marker) in [
         ("fn main()->i32 { let v=new::<&P>(); return 0; }", "unsupported typed-preview construct `&`"),
-        ("fn main()->i32 { let v=new::<P>(); let element=&v[0]; return 0; }", "unsupported typed-preview construct `[`"),
         ("fn read(value:&P)->i32 { return value.x; } fn main()->i32 { let v=new::<P>(); return read(&v[0]); }", "unsupported typed-preview construct `[`"),
         ("#[derive(Copy)]struct Node { x:i32 } #[derive(Copy)]struct Outer { node:Node } fn read(value:&Node)->i32 { return value.x; } fn main()->i32 { let v=new::<Outer>(); return read(&v[0].node); }", "unsupported typed-preview construct `[`"),
         ("struct Stored { value:&P } fn main()->i32 { let v=new::<P>(); return 0; }", "unsupported typed-preview construct `&`"),
@@ -449,6 +448,15 @@ fn element_and_field_references_cannot_be_stored_or_returned() {
     ] {
         rejects(body, "E0101", &[marker]);
     }
+}
+
+#[test]
+fn local_element_borrow_still_requires_an_owning_record() {
+    rejects(
+        "fn main()->i32 { let v=new::<P>(); let element=&v[0]; return 0; }",
+        "E0300",
+        &["local element references require a concrete non-Copy record vector"],
+    );
 }
 
 const READ_BOUNDS: &str =
