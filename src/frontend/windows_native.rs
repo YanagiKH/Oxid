@@ -23,10 +23,84 @@ pub(super) fn preflight(
     // All modules and unused declarations participate. These bounded parser
     // feature facts only deny. Ordinary type checking and OIR verification still
     // establish the sole authority for the native consumer.
-    if outside_project_scope(project) {
+    if outside_project_scope(project, false) {
         return Err(reject());
     }
     Ok(())
+}
+
+/// The checked owned source may enter the separate native File denial lane.
+/// This is not permission to emit a resource: its verified native consumer
+/// authenticates every type/operation after admitting the scan's carriers.
+pub(super) fn preflight_checked(
+    project: &ProjectSources,
+    checked: &super::oir::CheckedSourceProgram<'_>,
+    process: bool,
+    settings: Option<&NativeBuildSettings>,
+) -> Result<(), Box<Diagnostic>> {
+    if NativeBuildSettings::windows_msvc_host() && checked.windows_file_candidate() {
+        let execution = settings.map_or(ExecutionPolicy::Bounded, |settings| settings.execution());
+        if process || execution.hosted() || settings.is_some_and(|settings| settings.debug_info()) {
+            return Err(reject());
+        }
+        // Reuse the existing complete module walk. This narrower parser fact
+        // only denies generic syntax; the sealed consumer denies unported
+        // resource/type metadata before emitting any native code.
+        if outside_project_scope(project, true) {
+            return Err(reject());
+        }
+        Ok(())
+    } else {
+        preflight(project, process, settings)
+    }
+}
+
+/// Additional borrowed routing roles, paid only by the Windows File consumer.
+/// No source owner, parser arena, witness or retained permit is copied.
+#[allow(dead_code)]
+#[cfg(any(
+    test,
+    all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
+struct FileRoutingCarriers {
+    wrapper_arguments: (
+        &'static ProjectSources,
+        &'static super::oir::CheckedSourceProgram<'static>,
+        bool,
+        Option<&'static NativeBuildSettings>,
+    ),
+    candidate_arguments: [&'static super::oir::CheckedSourceProgram<'static>; 2],
+    selected_body: &'static (),
+    candidate_returns: [bool; 2],
+    execution: ExecutionPolicy,
+    scope_arguments: (&'static ProjectSources, bool),
+    scope_iterator: std::slice::Iter<'static, super::project::ModuleHeader>,
+    selected_module: &'static super::project::ModuleHeader,
+    ast_query: Option<&'static Program>,
+    selected_ast: &'static Program,
+    generic_header_borrow: &'static [super::ast::GenericHeader],
+    scope_returns: [bool; 3],
+    predicate_capture: (&'static ProjectSources, &'static bool),
+    returns: [Result<(), Box<Diagnostic>>; 2],
+}
+#[cfg(any(
+    test,
+    all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
+pub(super) const fn file_routing_control_bytes() -> usize {
+    std::mem::size_of::<FileRoutingCarriers>()
 }
 
 pub(super) fn test_preflight(
@@ -41,7 +115,7 @@ pub(super) fn test_preflight(
             None,
         ));
     }
-    if outside_project_scope(project) {
+    if outside_project_scope(project, false) {
         return Err(Diagnostic::new(
             "E0608", "oir-run",
             "Windows project tests support only pure bool, i32 and unit functions without owned values, references, arrays, resources, generics or process I/O",
@@ -51,11 +125,15 @@ pub(super) fn test_preflight(
     Ok(())
 }
 
-fn outside_project_scope(project: &ProjectSources) -> bool {
+fn outside_project_scope(project: &ProjectSources, file_candidate: bool) -> bool {
     project.modules().iter().any(|header| {
-        project
-            .try_file_ast(header.file)
-            .is_none_or(|program| outside_scalar_scope(program, project.sources().get(header.file)))
+        project.try_file_ast(header.file).is_none_or(|program| {
+            if file_candidate {
+                !program.generic_headers().is_empty()
+            } else {
+                outside_scalar_scope(program, project.sources().get(header.file))
+            }
+        })
     })
 }
 
@@ -79,7 +157,7 @@ fn outside_scalar_scope(program: &Program, source: &SourceFile) -> bool {
 fn reject() -> Box<Diagnostic> {
     Diagnostic::new(
         "E0700", "native-admission",
-        "Windows native builds currently support bounded result-entry bool, i32 and unit scalar functions without generics, owned values, references, arrays, resources, process I/O or debug information",
+        "Windows native builds require bounded bool/i32/unit result entry; File byte I/O is supported, while generics, other owned types, process I/O and debug information are unavailable",
         None,
     )
 }
@@ -88,6 +166,57 @@ fn reject() -> Box<Diagnostic> {
 mod tests {
     use super::*;
     use crate::frontend::{lexer, parser, project::budget::Allocator, source::SourceMap};
+
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    #[test]
+    fn windows_file_routing_has_a_closed_borrowed_carrier_inventory() {
+        fn inventory(bank: &FileRoutingCarriers) {
+            let FileRoutingCarriers {
+                wrapper_arguments,
+                candidate_arguments,
+                selected_body,
+                candidate_returns,
+                execution,
+                scope_arguments,
+                scope_iterator,
+                selected_module,
+                ast_query,
+                selected_ast,
+                generic_header_borrow,
+                scope_returns,
+                predicate_capture,
+                returns,
+            } = bank;
+            let _ = (
+                wrapper_arguments,
+                candidate_arguments,
+                selected_body,
+                candidate_returns,
+                execution,
+                scope_arguments,
+                scope_iterator,
+                selected_module,
+                ast_query,
+                selected_ast,
+                generic_header_borrow,
+                scope_returns,
+                predicate_capture,
+                returns,
+            );
+        }
+        let _: fn(&FileRoutingCarriers) = inventory;
+        println!(
+            "Windows File source routing={} align={}",
+            file_routing_control_bytes(),
+            std::mem::align_of::<FileRoutingCarriers>()
+        );
+    }
 
     fn outside(text: &str) -> bool {
         let mut sources = SourceMap::new();

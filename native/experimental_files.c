@@ -1,12 +1,31 @@
 /* Included after experimental_bytebuf.c: files use the same checked registry,
  * allocation charge and execution lifetime, with a distinct resource class. */
 #include <fcntl.h>
+#if defined(_WIN32)
+#include <io.h>
+#include <sys/stat.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+_Static_assert(sizeof(int) == 4 && sizeof(wchar_t) == 2 && sizeof(void *) == 8,
+    "File runtime requires the MSVC x64 CRT ABI");
+_Static_assert(_O_BINARY == 0x8000 && _O_NOINHERIT == 0x0080 && _O_WRONLY == 1
+    && _O_CREAT == 0x0100 && _O_TRUNC == 0x0200 && (_S_IREAD | _S_IWRITE) == 0x0180,
+    "CRT flags must match the independent Rust adapter");
+_Static_assert(EINVAL == 22 && ENOENT == 2 && EBADF == 9 && ENAMETOOLONG == 38,
+    "CRT errors must match the independent Rust adapter");
+#else
 /* Strict C11 on Linux can hide this POSIX flag. Darwin declares its own value. */
 #ifndef O_CLOEXEC
 #if defined(__linux__)
 #define O_CLOEXEC 02000000
 #else
 #error "O_CLOEXEC is required for native file handles"
+#endif
 #endif
 #endif
 
@@ -43,9 +62,9 @@ static int32_t close_file(oxid_byte_heap *heap, oxid_file *value, int32_t *error
     if (status) return status;
     *error = 0;
     if (node) {
-        /* Linux and Darwin release the descriptor before final close errors.
-         * Never retry against a descriptor number that may have been reused. */
-        if (close((int)node->initialized) < 0) *error = errno;
+        /* One close attempt only; never retry a descriptor number that may
+         * already have been released and reused, including on a final error. */
+        if (oxid_close_descriptor((int)node->initialized) < 0) *error = errno;
         node->initialized = UINT32_MAX;
         unlink_node(heap, node);
     }
@@ -89,8 +108,29 @@ static int32_t open_file(oxid_byte_heap *heap, const uint8_t *bytes, int32_t len
     if (fail(heap, INITIALIZE) || fail(heap, COMMIT)) {
         unlink_node(heap, node); result->tag = 3; return 0;
     }
+#if defined(_WIN32)
+    wchar_t wide[4096];
+    int fd;
+    int converted = length ? MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, length, wide, 4095) : 0;
+    if (!length) { errno = ENOENT; fd = -1; }
+    else if (!converted) { errno = EINVAL; fd = -1; }
+    else {
+        wide[converted] = 0;
+#if defined(__clang__)
+/* The reviewed fd32 registry deliberately uses the CRT's variadic _wopen.
+ * Keep strict warnings elsewhere, including every caller and conversion. */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+        fd = _wopen(wide, _O_BINARY | _O_NOINHERIT | (create ? _O_WRONLY | _O_CREAT | _O_TRUNC : _O_RDONLY), _S_IREAD | _S_IWRITE);
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+    }
+#else
     int flags = O_CLOEXEC | O_NOCTTY | (create ? O_WRONLY | O_CREAT | O_TRUNC : O_RDONLY);
     int fd = open(path, flags, 0600);
+#endif
     if (fd < 0) {
         int error = errno;
         unlink_node(heap, node); result->value.error = error; return 0;
@@ -135,10 +175,19 @@ int32_t __oxid_file_delivery(int32_t operation, oxid_file *file, uint8_t *bytes,
         } else if (!node) {
             status->tag = operation == 2 ? 2 : 1; status->value = EBADF;
         } else if (operation == 4) {
+#if defined(_WIN32)
+            if (_commit((int)node->initialized) < 0) { status->tag = 1; status->value = errno; }
+#else
             if (fsync((int)node->initialized) < 0) { status->tag = 1; status->value = errno; }
+#endif
         } else if (length) {
+#if defined(_WIN32)
+            int count = operation == 2 ? _read((int)node->initialized, bytes, (unsigned int)length)
+                : _write((int)node->initialized, bytes, (unsigned int)length);
+#else
             ssize_t count = operation == 2 ? read((int)node->initialized, bytes, (size_t)length)
                 : write((int)node->initialized, bytes, (size_t)length);
+#endif
             if (count < 0) { status->tag = operation == 2 ? 2 : 1; status->value = errno; }
             else if (!count && operation == 2) status->tag = 1;
             else status->value = (int32_t)count;
@@ -155,8 +204,10 @@ int32_t __oxid_file_delivery_hosted(int32_t operation, oxid_file *file, uint8_t 
 
 /* Separate entrypoint preserves every existing file operation and its ABI.
  * The caller has prepared both results and the exclusive loan release. */
+#if !defined(_WIN32)
 _Static_assert(sizeof(off_t) == sizeof(int64_t), "file seeking requires 64-bit off_t");
 _Static_assert((off_t)-1 < (off_t)0, "file seeking requires signed off_t");
+#endif
 int32_t __oxid_file_seek_absolute(const oxid_file *file, int64_t offset,
     uint64_t *fuel, oxid_binary_result *result, uint64_t return_cost) {
     if (!file || !fuel || !result ||
@@ -170,7 +221,11 @@ int32_t __oxid_file_seek_absolute(const oxid_file *file, int64_t offset,
     if (!node) error = EBADF;
     else if (offset < 0) error = EINVAL;
     else {
+#if defined(_WIN32)
+        int64_t position = _lseeki64((int)node->initialized, offset, SEEK_SET);
+#else
         off_t position = lseek((int)node->initialized, (off_t)offset, SEEK_SET);
+#endif
         if (position < 0) error = errno;
     }
     /* No allocation, admission or source work can fail after lseek. */

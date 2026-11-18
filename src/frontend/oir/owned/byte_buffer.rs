@@ -22,6 +22,10 @@ pub(in crate::frontend::oir::owned) use vectors::{
     CheckedElement as CheckedVectorElement, Element as VectorElement,
     RecordElement as RecordVectorElement, VectorDescriptor,
 };
+pub(super) const fn file_supported_host() -> bool {
+    files::supported_host()
+}
+
 pub(super) const fn file_helper_control_bytes() -> usize {
     files::helper_control_bytes()
 }

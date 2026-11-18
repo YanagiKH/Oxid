@@ -34,6 +34,18 @@ mod resources;
 #[path = "native_vector.rs"]
 mod vector;
 use reachability::EmittedFunctions;
+#[cfg(any(
+    test,
+    all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
+#[path = "native_windows_file.rs"]
+mod windows_file;
 
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
@@ -826,6 +838,14 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
             },
         )?,
     )?;
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    let emitter_transient = add(emitter_transient, windows_file::control_bytes())?;
     let emission_metadata = add(
         add(
             add(
@@ -847,6 +867,16 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         "emission metadata bytes",
         root.span,
     )?;
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    if !windows_file::allowed(witness, id) {
+        return Err(reject("Windows native File programs support only File byte I/O, byte arrays/slices and their standard status enums", None));
+    }
     let selected = R::build(&plan, id)?;
     let (transfer_cells, transfer_visits) = transfer_inventory_selected(&plan, selected)?;
     accounting.metrics.transfer_cells = transfer_cells;

@@ -674,6 +674,11 @@ impl From<Box<Diagnostic>> for ProcessFailure {
 }
 
 impl CheckedSourceProgram<'_> {
+    /// Selects only the existing checked owned owner. Native File admission
+    /// remains a separate denial over its sealed witness; vectors stay closed.
+    pub(in crate::frontend) fn windows_file_candidate(&self) -> bool {
+        matches!(&self.body, CheckedBody::Owned(_))
+    }
     pub(in crate::frontend) fn debug_records(&self) -> Option<super::super::DebugRecords<'_>> {
         match &self.body {
             CheckedBody::Scalar(_) => None,
