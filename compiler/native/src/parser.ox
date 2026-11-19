@@ -8,6 +8,7 @@ use crate::model::expect;
 use crate::model::fail;
 use crate::model::local;
 use crate::model::function;
+use crate::model::module_named;
 use crate::model::word;
 use crate::headers::ty as parse_type;
 use alloc::vec::new;
@@ -26,16 +27,22 @@ fn precedence(op: i32) -> i32 {
     return 0;
 }
 fn bind(c: &mut Compiler, name: i32, ty: i32, writable: bool, slot: i32) -> () {
-    if local(&*c, name) >= 0 || function(&*c, name) >= 0 { fail(&mut *c); return; }
+    let owner = c.functions[c.current];
+    if local(&*c, name) >= 0 || function(&*c, owner.source_module, name) >= 0 { fail(&mut *c); return; }
     if len(&*c.vars) >= 4096 { c.error = 68; return; }
     let row = Binding { name: name, ty: ty, slot: slot, writable: writable };
     if !grown(try_push(&mut *c.vars, row)) { c.error = 68; }
     return;
 }
-fn called(c: &mut Compiler, name: i32, depth: i32) -> Value {
-    let target = function(&*c, name);
+fn called(c: &mut Compiler, source_module: i32, name: i32, depth: i32) -> Value {
+    let target = function(&*c, source_module, name);
     if target < 0 { fail(&mut *c); return invalid(); }
     let f = c.functions[target];
+    let caller = c.functions[c.current];
+    if source_module != 0 && source_module != caller.source_module && !f.public {
+        fail(&mut *c);
+        return invalid();
+    }
     let mut args = new::<Value>();
     expect(&mut *c, 20);
     let mut count = 0;
@@ -53,6 +60,22 @@ fn called(c: &mut Compiler, name: i32, depth: i32) -> Value {
     if c.call_sites >= 4096 { c.error = 68; return invalid(); }
     c.call_sites = c.call_sites + 1;
     return crate::emit::call(&mut *c, target, &args, f.result);
+}
+fn qualified_call(c: &mut Compiler, depth: i32) -> Value {
+    expect(&mut *c, 44);
+    expect(&mut *c, 45);
+    let mut name = c.cursor;
+    expect(&mut *c, 1);
+    let mut source_module = 0;
+    if kind(&*c) == 45 {
+        source_module = module_named(&*c, name);
+        if source_module < 0 { fail(&mut *c); return invalid(); }
+        expect(&mut *c, 45);
+        name = c.cursor;
+        expect(&mut *c, 1);
+    }
+    if c.error != 0 { return invalid(); }
+    return called(&mut *c, source_module, name, depth);
 }
 fn convert_binding(c: &mut Compiler, value: Value) -> Value {
     let narrow = b"to_u8_checked";
@@ -120,10 +143,14 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
         expect(&mut *c, 21);
         return parenthesized;
     }
+    if t.kind == 44 { return qualified_call(&mut *c, depth); }
     if t.kind == 1 {
         let name = c.cursor;
         c.cursor = c.cursor + 1;
-        if kind(&*c) == 20 { return called(&mut *c, name, depth); }
+        if kind(&*c) == 20 {
+            let owner = c.functions[c.current];
+            return called(&mut *c, owner.source_module, name, depth);
+        }
         let position = local(&*c, name);
         if position < 0 { fail(&mut *c); return invalid(); }
         let binding = c.vars[position];

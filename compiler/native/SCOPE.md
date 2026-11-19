@@ -31,10 +31,16 @@ prints its i32, u8, bool or unit result, then exits 0.
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
-all paths. Loop conditions are checked conservatively. Imports, user records
-and enums, references, generics, strings, arrays, I/O in compiled input and
-other integer types are unsupported. The compiler itself uses ByteBuf, File and
-Copy vectors.
+all paths. Loop conditions are checked conservatively. `use` declarations,
+nested modules, user records and enums, references, generics, strings, arrays,
+I/O in compiled input and other integer types are unsupported. The compiler
+itself uses ByteBuf, File and Copy vectors.
+
+Declare sibling source files with `mod name;` in the entry file. For example,
+`mod math;` loads `math.ox` from the same directory. Use `pub fn` to expose a
+function to other modules and call it with `crate::math::function(...)`.
+The entry file and its siblings share the input and function limits.
+The compiler accepts up to 128 source files including the entry file.
 
 Input is limited to 65536 bytes, 32768 tokens, 128 functions, 16 parameters/function,
 4096 call sites and 4096 stack slots/function. Expression/block/comment nesting

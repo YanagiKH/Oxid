@@ -26,6 +26,9 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     let literal_bytes_11 = b"i32";
     let literal_bytes_12 = b"bool";
     let byte_type = b"u8";
+    let module_word = b"mod";
+    let public_word = b"pub";
+    let crate_word = b"crate";
 
     if word(&*source, start, end, &literal_bytes_0) { return 3; }
     if word(&*source, start, end, &literal_bytes_1) { return 4; }
@@ -41,6 +44,9 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     if word(&*source, start, end, &literal_bytes_11) { return 14; }
     if word(&*source, start, end, &literal_bytes_12) { return 15; }
     if word(&*source, start, end, &byte_type) { return 16; }
+    if word(&*source, start, end, &module_word) { return 18; }
+    if word(&*source, start, end, &public_word) { return 19; }
+    if word(&*source, start, end, &crate_word) { return 44; }
     return 1;
 }
 fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i32) -> () {
@@ -128,6 +134,7 @@ fn paired_kind(b: i32, next: i32) -> i32 {
     if b == 62 && next == 61 { return 40; }
     if b == 38 && next == 38 { return 41; }
     if b == 124 && next == 124 { return 42; }
+    if b == 58 && next == 58 { return 45; }
     return 0;
 }
 fn punctuation(c: &mut Compiler, start: i32, size: i32) -> i32 {
@@ -159,16 +166,21 @@ fn scan_one(c: &mut Compiler, start: i32, size: i32) -> i32 {
     if digit(b) { return integer(&mut *c, start, size); }
     return punctuation(&mut *c, start, size);
 }
-pub fn scan(c: &mut Compiler) -> () {
-    let size = bytes_len(&*c.source);
+pub fn scan_range(c: &mut Compiler, start: i32, size: i32) -> () {
     if size > 65536 { c.error = 68; return; }
-    let mut i = 0;
+    let mut i = start;
     while i < size {
         if code(&*c.source, i) > 127 { c.error = 65; c.error_start = i; return; }
         i = i + 1;
     }
-    i = 0;
+    i = start;
     while i < size && c.error == 0 { i = scan_one(&mut *c, i, size); }
     if c.error == 0 { push(&mut *c, 0, size, size, 0); }
+    return;
+}
+
+pub fn scan(c: &mut Compiler) -> () {
+    let size = bytes_len(&*c.source);
+    scan_range(&mut *c, 0, size);
     return;
 }

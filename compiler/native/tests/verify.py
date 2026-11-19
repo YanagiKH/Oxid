@@ -241,6 +241,79 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     return rows
 
 
+def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                   output: Path, timeout: int) -> list[dict]:
+    evidence = output / "modules"
+    evidence.mkdir()
+    cases = (
+        ("sibling-modules", 0, True, {
+            "main.ox": "mod a;fn base()->i32{return 40;}mod b;"
+                       "fn main()->i32{return crate::a::value()+crate::b::value();}",
+            "a.ox": "pub fn value()->i32{return crate::base()+local();}fn local()->i32{return 1;}",
+            "b.ox": "pub fn value()->i32{return crate::b::local();}fn local()->i32{return 1;}",
+        }),
+        ("private-export", 65, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::hidden();}",
+            "a.ox": "fn hidden()->i32{return 42;}",
+        }),
+        ("duplicate-module", 65, True, {
+            "main.ox": "mod a;mod a;fn main()->i32{return 42;}",
+            "a.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("missing-module", 66, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::value();}",
+        }),
+        ("nested-module", 65, False, {
+            "main.ox": "mod a;fn main()->i32{return 42;}",
+            "a.ox": "mod nested;",
+        }),
+        ("combined-input-limit", 68, False, {
+            "main.ox": "mod a;fn main()->i32{return 42;}",
+            "a.ox": " " * 65536,
+        }),
+    )
+    rows = []
+    for name, expected, compare, files in cases:
+        project = evidence / name
+        project.mkdir()
+        for relative, code in files.items():
+            (project / relative).write_text(code, encoding="ascii")
+        source = project / "main.ox"
+        command = [str(compiler), str(source)]
+        compiled = run(command, evidence, timeout)
+        row = {"name": name, "compiler": record(project, "compiler", command, compiled), "profiles": []}
+        require(compiled.returncode == expected and compiled.stderr == b"", name + ": unexpected module status")
+        if compare:
+            command = [str(reference), "run", str(source), "--edition=typed-preview"]
+            observed = run(command, evidence, timeout, clear_environment=False)
+            row["reference"] = record(project, "reference", command, observed)
+            if expected == 0:
+                check_native_behavior({"name": name, "kind": "value", "stdout": "42\n"}, observed)
+            else:
+                require(observed.returncode != 0, name + ": reference accepted invalid modules")
+        if expected != 0:
+            require(compiled.stdout == b"", name + ": rejected modules emitted LLVM")
+            rows.append(row)
+            continue
+        driver.module_from_result(compiled)
+        for profile in ("dev", "release"):
+            binary = evidence / f"{name}-{profile}"
+            receipt = driver.build(compiler, source, clang, runtime, binary,
+                                   profile, timeout, project / profile)
+            require(receipt["module_sha256"] == hashlib.sha256(compiled.stdout).hexdigest(),
+                    name + ": module LLVM bytes changed with the working directory")
+            row["profiles"].append(receipt)
+        project.rename(evidence / f"{name}-retained")
+        require(not project.exists(), name + ": module sources remain at their original path")
+        for receipt in row["profiles"]:
+            command = [receipt["output"]]
+            executed = run(command, evidence, timeout)
+            receipt["source_unavailable_run"] = record(evidence, f'{name}-{receipt["profile"]}', command, executed)
+            check_native_behavior({"name": name, "kind": "value", "stdout": "42\n"}, executed)
+        rows.append(row)
+    return rows
+
+
 def verify(args) -> dict:
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
     output = args.output.resolve()
@@ -327,6 +400,9 @@ def verify(args) -> dict:
                 check_native_behavior(case, executed)
             report["cases"].append(row)
         report["protocol"] = actual_protocol(compiler, clang, runtime, output, args.timeout)
+        if args.reference is not None:
+            report["modules"] = verify_modules(compiler, clang, runtime, args.reference.resolve(strict=True),
+                                               output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"
         return report
