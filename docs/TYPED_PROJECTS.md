@@ -181,6 +181,15 @@ from `main` to receive SIGINT and SIGTERM. If it returns true, poll
 `termination_requested()` between work items and return from `main` to close
 files and release other owned values.
 
+## Reading and writing file buffers
+
+Add the [file I/O library](../packages/file_io/oxid.toml) as a local dependency
+and import `read_exact` and `write_all` through its dependency name. `read_exact`
+fills a mutable byte slice or reports how many bytes it read before EOF.
+`write_all` continues until the slice is written or a write makes no progress.
+Both functions report the number of bytes transferred and the system error code
+if an I/O error occurs.
+
 ## Build profiles
 
 ```sh
