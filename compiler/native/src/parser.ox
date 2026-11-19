@@ -10,9 +10,10 @@ use crate::model::local;
 use crate::model::function;
 use crate::model::function_binding;
 use crate::model::function_visible;
-use crate::model::module_named;
+use crate::model::path_module;
 use crate::model::word;
 use crate::headers::ty as parse_type;
+use crate::headers::path_name;
 use alloc::vec::new;
 use alloc::vec::len;
 use alloc::vec::try_push;
@@ -58,21 +59,13 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     return crate::emit::call(&mut *c, target, &args, f.result);
 }
 fn qualified_call(c: &mut Compiler, depth: i32) -> Value {
-    expect(&mut *c, 44);
-    expect(&mut *c, 45);
-    let mut name = c.cursor;
-    expect(&mut *c, 1);
-    let mut source_module = 0;
-    if kind(&*c) == 45 {
-        source_module = module_named(&*c, name);
-        if source_module < 0 { fail(&mut *c); return invalid(); }
-        expect(&mut *c, 45);
-        name = c.cursor;
-        expect(&mut *c, 1);
-    }
+    let path_start = c.cursor + 2;
+    let name = path_name(&mut *c);
     if c.error != 0 { return invalid(); }
-    let target = function(&*c, source_module, name);
     let caller = c.functions[c.current];
+    let source_module = path_module(&*c, path_start, name, caller.source_module);
+    if source_module < 0 { fail(&mut *c); return invalid(); }
+    let target = function(&*c, source_module, name);
     if !function_visible(&*c, caller.source_module, target) { fail(&mut *c); return invalid(); }
     return called(&mut *c, target, depth);
 }

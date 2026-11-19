@@ -13,7 +13,8 @@ use crate::model::same_name;
 use crate::model::function;
 use crate::model::function_binding;
 use crate::model::function_visible;
-use crate::model::module_named;
+use crate::model::child_module;
+use crate::model::path_module;
 use alloc::vec::len;
 use alloc::vec::try_push;
 
@@ -25,20 +26,24 @@ pub fn ty(c: &mut Compiler) -> i32 {
     if k == 20 { expect(&mut *c, 20); expect(&mut *c, 21); return 3; }
     fail(&mut *c); return 0;
 }
-fn collect_import(c: &mut Compiler, source_module: i32) -> () {
-    if len(&*c.imports) >= 4096 { c.error = 68; return; }
-    expect(&mut *c, 46);
+pub fn path_name(c: &mut Compiler) -> i32 {
     expect(&mut *c, 44);
     expect(&mut *c, 45);
     let mut name = c.cursor;
     expect(&mut *c, 1);
-    let mut module_name = -1;
-    if kind(&*c) == 45 {
-        module_name = name;
+    while c.error == 0 && kind(&*c) == 45 {
         expect(&mut *c, 45);
         name = c.cursor;
         expect(&mut *c, 1);
     }
+    return name;
+}
+
+fn collect_import(c: &mut Compiler, source_module: i32) -> () {
+    if len(&*c.imports) >= 4096 { c.error = 68; return; }
+    expect(&mut *c, 46);
+    let path_start = c.cursor + 2;
+    let name = path_name(&mut *c);
     let mut alias = name;
     if kind(&*c) == 47 {
         expect(&mut *c, 47);
@@ -47,7 +52,7 @@ fn collect_import(c: &mut Compiler, source_module: i32) -> () {
     }
     expect(&mut *c, 25);
     if c.error != 0 { return; }
-    let row = Import { scope: source_module, module_name: module_name, name: name, alias: alias, target: -1 };
+    let row = Import { scope: source_module, path_start: path_start, name: name, alias: alias, target: -1 };
     if !grown(try_push(&mut *c.imports, row)) { c.error = 68; }
     return;
 }
@@ -57,11 +62,8 @@ fn resolve_imports(c: &mut Compiler) -> () {
     while index < len(&*c.imports) && c.error == 0 {
         let mut row = c.imports[index];
         c.cursor = row.alias;
-        let mut target_module = 0;
-        if row.module_name >= 0 {
-            target_module = module_named(&*c, row.module_name);
-            if target_module < 0 { fail(&mut *c); return; }
-        }
+        let target_module = path_module(&*c, row.path_start, row.name, row.scope);
+        if target_module < 0 { fail(&mut *c); return; }
         let target = function(&*c, target_module, row.name);
         if !function_visible(&*c, row.scope, target) || function(&*c, row.scope, row.alias) >= 0 {
             fail(&mut *c);
@@ -90,21 +92,20 @@ fn collect_module(c: &mut Compiler, source_module: i32) -> () {
 
     while kind(&*c) != 0 && c.error == 0 {
         if kind(&*c) == 46 { collect_import(&mut *c, source_module); continue; }
+        let public = kind(&*c) == 19;
+        if public { expect(&mut *c, 19); }
         if kind(&*c) == 18 {
-            if source_module != 0 { fail(&mut *c); return; }
             expect(&mut *c, 18);
             let module_name = c.cursor;
             expect(&mut *c, 1);
             expect(&mut *c, 25);
             if c.error != 0 { return; }
-            if module_named(&*c, module_name) >= 0 { fail(&mut *c); return; }
-            if len(&*c.sources) >= 128 { c.error = 68; return; }
-            crate::delivery::load_module(&mut *c, module_name);
+            if child_module(&*c, source_module, module_name, true) >= 0 { fail(&mut *c); return; }
+            if len(&*c.sources) >= 128 || input.depth >= 32 { c.error = 68; return; }
+            crate::delivery::load_module(&mut *c, source_module, module_name, public);
             continue;
         }
         if len(&*c.functions) >= 128 { c.error = 68; return; }
-        let public = kind(&*c) == 19;
-        if public { expect(&mut *c, 19); }
         expect(&mut *c, 3);
         let name = c.cursor;
         expect(&mut *c, 1);
@@ -158,7 +159,7 @@ fn collect_module(c: &mut Compiler, source_module: i32) -> () {
 }
 
 pub fn collect(c: &mut Compiler) -> () {
-    if !grown(try_push(&mut *c.sources, SourceModule { name: -1, first_token: 0 })) {
+    if !grown(try_push(&mut *c.sources, SourceModule { name: -1, first_token: 0, parent: -1, depth: 0, public: true })) {
         c.error = 68;
         return;
     }

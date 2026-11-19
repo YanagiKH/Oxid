@@ -287,9 +287,55 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
         ("missing-module", 66, True, {
             "main.ox": "mod a;fn main()->i32{return crate::a::value();}",
         }),
-        ("nested-module", 65, False, {
+        ("nested-modules", 0, True, {
+            "main.ox": "mod a;mod b;use crate::a::detail::value as left;"
+                       "fn main()->i32{return left()+crate::b::detail::value();}",
+            "a.ox": "pub mod detail;fn base()->i32{return 40;}",
+            "a/detail.ox": "pub mod inner;pub fn value()->i32{return crate::a::detail::inner::one()+crate::a::base();}",
+            "a/detail/inner.ox": "pub fn one()->i32{return 1;}",
+            "b.ox": "pub mod detail;",
+            "b/detail.ox": "pub fn value()->i32{return 1;}",
+        }),
+        ("private-module-in-own-subtree", 0, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::result();}",
+            "a.ox": "mod detail;pub fn result()->i32{return crate::a::detail::value();}",
+            "a/detail.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("private-module-call", 65, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::detail::value();}",
+            "a.ox": "mod detail;",
+            "a/detail.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("private-module-import", 65, True, {
+            "main.ox": "mod a;use crate::a::detail::value;fn main()->i32{return 42;}",
+            "a.ox": "mod detail;",
+            "a/detail.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("private-nested-function", 65, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::detail::value();}",
+            "a.ox": "pub mod detail;",
+            "a/detail.ox": "fn value()->i32{return 42;}",
+        }),
+        ("duplicate-nested-module", 65, True, {
+            "main.ox": "mod a;fn main()->i32{return 42;}",
+            "a.ox": "mod detail;mod Detail;",
+            "a/detail.ox": "",
+        }),
+        ("missing-nested-module", 66, True, {
             "main.ox": "mod a;fn main()->i32{return 42;}",
             "a.ox": "mod nested;",
+        }),
+        ("repeated-entry-module", 65, True, {
+            "main.ox": "mod main;fn main()->i32{return 42;}",
+        }),
+        ("maximum-module-depth", 0, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::" + "a::" * 32 + "value();}",
+            **{"a/" * depth + "a.ox": "pub mod a;" for depth in range(31)},
+            "a/" * 31 + "a.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("module-depth-limit", 68, True, {
+            "main.ox": "mod a;fn main()->i32{return 42;}",
+            **{"a/" * depth + "a.ox": "mod a;" for depth in range(33)},
         }),
         ("combined-input-limit", 68, False, {
             "main.ox": "mod a;fn main()->i32{return 42;}",
@@ -301,7 +347,9 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
         project = evidence / name
         project.mkdir()
         for relative, code in files.items():
-            (project / relative).write_text(code, encoding="ascii")
+            source_file = project / relative
+            source_file.parent.mkdir(parents=True, exist_ok=True)
+            source_file.write_text(code, encoding="ascii")
         source = project / "main.ox"
         command = [str(compiler), str(source)]
         compiled = run(command, evidence, timeout)

@@ -12,6 +12,7 @@ use crate::model::code as byte_code;
 use crate::model::grown;
 use crate::model::new_compiler;
 use crate::model::token;
+use crate::model::word;
 use std::env::arg_count;
 use std::env::arg_bytes;
 use std::env::ArgStatus;
@@ -71,22 +72,36 @@ fn load_file(path: &[u8], remaining: i32) -> FileInput {
     return FileInput::Failed(74);
 }
 
-pub fn load_module(c: &mut Compiler, name: i32) -> () {
+fn append_parent_path(c: &Compiler, parent: i32, path: &mut ByteBuf) -> bool {
+    if parent == 0 { return true; }
+    let row = c.sources[parent];
+    if !append_parent_path(&*c, row.parent, &mut *path) { return false; }
+    let slash = b"/";
+    let spelling = token(&*c, row.name);
+    if len(&*path) + spelling.end - spelling.start + 1 > 4093 { return false; }
+    return grown(try_extend(&mut *path, &*c.source[spelling.start..spelling.end]))
+        && grown(try_extend(&mut *path, &slash));
+}
+
+pub fn load_module(c: &mut Compiler, parent: i32, name: i32, public: bool) -> () {
     let extension = b".ox";
     let spelling = token(&*c, name);
+    let size = spelling.end - spelling.start;
     let mut directory_end = len(&*c.source_path);
     while directory_end > 0 && byte_code(&*c.source_path, directory_end - 1) != 47 {
         directory_end = directory_end - 1;
     }
-    if directory_end + spelling.end - spelling.start + 3 > 4096 {
-        c.error = 68;
-        return;
-    }
     let mut path = new();
-    if !grown(try_extend(&mut path, &*c.source_path[0..directory_end]))
+    if size > 255 || directory_end + size + 3 > 4096
+        || !grown(try_extend(&mut path, &*c.source_path[0..directory_end]))
+        || !append_parent_path(&*c, parent, &mut path) || len(&path) + size + 3 > 4096
         || !grown(try_extend(&mut path, &*c.source[spelling.start..spelling.end]))
         || !grown(try_extend(&mut path, &extension)) {
         c.error = 68;
+        return;
+    }
+    if word(&*c.source_path, 0, len(&*c.source_path), &path) {
+        c.error = 65;
         return;
     }
     let start = len(&*c.source);
@@ -99,7 +114,10 @@ pub fn load_module(c: &mut Compiler, name: i32) -> () {
             let end = len(&*c.source);
             crate::lexer::scan_range(&mut *c, start, end);
             if c.error != 0 { return; }
-            if !grown(try_push(&mut *c.sources, SourceModule { name: name, first_token: first })) {
+            let owner = c.sources[parent];
+            let row = SourceModule { name: name, first_token: first, parent: parent,
+                depth: owner.depth + 1, public: public };
+            if !grown(try_push(&mut *c.sources, row)) {
                 c.error = 68;
             }
         },

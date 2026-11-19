@@ -32,17 +32,17 @@ Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-nested modules, user records and enums, references, generics, strings, arrays,
+user records and enums, references, generics, strings, arrays,
 I/O in compiled input and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 
-Declare sibling source files with `mod name;` in the entry file. For example,
-`mod math;` loads `math.ox` from the same directory. Use `pub fn` to expose a
-function to other modules and call it with `crate::math::function(...)`.
-Import it with `use crate::math::function;` or rename it with `as name` to make
-unqualified calls from that file.
-The entry file and its siblings share the input and function limits.
-The compiler accepts up to 128 source files including the entry file.
+Declare `mod math;` in the entry file to load `math.ox`. Inside `math.ox`,
+`pub mod stats;` loads `math/stats.ox` and exposes it outside `math`.
+Use `pub fn` to expose a function and call it with
+`crate::math::stats::function(...)`. Import it with
+`use crate::math::stats::function;` or rename it with `as name` for unqualified calls.
+Source files share the input and function limits. The compiler accepts up to
+128 source files including the entry file and up to 32 levels of modules.
 
 Input is limited to 65536 bytes, 32768 tokens, 128 functions, 16 parameters/function,
 4096 call sites and 4096 stack slots/function. Expression/block/comment nesting
