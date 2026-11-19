@@ -61,8 +61,8 @@ FIXTURE_INPUTS = (('compiler/native/tests/fixtures/comments.ox',
   51,
   '1ec8b81b351357a5b5597aad6cfa9fd31e56d949d97bb3bf7d3548313107af11'))
 CASES_JSON = ('compiler/native/tests/cases.json',
- 8647,
- '7e3506ed7db761958fcb0237e508e92792082b80f8e266bbe56fb0543d83d02d')
+ 12490,
+ '692b68eafd279481a83e3a6511b2127171fc5ae170e7abfd69e27fa4ee2d37d3')
 CASE_NAMES = ('forward',
  'control',
  'scopes',
@@ -127,7 +127,31 @@ CASE_NAMES = ('forward',
  'byte-divide-zero',
  'byte-remainder-zero',
  'byte-narrow-negative',
- 'byte-narrow-too-large')
+ 'byte-narrow-too-large',
+ 'i64-minimum',
+ 'i64-maximum',
+ 'i64-precise-arithmetic',
+ 'i64-negative-division',
+ 'i64-signed-order',
+ 'i64-conversions',
+ 'i64-missing-suffix',
+ 'i64-literal-too-high',
+ 'i64-literal-too-low',
+ 'i64-mixed-comparison',
+ 'i64-invalid-suffix',
+ 'i64-widen-wrong-type',
+ 'i64-add-overflow',
+ 'i64-subtract-overflow',
+ 'i64-multiply-overflow',
+ 'i64-negate-overflow',
+ 'i64-divide-zero',
+ 'i64-remainder-zero',
+ 'i64-divide-minimum',
+ 'i64-remainder-minimum',
+ 'i64-int-narrow-low',
+ 'i64-int-narrow-high',
+ 'i64-byte-narrow-low',
+ 'i64-byte-narrow-high')
 
 
 def require(condition, message):
@@ -204,11 +228,11 @@ def parse_cases(inputs):
         cases = json.loads(inputs[CASES_JSON[0]].decode("utf-8"), object_pairs_hook=unique_object)
     except (ValueError, UnicodeError) as error:
         raise RuntimeError("invalid scalar compiler case manifest: " + str(error)) from error
-    require(isinstance(cases, list) and len(cases) == 65
+    require(isinstance(cases, list) and len(cases) == 89
             and all(isinstance(case, dict) for case in cases),
-            "scalar compiler acceptance requires all 65 cases")
+            "scalar compiler acceptance requires all 89 cases")
     require(tuple(case.get("name") for case in cases) == CASE_NAMES
-            and len(set(CASE_NAMES)) == 65,
+            and len(set(CASE_NAMES)) == 89,
             "scalar compiler acceptance case names or order changed")
     sources, referenced = {}, []
     for case in cases:
@@ -238,7 +262,7 @@ def parse_cases(inputs):
     require(len(referenced) == 11 and set(referenced) == set(FIXTURE_FILES),
             "scalar compiler file fixtures must each be exercised once")
     require({kind: sum(case["kind"] == kind for case in cases) for kind in ("value", "reject", "runtime")}
-            == {"value": 23, "reject": 25, "runtime": 17},
+            == {"value": 29, "reject": 31, "runtime": 29},
             "scalar compiler positive, negative or runtime case census changed")
     return cases, sources
 

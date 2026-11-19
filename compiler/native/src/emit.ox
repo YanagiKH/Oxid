@@ -21,21 +21,23 @@ pub fn append(c: &mut Compiler, destination: i32, bytes: &[u8]) -> () {
     return;
 }
 pub fn number(c: &mut Compiler, destination: i32, value: i32) -> () {
-    let literal_bytes_0 = b"-";
-
-    let mut digits = b"0000000000";
-    let mut at = 10;
+    decimal(&mut *c, destination, value.to_i64());
+    return;
+}
+fn decimal(c: &mut Compiler, destination: i32, value: i64) -> () {
+    let minus = b"-";
+    let mut digits = b"00000000000000000000";
+    let mut at = 20;
     let mut remaining = value;
-    if remaining > 0 { remaining = 0 - remaining; }
-    while remaining != 0 || at == 10 {
+    if remaining > 0i64 { remaining = 0i64 - remaining; }
+    while remaining != 0i64 || at == 20 {
         at = at - 1;
-        let digit = 0 - remaining % 10;
-        let digit_code = 48 + digit;
+        let digit_code = 48i64 - remaining % 10i64;
         digits[at] = digit_code.to_u8_checked();
-        remaining = remaining / 10;
+        remaining = remaining / 10i64;
     }
-    if value < 0 { append(&mut *c, destination, &literal_bytes_0); }
-    append(&mut *c, destination, &digits[at..10]);
+    if value < 0i64 { append(&mut *c, destination, &minus); }
+    append(&mut *c, destination, &digits[at..20]);
     return;
 }
 pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> () {
@@ -43,9 +45,11 @@ pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> 
     let literal_bytes_1 = b"void";
     let literal_bytes_2 = b"i1";
     let byte_type = b"i8";
+    let long_type = b"i64";
 
     if ty == 1 { append(&mut *c, destination, &literal_bytes_0); return; }
     if ty == 4 { append(&mut *c, destination, &byte_type); return; }
+    if ty == 5 { append(&mut *c, destination, &long_type); return; }
     if ty == 3 && result { append(&mut *c, destination, &literal_bytes_1); }
     else { append(&mut *c, destination, &literal_bytes_2); }
     return;
@@ -145,22 +149,23 @@ pub fn load(c: &mut Compiler, position: i32, ty: i32) -> Value {
     append(&mut *c, 2, &literal_bytes_2); number(&mut *c, 2, position); append(&mut *c, 2, &literal_bytes_3);
     return Value { ty: ty, id: id };
 }
-pub fn constant(c: &mut Compiler, ty: i32, value: i32) -> Value {
-    let literal_bytes_0 = b"  %v";
-    let literal_bytes_1 = b" = add i32 0, ";
-    let literal_bytes_2 = b" = icmp ne i32 0, ";
-    let literal_bytes_3 = b"\n";
-    let byte_constant = b" = add i8 0, ";
+pub fn constant(c: &mut Compiler, ty: i32, value: i64) -> Value {
+    let prefix = b"  %v";
+    let numeric = b" = add ";
+    let zero = b" 0, ";
+    let boolean = b" = icmp ne i32 0, ";
+    let line = b"\n";
 
     if ty == 3 { return Value { ty: 3, id: -1 }; }
     let id = fresh(&mut *c);
-    append(&mut *c, 2, &literal_bytes_0); number(&mut *c, 2, id);
-    if ty == 1 { append(&mut *c, 2, &literal_bytes_1); }
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
+    if ty == 2 { append(&mut *c, 2, &boolean); }
     else {
-        if ty == 4 { append(&mut *c, 2, &byte_constant); }
-        else { append(&mut *c, 2, &literal_bytes_2); }
+        append(&mut *c, 2, &numeric);
+        write_type(&mut *c, 2, ty, false);
+        append(&mut *c, 2, &zero);
     }
-    number(&mut *c, 2, value); append(&mut *c, 2, &literal_bytes_3);
+    decimal(&mut *c, 2, value); append(&mut *c, 2, &line);
     return Value { ty: ty, id: id };
 }
 pub fn negate_bool(c: &mut Compiler, value: Value) -> Value {
@@ -176,15 +181,11 @@ pub fn negate_bool(c: &mut Compiler, value: Value) -> Value {
 pub fn binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
     let literal_bytes_0 = b"  %v";
     let literal_bytes_1 = b" = ";
-    let literal_bytes_2 = b"call i32 @ox_";
-    let literal_bytes_3 = b"add";
-    let literal_bytes_4 = b"sub";
-    let literal_bytes_5 = b"mul";
-    let literal_bytes_6 = b"div";
-    let literal_bytes_7 = b"rem";
-    let literal_bytes_8 = b"(i32 ";
-    let literal_bytes_9 = b", i32 ";
-    let literal_bytes_10 = b")\n";
+    let call_prefix = b"call ";
+    let space = b" ";
+    let open = b"(";
+    let comma = b", ";
+    let close = b")\n";
     let literal_bytes_11 = b"icmp ";
     let literal_bytes_12 = b"eq ";
     let literal_bytes_13 = b"ne ";
@@ -199,15 +200,14 @@ pub fn binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
     let id = fresh(&mut *c);
     append(&mut *c, 2, &literal_bytes_0); number(&mut *c, 2, id); append(&mut *c, 2, &literal_bytes_1);
     if op >= 29 && op <= 33 {
-        append(&mut *c, 2, &literal_bytes_2);
-        if op == 29 { append(&mut *c, 2, &literal_bytes_3); }
-        if op == 30 { append(&mut *c, 2, &literal_bytes_4); }
-        if op == 31 { append(&mut *c, 2, &literal_bytes_5); }
-        if op == 32 { append(&mut *c, 2, &literal_bytes_6); }
-        if op == 33 { append(&mut *c, 2, &literal_bytes_7); }
-        append(&mut *c, 2, &literal_bytes_8); operand(&mut *c, 2, left);
-        append(&mut *c, 2, &literal_bytes_9); operand(&mut *c, 2, right); append(&mut *c, 2, &literal_bytes_10);
-        return Value { ty: 1, id: id };
+        append(&mut *c, 2, &call_prefix);
+        write_type(&mut *c, 2, left.ty, false); append(&mut *c, 2, &space);
+        signed_symbol(&mut *c, 2, op, left.ty); append(&mut *c, 2, &open);
+        write_type(&mut *c, 2, left.ty, false); append(&mut *c, 2, &space); operand(&mut *c, 2, left);
+        append(&mut *c, 2, &comma);
+        write_type(&mut *c, 2, left.ty, false); append(&mut *c, 2, &space); operand(&mut *c, 2, right);
+        append(&mut *c, 2, &close);
+        return Value { ty: left.ty, id: id };
     }
     append(&mut *c, 2, &literal_bytes_11);
     if op == 35 { append(&mut *c, 2, &literal_bytes_12); }
@@ -220,17 +220,33 @@ pub fn binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
     append(&mut *c, 2, &literal_bytes_19); operand(&mut *c, 2, right); append(&mut *c, 2, &literal_bytes_20);
     return Value { ty: 2, id: id };
 }
-pub fn widen_byte(c: &mut Compiler, value: Value) -> Value {
+pub fn widen(c: &mut Compiler, value: Value, ty: i32) -> Value {
     let prefix = b"  %v";
-    let cast = b" = zext i8 ";
-    let end = b" to i32\n";
+    let unsigned = b" = zext ";
+    let signed = b" = sext ";
+    let space = b" ";
+    let to = b" to ";
+    let line = b"\n";
     let id = fresh(&mut *c);
-    append(&mut *c, 2, &prefix);
-    number(&mut *c, 2, id);
-    append(&mut *c, 2, &cast);
-    operand(&mut *c, 2, value);
-    append(&mut *c, 2, &end);
-    return Value { ty: 1, id: id };
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
+    if value.ty == 4 { append(&mut *c, 2, &unsigned); } else { append(&mut *c, 2, &signed); }
+    write_type(&mut *c, 2, value.ty, false); append(&mut *c, 2, &space);
+    operand(&mut *c, 2, value); append(&mut *c, 2, &to);
+    write_type(&mut *c, 2, ty, false); append(&mut *c, 2, &line);
+    return Value { ty: ty, id: id };
+}
+pub fn narrow_long(c: &mut Compiler, value: Value, ty: i32) -> Value {
+    let prefix = b"  %v";
+    let call_prefix = b" = call ";
+    let helper = b" @ox_from_long_";
+    let arg = b"(i64 ";
+    let end = b")\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
+    append(&mut *c, 2, &call_prefix); write_type(&mut *c, 2, ty, false);
+    append(&mut *c, 2, &helper); write_type(&mut *c, 2, ty, false);
+    append(&mut *c, 2, &arg); operand(&mut *c, 2, value); append(&mut *c, 2, &end);
+    return Value { ty: ty, id: id };
 }
 
 pub fn narrow_byte(c: &mut Compiler, value: Value, arithmetic: bool) -> Value {
@@ -250,8 +266,8 @@ pub fn narrow_byte(c: &mut Compiler, value: Value, arithmetic: bool) -> Value {
 
 pub fn byte_binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
     // Widening preserves unsigned comparisons and fits every byte product in i32.
-    let a = widen_byte(&mut *c, left);
-    let b = widen_byte(&mut *c, right);
+    let a = widen(&mut *c, left, 1);
+    let b = widen(&mut *c, right, 1);
     let value = binary(&mut *c, op, a, b);
     if op <= 33 { return narrow_byte(&mut *c, value, true); }
     return value;
@@ -359,104 +375,139 @@ fn preamble_text_2_1(c: &mut Compiler) -> () {
     append(&mut *c, 0, &text);
     return;
 }
-fn preamble_text_3_0(c: &mut Compiler) -> () {
-    let text = b"declare {i32, i1} @llvm.sadd.with.overflow.i32(i32, i32)\ndeclare {i32, i1} @llvm.ssub.with.overf";
-    append(&mut *c, 0, &text);
+fn signed_op(c: &mut Compiler, destination: i32, op: i32) -> () {
+    let add = b"add";
+    let sub = b"sub";
+    let mul = b"mul";
+    let div = b"div";
+    let rem = b"rem";
+    if op == 29 { append(&mut *c, destination, &add); }
+    if op == 30 { append(&mut *c, destination, &sub); }
+    if op == 31 { append(&mut *c, destination, &mul); }
+    if op == 32 { append(&mut *c, destination, &div); }
+    if op == 33 { append(&mut *c, destination, &rem); }
     return;
 }
-fn preamble_text_3_1(c: &mut Compiler) -> () {
-    let text = b"low.i32(i32, i32)\ndeclare {i32, i1} @llvm.smul.with.overflow.i32(i32, i32)\n";
-    append(&mut *c, 0, &text);
+fn signed_symbol(c: &mut Compiler, destination: i32, op: i32, ty: i32) -> () {
+    let prefix = b"@ox_";
+    let underscore = b"_";
+    append(&mut *c, destination, &prefix); signed_op(&mut *c, destination, op);
+    append(&mut *c, destination, &underscore); write_type(&mut *c, destination, ty, false);
     return;
 }
-fn preamble_text_4_0(c: &mut Compiler) -> () {
-    let text = b"define internal i32 @ox_";
-    append(&mut *c, 0, &text);
+fn overflow_tuple(c: &mut Compiler, ty: i32) -> () {
+    let open = b"{";
+    let close = b", i1} ";
+    append(&mut *c, 0, &open); write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &close);
     return;
 }
-fn preamble_text_5_0(c: &mut Compiler) -> () {
-    let text = b"add";
-    append(&mut *c, 0, &text);
+fn intrinsic_name(c: &mut Compiler, op: i32, ty: i32) -> () {
+    let prefix = b"@llvm.s";
+    let suffix = b".with.overflow.";
+    append(&mut *c, 0, &prefix); signed_op(&mut *c, 0, op);
+    append(&mut *c, 0, &suffix); write_type(&mut *c, 0, ty, false);
     return;
 }
-fn preamble_text_6_0(c: &mut Compiler) -> () {
-    let text = b"sub";
-    append(&mut *c, 0, &text);
+fn signed_header(c: &mut Compiler, op: i32, ty: i32) -> () {
+    let define = b"define internal ";
+    let space = b" ";
+    let open = b"(";
+    let a = b" %a, ";
+    let b = b" %b) {\nentry:\n";
+    append(&mut *c, 0, &define); write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &space);
+    signed_symbol(&mut *c, 0, op, ty); append(&mut *c, 0, &open);
+    write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &a);
+    write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &b);
     return;
 }
-fn preamble_text_7_0(c: &mut Compiler) -> () {
-    let text = b"mul";
-    append(&mut *c, 0, &text);
+fn declare_intrinsic(c: &mut Compiler, op: i32, ty: i32) -> () {
+    let declare = b"declare ";
+    let open = b"(";
+    let comma = b", ";
+    let end = b")\n";
+    append(&mut *c, 0, &declare); overflow_tuple(&mut *c, ty); intrinsic_name(&mut *c, op, ty);
+    append(&mut *c, 0, &open); write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &comma);
+    write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &end);
     return;
 }
-fn preamble_text_8_0(c: &mut Compiler) -> () {
-    let text = b"(i32 %a, i32 %b) {\nentry:\n  %p = call {i32, i1} @llvm.s";
-    append(&mut *c, 0, &text);
+fn call_intrinsic(c: &mut Compiler, op: i32, ty: i32) -> () {
+    let pair = b"  %p = call ";
+    let open = b"(";
+    let first = b" %a, ";
+    let second = b" %b)\n  %bad = extractvalue ";
+    append(&mut *c, 0, &pair); overflow_tuple(&mut *c, ty); intrinsic_name(&mut *c, op, ty);
+    append(&mut *c, 0, &open); write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &first);
+    write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &second); overflow_tuple(&mut *c, ty);
     return;
 }
-fn preamble_text_9_0(c: &mut Compiler) -> () {
-    let text = b".with.overflow.i32(i32 %a, i32 %b)\n  %bad = extractvalue {i32, i1} %p, 1\n  br i1 %bad, label %er";
-    append(&mut *c, 0, &text);
+fn signed_arithmetic(c: &mut Compiler, op: i32, ty: i32) -> () {
+    let test = b"%p, 1\n  br i1 %bad, label %error, label %ok\nerror:\n";
+    let error = b"  call void @__oxid_overflow(ptr @ov, i64 17)\n  unreachable\nok:\n  %v = extractvalue ";
+    let return_value = b"%p, 0\n  ret ";
+    let end = b" %v\n}\n";
+    declare_intrinsic(&mut *c, op, ty);
+    signed_header(&mut *c, op, ty);
+    call_intrinsic(&mut *c, op, ty);
+    append(&mut *c, 0, &test); append(&mut *c, 0, &error); overflow_tuple(&mut *c, ty);
+    append(&mut *c, 0, &return_value); write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &end);
     return;
 }
-fn preamble_text_9_1(c: &mut Compiler) -> () {
-    let text = b"ror, label %ok\nerror:\n  call void @__oxid_overflow(ptr @ov, i64 17)\n  unreachable\nok:\n  %v = ext";
-    append(&mut *c, 0, &text);
+fn reject_division_zero(c: &mut Compiler, ty: i32) -> () {
+    let zero = b"  %zero = icmp eq ";
+    let on_zero = b" %b, 0\n  br i1 %zero, label %zero_error, label %check\nzero_error:\n";
+    let error = b"  call void @__oxid_overflow(ptr @dz, i64 17)\n  unreachable\ncheck:\n";
+    append(&mut *c, 0, &zero); write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &on_zero);
+    append(&mut *c, 0, &error);
     return;
 }
-fn preamble_text_9_2(c: &mut Compiler) -> () {
-    let text = b"ractvalue {i32, i1} %p, 0\n  ret i32 %v\n}\n";
-    append(&mut *c, 0, &text);
+fn reject_division_overflow(c: &mut Compiler, ty: i32) -> () {
+    let minimum = b"  %min = icmp eq ";
+    let min_int = b" %a, -2147483648\n";
+    let min_long = b" %a, -9223372036854775808\n";
+    let negative = b"  %negative = icmp eq ";
+    let test = b" %b, -1\n  %bad = and i1 %min, %negative\n  br i1 %bad, label %error, label %ok\nerror:\n";
+    append(&mut *c, 0, &minimum); write_type(&mut *c, 0, ty, false);
+    if ty == 5 { append(&mut *c, 0, &min_long); } else { append(&mut *c, 0, &min_int); }
+    append(&mut *c, 0, &negative); write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &test);
     return;
 }
-fn preamble_text_10_0(c: &mut Compiler) -> () {
-    let text = b"div";
-    append(&mut *c, 0, &text);
+fn signed_division(c: &mut Compiler, op: i32, ty: i32) -> () {
+    let overflow = b"  call void @__oxid_overflow(ptr @ov, i64 17)\n  unreachable\nok:\n  %v = s";
+    let space = b" ";
+    let operands = b" %a, %b\n  ret ";
+    let end = b" %v\n}\n";
+    signed_header(&mut *c, op, ty);
+    reject_division_zero(&mut *c, ty);
+    reject_division_overflow(&mut *c, ty);
+    append(&mut *c, 0, &overflow); signed_op(&mut *c, 0, op); append(&mut *c, 0, &space);
+    write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &operands);
+    write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &end);
     return;
 }
-fn preamble_text_11_0(c: &mut Compiler) -> () {
-    let text = b"rem";
-    append(&mut *c, 0, &text);
+fn long_conversion_check(c: &mut Compiler, ty: i32) -> () {
+    let define = b"define internal ";
+    let helper = b" @ox_from_long_";
+    let truncate = b"(i64 %value) {\nentry:\n  %part = trunc i64 %value to ";
+    let sign_extend = b"\n  %round = sext ";
+    let zero_extend = b"\n  %round = zext ";
+    let round = b" %part to i64\n  %fits = icmp eq i64 %round, %value\n";
+    append(&mut *c, 0, &define); write_type(&mut *c, 0, ty, false);
+    append(&mut *c, 0, &helper); write_type(&mut *c, 0, ty, false);
+    append(&mut *c, 0, &truncate); write_type(&mut *c, 0, ty, false);
+    if ty == 4 { append(&mut *c, 0, &zero_extend); } else { append(&mut *c, 0, &sign_extend); }
+    write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &round);
     return;
 }
-fn preamble_text_12_0(c: &mut Compiler) -> () {
-    let text = b"(i32 %a, i32 %b) {\nentry:\n  %zero = icmp eq i32 %b, 0\n  br i1 %zero, label %zero_error, label %c";
-    append(&mut *c, 0, &text);
-    return;
-}
-fn preamble_text_12_1(c: &mut Compiler) -> () {
-    let text = b"heck\nzero_error:\n  call void @__oxid_overflow(ptr @dz, i64 17)\n  unreachable\ncheck:\n  %min = icm";
-    append(&mut *c, 0, &text);
-    return;
-}
-fn preamble_text_12_2(c: &mut Compiler) -> () {
-    let text = b"p eq i32 %a, -2147483648\n  %negative = icmp eq i32 %b, -1\n  %bad = and i1 %min, %negative\n  br i";
-    append(&mut *c, 0, &text);
-    return;
-}
-fn preamble_text_12_3(c: &mut Compiler) -> () {
-    let text = b"1 %bad, label %overflow_error, label %ok\noverflow_error:\n  call void @__oxid_overflow(ptr @ov, i";
-    append(&mut *c, 0, &text);
-    return;
-}
-fn preamble_text_12_4(c: &mut Compiler) -> () {
-    let text = b"64 17)\n  unreachable\nok:\n  %v = ";
-    append(&mut *c, 0, &text);
-    return;
-}
-fn preamble_text_13_0(c: &mut Compiler) -> () {
-    let text = b"sdiv";
-    append(&mut *c, 0, &text);
-    return;
-}
-fn preamble_text_14_0(c: &mut Compiler) -> () {
-    let text = b"srem";
-    append(&mut *c, 0, &text);
-    return;
-}
-fn preamble_text_15_0(c: &mut Compiler) -> () {
-    let text = b" i32 %a, %b\n  ret i32 %v\n}\n";
-    append(&mut *c, 0, &text);
+fn long_conversion(c: &mut Compiler, ty: i32) -> () {
+    let test = b"  br i1 %fits, label %ok, label %bad\nbad:\n  call void @__oxid_overflow(";
+    let int_error = b"ptr @int_conversion, i64 28)\n";
+    let byte_error = b"ptr @byte_conversion, i64 29)\n";
+    let tail = b"  unreachable\nok:\n  ret ";
+    let return_value = b" %part\n}\n";
+    long_conversion_check(&mut *c, ty);
+    append(&mut *c, 0, &test);
+    if ty == 4 { append(&mut *c, 0, &byte_error); } else { append(&mut *c, 0, &int_error); }
+    append(&mut *c, 0, &tail); write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &return_value);
     return;
 }
 fn byte_conversion_check(c: &mut Compiler) -> () {
@@ -479,33 +530,22 @@ fn byte_conversion_paths(c: &mut Compiler) -> () {
 
 pub fn preamble(c: &mut Compiler) -> () {
     let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
+    let int_error = b"@int_conversion = private constant [28 x i8] c\"i32 conversion out of range\\0A\"\n";
+    let print_long = b"declare i32 @__oxid_print_i64(i64)\n";
     preamble_text_0_0(&mut *c);
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
-    append(&mut *c, 0, &depth_error);
+    append(&mut *c, 0, &depth_error); append(&mut *c, 0, &int_error); append(&mut *c, 0, &print_long);
     byte_conversion_check(&mut *c);
     byte_conversion_paths(&mut *c);
-    preamble_text_3_0(&mut *c); preamble_text_3_1(&mut *c);
+    long_conversion(&mut *c, 1); long_conversion(&mut *c, 4);
     let mut op = 29;
     while op <= 31 {
-        preamble_text_4_0(&mut *c);
-        if op == 29 { preamble_text_5_0(&mut *c); }
-        if op == 30 { preamble_text_6_0(&mut *c); }
-        if op == 31 { preamble_text_7_0(&mut *c); }
-        preamble_text_8_0(&mut *c);
-        if op == 29 { preamble_text_5_0(&mut *c); }
-        if op == 30 { preamble_text_6_0(&mut *c); }
-        if op == 31 { preamble_text_7_0(&mut *c); }
-        preamble_text_9_0(&mut *c); preamble_text_9_1(&mut *c); preamble_text_9_2(&mut *c);
+        signed_arithmetic(&mut *c, op, 1); signed_arithmetic(&mut *c, op, 5);
         op = op + 1;
     }
-    op = 32;
     while op <= 33 {
-        preamble_text_4_0(&mut *c);
-        if op == 32 { preamble_text_10_0(&mut *c); } else { preamble_text_11_0(&mut *c); }
-        preamble_text_12_0(&mut *c); preamble_text_12_1(&mut *c); preamble_text_12_2(&mut *c); preamble_text_12_3(&mut *c); preamble_text_12_4(&mut *c);
-        if op == 32 { preamble_text_13_0(&mut *c); } else { preamble_text_14_0(&mut *c); }
-        preamble_text_15_0(&mut *c);
+        signed_division(&mut *c, op, 1); signed_division(&mut *c, op, 5);
         op = op + 1;
     }
     return;
@@ -561,6 +601,7 @@ fn wrapper_text_8_0(c: &mut Compiler) -> () {
     return;
 }
 pub fn wrapper(c: &mut Compiler) -> () {
+    let print_long = b"  %status = call i32 @__oxid_print_i64(i64 %value)\n";
 
     let entry = c.main;
     let f = c.functions[entry];
@@ -572,6 +613,7 @@ pub fn wrapper(c: &mut Compiler) -> () {
     if f.result == 2 { wrapper_text_6_0(&mut *c); }
     if f.result == 3 { wrapper_text_7_0(&mut *c); }
     if f.result == 4 { wrapper_byte_result(&mut *c); }
+    if f.result == 5 { append(&mut *c, 0, &print_long); }
     wrapper_text_8_0(&mut *c);
     return;
 }

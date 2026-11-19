@@ -70,20 +70,31 @@ fn qualified_call(c: &mut Compiler, depth: i32) -> Value {
     return called(&mut *c, target, depth);
 }
 fn convert_binding(c: &mut Compiler, value: Value) -> Value {
-    let narrow = b"to_u8_checked";
-    let widen = b"to_i32";
+    let narrow_byte = b"to_u8_checked";
+    let byte_to_int = b"to_i32";
+    let to_long = b"to_i64";
+    let to_int = b"to_i32_checked";
     expect(&mut *c, 43);
     let method = token(&*c, c.cursor);
     expect(&mut *c, 1);
     expect(&mut *c, 20);
     expect(&mut *c, 21);
     if c.error != 0 { return invalid(); }
-    if value.ty == 4 && word(&*c.source, method.start, method.end, &widen) {
-        return crate::emit::widen_byte(&mut *c, value);
+    if value.ty == 4 && word(&*c.source, method.start, method.end, &byte_to_int) {
+        return crate::emit::widen(&mut *c, value, 1);
     }
-    if word(&*c.source, method.start, method.end, &narrow) {
+    if word(&*c.source, method.start, method.end, &to_long) {
+        if value.ty == 1 || value.ty == 4 { return crate::emit::widen(&mut *c, value, 5); }
+    }
+    if word(&*c.source, method.start, method.end, &to_int) {
+        if value.ty == 1 { return value; }
+        if value.ty == 4 { return crate::emit::widen(&mut *c, value, 1); }
+        if value.ty == 5 { return crate::emit::narrow_long(&mut *c, value, 1); }
+    }
+    if word(&*c.source, method.start, method.end, &narrow_byte) {
         if value.ty == 4 { return value; }
         if value.ty == 1 { return crate::emit::narrow_byte(&mut *c, value, false); }
+        if value.ty == 5 { return crate::emit::narrow_long(&mut *c, value, 4); }
     }
     fail(&mut *c);
     return invalid();
@@ -95,13 +106,15 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
     if t.kind == 30 {
         c.cursor = c.cursor + 1;
         let next = token(&*c, c.cursor);
-        if next.kind == 2 {
+        if next.kind == 2 || next.kind == 49 {
             c.cursor = c.cursor + 1;
-            return crate::emit::constant(&mut *c, 1, next.value);
+            let mut ty = 1;
+            if next.kind == 49 { ty = 5; }
+            return crate::emit::constant(&mut *c, ty, next.value);
         }
         let negative_operand = prefix(&mut *c, depth + 1);
-        if negative_operand.ty != 1 { fail(&mut *c); return invalid(); }
-        let zero = crate::emit::constant(&mut *c, 1, 0);
+        if negative_operand.ty != 1 && negative_operand.ty != 5 { fail(&mut *c); return invalid(); }
+        let zero = crate::emit::constant(&mut *c, negative_operand.ty, 0i64);
         return crate::emit::binary(&mut *c, 30, zero, negative_operand);
     }
     if t.kind == 34 {
@@ -110,10 +123,14 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
         if not_operand.ty != 2 { fail(&mut *c); return invalid(); }
         return crate::emit::negate_bool(&mut *c, not_operand);
     }
-    if t.kind == 2 {
-        if t.value == -2147483648 { fail(&mut *c); return invalid(); }
+    if t.kind == 2 || t.kind == 49 {
+        let mut ty = 1;
+        if t.kind == 49 { ty = 5; }
+        if (ty == 1 && t.value == -2147483648i64) || t.value == -9223372036854775808i64 {
+            fail(&mut *c); return invalid();
+        }
         c.cursor = c.cursor + 1;
-        return crate::emit::constant(&mut *c, 1, 0 - t.value);
+        return crate::emit::constant(&mut *c, ty, 0i64 - t.value);
     }
     if t.kind == 17 {
         c.cursor = c.cursor + 1;
@@ -121,8 +138,8 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
     }
     if t.kind == 12 || t.kind == 13 {
         c.cursor = c.cursor + 1;
-        let mut boolean_literal = 0;
-        if t.kind == 12 { boolean_literal = 1; }
+        let mut boolean_literal = 0i64;
+        if t.kind == 12 { boolean_literal = 1i64; }
         return crate::emit::constant(&mut *c, 2, boolean_literal);
     }
     if t.kind == 20 {
@@ -162,8 +179,8 @@ fn short_circuit(c: &mut Compiler, op: i32, left: Value, rank: i32, depth: i32) 
     if op == 41 { crate::emit::conditional(&mut *c, left, rhs, shortcut); }
     else { crate::emit::conditional(&mut *c, left, shortcut, rhs); }
     crate::emit::label(&mut *c, shortcut);
-    let mut bit = 0;
-    if op == 42 { bit = 1; }
+    let mut bit = 0i64;
+    if op == 42 { bit = 1i64; }
     let value = crate::emit::constant(&mut *c, 2, bit);
     crate::emit::store(&mut *c, slot, value);
     crate::emit::branch(&mut *c, merge);
@@ -188,7 +205,7 @@ pub fn expression(c: &mut Compiler, minimum: i32, depth: i32) -> Value {
         } else {
             let right = expression(&mut *c, rank + 1, depth + 1);
             if left.ty != right.ty || left.ty == 3 || left.ty == 0 { fail(&mut *c); return invalid(); }
-            if op != 35 && op != 36 && left.ty != 1 && left.ty != 4 { fail(&mut *c); return invalid(); }
+            if op != 35 && op != 36 && left.ty != 1 && left.ty != 4 && left.ty != 5 { fail(&mut *c); return invalid(); }
             if left.ty == 4 { left = crate::emit::byte_binary(&mut *c, op, left, right); }
             else { left = crate::emit::binary(&mut *c, op, left, right); }
         }

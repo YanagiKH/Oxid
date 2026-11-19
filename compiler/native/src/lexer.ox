@@ -26,6 +26,7 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     let literal_bytes_11 = b"i32";
     let literal_bytes_12 = b"bool";
     let byte_type = b"u8";
+    let long_type = b"i64";
     let module_word = b"mod";
     let public_word = b"pub";
     let crate_word = b"crate";
@@ -51,9 +52,10 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     if word(&*source, start, end, &crate_word) { return 44; }
     if word(&*source, start, end, &use_word) { return 46; }
     if word(&*source, start, end, &as_word) { return 47; }
+    if word(&*source, start, end, &long_type) { return 48; }
     return 1;
 }
-fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i32) -> () {
+fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i64) -> () {
     if len(&*c.tokens) >= 32768 { c.error = 68; return; }
     if !grown(try_push(&mut *c.tokens, Token { kind: kind, start: start, end: end, value: value })) {
         c.error = 68;
@@ -82,31 +84,44 @@ fn identifier(c: &mut Compiler, start: i32, size: i32) -> i32 {
     let mut i = start + 1;
     while i < size && (letter(code(&*c.source, i)) || digit(code(&*c.source, i))) { i = i + 1; }
     let keyword_kind = keyword(&*c.source, start, i);
-    push(&mut *c, keyword_kind, start, i, 0);
+    push(&mut *c, keyword_kind, start, i, 0i64);
     return i;
+}
+fn suffix_end(c: &mut Compiler, start: i32, end: i32, size: i32) -> bool {
+    if end < size {
+        let next = code(&*c.source, end);
+        if letter(next) || digit(next) { c.error = 65; c.error_start = start; return false; }
+    }
+    return true;
 }
 fn integer(c: &mut Compiler, start: i32, size: i32) -> i32 {
     let byte_suffix = b"u8";
+    let long_suffix = b"i64";
     let mut i = start;
-    let mut value = 0;
+    // Accumulate a negative magnitude so the signed minimum can be represented.
+    let mut value = 0i64;
     while i < size && digit(code(&*c.source, i)) {
-        let d = code(&*c.source, i) - 48;
-        if value < -214748364 || (value == -214748364 && d > 8) {
+        let digit_value = code(&*c.source, i) - 48;
+        let d = digit_value.to_i64();
+        if value < -922337203685477580i64 || (value == -922337203685477580i64 && d > 8i64) {
             c.error = 65; c.error_start = start; return i;
         }
-        value = value * 10 - d;
+        value = value * 10i64 - d;
         i = i + 1;
     }
     if i + 2 <= size && word(&*c.source, i, i + 2, &byte_suffix) {
         let end = i + 2;
-        if end < size {
-            let next = code(&*c.source, end);
-            if letter(next) || digit(next) { c.error = 65; c.error_start = start; return end; }
-        }
-        if value < -255 { c.error = 65; c.error_start = start; return end; }
-        push(&mut *c, 17, start, end, 0 - value);
+        if !suffix_end(&mut *c, start, end, size) { return end; }
+        if value < -255i64 { c.error = 65; c.error_start = start; return end; }
+        push(&mut *c, 17, start, end, 0i64 - value);
         return end;
     }
+    if i + 3 <= size && word(&*c.source, i, i + 3, &long_suffix) {
+        let end = i + 3;
+        if suffix_end(&mut *c, start, end, size) { push(&mut *c, 49, start, end, value); }
+        return end;
+    }
+    if value < -2147483648i64 { c.error = 65; c.error_start = start; return i; }
     push(&mut *c, 2, start, i, value);
     return i;
 }
@@ -151,7 +166,7 @@ fn punctuation(c: &mut Compiler, start: i32, size: i32) -> i32 {
     }
     if kind == 0 { c.error = 65; c.error_start = start; return start; }
     let end = start + width;
-    push(&mut *c, kind, start, end, 0);
+    push(&mut *c, kind, start, end, 0i64);
     return end;
 }
 fn scan_one(c: &mut Compiler, start: i32, size: i32) -> i32 {
@@ -179,7 +194,7 @@ pub fn scan_range(c: &mut Compiler, start: i32, size: i32) -> () {
     }
     i = start;
     while i < size && c.error == 0 { i = scan_one(&mut *c, i, size); }
-    if c.error == 0 { push(&mut *c, 0, size, size, 0); }
+    if c.error == 0 { push(&mut *c, 0, size, size, 0i64); }
     return;
 }
 
