@@ -12,9 +12,17 @@ pub struct Token { pub kind: i32, pub start: i32, pub end: i32, pub value: i32 }
 #[derive(Copy)]
 pub struct Parameter { pub name: i32, pub ty: i32 }
 #[derive(Copy)]
+pub struct SourceModule {
+    pub name: i32, pub first_token: i32, pub parent: i32, pub depth: i32, pub public: bool
+}
+#[derive(Copy)]
+pub struct Import {
+    pub scope: i32, pub path_start: i32, pub name: i32, pub alias: i32, pub target: i32
+}
+#[derive(Copy)]
 pub struct Function {
     pub name: i32, pub params: i32, pub count: i32, pub result: i32,
-    pub begin: i32, pub end: i32
+    pub begin: i32, pub end: i32, pub source_module: i32, pub public: bool
 }
 #[derive(Copy)]
 pub struct Binding { pub name: i32, pub ty: i32, pub slot: i32, pub writable: bool }
@@ -22,7 +30,7 @@ pub struct Binding { pub name: i32, pub ty: i32, pub slot: i32, pub writable: bo
 pub struct Value { pub ty: i32, pub id: i32 }
 
 pub struct Compiler {
-    pub source: ByteBuf,
+    pub source: ByteBuf, pub source_path: ByteBuf, pub sources: Vec<SourceModule>, pub imports: Vec<Import>,
     pub tokens: Vec<Token>, pub params: Vec<Parameter>, pub functions: Vec<Function>,
     pub vars: Vec<Binding>, pub call_sites: i32,
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
@@ -31,9 +39,10 @@ pub struct Compiler {
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32
 }
 
-pub fn new_compiler(source: ByteBuf) -> Compiler {
+pub fn new_compiler(source: ByteBuf, source_path: ByteBuf) -> Compiler {
     return Compiler {
-        source: source, tokens: new::<Token>(), params: new::<Parameter>(),
+        source: source, source_path: source_path, sources: new::<SourceModule>(), imports: new::<Import>(),
+        tokens: new::<Token>(), params: new::<Parameter>(),
         functions: new::<Function>(), vars: new::<Binding>(), call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
@@ -80,12 +89,27 @@ pub fn expect(c: &mut Compiler, wanted: i32) -> () {
 }
 
 pub fn same_name(c: &Compiler, left: i32, right: i32) -> bool {
+    return same_spelling(&*c, left, right, false);
+}
+
+fn ascii_lower(value: i32) -> i32 {
+    if value >= 65 && value <= 90 { return value + 32; }
+    return value;
+}
+
+fn same_spelling(c: &Compiler, left: i32, right: i32, fold_case: bool) -> bool {
     let a = token(&*c, left);
     let b = token(&*c, right);
     if a.end - a.start != b.end - b.start { return false; }
     let mut i = 0;
     while i < a.end - a.start {
-        if code(&*c.source, a.start + i) != code(&*c.source, b.start + i) { return false; }
+        let x = code(&*c.source, a.start + i);
+        let y = code(&*c.source, b.start + i);
+        if fold_case {
+            if ascii_lower(x) != ascii_lower(y) { return false; }
+        } else {
+            if x != y { return false; }
+        }
         i = i + 1;
     }
     return true;
@@ -106,14 +130,68 @@ pub fn code(bytes: &[u8], index: i32) -> i32 {
     return selected.to_i32();
 }
 
-pub fn function(c: &Compiler, name: i32) -> i32 {
+pub fn function(c: &Compiler, source_module: i32, name: i32) -> i32 {
     let mut i = 0;
     while i < len(&*c.functions) {
         let f = c.functions[i];
-        if same_name(&*c, f.name, name) { return i; }
+        if f.source_module == source_module && same_name(&*c, f.name, name) { return i; }
         i = i + 1;
     }
     return -1;
+}
+
+fn within(c: &Compiler, module: i32, ancestor: i32) -> bool {
+    let mut current = module;
+    while current >= 0 {
+        if current == ancestor { return true; }
+        let row = c.sources[current];
+        current = row.parent;
+    }
+    return false;
+}
+
+pub fn function_visible(c: &Compiler, source_module: i32, target: i32) -> bool {
+    if target < 0 { return false; }
+    let selected = c.functions[target];
+    return selected.public || within(&*c, source_module, selected.source_module);
+}
+
+pub fn function_binding(c: &Compiler, source_module: i32, name: i32) -> i32 {
+    let declared = function(&*c, source_module, name);
+    if declared >= 0 { return declared; }
+    let mut index = 0;
+    while index < len(&*c.imports) {
+        let imported = c.imports[index];
+        if imported.scope == source_module && same_name(&*c, imported.alias, name) { return imported.target; }
+        index = index + 1;
+    }
+    return -1;
+}
+
+pub fn child_module(c: &Compiler, parent: i32, name: i32, fold_case: bool) -> i32 {
+    let mut index = 1;
+    while index < len(&*c.sources) {
+        let source_module = c.sources[index];
+        if source_module.parent == parent && same_spelling(&*c, source_module.name, name, fold_case) {
+            return index;
+        }
+        index = index + 1;
+    }
+    return -1;
+}
+
+pub fn path_module(c: &Compiler, start: i32, function_name: i32, requester: i32) -> i32 {
+    let mut parent = 0;
+    let mut component = start;
+    while component < function_name {
+        let child = child_module(&*c, parent, component, false);
+        if child < 0 { return -1; }
+        let row = c.sources[child];
+        if !row.public && !within(&*c, requester, parent) { return -1; }
+        parent = child;
+        component = component + 2;
+    }
+    return parent;
 }
 
 pub fn local(c: &Compiler, name: i32) -> i32 {

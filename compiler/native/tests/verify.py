@@ -241,6 +241,151 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     return rows
 
 
+def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                   output: Path, timeout: int) -> list[dict]:
+    evidence = output / "modules"
+    evidence.mkdir()
+    cases = (
+        ("sibling-modules", 0, True, {
+            "main.ox": "mod a;fn base()->i32{return 40;}mod b;"
+                       "fn main()->i32{return crate::a::value()+crate::b::value();}",
+            "a.ox": "pub fn value()->i32{return crate::base()+local();}fn local()->i32{return 1;}",
+            "b.ox": "pub fn value()->i32{return crate::b::local();}fn local()->i32{return 1;}",
+        }),
+        ("function-imports", 0, True, {
+            "main.ox": "use crate::a::value as answer;mod a;mod b;use crate::b::extra;"
+                       "fn base()->i32{return 41;}fn main()->i32{return answer()+extra();}",
+            "a.ox": "use crate::base as seed;pub fn value()->i32{return seed();}",
+            "b.ox": "pub fn extra()->i32{return 1;}",
+        }),
+        ("private-import", 65, True, {
+            "main.ox": "mod a;use crate::a::hidden;fn main()->i32{return 42;}",
+            "a.ox": "fn hidden()->i32{return 42;}",
+        }),
+        ("duplicate-target-import", 65, True, {
+            "main.ox": "mod a;use crate::a::value as first;use crate::a::value as second;"
+                       "fn main()->i32{return first();}",
+            "a.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("shadowed-import", 65, True, {
+            "main.ox": "mod a;use crate::a::value as amount;"
+                       "fn main()->i32{let amount=42;return amount;}",
+            "a.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("unknown-import", 65, True, {
+            "main.ox": "mod a;use crate::a::missing;fn main()->i32{return 42;}",
+            "a.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("private-export", 65, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::hidden();}",
+            "a.ox": "fn hidden()->i32{return 42;}",
+        }),
+        ("duplicate-module", 65, True, {
+            "main.ox": "mod a;mod a;fn main()->i32{return 42;}",
+            "a.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("missing-module", 66, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::value();}",
+        }),
+        ("nested-modules", 0, True, {
+            "main.ox": "mod a;mod b;use crate::a::detail::value as left;"
+                       "fn main()->i32{return left()+crate::b::detail::value();}",
+            "a.ox": "pub mod detail;fn base()->i32{return 40;}",
+            "a/detail.ox": "pub mod inner;pub fn value()->i32{return crate::a::detail::inner::one()+crate::a::base();}",
+            "a/detail/inner.ox": "pub fn one()->i32{return 1;}",
+            "b.ox": "pub mod detail;",
+            "b/detail.ox": "pub fn value()->i32{return 1;}",
+        }),
+        ("private-module-in-own-subtree", 0, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::result();}",
+            "a.ox": "mod detail;pub fn result()->i32{return crate::a::detail::value();}",
+            "a/detail.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("private-module-call", 65, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::detail::value();}",
+            "a.ox": "mod detail;",
+            "a/detail.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("private-module-import", 65, True, {
+            "main.ox": "mod a;use crate::a::detail::value;fn main()->i32{return 42;}",
+            "a.ox": "mod detail;",
+            "a/detail.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("private-nested-function", 65, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::a::detail::value();}",
+            "a.ox": "pub mod detail;",
+            "a/detail.ox": "fn value()->i32{return 42;}",
+        }),
+        ("duplicate-nested-module", 65, True, {
+            "main.ox": "mod a;fn main()->i32{return 42;}",
+            "a.ox": "mod detail;mod Detail;",
+            "a/detail.ox": "",
+        }),
+        ("missing-nested-module", 66, True, {
+            "main.ox": "mod a;fn main()->i32{return 42;}",
+            "a.ox": "mod nested;",
+        }),
+        ("repeated-entry-module", 65, True, {
+            "main.ox": "mod main;fn main()->i32{return 42;}",
+        }),
+        ("maximum-module-depth", 0, True, {
+            "main.ox": "mod a;fn main()->i32{return crate::" + "a::" * 32 + "value();}",
+            **{"a/" * depth + "a.ox": "pub mod a;" for depth in range(31)},
+            "a/" * 31 + "a.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("module-depth-limit", 68, True, {
+            "main.ox": "mod a;fn main()->i32{return 42;}",
+            **{"a/" * depth + "a.ox": "mod a;" for depth in range(33)},
+        }),
+        ("combined-input-limit", 68, False, {
+            "main.ox": "mod a;fn main()->i32{return 42;}",
+            "a.ox": " " * 65536,
+        }),
+    )
+    rows = []
+    for name, expected, compare, files in cases:
+        project = evidence / name
+        project.mkdir()
+        for relative, code in files.items():
+            source_file = project / relative
+            source_file.parent.mkdir(parents=True, exist_ok=True)
+            source_file.write_text(code, encoding="ascii")
+        source = project / "main.ox"
+        command = [str(compiler), str(source)]
+        compiled = run(command, evidence, timeout)
+        row = {"name": name, "compiler": record(project, "compiler", command, compiled), "profiles": []}
+        require(compiled.returncode == expected and compiled.stderr == b"", name + ": unexpected module status")
+        if compare:
+            command = [str(reference), "run", str(source), "--edition=typed-preview"]
+            observed = run(command, evidence, timeout, clear_environment=False)
+            row["reference"] = record(project, "reference", command, observed)
+            if expected == 0:
+                check_native_behavior({"name": name, "kind": "value", "stdout": "42\n"}, observed)
+            else:
+                require(observed.returncode != 0, name + ": reference accepted invalid modules")
+        if expected != 0:
+            require(compiled.stdout == b"", name + ": rejected modules emitted LLVM")
+            rows.append(row)
+            continue
+        driver.module_from_result(compiled)
+        for profile in ("dev", "release"):
+            binary = evidence / f"{name}-{profile}"
+            receipt = driver.build(compiler, source, clang, runtime, binary,
+                                   profile, timeout, project / profile)
+            require(receipt["module_sha256"] == hashlib.sha256(compiled.stdout).hexdigest(),
+                    name + ": module LLVM bytes changed with the working directory")
+            row["profiles"].append(receipt)
+        project.rename(evidence / f"{name}-retained")
+        require(not project.exists(), name + ": module sources remain at their original path")
+        for receipt in row["profiles"]:
+            command = [receipt["output"]]
+            executed = run(command, evidence, timeout)
+            receipt["source_unavailable_run"] = record(evidence, f'{name}-{receipt["profile"]}', command, executed)
+            check_native_behavior({"name": name, "kind": "value", "stdout": "42\n"}, executed)
+        rows.append(row)
+    return rows
+
+
 def verify(args) -> dict:
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
     output = args.output.resolve()
@@ -327,6 +472,9 @@ def verify(args) -> dict:
                 check_native_behavior(case, executed)
             report["cases"].append(row)
         report["protocol"] = actual_protocol(compiler, clang, runtime, output, args.timeout)
+        if args.reference is not None:
+            report["modules"] = verify_modules(compiler, clang, runtime, args.reference.resolve(strict=True),
+                                               output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"
         return report
