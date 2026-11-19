@@ -465,7 +465,7 @@ fn shared_selector_metadata_is_paid_even_for_an_empty_builtin_inventory() {
 
 #[test]
 fn ordinary_plan_fixed_metadata_includes_its_real_shared_query_roles() {
-    use super::super::super::{plan, termination_queries, verified};
+    use super::super::super::{element_loan_budget_oracle, plan, termination_queries, verified};
     let project = project("use std::io::ReadStatus;fn main()->i32{return 42;}");
     let (program, _) = check_enum_source(SourceOwner::project(&project)).unwrap();
     let raw = duplicate_without_records(program.witness.raw_program());
@@ -482,7 +482,8 @@ fn ordinary_plan_fixed_metadata_includes_its_real_shared_query_roles() {
     assert_eq!(plan.process_delivery_cost(hir::DefId(0)), None);
     assert_eq!(
         plan.metadata_bytes(),
-        std::mem::size_of::<plan::FunctionPlan>()
+        element_loan_budget_oracle::PLAN_BUILDER
+            + std::mem::size_of::<plan::FunctionPlan>()
             + termination_queries::plan_bytes::<verified::VerifiedOwnedProgram>()
     );
     assert!(plan::ExecutionPlan::build_with_test_limit(&witness, plan.metadata_bytes()).is_ok());
