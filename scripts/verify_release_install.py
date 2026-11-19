@@ -5,10 +5,14 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import platform
+import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
+
+from package_release import PACKAGE_FILES
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,9 +26,13 @@ def run(args: list[str], cwd: Path, env: dict[str, str]) -> subprocess.Completed
     return result
 
 
+def clean_environment() -> dict[str, str]:
+    return {name: value for name, value in os.environ.items() if not name.upper().startswith("OXID_")}
+
+
 def verify(archive: Path) -> None:
     version = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
-    env = {name: value for name, value in os.environ.items() if not name.upper().startswith("OXID_")}
+    env = clean_environment()
     windows = sys.platform == "win32"
     if windows:
         installer = ["pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "install.ps1")]
@@ -50,12 +58,41 @@ def verify(archive: Path) -> None:
     print(f"Installed and ran Oxid {version} from {archive.name}")
 
 
+def verify_binary(binary: Path) -> None:
+    system = {"linux": "linux", "darwin": "macos", "win32": "windows"}.get(sys.platform)
+    machine = platform.machine().lower()
+    arch = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
+    supported = {("linux", "x86_64"), ("linux", "aarch64"), ("macos", "x86_64"),
+                 ("macos", "aarch64"), ("windows", "x86_64")}
+    if (system, arch) not in supported:
+        raise ValueError(f"no release archive for {sys.platform} {machine}")
+    suffix = "zip" if system == "windows" else "tar.gz"
+    asset = f"oxid-{system}-{arch}.{suffix}"
+    env = clean_environment()
+    with tempfile.TemporaryDirectory(prefix="oxid-candidate-archive-") as directory:
+        work = Path(directory)
+        for relative in PACKAGE_FILES:
+            if relative.parts[0] != ".oxid":
+                destination = work / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / relative, destination)
+        run([str(binary), "bootstrap"], work, env)
+        run([sys.executable, "-B", str(ROOT / "scripts/package_release.py"), str(binary), asset], work, env)
+        verify(work / "dist" / asset)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("archive", type=Path, help="local release archive with its .sha256 file")
+    parser.add_argument("archive", type=Path, nargs="?", help="local release archive with its .sha256 file")
+    parser.add_argument("--binary", type=Path, help="build and install an archive from this compiler")
     args = parser.parse_args()
+    if (args.archive is None) == (args.binary is None):
+        parser.error("provide either an archive or --binary")
     try:
-        verify(args.archive.resolve(strict=True))
+        if args.binary is None:
+            verify(args.archive.resolve(strict=True))
+        else:
+            verify_binary(args.binary.resolve(strict=True))
     except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
         print(f"Release installation failed: {error}", file=sys.stderr)
         return 1
