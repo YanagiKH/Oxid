@@ -26,11 +26,13 @@ cannot shadow bindings or functions. Integer arithmetic is checked; division
 and remainder reject zero and MIN/-1 before the LLVM operation. A result-mode
 main has no arguments and prints its i32, bool or unit result, then exits 0.
 
-Calls must form an acyclic graph. Non-unit functions must return on all paths;
-loop conditions are checked conservatively. Imports, user records/enums,
-references, generics, strings, arrays, recursion, I/O in compiled input and
-other integer types are unsupported. The compiler's own implementation uses
-existing ByteBuf/File/Copy-vector APIs; it is a separate larger source scope.
+Calls can be recursive. Compiled programs allow up to 128 active Oxid function
+calls including `main`. The next call exits with status 1 and reports
+`call depth limit exceeded` on standard error. Non-unit functions must return on
+all paths. Loop conditions are checked conservatively. Imports, user records
+and enums, references, generics, strings, arrays, I/O in compiled input and
+other integer types are unsupported. The compiler itself uses ByteBuf, File and
+Copy vectors.
 
 Input is limited to 65536 bytes, 32768 tokens, 128 functions, 16 parameters/function,
 4096 call sites and 4096 stack slots/function. Expression/block/comment nesting

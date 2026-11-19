@@ -61,8 +61,8 @@ FIXTURE_INPUTS = (('compiler/native/tests/fixtures/comments.ox',
   51,
   '1ec8b81b351357a5b5597aad6cfa9fd31e56d949d97bb3bf7d3548313107af11'))
 CASES_JSON = ('compiler/native/tests/cases.json',
- 5105,
- 'eb5ecb4d3e85449779278787db3dc50971eada3fe64bbf650f50a75d88cc2cf8')
+ 5956,
+ 'dfd7c16c9e23d0268a8001f22a7a1f13a96653b83a1ee42aeae3b389c297b7bd')
 CASE_NAMES = ('forward',
  'control',
  'scopes',
@@ -90,6 +90,10 @@ CASE_NAMES = ('forward',
  'main-argument',
  'recursive',
  'indirect-recursive',
+ 'recursive-sum',
+ 'mutual-recursion',
+ 'last-live-frame',
+ 'call-frame-limit',
  'unsupported-array',
  'unsupported-import',
  'unterminated-comment',
@@ -181,11 +185,11 @@ def parse_cases(inputs):
         cases = json.loads(inputs[CASES_JSON[0]].decode("utf-8"), object_pairs_hook=unique_object)
     except (ValueError, UnicodeError) as error:
         raise RuntimeError("invalid scalar compiler case manifest: " + str(error)) from error
-    require(isinstance(cases, list) and len(cases) == 42
+    require(isinstance(cases, list) and len(cases) == 46
             and all(isinstance(case, dict) for case in cases),
-            "scalar compiler acceptance requires all 42 cases")
+            "scalar compiler acceptance requires all 46 cases")
     require(tuple(case.get("name") for case in cases) == CASE_NAMES
-            and len(set(CASE_NAMES)) == 42,
+            and len(set(CASE_NAMES)) == 46,
             "scalar compiler acceptance case names or order changed")
     sources, referenced = {}, []
     for case in cases:
@@ -215,7 +219,7 @@ def parse_cases(inputs):
     require(len(referenced) == 11 and set(referenced) == set(FIXTURE_FILES),
             "scalar compiler file fixtures must each be exercised once")
     require({kind: sum(case["kind"] == kind for case in cases) for kind in ("value", "reject", "runtime")}
-            == {"value": 13, "reject": 20, "runtime": 9},
+            == {"value": 18, "reject": 18, "runtime": 10},
             "scalar compiler positive, negative or runtime case census changed")
     return cases, sources
 

@@ -8,16 +8,11 @@ use crate::model::expect;
 use crate::model::fail;
 use crate::model::local;
 use crate::model::function;
-use crate::model::edge;
-use crate::model::code as byte_code;
-use crate::model::set_byte;
 use crate::headers::ty as parse_type;
 use alloc::vec::new;
 use alloc::vec::len;
 use alloc::vec::try_push;
 use alloc::vec::truncate;
-use alloc::bytes::new as bytes_new;
-use alloc::bytes::try_resize;
 
 fn invalid() -> Value { return Value { ty: 0, id: 0 }; }
 fn precedence(op: i32) -> i32 {
@@ -54,7 +49,8 @@ fn called(c: &mut Compiler, name: i32, depth: i32) -> Value {
     }
     expect(&mut *c, 21);
     if count != f.count { fail(&mut *c); return invalid(); }
-    edge(&mut *c, target);
+    if c.call_sites >= 4096 { c.error = 68; return invalid(); }
+    c.call_sites = c.call_sites + 1;
     return crate::emit::call(&mut *c, target, &args, f.result);
 }
 fn prefix(c: &mut Compiler, depth: i32) -> Value {
@@ -301,37 +297,6 @@ pub fn bodies(c: &mut Compiler) -> () {
         }
         crate::emit::finish_function(&mut *c, i);
         i = i + 1;
-    }
-    return;
-}
-pub fn acyclic(c: &mut Compiler) -> () {
-    if c.error != 0 { return; }
-    let count = len(&*c.functions);
-    let mut reach = bytes_new();
-    if !grown(try_resize(&mut reach, count * count, 0u8)) { c.error = 68; return; }
-    let mut e = 0;
-    while e < len(&*c.edges) {
-        let row = c.edges[e]; set_byte(&mut reach, row.caller * count + row.callee, 1); e = e + 1;
-    }
-    let mut k = 0;
-    while k < count {
-        let mut i = 0;
-        while i < count {
-            if byte_code(&reach, i * count + k) != 0 {
-                let mut j = 0;
-                while j < count {
-                    if byte_code(&reach, k * count + j) != 0 { set_byte(&mut reach, i * count + j, 1); }
-                    j = j + 1;
-                }
-            }
-            i = i + 1;
-        }
-        k = k + 1;
-    }
-    let mut diagonal = 0;
-    while diagonal < count {
-        if byte_code(&reach, diagonal * count + diagonal) != 0 { fail(&mut *c); return; }
-        diagonal = diagonal + 1;
     }
     return;
 }

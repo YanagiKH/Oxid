@@ -222,7 +222,7 @@ pub fn call(c: &mut Compiler, function: i32, args: &[Value], result: i32) -> Val
     let literal_bytes_2 = b" = ";
     let literal_bytes_3 = b"call ";
     let literal_bytes_4 = b" @f";
-    let literal_bytes_5 = b"(";
+    let literal_bytes_5 = b"(i32 %next_depth";
     let literal_bytes_6 = b", ";
     let literal_bytes_7 = b" ";
     let literal_bytes_8 = b")\n";
@@ -236,7 +236,7 @@ pub fn call(c: &mut Compiler, function: i32, args: &[Value], result: i32) -> Val
     append(&mut *c, 2, &literal_bytes_4); number(&mut *c, 2, function); append(&mut *c, 2, &literal_bytes_5);
     let mut i = 0;
     while i < args.len() {
-        if i != 0 { append(&mut *c, 2, &literal_bytes_6); }
+        append(&mut *c, 2, &literal_bytes_6);
         let value = args[i];
         write_type(&mut *c, 2, value.ty, false); append(&mut *c, 2, &literal_bytes_7); operand(&mut *c, 2, value);
         i = i + 1;
@@ -254,10 +254,21 @@ pub fn returned(c: &mut Compiler, value: Value) -> () {
     append(&mut *c, 2, &literal_bytes_2); c.terminated = true; c.live = false;
     return;
 }
+fn emit_depth_guard(c: &mut Compiler) -> () {
+    // The 128-function declaration limit also bounds every acyclic call path.
+    let test = b"  %depth_ok = icmp ult i32 %depth, 128\n  br i1 %depth_ok, label %start, label %depth_error\n";
+    let exceeded = b"depth_error:\n  call void @__oxid_overflow(ptr @depth_error_text, i64 26)\n  unreachable\n";
+    let admitted = b"start:\n  %next_depth = add nuw nsw i32 %depth, 1\n";
+    append(&mut *c, 0, &test);
+    append(&mut *c, 0, &exceeded);
+    append(&mut *c, 0, &admitted);
+    return;
+}
+
 pub fn finish_function(c: &mut Compiler, function: i32) -> () {
     let literal_bytes_0 = b"define internal ";
     let literal_bytes_1 = b" @f";
-    let literal_bytes_2 = b"(";
+    let literal_bytes_2 = b"(i32 %depth";
     let literal_bytes_3 = b", ";
     let literal_bytes_4 = b" %a";
     let literal_bytes_5 = b") {\nentry:\n";
@@ -268,7 +279,7 @@ pub fn finish_function(c: &mut Compiler, function: i32) -> () {
     append(&mut *c, 0, &literal_bytes_1); number(&mut *c, 0, function); append(&mut *c, 0, &literal_bytes_2);
     let mut i = 0;
     while i < f.count {
-        if i != 0 { append(&mut *c, 0, &literal_bytes_3); }
+        append(&mut *c, 0, &literal_bytes_3);
         let p = c.params[f.params + i];
         write_type(&mut *c, 0, p.ty, false); append(&mut *c, 0, &literal_bytes_4); number(&mut *c, 0, i);
         i = i + 1;
@@ -276,7 +287,10 @@ pub fn finish_function(c: &mut Compiler, function: i32) -> () {
     append(&mut *c, 0, &literal_bytes_5);
     let slots = take(&mut *c.slots);
     let body = take(&mut *c.body);
-    append(&mut *c, 0, &slots); append(&mut *c, 0, &body); append(&mut *c, 0, &literal_bytes_6);
+    // Entry-block slots have one fixed stack layout, including at -O0.
+    append(&mut *c, 0, &slots);
+    emit_depth_guard(&mut *c);
+    append(&mut *c, 0, &body); append(&mut *c, 0, &literal_bytes_6);
     return;
 }
 fn preamble_text_0_0(c: &mut Compiler) -> () {
@@ -405,10 +419,11 @@ fn preamble_text_15_0(c: &mut Compiler) -> () {
     return;
 }
 pub fn preamble(c: &mut Compiler) -> () {
-
+    let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
     preamble_text_0_0(&mut *c);
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
+    append(&mut *c, 0, &depth_error);
     preamble_text_3_0(&mut *c); preamble_text_3_1(&mut *c);
     let mut op = 29;
     while op <= 31 {
@@ -455,7 +470,7 @@ fn wrapper_text_3_0(c: &mut Compiler) -> () {
     return;
 }
 fn wrapper_text_4_0(c: &mut Compiler) -> () {
-    let text = b"()\n";
+    let text = b"(i32 0)\n";
     append(&mut *c, 0, &text);
     return;
 }
