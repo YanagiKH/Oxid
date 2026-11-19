@@ -24,6 +24,8 @@ mod integer128;
 #[path = "execute_integers.rs"]
 mod integers;
 
+#[path = "execute_element_loans.rs"]
+mod element_loans;
 #[path = "execute_experimental.rs"]
 mod experimental;
 #[path = "execute_owned_vector.rs"]
@@ -56,6 +58,8 @@ pub(super) enum OwnedRunFailure {
     OutputEntry(Span),
     BinaryEntry(Span),
     BinaryHost(Span),
+    TerminationEntry(Span),
+    TerminationHost(Span),
     ProcessHost,
     ProcessSetup,
     ProcessEntry(Span),
@@ -84,6 +88,18 @@ impl OwnedRunFailure {
     }
     pub fn diagnostic(&self, sources: &SourceMap) -> Box<Diagnostic> {
         match self {
+            Self::TerminationEntry(span) => Diagnostic::new(
+                "E0609",
+                "oir-owned-run",
+                "termination notifications require process entry mode",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::TerminationHost(span) => Diagnostic::new(
+                "E0608",
+                "oir-owned-run",
+                "termination notifications require Linux or macOS on x86_64 or ARM64",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
             Self::BinaryEntry(span) => Diagnostic::new(
                 "E0609",
                 "oir-owned-run",
@@ -723,6 +739,11 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
         field: FieldId,
         span: Span,
     ) -> Result<V> {
+        if self.plan.has_local_record_element_loans() {
+            if let Some((place, ty)) = self.element_field_place(frame, base, key, field, span)? {
+                return V::decode(self.resource_bytes(&place), 0, ty, span);
+            }
+        }
         let (offset, ty) = self.accessed_field(frame, base, key, field, span)?;
         V::decode(&self.frames[key.frame as usize].payload, offset, ty, span)
     }
@@ -916,6 +937,11 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
         Err(bad("projected view provenance", span))
     }
     fn checked_handle_view(&self, handle: ReferenceHandle, span: Span) -> Result<AggregateTy> {
+        if self.plan.has_local_record_element_loans() {
+            if let Some(aggregate) = self.checked_element_view(handle, span)? {
+                return Ok(aggregate);
+            }
+        }
         let actual = handle
             .view
             .aggregate
@@ -1023,7 +1049,14 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 return Err(bad("view root type", span));
             }
             if !scalar_slice {
-                self.view_extent(handle.root, handle.view, span)?;
+                let frame_index = index(handle.permission.frame, span)?;
+                let current = AccessBase::Loan(LoanId(index(handle.permission.loan, span)?));
+                if self
+                    .staged_element_extent(frame_index, current, handle.root, handle.view, span)?
+                    .is_none()
+                {
+                    self.view_extent(handle.root, handle.view, span)?;
+                }
             }
             match declaration.authority {
                 AccessBase::Owner(owner) => {
@@ -1270,11 +1303,15 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 .map_err(|_| bad("projection layout", span))?
                 .size(),
         };
-        let extent = self.owner_extent(key, span)?;
-        relative
-            .checked_add(size)
-            .filter(|end| *end <= extent.len())
-            .ok_or_else(|| bad("projection extent", span))?;
+        if self.has_element_base(frame, base, key, span)? {
+            self.resource_place(frame, base, key, relative as u64, size, span)?;
+        } else {
+            let extent = self.owner_extent(key, span)?;
+            relative
+                .checked_add(size)
+                .filter(|end| *end <= extent.len())
+                .ok_or_else(|| bad("projection extent", span))?;
+        }
         Ok((key, ty, relative))
     }
     fn projection_leaf(
@@ -1941,7 +1978,13 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 AggregateSlot::try_from_aggregate(projected)
                     .map_err(|_| bad("loan view descriptor", span))?,
             );
-            actual = self.view_extent(root, view, span)?;
+            actual = if let Some(actual) =
+                self.staged_element_extent(frame, descriptor.authority, root, view, span)?
+            {
+                actual
+            } else {
+                self.view_extent(root, view, span)?
+            };
         }
         self.plan
             .witness()
@@ -3033,6 +3076,18 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 let (key, ty, relative) =
                     self.projection_base(frame, *base, Access::Read, path, span)?;
                 if let (ValueTy::Owned(AggregateTy::Vector(element)), Some(index)) = (ty, *index) {
+                    if self.has_element_base(frame, *base, key, span)? {
+                        return self.element_vector_read(
+                            frame,
+                            *destination,
+                            *base,
+                            key,
+                            element,
+                            relative,
+                            index,
+                            span,
+                        );
+                    }
                     return self.vector_projection_read(
                         frame,
                         *destination,
@@ -3047,7 +3102,7 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 if f.locals.get(destination.0).map(|local| local.ty) != Some(leaf.ty) {
                     return Err(bad("projection read type", span));
                 }
-                let value = self.load_leaf(key, leaf, span)?;
+                let value = self.read_access_leaf(frame, *base, key, leaf, span)?;
                 self.write(frame, *destination, value, span)?;
                 #[cfg(test)]
                 if let Some(ordinal) = _ordinal {
@@ -3063,6 +3118,11 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 let (key, ty, relative) =
                     self.projection_base(frame, *base, Access::Write, path, span)?;
                 if let (ValueTy::Owned(AggregateTy::Vector(element)), Some(index)) = (ty, *index) {
+                    if self.has_element_base(frame, *base, key, span)? {
+                        return self.element_vector_write(
+                            frame, *base, key, element, relative, index, *value, span,
+                        );
+                    }
                     return self.vector_projection_write(
                         frame, key, element, relative, index, *value, span,
                     );
@@ -3077,7 +3137,7 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     return Err(bad("projection write type", span));
                 }
                 let (leaf, _ordinal) = self.projection_leaf(frame, ty, relative, *index, span)?;
-                self.store_leaf(key, leaf, value, span)?;
+                self.write_access_leaf(frame, *base, key, leaf, value, span)?;
                 #[cfg(test)]
                 if let Some(ordinal) = _ordinal {
                     self.record_event(Event::WriteIndex(key, ordinal, value));
@@ -3097,6 +3157,17 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     self.projection_base(frame, *base, Access::Read, path, span)?;
                 if let ValueTy::Owned(aggregate) = ty {
                     if let Some(element) = super::vector_type::VectorTy::from_aggregate(aggregate) {
+                        if self.has_element_base(frame, *base, _key, span)? {
+                            return self.element_vector_length(
+                                frame,
+                                *destination,
+                                *base,
+                                _key,
+                                element,
+                                relative,
+                                span,
+                            );
+                        }
                         return self.vector_projection_length(
                             frame,
                             *destination,
@@ -3181,7 +3252,9 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     return Err(bad("array read type", span));
                 }
                 let ordinal = array_index(self.read(frame, *index)?, array, span)?;
-                let value = self.load_leaf(
+                let value = self.read_access_leaf(
+                    frame,
+                    *base,
                     key,
                     ScalarLeaf {
                         offset: relative
@@ -3212,7 +3285,9 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     return Err(bad("array write type", span));
                 }
                 let ordinal = array_index(self.read(frame, *index)?, array, span)?;
-                self.store_leaf(
+                self.write_access_leaf(
+                    frame,
+                    *base,
                     key,
                     ScalarLeaf {
                         offset: relative
@@ -3441,11 +3516,20 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     },
                 )?;
                 let value = self.read(frame, *value)?;
-                let (offset, ty) = self.accessed_field(frame, *base, key, *field, span)?;
-                if ty != value.ty() {
-                    return Err(bad("field value type", span));
+                if let Some((place, ty)) =
+                    self.element_field_place(frame, *base, key, *field, span)?
+                {
+                    if ty != value.ty() {
+                        return Err(bad("field value type", span));
+                    }
+                    value.encode(self.resource_bytes_mut(&place), 0, span)?;
+                } else {
+                    let (offset, ty) = self.accessed_field(frame, *base, key, *field, span)?;
+                    if ty != value.ty() {
+                        return Err(bad("field value type", span));
+                    }
+                    value.encode(&mut self.frames[key.frame as usize].payload, offset, span)?;
                 }
-                value.encode(&mut self.frames[key.frame as usize].payload, offset, span)?;
                 #[cfg(test)]
                 self.record_event(Event::WriteField(key, *field, value));
             }
@@ -3492,6 +3576,9 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 self.frames[frame].calls[call.0].next_argument += 1;
             }
             OwnedInstruction::AcquireLocalBorrow(loan) => self.acquire(frame, *loan, span)?,
+            OwnedInstruction::AcquireLocalElementBorrow { loan, index } => {
+                self.acquire_element(frame, *loan, *index, span)?;
+            }
             OwnedInstruction::ReleaseLocalBorrow(loan) => {
                 let handle = self.reference_from_loan(frame, *loan, span)?;
                 self.release(handle.permission, span)?;
@@ -3888,6 +3975,10 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 } = statement.kind
                 {
                     use crate::frontend::builtin_catalog::experimental::Function;
+                    if operation.process().is_some() {
+                        self.process_delivery(frame, operation, destination, span)?;
+                        continue;
+                    }
                     if operation.is_file() {
                         self.file_delivery(frame, operation, destination, span)?;
                         continue;
@@ -4454,10 +4545,28 @@ fn checked_entry_policy<W: PlanWitness>(
     entry: Option<hir::DefId>,
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
+    if !witness.raw_program().builtins.process().is_empty() {
+        for operation in [
+            crate::frontend::builtin_catalog::experimental::Function::EnableTermination,
+            crate::frontend::builtin_catalog::experimental::Function::TerminationRequested,
+        ] {
+            #[cfg(test)]
+            super::termination_queries::vm_catalog_row();
+            if let Some(function) = witness.experimental_function(operation) {
+                let span = witness.functions()[function.0].span;
+                if policy != EntryPolicy::Process {
+                    return Err(OwnedRunFailure::TerminationEntry(span));
+                }
+                if !process::supported_host() {
+                    return Err(OwnedRunFailure::TerminationHost(span));
+                }
+            }
+        }
+    }
     for operation in crate::frontend::builtin_catalog::experimental::Function::ALL {
-        if (operation.is_file() || operation.is_arguments())
+        if ((operation.is_file() && !byte_buffer::file_supported_host())
+            || (operation.is_arguments() && !input::supported_host()))
             && witness.experimental_function(operation).is_some()
-            && !input::supported_host()
         {
             return Err(OwnedRunFailure::BinaryHost(
                 witness.functions()[witness.experimental_function(operation).unwrap().0].span,
@@ -4575,10 +4684,48 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
     #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
     #[cfg(test)] remaining_fuel: Option<&mut usize>,
 ) -> Result<V> {
+    if plan.has_termination() {
+        return execute_plan_policy_with_termination(
+            plan,
+            entry,
+            limits,
+            policy,
+            execution,
+            #[cfg(test)]
+            events,
+            #[cfg(test)]
+            observation,
+            #[cfg(test)]
+            remaining_fuel,
+        );
+    }
     // All callers share entry validation. Every sealed Process caller
     // establishes host support and signal policy before reaching this point.
     checked_entry_policy(plan.witness(), Some(entry), policy)?;
-    if plan.has_file_delivery() && !process::setup() {
+    if plan.has_file_delivery()
+        && !{
+            #[cfg(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ))]
+            {
+                true
+            }
+            #[cfg(not(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )))]
+            {
+                process::setup()
+            }
+        }
+    {
         return Err(OwnedRunFailure::BinaryHost(
             plan.witness().functions()[entry.0].span,
         ));
@@ -4714,6 +4861,16 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
             .map(|observer| std::mem::take(*observer))
             .unwrap_or_default(),
     };
+    machine.header_bytes = plan::add(
+        machine.header_bytes,
+        plan::add(
+            crate::frontend::builtin_catalog::termination::shared_selector_bytes(),
+            plan::add(
+                super::termination_queries::raw_bytes(),
+                super::termination_queries::plan_bytes::<W>(),
+            )?,
+        )?,
+    )?;
     #[cfg(test)]
     if policy == EntryPolicy::Process {
         // Process effects cannot trigger test-only event Vec allocations after
@@ -4774,6 +4931,251 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
         result
     }
 }
+#[allow(clippy::too_many_arguments)] // Separate prepaid process-family activation.
+fn execute_plan_policy_with_termination<V: StoredValue, W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    entry: hir::DefId,
+    limits: Limits,
+    policy: EntryPolicy,
+    execution: ExecutionPolicy,
+    #[cfg(test)] events: Option<&mut Vec<Event<V>>>,
+    #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
+    #[cfg(test)] remaining_fuel: Option<&mut usize>,
+) -> Result<V> {
+    // All callers share entry validation. Every sealed Process caller
+    // establishes host support and signal policy before reaching this point.
+    checked_entry_policy(plan.witness(), Some(entry), policy)?;
+    if plan.has_file_delivery() && !process::setup() {
+        return Err(OwnedRunFailure::BinaryHost(
+            plan.witness().functions()[entry.0].span,
+        ));
+    }
+    if (plan.uses_wide_scalars() || plan.uses_quad_scalars()) != V::WIDE
+        || plan.uses_quad_scalars() != V::QUAD
+    {
+        return Err(bad(
+            "scalar storage representation",
+            plan.witness().functions()[entry.0].span,
+        ));
+    }
+    let limits = limits.bounded();
+    let f = &plan.witness().functions()[entry.0];
+    let mut machine = ValueMachine::<V, W> {
+        plan,
+        frames: Vec::new(),
+        limits,
+        fuel: execution.initial_fuel(limits.fuel),
+        next_activation: 1,
+        live_slots: 0,
+        live_cells: 0,
+        live_bytes: 0,
+        header_bytes: plan::add(
+            plan::mul(limits.frames, size_of::<ValueFrame<V>>())?,
+            plan::add(
+                if plan.uses_dynamic_resources() {
+                    plan::add(
+                        plan::add(size_of::<byte_buffer::Heap>(), resources::control_bytes())?,
+                        if plan.uses_owned_vectors() {
+                            resources::owned_control_bytes::<W>()
+                        } else {
+                            0
+                        },
+                    )?
+                } else {
+                    0
+                },
+                if plan.has_binary_delivery() {
+                    binary_delivery_control_bytes()
+                } else {
+                    0
+                } + if plan.has_file_delivery() {
+                    experimental::file_delivery_control_bytes()
+                } else {
+                    0
+                } + if plan.has_file_seek() {
+                    experimental::file_seek_control_bytes::<V>()
+                } else {
+                    0
+                } + if plan.uses_vectors() {
+                    vector::control_bytes::<V>()
+                        + if plan.uses_record_vectors() {
+                            vector::record_control_bytes()
+                        } else {
+                            0
+                        }
+                } else if plan.uses_typed_ranges() {
+                    vector::range_control_bytes()
+                } else {
+                    0
+                } + if plan.uses_owned_vectors() {
+                    owned_vector::control_bytes::<V, W>()
+                } else {
+                    0
+                } + if plan.has_local_record_element_loans() {
+                    element_loans::control_bytes::<V, W>()
+                } else {
+                    0
+                } + if plan.has_program_arguments() {
+                    plan::add(
+                        crate::program_arguments::control_bytes(),
+                        experimental::argument_delivery_control_bytes(f.span),
+                    )?
+                } else {
+                    0
+                },
+            )?,
+        )
+        .and_then(|bytes| plan::add(bytes, values::control_bytes::<V>()))
+        .and_then(|bytes| plan::add(bytes, element_loans::shared_adapter_control_bytes::<V, W>()))
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                plan::element_loan_accounting::query_control_bytes::<W>(),
+            )
+        })
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_enum_record_nesting() {
+                    composition::control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_characters() {
+                    values::character_control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_floats() {
+                    floats::control_bytes::<V>() + 8192
+                } else {
+                    0
+                },
+            )
+        })
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_bitwise() {
+                    bitwise::control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_integer_extension() || plan.uses_quad_scalars() {
+                    integers::control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })?,
+        heap: byte_buffer::Heap::for_execution(execution.heap_limit()),
+        #[cfg(test)]
+        events: Vec::new(),
+        #[cfg(test)]
+        observer: observation
+            .as_mut()
+            .map(|observer| std::mem::take(*observer))
+            .unwrap_or_default(),
+    };
+    machine.header_bytes = plan::add(
+        machine.header_bytes,
+        plan::add(
+            crate::frontend::builtin_catalog::termination::shared_selector_bytes(),
+            plan::add(
+                super::termination_queries::raw_bytes(),
+                super::termination_queries::plan_bytes::<W>(),
+            )?,
+        )?,
+    )?;
+    #[cfg(test)]
+    if policy == EntryPolicy::Process {
+        // Process effects cannot trigger test-only event Vec allocations after
+        // the first write. The private process seam has no observation sink.
+        machine.observer.silent = true;
+    }
+    machine.header_bytes = plan::add(
+        machine.header_bytes,
+        plan::add(
+            crate::program_termination::control_bytes(),
+            experimental::process_delivery_control_bytes(),
+        )?,
+    )?;
+    let mut termination_scope = None;
+    let mut result = (|| {
+        machine.activation_preflight(
+            entry,
+            plan::add(1, plan.function(entry).usage().activation_fuel_cells())?,
+            f.span,
+        )?;
+        machine.frames = plan::reserve(limits.frames)
+            .map_err(|error| OwnedRunFailure::from(error).at_runtime(f.span))?;
+        let root = ValueFrame::<V>::allocate(plan, entry, machine.next_activation, None)
+            .map_err(|error| error.at_runtime(f.span))?;
+        machine.install(root);
+        termination_scope = Some(
+            crate::program_termination::Scope::enter()
+                .map_err(|_| OwnedRunFailure::ProcessSetup)?,
+        );
+        machine.execute()
+    })();
+    if result.is_ok() && machine.heap.ledger().live_allocations != 0 {
+        result = Err(bad("resource obligations at execution end", f.span));
+    }
+    // Terminal reclamation is outside all user fuel/admission paths. It also
+    // runs on ordinary completion, after the zero-obligation check above.
+    #[cfg(test)]
+    let before_cleanup = machine.heap.ledger();
+    machine.heap.cleanup();
+    drop(termination_scope);
+    #[cfg(test)]
+    byte_buffer::testing::record(&machine.heap, before_cleanup);
+    #[cfg(test)]
+    {
+        if result.is_err() && machine.observer.collecting() {
+            for frame in 0..machine.frames.len() {
+                if !machine.observer.collecting() {
+                    break;
+                }
+                let span = machine.function(machine.frames[frame].function).span;
+                machine.observe_frame(frame, StorageObservationKind::Failure, span);
+            }
+        }
+        if let Some(observation) = observation {
+            *observation = machine.observer;
+        }
+        if let Some(fuel) = remaining_fuel {
+            *fuel = machine.fuel;
+        }
+    }
+    #[cfg(test)]
+    if let Some(events) = events {
+        *events = machine.events;
+    }
+    if policy == EntryPolicy::Process {
+        match result?.narrow() {
+            Some(scalar @ Scalar::I32(0..=255)) => Ok(scalar.into()),
+            _ => Err(OwnedRunFailure::ProcessResult(f.span)),
+        }
+    } else {
+        result
+    }
+}
+
 /// Sealed process execution. Only a scalar result or failure escapes;
 /// machine storage and all owners are dropped inside the ordinary executor.
 /// SIGPIPE setup precedes entry diagnostics, planning and the activation guard.

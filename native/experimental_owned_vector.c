@@ -185,6 +185,28 @@ int32_t oxid_owned_vector_new(uint32_t record, oxid_owned_vector *result) {
     *result = (oxid_owned_vector){0, 0, 0};
     return 0;
 }
+int32_t oxid_owned_vector_borrow_record(oxid_byte_heap *heap,
+    const oxid_owned_vector *value, uint32_t record, int32_t index,
+    uint64_t *fuel, uint8_t **result) {
+    if (!heap || !value || !fuel || !result || (record & UINT32_C(0x80000000)))
+        return OXID_BUFFER_DESCRIPTOR;
+    const oxid_owned_record_schema *schema = owned_record_schema(record);
+    owned_vector_range ranges[] = {{value, sizeof(*value)}, {fuel, sizeof(*fuel)}, {result, sizeof(*result)}};
+    uint64_t remaining, work;
+    int32_t status = owned_vector_controls(heap, ranges, 3, *fuel, &remaining);
+    if (status) return status;
+    oxid_allocation *node;
+    status = locate_owned_vector(heap, value, schema, &node);
+    if (status) return status;
+    if (index < 0 || index >= value->length) return OXID_BUFFER_BOUNDS;
+    if (!owned_vector_work(heap, schema, (uint64_t)value->length, 0, &work) || remaining < work)
+        return OXID_BUFFER_FUEL;
+    if (!owned_vector_preflight(heap, node, value->length, schema, NULL))
+        return OXID_BUFFER_DESCRIPTOR;
+    *fuel = remaining - work;
+    *result = owned_vector_data(node) + (size_t)index * (size_t)schema->stride;
+    return 0;
+}
 int32_t oxid_owned_vector_reserve(oxid_byte_heap *heap, oxid_owned_vector *value,
     uint32_t record, int32_t additional, uint64_t *fuel) {
     if (!heap || !value || !fuel) return OXID_BUFFER_DESCRIPTOR;

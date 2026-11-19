@@ -1014,3 +1014,6 @@ fn owned_record_vector_file_scalar_and_copy_record_vector_leaves_release_once() 
     assert_eq!(heap.ledger().live_bytes, 0);
     assert_eq!(heap.ledger().allocations, heap.ledger().releases);
 }
+
+#[path = "owned_record_element_resource_tests.rs"]
+mod local_element_loans;

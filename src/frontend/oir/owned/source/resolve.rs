@@ -389,6 +389,25 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 return Err(invalid_signature_identity(selected.anchor));
             }
         }
+        if !index.builtin_set().process().is_empty() {
+            for item in crate::frontend::builtin_catalog::termination::Function::ALL {
+                if index.builtin_set().process().contains(item) {
+                    let id = index.process_function_id(item)?;
+                    let anchor = index.process_anchor(item, self.work())?;
+                    let actual = self
+                        .signatures
+                        .get(id.0)
+                        .ok_or_else(|| invalid_signature_identity(anchor))?;
+                    self.work().debit(4, anchor, "process signature identity")?;
+                    if !actual.params.is_empty()
+                        || actual.result != ValueTy::Scalar(Ty::Bool)
+                        || actual.span != anchor
+                    {
+                        return Err(invalid_signature_identity(anchor));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -1566,7 +1585,7 @@ fn resolve_index_impl(
                     {
                         if matches!(
                             sources.ast(module)?.expressions[init.0].kind,
-                            ast::ExprKind::Borrow { .. }
+                            ast::ExprKind::Borrow { .. } | ast::ExprKind::BorrowElement { .. }
                         ) {
                             index.instantiated_parameter(DefId(id), ty, work)?;
                         } else {
@@ -1825,6 +1844,30 @@ fn resolve_index_impl(
             Ok(())
         };
         append().map_err(|error| vec![*error])?;
+    }
+    if !index.builtin_set().process().is_empty() {
+        for item in crate::frontend::builtin_catalog::termination::Function::ALL {
+            if index.builtin_set().process().contains(item) {
+                let anchor = index
+                    .process_anchor(item, work)
+                    .map_err(|error| vec![*error])?;
+                let id = index
+                    .process_function_id(item)
+                    .map_err(|error| vec![*error])?;
+                if id.0 != signatures.len() {
+                    return Err(vec![*invalid_signature_identity(anchor)]);
+                }
+                work.debit(1, anchor, "process signature construction")
+                    .map_err(|error| vec![*error])?;
+                storage::room(&signatures, signatures.capacity(), true, anchor)
+                    .map_err(|error| vec![*error])?;
+                signatures.push(Signature {
+                    params: Vec::new(),
+                    result: ValueTy::Scalar(Ty::Bool),
+                    span: anchor,
+                });
+            }
+        }
     }
     if super::record_enum_layouts::needed(&records) {
         super::record_enum_layouts::inventory(index, &records, work, &mut Allocator::default())
@@ -2641,7 +2684,55 @@ impl<'a> Resolver<'_, 'a> {
                     annotation,
                     init,
                 } => {
-                    if let ast::ExprKind::Borrow {
+                    if let ast::ExprKind::BorrowElement {
+                        mutable: exclusive,
+                        name: target,
+                        forwarded,
+                        index,
+                    } = &self.ast.expressions[init.0].kind
+                    {
+                        if *mutable {
+                            return Err(error(
+                                "E0304",
+                                format_args!("reference bindings cannot be reassigned"),
+                                *name,
+                            ));
+                        }
+                        let root = self.lookup(*target)?;
+                        let index = self.expression(*index)?;
+                        let annotation = annotation
+                            .map(|ty| {
+                                self.index.instantiated_parameter(
+                                    self.context.function(),
+                                    ty,
+                                    self.work,
+                                )
+                            })
+                            .transpose()?;
+                        let local = self.bind(*name, None, false, BodyBlockId(block.0), None)?;
+                        if self.storage.paid.is_none() {
+                            scopes
+                                .last_mut()
+                                .expect("active body scope")
+                                .push(self.text(*name));
+                        }
+                        StmtKind::BorrowElementLet {
+                            binding: local,
+                            kind: if *exclusive {
+                                BorrowKind::Exclusive
+                            } else {
+                                BorrowKind::Shared
+                            },
+                            place: if *forwarded {
+                                BorrowPlace::Forwarded(root)
+                            } else {
+                                BorrowPlace::Owner(root)
+                            },
+                            index,
+                            borrow_span: self.ast.expressions[init.0].span,
+                            annotation,
+                        }
+                    } else if let ast::ExprKind::Borrow {
                         mutable: exclusive,
                         name: target,
                         forwarded,
@@ -3118,7 +3209,7 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
-            ast::ExprKind::Borrow { .. } => {
+            ast::ExprKind::Borrow { .. } | ast::ExprKind::BorrowElement { .. } => {
                 return Err(error(
                     "E0300",
                     format_args!("reference initializer requires a local declaration"),

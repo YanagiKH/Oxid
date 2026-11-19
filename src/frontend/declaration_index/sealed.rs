@@ -38,6 +38,10 @@ impl<'s> BuiltinAdmission<'s> {
         legacy.with_experimental(self.experimental)
     }
     fn admit(&mut self, item: BuiltinItem, import: u32) {
+        if let BuiltinItem::Process(item) = item {
+            self.experimental = self.experimental.admit_process(item);
+            return;
+        }
         let slot = match item {
             BuiltinItem::Enum(BuiltinEnum::ReadStatus) => 0,
             BuiltinItem::Function(BuiltinFunction::ReadStdin) => {
@@ -77,6 +81,7 @@ impl<'s> BuiltinAdmission<'s> {
                 }
                 9
             }
+            BuiltinItem::Process(_) => unreachable!("separate process-family admission"),
         };
         if self.anchors[slot] == NONE {
             self.anchors[slot] = import;
@@ -200,7 +205,7 @@ fn current_builtin_endpoint(
         && segments.len() == 3
         && (sources.text(segments[0])? == "alloc"
             || (sources.text(segments[0])? == "std"
-                && matches!(sources.text(segments[1])?, "fs" | "env")))
+                && matches!(sources.text(segments[1])?, "fs" | "env" | "process")))
     {
         return experimental_endpoint(sources, segments, work, at);
     }
@@ -253,6 +258,9 @@ fn experimental_endpoint(
     at: Span,
 ) -> Result<BuiltinItem, Box<Diagnostic>> {
     if segments.len() == 3 {
+        if sources.text(segments[0])? == "std" && sources.text(segments[1])? == "process" {
+            return process_endpoint(sources, segments, work, at).map(BuiltinItem::Process);
+        }
         let mut alias = true;
         for (name, segment) in ["alloc", "vec", "GrowStatus"].into_iter().zip(segments) {
             if compare_bytes(sources.text(*segment)?, name, work, *segment)? != Ordering::Equal {
@@ -296,6 +304,67 @@ fn experimental_endpoint(
         "unsupported standard library import",
         at,
     ))
+}
+
+fn process_endpoint(
+    sources: SourceOwner<'_>,
+    segments: &[Span],
+    work: &WorkMeter,
+    at: Span,
+) -> Result<termination::Function, Box<Diagnostic>> {
+    for item in termination::Function::ALL {
+        let mut selected = segments.len() == 3;
+        for (word, segment) in item.path().into_iter().zip(segments) {
+            if compare_bytes(sources.text(*segment)?, word, work, *segment)? != Ordering::Equal {
+                selected = false;
+                break;
+            }
+        }
+        if selected {
+            return Ok(item);
+        }
+    }
+    Err(diagnostic(
+        "E0205",
+        "resolve",
+        "unsupported process import",
+        at,
+    ))
+}
+
+/// New metered family lookup uses the old immutable import rows. Its borrowed
+/// view/caller/return transports are prepaid separately, not added to anchors.
+#[allow(dead_code)]
+struct ProcessLookupCarriers {
+    lookup_index: &'static DeclarationIndex<'static>,
+    lookup_work: &'static WorkMeter,
+    lookup_item: termination::Function,
+    selected_item: termination::Function,
+    source_receiver: SourceOwner<'static>,
+    import_path_receiver: SourceOwner<'static>,
+    qualified_path_receiver: SourceOwner<'static>,
+    module_lookup_receiver: SourceOwner<'static>,
+    import_ordinal: usize,
+    import_ordinals: std::ops::Range<usize>,
+    compact_return: Result<u32, Box<Diagnostic>>,
+    import_return: Result<&'static ast::ImportDecl, Box<Diagnostic>>,
+    import_caller: &'static ast::ImportDecl,
+    path_argument: QualifiedPathRef,
+    path_forwarded_argument: QualifiedPathRef,
+    path_construction: source_owner::QualifiedPathView<'static>,
+    qualified_path_return: Result<source_owner::QualifiedPathView<'static>, Box<Diagnostic>>,
+    import_path_return: Result<source_owner::QualifiedPathView<'static>, Box<Diagnostic>>,
+    caller_path: source_owner::QualifiedPathView<'static>,
+    segments: &'static [Span],
+    source_text_returns: [Result<&'static str, Box<Diagnostic>>; 3],
+    endpoint_return: Result<termination::Function, Box<Diagnostic>>,
+    anchor_construction: Span,
+    anchor_return: Result<Span, Box<Diagnostic>>,
+    anchor_caller: Span,
+    work_return: Result<(), Box<Diagnostic>>,
+}
+pub(in crate::frontend) const fn process_lookup_carrier_bytes() -> usize {
+    size_of::<ProcessLookupCarriers>()
 }
 
 fn owned_candidate_endpoint(
@@ -833,9 +902,13 @@ fn collect<'s>(
                 )
                 + builtins.set().vector_templates()
                 + builtins.set().experimental().owned_vector_templates()
-                + usize::from(builtins.set().contains_vector(vector::Item::Vec)),
+                + usize::from(builtins.set().contains_vector(vector::Item::Vec))
+                + builtins.set().process().count(),
         ),
-        (c.functions, builtins.set().extra_template_functions()),
+        (
+            c.functions,
+            builtins.set().extra_template_functions() + builtins.set().process().count(),
+        ),
         (c.enums, builtins.set().extra_enums()),
     ] {
         let total = prefix
@@ -863,6 +936,13 @@ fn collect<'s>(
                 0
             } else {
                 experimental::compiler_carrier_bytes()
+            })
+        })
+        .and_then(|bytes| {
+            bytes.checked_add(if builtins.set().process().is_empty() {
+                0
+            } else {
+                termination::compiler_carrier_bytes()
             })
         })
         .ok_or_else(|| overflow(at))?;
@@ -1450,7 +1530,9 @@ impl<'s> DeclarationFacts<'s> {
         self.tables.originals.len()
     }
     pub fn function_count(&self) -> usize {
-        self.source_function_count() + self.builtin_set().extra_functions()
+        self.source_function_count()
+            + self.builtin_set().extra_functions()
+            + self.builtin_set().process().count()
     }
     pub fn source_function_count(&self) -> usize {
         self.tables.functions.len()
@@ -1779,7 +1861,7 @@ fn stage_import(
         let handle = tables.builtin_handle(item)?;
         match item {
             BuiltinItem::Enum(_) => (Some(handle), None),
-            BuiltinItem::Function(_) => (None, Some(handle)),
+            BuiltinItem::Function(_) | BuiltinItem::Process(_) => (None, Some(handle)),
             BuiltinItem::Vector(item) => {
                 if item.operation().is_some() || item.owned_item().is_some() {
                     (None, Some(handle))
@@ -2090,6 +2172,85 @@ impl<'s> DeclarationIndex<'s> {
             .map(|rank| DefId(self.source_function_count() + rank))
             .ok_or_else(|| bad(self.sources().eof()))
     }
+    pub fn process_function_id(
+        &self,
+        item: termination::Function,
+    ) -> Result<DefId, Box<Diagnostic>> {
+        self.tables.builtin_handle(BuiltinItem::Process(item))?;
+        let rank = self
+            .builtin_set()
+            .process()
+            .rank(item)
+            .ok_or_else(|| bad(self.sources().eof()))?;
+        self.source_function_count()
+            .checked_add(self.builtin_set().extra_functions())
+            .and_then(|n| n.checked_add(self.vector_functions().len()))
+            .and_then(|n| n.checked_add(self.owned_vector_functions().len()))
+            .and_then(|n| n.checked_add(rank))
+            .map(DefId)
+            .ok_or_else(|| overflow(self.sources().eof()))
+    }
+    pub(super) fn process_template(&self, id: DefId) -> Option<termination::Function> {
+        let base = self
+            .template_function_count()
+            .checked_add(self.builtin_set().extra_template_functions())?;
+        self.builtin_set().process().at(id.0.checked_sub(base)?)
+    }
+    pub(super) fn frozen_process_id(
+        &self,
+        item: termination::Function,
+        users: usize,
+        vectors: usize,
+        owned: usize,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<DefId, Box<Diagnostic>> {
+        work.debit(1, at, "process frozen function identity")?;
+        let rank = self
+            .builtin_set()
+            .process()
+            .rank(item)
+            .ok_or_else(|| bad(at))?;
+        users
+            .checked_add(self.builtin_set().extra_functions())
+            .and_then(|n| n.checked_add(vectors))
+            .and_then(|n| n.checked_add(owned))
+            .and_then(|n| n.checked_add(rank))
+            .map(DefId)
+            .ok_or_else(|| overflow(at))
+    }
+    /// At most the two canonical process descriptors call this metered lookup.
+    /// Source call sites use cached signatures/IDs, never repeat this scan.
+    pub fn process_anchor(
+        &self,
+        item: termination::Function,
+        work: &WorkMeter,
+    ) -> Result<Span, Box<Diagnostic>> {
+        self.process_function_id(item)?;
+        for ordinal in 0..self.tables.imports.len() {
+            work.debit(1, self.sources().eof(), "process canonical import row")?;
+            let import = self
+                .tables
+                .import(compact(ordinal, self.sources().eof())?)?;
+            let view = self.tables.sources.import_path(QualifiedPathRef {
+                file: import.span.file,
+                path: import.path,
+            })?;
+            let segments = view.segments();
+            if view.root() == ast::PathRoot::Std
+                && segments.len() == 3
+                && self.tables.sources.text(segments[0])? == "std"
+                && self.tables.sources.text(segments[1])? == "process"
+            {
+                let selected = process_endpoint(self.tables.sources, segments, work, view.span())?;
+                if !self.builtin_set().process().contains(selected) {
+                    return Err(bad(view.span()));
+                }
+                return Ok(segments[2]);
+            }
+        }
+        Err(bad(self.sources().eof()))
+    }
     pub fn experimental_anchor(&self, item: experimental::Item) -> Result<Span, Box<Diagnostic>> {
         self.tables
             .builtin_handle(BuiltinItem::Experimental(item))?;
@@ -2232,6 +2393,14 @@ impl<'s> DeclarationIndex<'s> {
                 return Ok(DeclarationOrigin::Builtin(BuiltinItem::Vector(item)));
             }
         }
+        if let Some(rank) = id
+            .0
+            .checked_sub(base + self.vector_functions().len() + self.owned_vector_functions().len())
+        {
+            if let Some(item) = self.builtin_set().process().at(rank) {
+                return Ok(DeclarationOrigin::Builtin(BuiltinItem::Process(item)));
+            }
+        }
         Err(bad(self.sources().eof()))
     }
     // Only checked view constructors use these narrow immutable projections.
@@ -2348,6 +2517,7 @@ impl<'s> DeclarationIndex<'s> {
             + self.builtin_set().extra_functions()
             + self.vector_functions().len()
             + self.owned_vector_functions().len()
+            + self.builtin_set().process().count()
     }
     pub fn vector_functions(&self) -> &[vector::Function] {
         self.generic_plan()

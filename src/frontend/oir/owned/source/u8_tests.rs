@@ -528,6 +528,7 @@ fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
         assert_eq!(
             seed,
             169_210
+                + crate::frontend::builtin_catalog::termination::shared_selector_bytes()
                 + super::hir_budget::byte_storage_fixed_successor_bytes()
                 + super::hir_budget::byte_string_successor_bytes(1)
                 + super::hir_budget::file_index_successor_bytes()
@@ -543,6 +544,7 @@ fn owned_u8_ordinary_source_tracker_byte_storage_admission_successor() {
         assert_eq!(
             exact,
             171_238
+                + crate::frontend::builtin_catalog::termination::shared_selector_bytes()
                 + super::hir_budget::byte_storage_fixed_successor_bytes()
                 + super::hir_budget::byte_string_successor_bytes(1)
                 + super::hir_budget::file_index_successor_bytes()

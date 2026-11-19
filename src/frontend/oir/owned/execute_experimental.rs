@@ -8,16 +8,20 @@ use std::ops::Range;
 mod delivery;
 #[path = "execute_file_delivery.rs"]
 mod file_delivery;
+#[path = "execute_process_delivery.rs"]
+mod process_delivery;
 pub(super) use delivery::argument_control_bytes as argument_delivery_control_bytes;
 pub(super) use delivery::control_bytes as binary_delivery_control_bytes;
 pub(super) use file_delivery::control_bytes as file_delivery_control_bytes;
 pub(super) use file_delivery::seek_control_bytes as file_seek_control_bytes;
+pub(super) use process_delivery::control_bytes as process_delivery_control_bytes;
 
 pub(super) enum ByteRegion {
     Activation {
         frame: usize,
         bytes: Range<usize>,
     },
+    Cell(super::element_loans::CellAddress),
     Buffer {
         value: byte_buffer::Descriptor,
         start: i32,
@@ -29,9 +33,9 @@ pub(super) enum ByteRegion {
         end: i32,
     },
 }
-struct BufferPlace {
-    frame: usize,
-    bytes: Range<usize>,
+pub(super) enum BufferPlace {
+    Activation { frame: usize, bytes: Range<usize> },
+    Cell(super::element_loans::CellAddress),
 }
 #[derive(Clone)]
 pub(super) enum ResultPlace {
@@ -85,7 +89,25 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             .heap
             .descriptor(&self.frames[frame].payload[bytes.clone()])
             .map_err(|failure| heap_failure(failure, span))?;
-        Ok((BufferPlace { frame, bytes }, value))
+        Ok((BufferPlace::Activation { frame, bytes }, value))
+    }
+    fn buffer_at_access(
+        &self,
+        frame: usize,
+        base: AccessBase,
+        root: OwnerKey,
+        relative: u64,
+        span: Span,
+    ) -> Result<(BufferPlace, byte_buffer::Descriptor)> {
+        if !self.plan.has_local_record_element_loans() {
+            return self.buffer_at(root, relative, span);
+        }
+        let place = self.resource_place(frame, base, root, relative, 16, span)?;
+        let value = self
+            .heap
+            .descriptor(self.resource_bytes(&place))
+            .map_err(|failure| heap_failure(failure, span))?;
+        Ok((place, value))
     }
     /// The descriptor address is re-derived from checked nominal paths. A slice
     /// stores only its initialized range and can never manufacture an owner.
@@ -95,6 +117,13 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         root: OwnerKey,
         span: Span,
     ) -> Result<u64> {
+        if self.plan.has_local_record_element_loans() {
+            if let Some(offset) =
+                self.element_resource_offset(permission, root, AggregateTy::ByteBuf, span)?
+            {
+                return Ok(offset);
+            }
+        }
         if matches!(self.aggregate(root, span)?, AggregateTy::Record(_)) {
             let view = self
                 .projected_view(permission, root, span)
@@ -138,7 +167,13 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
     }
     pub(super) fn buffer_slice(&self, handle: ReferenceHandle, span: Span) -> Result<ByteRegion> {
         let offset = self.resource_origin(handle.permission, handle.root, span)?;
-        let (_, value) = self.buffer_at(handle.root, offset, span)?;
+        let (_, value) = self.buffer_at_access(
+            index(handle.permission.frame, span)?,
+            AccessBase::Loan(LoanId(index(handle.permission.loan, span)?)),
+            handle.root,
+            offset,
+            span,
+        )?;
         let start = (handle.view.offset >> 32) as u32;
         let length = handle.view.offset as u32;
         let end = start
@@ -172,7 +207,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                         return self.buffer_slice(self.frames[frame].references[reference.0], span);
                     }
                 }
-                let (_, value) = self.buffer_at(root, view.offset, span)?;
+                let (_, value) = self.buffer_at_access(frame, base, root, view.offset, span)?;
                 let end = self
                     .heap
                     .len(&value)
@@ -184,18 +219,13 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 })
             }
             Some(AggregateTy::FixedArray(array)) if array.element() == hir::Ty::U8 => {
-                let extent = self.owner_extent(root, span)?;
-                let start = extent
-                    .start
-                    .checked_add(index(view.offset, span)?)
-                    .ok_or_else(|| bad("byte view offset", span))?;
-                let end = start
-                    .checked_add(array.length())
-                    .filter(|end| *end <= extent.end)
-                    .ok_or_else(|| bad("byte view extent", span))?;
-                Ok(ByteRegion::Activation {
-                    frame: index(root.frame, span)?,
-                    bytes: start..end,
+                let place =
+                    self.resource_place(frame, base, root, view.offset, array.length(), span)?;
+                Ok(match place {
+                    BufferPlace::Activation { frame, bytes } => {
+                        ByteRegion::Activation { frame, bytes }
+                    }
+                    BufferPlace::Cell(address) => ByteRegion::Cell(address),
                 })
             }
             _ => Err(bad("byte view type", span)),
@@ -217,7 +247,13 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         }
         let root = self.base(frame, AccessBase::Parameter(reference), access, span)?;
         let view = self.base_view(frame, AccessBase::Parameter(reference), root, span)?;
-        self.buffer_at(root, view.offset, span)
+        self.buffer_at_access(
+            frame,
+            AccessBase::Parameter(reference),
+            root,
+            view.offset,
+            span,
+        )
     }
     pub(super) fn prepare_experimental_result(
         &self,
@@ -376,6 +412,9 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         }
         let result = self.prepare_experimental_result(frame, destination, span)?;
         let value = match operation {
+            Function::EnableTermination | Function::TerminationRequested => {
+                return Err(bad("process operation requires prepared delivery", span));
+            }
             Function::New => OperationValue::EmptyBuffer,
             Function::ArgCount => {
                 OperationValue::Scalar(Scalar::I32(crate::program_arguments::count()))
@@ -395,7 +434,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 let encoding = value.encoding();
                 // All source/result admission precedes the transfer. The
                 // existing allocation stays registered under its old identity.
-                self.frames[place.frame].payload[place.bytes].fill(0);
+                self.resource_bytes_mut(&place).fill(0);
                 self.commit_experimental_result(frame, result, OperationValue::EmptyBuffer);
                 self.frames[frame].payload[bytes].copy_from_slice(&encoding);
                 return Ok(());
@@ -441,11 +480,27 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                             Access::Read,
                             span,
                         )? {
-                            ByteRegion::Activation { frame, bytes } => self.heap.try_extend(
-                                &mut value,
-                                &self.frames[frame].payload[bytes],
-                                &mut operation_fuel,
-                            ),
+                            ByteRegion::Activation { frame, bytes } => {
+                                let place = BufferPlace::Activation { frame, bytes };
+                                let bytes = self.resource_bytes(&place);
+                                let pointer = bytes.as_ptr();
+                                let length = bytes.len();
+                                // SAFETY: the verified shared source loan pins
+                                // this disjoint activation or outer heap cell.
+                                let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
+                                self.heap.try_extend(&mut value, bytes, &mut operation_fuel)
+                            }
+                            ByteRegion::Cell(address) => {
+                                let place = BufferPlace::Cell(address);
+                                let bytes = self.resource_bytes(&place);
+                                let pointer = bytes.as_ptr();
+                                let length = bytes.len();
+                                // SAFETY: this fixed-array source belongs to
+                                // the pinned outer owning vector, whereas only
+                                // the distinct child ByteBuf may reallocate.
+                                let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
+                                self.heap.try_extend(&mut value, bytes, &mut operation_fuel)
+                            }
                             ByteRegion::Buffer {
                                 value: source,
                                 start,
@@ -494,7 +549,8 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                     self.fuel = operation_fuel;
                 }
                 let status = status.map_err(|failure| heap_failure(failure, span))?;
-                self.frames[place.frame].payload[place.bytes].copy_from_slice(&value.encoding());
+                self.resource_bytes_mut(&place)
+                    .copy_from_slice(&value.encoding());
                 if operation == Function::Truncate {
                     OperationValue::Scalar(Scalar::Unit)
                 } else {
@@ -532,7 +588,8 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             {
                 ((view.offset >> 32) as i32, view.offset as u32 as i32)
             } else {
-                let (_, value) = self.buffer_at(root, view.offset, span)?;
+                let (_, value) =
+                    self.buffer_at_access(frame, declaration.authority, root, view.offset, span)?;
                 (
                     0,
                     self.heap

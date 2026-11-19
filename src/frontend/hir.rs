@@ -803,7 +803,7 @@ impl<'a> Resolver<'_, 'a> {
     fn expression(&mut self, id: ast::ExprId) -> Result<ExprId, Box<Diagnostic>> {
         let expr = &self.ast.expressions[id.0];
         let kind = match &expr.kind {
-            ast::ExprKind::Borrow { .. } => {
+            ast::ExprKind::Borrow { .. } | ast::ExprKind::BorrowElement { .. } => {
                 return Err(Diagnostic::new(
                     "E0300",
                     "resolve",

@@ -465,6 +465,11 @@ fn roles_with_syntax(
                 forwarded: true,
                 name,
                 ..
+            }
+            | ExprKind::BorrowElement {
+                forwarded: true,
+                name,
+                ..
             } => {
                 let first = program
                     .tokens
