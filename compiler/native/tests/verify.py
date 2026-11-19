@@ -52,6 +52,10 @@ def run(command: list[str], cwd: Path, timeout: int, clear_environment: bool = T
 RUNTIME_EXPECTATIONS = {
     "overflow": (b"integer overflow\n", "E0604", "checked i32 arithmetic overflow"),
     "division by zero": (b"division by zero\n", "E0607", "checked i32 division by zero"),
+    "byte overflow": (b"integer overflow\n", "E0604", "checked u8 arithmetic overflow"),
+    "byte division by zero": (b"division by zero\n", "E0607", "checked u8 division by zero"),
+    "byte conversion": (b"byte conversion out of range\n", "E0610",
+                        "checked i32 to u8 conversion out of range"),
 }
 NATIVE_DEPTH_ERROR = b"call depth limit exceeded\n"
 

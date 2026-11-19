@@ -25,6 +25,7 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     let literal_bytes_10 = b"false";
     let literal_bytes_11 = b"i32";
     let literal_bytes_12 = b"bool";
+    let byte_type = b"u8";
 
     if word(&*source, start, end, &literal_bytes_0) { return 3; }
     if word(&*source, start, end, &literal_bytes_1) { return 4; }
@@ -39,6 +40,7 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     if word(&*source, start, end, &literal_bytes_10) { return 13; }
     if word(&*source, start, end, &literal_bytes_11) { return 14; }
     if word(&*source, start, end, &literal_bytes_12) { return 15; }
+    if word(&*source, start, end, &byte_type) { return 16; }
     return 1;
 }
 fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i32) -> () {
@@ -74,6 +76,7 @@ fn identifier(c: &mut Compiler, start: i32, size: i32) -> i32 {
     return i;
 }
 fn integer(c: &mut Compiler, start: i32, size: i32) -> i32 {
+    let byte_suffix = b"u8";
     let mut i = start;
     let mut value = 0;
     while i < size && digit(code(&*c.source, i)) {
@@ -83,6 +86,16 @@ fn integer(c: &mut Compiler, start: i32, size: i32) -> i32 {
         }
         value = value * 10 - d;
         i = i + 1;
+    }
+    if i + 2 <= size && word(&*c.source, i, i + 2, &byte_suffix) {
+        let end = i + 2;
+        if end < size {
+            let next = code(&*c.source, end);
+            if letter(next) || digit(next) { c.error = 65; c.error_start = start; return end; }
+        }
+        if value < -255 { c.error = 65; c.error_start = start; return end; }
+        push(&mut *c, 17, start, end, 0 - value);
+        return end;
     }
     push(&mut *c, 2, start, i, value);
     return i;
@@ -104,6 +117,7 @@ fn single_kind(b: i32) -> i32 {
     if b == 33 { return 34; }
     if b == 60 { return 37; }
     if b == 62 { return 39; }
+    if b == 46 { return 43; }
     return 0;
 }
 fn paired_kind(b: i32, next: i32) -> i32 {
