@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_windows_local_package_compatibility.py \
+          python3 -B scripts/verify_windows_file_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -1099,6 +1099,11 @@ jobs:
           cargo test --locked --bin oxid frontend::native::doctor::windows::tests:: -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --test native_doctor --test typed_windows_native -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows binary file programs
+        run: |
+          $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN
+          cargo test --locked --test windows_file_io -- --include-ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify PE execution, publication and standalone deployment
         run: |
