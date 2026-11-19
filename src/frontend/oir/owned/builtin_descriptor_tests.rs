@@ -103,6 +103,7 @@ fn function(id: usize, enumeration: usize, span: Span) -> RawOwnedFunction {
 
 fn canonical(builtins: BuiltinOrigins) -> RawOwnedProgram {
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins,
         enums: vec![enumeration(0, anchor(0))],
         records: vec![],
@@ -167,6 +168,7 @@ fn builtin_descriptor_claim_selects_only_the_canonical_suffix() {
         );
     });
     let mut prefixed = RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::ReadStdin,
         // The same shape is legal as a source-origin prefix and does not imply
         // a second builtin. Only the explicit suffix receives builtin identity.
@@ -418,8 +420,10 @@ fn builtin_descriptor_rejects_extra_function_rows() {
         }),
         ("loan", |f| {
             f.loans.push(LoanDecl {
-                call: CallSiteId(0),
-                argument: 0,
+                region: LoanRegion::Call {
+                    call: CallSiteId(0),
+                    argument: 0,
+                },
                 authority: AccessBase::Parameter(ReferenceParamId(0)),
                 projection: vec![],
                 kind: BorrowKind::Exclusive,

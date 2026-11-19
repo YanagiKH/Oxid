@@ -96,6 +96,208 @@ pub(super) fn scalar_statement_shape(
     };
     let expected = local_in(locals, assign.destination, assign.span)?.ty;
     let actual = match assign.value {
+        Rvalue::Character(_) => Ty::Char,
+        Rvalue::CharacterConvert {
+            op,
+            operand,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            operand_in(locals, operand, sources)?
+                .character_conversion(op)
+                .ok_or_else(|| failure(FailureKind::TypeMismatch, operand.span))?
+        }
+        Rvalue::FloatConvert {
+            op,
+            operand,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            operand_in(locals, operand, sources)?
+                .float_conversion(op)
+                .ok_or_else(|| failure(FailureKind::TypeMismatch, operand.span))?
+        }
+        Rvalue::Float { bits, ty } => {
+            if RuntimeScalar::from_float(ty, bits).is_none() {
+                return Err(failure(FailureKind::TypeMismatch, assign.span));
+            }
+            ty
+        }
+        Rvalue::FloatNegate {
+            operand,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, operand, sources)?;
+            if !ty.floating() {
+                return Err(failure(FailureKind::TypeMismatch, operand.span));
+            }
+            ty
+        }
+        Rvalue::FloatArithmetic {
+            left,
+            right,
+            operator_span,
+            ..
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, left, sources)?;
+            if !ty.floating() {
+                return Err(failure(FailureKind::TypeMismatch, left.span));
+            }
+            same_type(operand_in(locals, right, sources)?, ty, right.span)?;
+            ty
+        }
+
+        Rvalue::BitNot {
+            operand,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, operand, sources)?;
+            if ty.integer_bits().is_none() {
+                return Err(failure(FailureKind::TypeMismatch, operand.span));
+            }
+            ty
+        }
+        Rvalue::Bitwise {
+            op,
+            left,
+            right,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, left, sources)?;
+            let other = operand_in(locals, right, sources)?;
+            if ty.integer_bits().is_none()
+                || other.integer_bits().is_none()
+                || (!op.shift() && ty != other)
+            {
+                return Err(failure(FailureKind::TypeMismatch, right.span));
+            }
+            ty
+        }
+        Rvalue::Integer128 { ty, .. } => {
+            if !ty.quad_integer() {
+                return Err(failure(FailureKind::TypeMismatch, assign.span));
+            }
+            ty
+        }
+        Rvalue::Integer { ty, bits } => {
+            if RuntimeScalar::from_integer(ty, bits).is_none() {
+                return Err(failure(FailureKind::TypeMismatch, assign.span));
+            }
+            ty
+        }
+        Rvalue::CheckedInteger {
+            left,
+            right,
+            operator_span,
+            ..
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, left, sources)?;
+            if ty.integer_bits().is_none() {
+                return Err(failure(FailureKind::TypeMismatch, left.span));
+            }
+            same_type(operand_in(locals, right, sources)?, ty, right.span)?;
+            ty
+        }
+        Rvalue::CheckedNegateInteger {
+            operand,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            let ty = operand_in(locals, operand, sources)?;
+            if !ty.signed_integer() {
+                return Err(failure(FailureKind::TypeMismatch, operand.span));
+            }
+            ty
+        }
+        Rvalue::CheckedIntegerCast {
+            operand,
+            target,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            if operand_in(locals, operand, sources)?
+                .integer_bits()
+                .is_none()
+                || target.integer_bits().is_none()
+            {
+                return Err(failure(FailureKind::TypeMismatch, operand.span));
+            }
+            target
+        }
+        Rvalue::I64(_) => hir::Ty::I64,
+        Rvalue::WidenI64 {
+            operand: value,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            if !matches!(
+                operand_in(locals, value, sources)?,
+                hir::Ty::I32 | hir::Ty::U8
+            ) {
+                return Err(failure(FailureKind::TypeMismatch, value.span));
+            }
+            hir::Ty::I64
+        }
+        Rvalue::CheckedI64ToI32 {
+            operand: value,
+            name_span,
+            ..
+        }
+        | Rvalue::CheckedI64ToU8 {
+            operand: value,
+            name_span,
+            ..
+        } => {
+            span(sources, name_span)?;
+            same_type(
+                operand_in(locals, value, sources)?,
+                hir::Ty::I64,
+                value.span,
+            )?;
+            if matches!(assign.value, Rvalue::CheckedI64ToI32 { .. }) {
+                hir::Ty::I32
+            } else {
+                hir::Ty::U8
+            }
+        }
+        Rvalue::CheckedNegateI64 {
+            operand: value,
+            operator_span,
+        } => {
+            span(sources, operator_span)?;
+            same_type(
+                operand_in(locals, value, sources)?,
+                hir::Ty::I64,
+                value.span,
+            )?;
+            hir::Ty::I64
+        }
+        Rvalue::CheckedI64 {
+            left,
+            right,
+            operator_span,
+            ..
+        } => {
+            span(sources, operator_span)?;
+            for value in [left, right] {
+                same_type(
+                    operand_in(locals, value, sources)?,
+                    hir::Ty::I64,
+                    value.span,
+                )?;
+            }
+            hir::Ty::I64
+        }
+        Rvalue::U8(_) => hir::Ty::U8,
         Rvalue::Load(value) => place_in(places, value, sources)?,
         Rvalue::CheckedI32ToU8 {
             operand: value,
@@ -157,7 +359,11 @@ pub(super) fn scalar_statement_shape(
             let left_ty = operand_in(locals, left, sources)?;
             let expected = match op {
                 hir::ComparisonOp::Equal | hir::ComparisonOp::NotEqual => {
-                    if !matches!(left_ty, hir::Ty::I32 | hir::Ty::Bool | hir::Ty::U8) {
+                    if left_ty != hir::Ty::Bool
+                        && left_ty.integer_bits().is_none()
+                        && !left_ty.floating()
+                        && left_ty != Ty::Char
+                    {
                         return Err(failure(FailureKind::TypeMismatch, left.span));
                     }
                     left_ty
@@ -166,7 +372,10 @@ pub(super) fn scalar_statement_shape(
                 | hir::ComparisonOp::LessEqual
                 | hir::ComparisonOp::Greater
                 | hir::ComparisonOp::GreaterEqual => {
-                    if !matches!(left_ty, hir::Ty::I32 | hir::Ty::U8) {
+                    if left_ty.integer_bits().is_none()
+                        && !left_ty.floating()
+                        && left_ty != Ty::Char
+                    {
                         return Err(failure(FailureKind::TypeMismatch, left.span));
                     }
                     left_ty
@@ -281,6 +490,9 @@ fn verify_impl(
     // forward calls and recursion. Parameter types live in this single table.
     for (index, function) in program.functions.iter().enumerate() {
         span(sources, function.span)?;
+        if function.result == hir::Ty::I64 || function.result.extended_integer().is_some() {
+            return Err(failure(FailureKind::TypeMismatch, function.span));
+        }
         if function.id != hir::DefId(index) {
             return Err(failure(FailureKind::InvalidFunctionId, function.span));
         }
@@ -291,12 +503,18 @@ fn verify_impl(
         }
         for (index, decl) in function.locals.iter().enumerate() {
             span(sources, decl.span)?;
+            if decl.ty == hir::Ty::I64 || decl.ty.extended_integer().is_some() {
+                return Err(failure(FailureKind::TypeMismatch, decl.span));
+            }
             if (index < function.param_count) != (decl.kind == LocalKind::Parameter) {
                 return Err(failure(FailureKind::ParameterKind, decl.span));
             }
         }
         for decl in &function.places {
             span(sources, decl.span)?;
+            if decl.ty == hir::Ty::I64 || decl.ty.extended_integer().is_some() {
+                return Err(failure(FailureKind::TypeMismatch, decl.span));
+            }
         }
         if function.blocks.is_empty() {
             return Err(failure(FailureKind::NoBlocks, function.span));
@@ -328,6 +546,20 @@ fn verify_impl(
                 }
             }
             for statement in &block.statements {
+                if statement.as_assignment().is_some_and(|assign| {
+                    matches!(
+                        assign.value,
+                        Rvalue::Bitwise { .. }
+                            | Rvalue::BitNot { .. }
+                            | Rvalue::Integer { .. }
+                            | Rvalue::Integer128 { .. }
+                            | Rvalue::CheckedInteger { .. }
+                            | Rvalue::CheckedNegateInteger { .. }
+                            | Rvalue::CheckedIntegerCast { .. }
+                    )
+                }) {
+                    return Err(failure(FailureKind::TypeMismatch, statement.span()));
+                }
                 if !authenticated
                     && statement.as_assignment().is_some_and(|assign| {
                         matches!(
@@ -462,16 +694,39 @@ pub(super) fn scalar_statement_uses(
         }
         Statement::Assign(assign) => match assign.value {
             Rvalue::Load(place) => visit(ScalarUse::Place(place)),
-            Rvalue::Copy(value)
+            Rvalue::CharacterConvert { operand: value, .. }
+            | Rvalue::FloatConvert { operand: value, .. }
+            | Rvalue::FloatNegate { operand: value, .. }
+            | Rvalue::BitNot { operand: value, .. }
+            | Rvalue::Copy(value)
             | Rvalue::CheckedI32ToU8 { operand: value, .. }
             | Rvalue::U8ToI32 { operand: value, .. }
+            | Rvalue::WidenI64 { operand: value, .. }
+            | Rvalue::CheckedI64ToI32 { operand: value, .. }
+            | Rvalue::CheckedI64ToU8 { operand: value, .. }
             | Rvalue::NotBool { operand: value, .. }
-            | Rvalue::CheckedNegateI32 { operand: value, .. } => visit(ScalarUse::Operand(value)),
-            Rvalue::CheckedI32 { left, right, .. } | Rvalue::CompareScalar { left, right, .. } => {
+            | Rvalue::CheckedNegateI32 { operand: value, .. }
+            | Rvalue::CheckedNegateInteger { operand: value, .. }
+            | Rvalue::CheckedIntegerCast { operand: value, .. }
+            | Rvalue::CheckedNegateI64 { operand: value, .. } => visit(ScalarUse::Operand(value)),
+            Rvalue::FloatArithmetic { left, right, .. }
+            | Rvalue::Bitwise { left, right, .. }
+            | Rvalue::CheckedI32 { left, right, .. }
+            | Rvalue::CheckedI64 { left, right, .. }
+            | Rvalue::CheckedInteger { left, right, .. }
+            | Rvalue::CompareScalar { left, right, .. } => {
                 visit(ScalarUse::Operand(left))?;
                 visit(ScalarUse::Operand(right))
             }
-            Rvalue::Bool(_) | Rvalue::I32(_) | Rvalue::Unit => Ok(()),
+            Rvalue::Bool(_)
+            | Rvalue::I32(_)
+            | Rvalue::I64(_)
+            | Rvalue::Integer { .. }
+            | Rvalue::Character(_)
+            | Rvalue::Float { .. }
+            | Rvalue::Integer128 { .. }
+            | Rvalue::U8(_)
+            | Rvalue::Unit => Ok(()),
         },
     }
 }

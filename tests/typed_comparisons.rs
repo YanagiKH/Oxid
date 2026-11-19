@@ -382,8 +382,6 @@ fn adjacent_tokens_are_required_and_unrelated_operators_remain_unsupported() {
         ("1 > /* 雪 */ = 2", "="),
         ("1 =/* 雪 */= 2", "="),
         ("1 !/* 雪 */=2", "!"),
-        ("true & false", "&"),
-        ("true | false", "|"),
         ("true or false", "or"),
         ("1 as bool", "as"),
     ] {
@@ -400,6 +398,11 @@ fn adjacent_tokens_are_required_and_unrelated_operators_remain_unsupported() {
             prefix.len() + expression.find(origin).unwrap(),
             origin.len(),
         );
+    }
+    for operator in ["&", "|"] {
+        let prefix = "// 🦀\r\nfn main() -> bool { return ";
+        let source = format!("{prefix}true {operator} false; }}");
+        reject(&source, "E0300", "type", prefix.len(), 4);
     }
     for expression in ["1 <", "true ==", "1 <=", "1 < < 2"] {
         let out = Fixture::new(&format!("fn main() -> bool {{ return {expression}; }}")).run(true);

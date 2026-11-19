@@ -52,6 +52,7 @@ fn output_identity_denial_precedes_runtime_view_and_fuel() {
         live_cells: 0,
         live_bytes: 0,
         header_bytes: size_of::<Frame>(),
+        heap: byte_buffer::Heap::default(),
         events: vec![],
         observer: array_observe::Observer::default(),
     };
@@ -151,6 +152,7 @@ fn process_silent_observer_does_not_reserve_or_emit_charge_events() {
         live_cells: 0,
         live_bytes: 0,
         header_bytes: 0,
+        heap: byte_buffer::Heap::default(),
         events: Vec::new(),
         observer: array_observe::Observer {
             silent: true,

@@ -1,6 +1,86 @@
+use super::super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH;
 use super::super::*;
 use super::{budget, lower, resolve, typeck};
 use crate::frontend::{lexer, parser, source::SourceMap};
+
+// These independent models keep predecessor measurements visible while pricing
+// the explicit Copy bit in each raw and verified record declaration.
+#[allow(dead_code)]
+#[repr(C)]
+struct PriorRawRecordHeader {
+    id: RecordId,
+    span: Span,
+    fields: Vec<RawFieldDecl>,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct CopyRawRecordHeader {
+    id: RecordId,
+    span: Span,
+    fields: Vec<RawFieldDecl>,
+    is_copy: bool,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct PriorCheckedRecordHeader {
+    id: RecordId,
+    span: Span,
+    field_start: usize,
+    field_end: usize,
+    layout: [usize; 2],
+    width: usize,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct CopyCheckedRecordHeader {
+    id: RecordId,
+    span: Span,
+    field_start: usize,
+    field_end: usize,
+    layout: [usize; 2],
+    width: usize,
+    is_copy: bool,
+}
+const COPY_RAW_RECORD_GROWTH: usize =
+    std::mem::size_of::<CopyRawRecordHeader>() - std::mem::size_of::<PriorRawRecordHeader>();
+const COPY_CHECKED_RECORD_GROWTH: usize = std::mem::size_of::<CopyCheckedRecordHeader>()
+    - std::mem::size_of::<PriorCheckedRecordHeader>();
+
+#[test]
+fn checked_copy_record_layout_growth_is_charged_once_per_declaration() {
+    use std::mem::{align_of, size_of};
+    assert_eq!(size_of::<RawRecordDecl>(), size_of::<CopyRawRecordHeader>());
+    assert_eq!(
+        align_of::<RawRecordDecl>(),
+        align_of::<CopyRawRecordHeader>()
+    );
+    assert_eq!(
+        size_of::<RecordDecl>(),
+        size_of::<CopyCheckedRecordHeader>()
+    );
+    assert_eq!(
+        align_of::<RecordDecl>(),
+        align_of::<CopyCheckedRecordHeader>()
+    );
+    #[cfg(target_pointer_width = "64")]
+    {
+        assert_eq!(
+            (
+                size_of::<PriorRawRecordHeader>(),
+                size_of::<CopyRawRecordHeader>()
+            ),
+            (56, 64)
+        );
+        assert_eq!(
+            (
+                size_of::<PriorCheckedRecordHeader>(),
+                size_of::<CopyCheckedRecordHeader>()
+            ),
+            (72, 80)
+        );
+        assert_eq!((COPY_RAW_RECORD_GROWTH, COPY_CHECKED_RECORD_GROWTH), (8, 8));
+    }
+}
 
 fn with_typed<T>(
     text: &str,
@@ -41,12 +121,15 @@ fn source_payload_exact_count_and_one_under_precede_every_reservation() {
             assert_eq!(
                 usage.raw_bytes,
                 2312 + std::mem::size_of::<Vec<MatchDecl>>()
+                    + VECTOR_RAW_HEADER_GROWTH
+                    + COPY_RAW_RECORD_GROWTH
             );
             assert_eq!(usage.analysis.expanded_events, 7);
             assert_eq!(usage.analysis.work, 552);
+            // Declaration tables have their own budget; control-flow metadata is unchanged.
             assert_eq!(
                 usage.analysis.metadata_bytes,
-                576 + std::mem::size_of::<Vec<MatchDecl>>()
+                576 + std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH
             );
             let raw = lower::lower_with_limits(
                 typed,
@@ -80,18 +163,89 @@ fn source_payload_exact_count_and_one_under_precede_every_reservation() {
 }
 
 #[test]
+fn local_reference_descriptors_cleanup_and_limits_are_paid_before_reservation() {
+    let baseline = with_typed("struct T{}fn main()->(){let x=T{};return;}", |typed, _| {
+        let usage = budget::preflight(typed, budget::Limits::DEFAULT).unwrap();
+        let view = typed.functions().next().unwrap();
+        (usage, lower::count_preflight_function(&view).unwrap())
+    });
+    with_typed(
+        "struct T{}fn main()->(){let x=T{};let a=&x;let b=&*a;return;}",
+        |typed, sources| {
+            let usage = budget::fail_allocation_after(0, || {
+                budget::preflight(typed, budget::Limits::DEFAULT)
+            })
+            .unwrap();
+            let view = typed.functions().next().unwrap();
+            let counts = lower::count_preflight_function(&view).unwrap();
+            assert_eq!(counts.owners, baseline.1.owners);
+            assert_eq!(counts.locals, baseline.1.locals);
+            assert_eq!(counts.references, 0);
+            assert_eq!(counts.loans, 2);
+            assert_eq!(counts.statements, baseline.1.statements + 4);
+            assert_eq!(
+                usage.raw_bytes,
+                baseline.0.raw_bytes
+                    + 2 * std::mem::size_of::<LoanDecl>()
+                    + 4 * std::mem::size_of::<OwnedStatement>()
+            );
+            // Each reference adds one binding location and one machine-word cleanup slot.
+            assert_eq!(
+                usage.scratch_bytes,
+                baseline.0.scratch_bytes
+                    + 2 * (std::mem::size_of::<Option<lower::BindingLocation>>()
+                        + std::mem::size_of::<usize>())
+            );
+            let raw = lower::lower_with_limits(
+                typed,
+                budget::Limits {
+                    raw_bytes: usage.raw_bytes,
+                },
+            )
+            .unwrap();
+            let witness = verified::verify_owned(raw, sources).unwrap();
+            assert_eq!(
+                execute::run(&witness, Some(hir::DefId(0))),
+                Ok(Scalar::Unit)
+            );
+            let error = budget::fail_allocation_after(0, || {
+                lower::lower_with_limits(
+                    typed,
+                    budget::Limits {
+                        raw_bytes: usage.raw_bytes - 1,
+                    },
+                )
+            })
+            .unwrap_err();
+            assert_eq!(error.kind, OwnedFailureKind::Resource("source raw payload"));
+            assert_eq!(
+                budget::fail_allocation_after(0, || lower::lower(typed))
+                    .unwrap_err()
+                    .kind,
+                OwnedFailureKind::Resource("injected source allocation failure")
+            );
+        },
+    );
+}
+
+#[test]
 fn source_scalar_origin_only_output_is_counted_without_ownership_flow() {
     with_typed(
         "struct T {} fn main() -> () { return; }",
         |typed, sources| {
             let usage = budget::preflight(typed, budget::Limits::DEFAULT).unwrap();
-            assert_eq!(usage.raw_bytes, 952 + std::mem::size_of::<Vec<MatchDecl>>());
+            assert_eq!(
+                usage.raw_bytes,
+                952 + std::mem::size_of::<Vec<MatchDecl>>()
+                    + VECTOR_RAW_HEADER_GROWTH
+                    + COPY_RAW_RECORD_GROWTH
+            );
             assert_eq!(usage.analysis.owners, 0);
             assert_eq!(usage.analysis.expanded_events, 0);
             assert_eq!(usage.analysis.work, 4);
             assert_eq!(
                 usage.analysis.metadata_bytes,
-                144 + std::mem::size_of::<Vec<MatchDecl>>()
+                144 + std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH
             );
             let raw = lower::lower(typed).unwrap();
             assert!(!super::super::budget::active(&raw.functions[0]));
@@ -207,13 +361,17 @@ fn production_token_envelope_lowers_a_large_real_source_graph() {
     // loop and one synthetic return-unit slot/instruction. No owner slots.
     assert_eq!(
         usage.raw_bytes,
-        1224 * loops + 952 + std::mem::size_of::<Vec<MatchDecl>>()
+        1224 * loops
+            + 952
+            + std::mem::size_of::<Vec<MatchDecl>>()
+            + VECTOR_RAW_HEADER_GROWTH
+            + COPY_RAW_RECORD_GROWTH
     );
     assert_eq!(usage.scratch_bytes, 64 * loops + 8);
     assert_eq!(usage.analysis.work, 8 * loops + 4);
     assert_eq!(
         usage.analysis.metadata_bytes,
-        224 * loops + 144 + std::mem::size_of::<Vec<MatchDecl>>()
+        224 * loops + 144 + std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH
     );
     let raw = lower::lower(&typed).unwrap();
     assert_eq!(raw.functions[0].blocks.len(), 3 * loops + 1);
@@ -267,7 +425,12 @@ fn comment_padded_source_checks_do_not_claim_the_file_loader_byte_gate() {
         }
         with_typed(&text, |typed, sources| {
             let usage = budget::preflight(typed, budget::Limits::DEFAULT).unwrap();
-            assert_eq!(usage.raw_bytes, 952 + std::mem::size_of::<Vec<MatchDecl>>());
+            assert_eq!(
+                usage.raw_bytes,
+                952 + std::mem::size_of::<Vec<MatchDecl>>()
+                    + VECTOR_RAW_HEADER_GROWTH
+                    + COPY_RAW_RECORD_GROWTH
+            );
             let witness = verified::verify_owned(lower::lower(typed).unwrap(), sources).unwrap();
             assert_eq!(execute::run(&witness, typed.entry()).unwrap(), Scalar::Unit);
         });

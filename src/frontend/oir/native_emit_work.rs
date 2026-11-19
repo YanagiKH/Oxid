@@ -102,19 +102,39 @@ pub(in crate::frontend::oir) fn debit(
 fn arithmetic_failures(statement: &Statement) -> (u64, bool) {
     match statement {
         Statement::Assign(assign) => match &assign.value {
-            Rvalue::CheckedI32ToU8 { .. } => (1, true),
-            Rvalue::CheckedNegateI32 { .. } => (1, false),
-            Rvalue::CheckedI32 { op, .. } => match op {
+            Rvalue::CheckedI32ToU8 { .. }
+            | Rvalue::CheckedI64ToU8 { .. }
+            | Rvalue::CheckedI64ToI32 { .. }
+            | Rvalue::CheckedIntegerCast { .. } => (1, true),
+            Rvalue::CheckedNegateI32 { .. }
+            | Rvalue::CheckedNegateI64 { .. }
+            | Rvalue::CheckedNegateInteger { .. } => (1, false),
+            Rvalue::CheckedI32 { op, .. }
+            | Rvalue::CheckedI64 { op, .. }
+            | Rvalue::CheckedInteger { op, .. } => match op {
                 hir::ArithmeticOp::Add
                 | hir::ArithmeticOp::Subtract
                 | hir::ArithmeticOp::Multiply => (1, false),
                 hir::ArithmeticOp::Divide | hir::ArithmeticOp::Remainder => (2, false),
             },
             Rvalue::U8ToI32 { .. }
+            | Rvalue::WidenI64 { .. }
+            | Rvalue::I64(_)
+            | Rvalue::Integer { .. }
+            | Rvalue::CharacterConvert { .. }
+            | Rvalue::FloatConvert { .. }
+            | Rvalue::Character(_)
+            | Rvalue::Float { .. }
+            | Rvalue::FloatArithmetic { .. }
+            | Rvalue::FloatNegate { .. }
+            | Rvalue::Integer128 { .. }
+            | Rvalue::Bitwise { .. }
+            | Rvalue::BitNot { .. }
             | Rvalue::Load(_)
             | Rvalue::NotBool { .. }
             | Rvalue::Bool(_)
             | Rvalue::I32(_)
+            | Rvalue::U8(_)
             | Rvalue::Unit
             | Rvalue::Copy(_)
             | Rvalue::CompareScalar { .. } => (0, false),

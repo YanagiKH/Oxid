@@ -31,6 +31,7 @@ pub(super) struct Workspace {
     members: Vec<Member>,
     defaults: Vec<usize>,
     current: Option<usize>,
+    registry_budget: Option<crate::project_registry::Allowance>,
 }
 
 fn member_path(value: &str) -> Result<(), String> {
@@ -53,28 +54,41 @@ fn member_path(value: &str) -> Result<(), String> {
 
 fn member_directory(root: &Path, value: &str) -> Result<PathBuf, String> {
     member_path(value)?;
-    let mut path = root.to_path_buf();
-    if value != "." {
-        for part in value.split('/') {
-            path.push(part);
-            let metadata = fs::symlink_metadata(&path)
-                .map_err(|error| format!("cannot inspect workspace member {value}: {error}"))?;
-            if !metadata.file_type().is_dir() {
-                return Err(format!(
+    #[cfg(windows)]
+    {
+        frontend::verify_windows_workspace_member(root, value)
+    }
+    #[cfg(not(windows))]
+    {
+        let mut path = root.to_path_buf();
+        if value != "." {
+            for part in value.split('/') {
+                path.push(part);
+                let metadata = fs::symlink_metadata(&path)
+                    .map_err(|error| format!("cannot inspect workspace member {value}: {error}"))?;
+                if !metadata.file_type().is_dir() {
+                    return Err(format!(
                     "workspace member {value} must use ordinary directories without symbolic links"
                 ));
+                }
             }
         }
+        let canonical = fs::canonicalize(&path)
+            .map_err(|error| format!("cannot open workspace member {value}: {error}"))?;
+        if !canonical.starts_with(root) {
+            return Err(format!("workspace member {value} escapes its workspace"));
+        }
+        Ok(canonical)
     }
-    let canonical = fs::canonicalize(&path)
-        .map_err(|error| format!("cannot open workspace member {value}: {error}"))?;
-    if !canonical.starts_with(root) {
-        return Err(format!("workspace member {value} escapes its workspace"));
-    }
-    Ok(canonical)
 }
 
 pub(super) fn discover() -> Result<Option<Workspace>, String> {
+    discover_with_registry_budget(None)
+}
+
+pub(super) fn discover_with_registry_budget(
+    registry_budget: Option<crate::project_registry::Allowance>,
+) -> Result<Option<Workspace>, String> {
     let cwd = fs::canonicalize(
         std::env::current_dir()
             .map_err(|error| format!("cannot read current directory: {error}"))?,
@@ -100,8 +114,10 @@ pub(super) fn discover() -> Result<Option<Workspace>, String> {
     let Some(root) = found else {
         return Ok(None);
     };
-    let snapshot = runtime::load_typed_manifest(&root.join("oxid.toml"))?;
-    load_roster(root, &cwd, snapshot, &mut RegularProjectReader).map(Some)
+    let mut reader = RegularProjectReader::new(root.clone(), true, true);
+    reader.registry_budget = registry_budget;
+    let snapshot = reader.manifest(&root.join("oxid.toml"))?;
+    load_roster(root, &cwd, snapshot, &mut reader).map(Some)
 }
 
 /// Reuse workspace member/default/nesting admission with already retained root
@@ -112,6 +128,7 @@ pub(super) fn load_roster(
     snapshot: runtime::ManifestSnapshot,
     reader: &mut dyn ProjectReader,
 ) -> Result<Workspace, String> {
+    reader.registry_manifest(&snapshot)?;
     let declaration = snapshot
         .workspace
         .as_ref()
@@ -132,7 +149,9 @@ pub(super) fn load_roster(
             || snapshot.manifest.target.is_some()
             || snapshot.manifest.profile.is_some()
             || snapshot.manifest.reproducible.is_some()
+            || snapshot.manifest.debug_info.is_some()
             || snapshot.manifest.entry_mode.is_some()
+            || snapshot.manifest.heap_limit.is_some()
             || !snapshot.manifest.scripts.is_empty()
             || !snapshot.manifest.features.is_empty())
     {
@@ -232,10 +251,61 @@ pub(super) fn load_roster(
         members,
         defaults,
         current,
+        registry_budget: reader.registry_allowance(),
     })
 }
 
 impl Workspace {
+    pub(super) fn publication(
+        &self,
+        selection: Option<&str>,
+        budget: crate::project_registry::Allowance,
+    ) -> Result<
+        (
+            PathBuf,
+            runtime::ManifestSnapshot,
+            Vec<PackageGraph>,
+            usize,
+            project_lock::Existing,
+        ),
+        String,
+    > {
+        let mut allowance = budget.borrow_mut();
+        let options = Options {
+            package: selection.map(|value| allowance.text(value)).transpose()?,
+            words: {
+                let mut words = Vec::new();
+                allowance.reserve(&mut words, 1)?;
+                words.push(allowance.text("check")?);
+                words
+            },
+            ..Options::default()
+        };
+        let selected = allowance.scoped(
+            2 * self.members.len().max(4).next_power_of_two() * std::mem::size_of::<usize>(),
+            || self.selected(&options),
+            |selected| Ok(selected.capacity() * std::mem::size_of::<usize>()),
+        )?;
+        if selected.len() != 1 {
+            return Err(
+                "publish requires exactly one library member; select it with --package".into(),
+            );
+        }
+        let index = selected[0];
+        crate::project_registry::publication_manifest(&self.members[index].snapshot.manifest)?;
+        let existing = project_lock::read_registry(&self.root, true, true, &mut allowance)?
+            .ok_or("publish requires the existing author lock")?;
+        let mut reader = RegularProjectReader::new(allowance.path(&self.root)?, true, true);
+        let mut scope = Vec::new();
+        allowance.reserve(&mut scope, self.members.len())?;
+        scope.extend(0..self.members.len());
+        let owner = allowance.path(&self.root)?;
+        let snapshot = crate::project_registry::clone_manifest(&self.snapshot, &mut allowance)?;
+        drop(allowance);
+        reader.registry_budget = Some(budget);
+        let graphs = self.graphs_with_reader(&scope, &mut reader)?;
+        Ok((owner, snapshot, graphs, index, existing))
+    }
     pub(super) fn source_members(
         &self,
     ) -> impl Iterator<Item = (&Path, &runtime::ManifestSnapshot)> {
@@ -244,12 +314,33 @@ impl Workspace {
             .map(|member| (member.root.as_path(), &member.snapshot))
     }
 
-    fn graphs(&self, scope: &[usize]) -> Result<Vec<PackageGraph>, String> {
+    fn graphs(
+        &self,
+        scope: &[usize],
+        locked: bool,
+        offline: bool,
+        registry_no_fetch: bool,
+        registry_budget: Option<crate::project_registry::Allowance>,
+    ) -> Result<Vec<PackageGraph>, String> {
+        let mut reader = RegularProjectReader::new(self.root.clone(), locked, offline);
+        reader.registry_budget = registry_budget;
+        reader.registry_no_fetch = registry_no_fetch;
+        self.graphs_with_reader(scope, &mut reader)
+    }
+    fn graphs_with_reader(
+        &self,
+        scope: &[usize],
+        reader: &mut RegularProjectReader,
+    ) -> Result<Vec<PackageGraph>, String> {
         let mut graphs = Vec::new();
         let mut nodes = 0usize;
         let mut edges = 0usize;
         for &index in scope {
-            let graph = package_graph(&self.members[index].root, &self.members[index].snapshot)?;
+            let graph = package_graph_with(
+                &self.members[index].root,
+                &self.members[index].snapshot,
+                reader,
+            )?;
             nodes += graph.specs.len();
             edges += graph
                 .specs
@@ -270,6 +361,9 @@ impl Workspace {
                     return Err("binary workspace members cannot be imported as library dependencies; declare kind = \"lib\"".into());
                 }
             }
+            if let Some(budget) = &reader.registry_budget {
+                budget.borrow_mut().reserve(&mut graphs, 1)?;
+            }
             graphs.push(graph);
         }
         Ok(graphs)
@@ -280,6 +374,40 @@ impl Workspace {
         graphs: &[PackageGraph],
         prepared: &[frontend::PreparedPackageProject<'_>],
     ) -> Result<project_lock::Snapshot, String> {
+        for (graph, prepared) in graphs.iter().zip(prepared) {
+            graph.verify_registries(prepared)?;
+        }
+        if let Some(origins) = graphs.iter().find_map(|graph| graph.registries.as_ref()) {
+            let allowance = &origins.allowance;
+            let mut fingerprints = Vec::new();
+            allowance
+                .borrow_mut()
+                .reserve(&mut fingerprints, graphs.len())?;
+            for (graph, session) in graphs.iter().zip(prepared) {
+                fingerprints.push(registry::publication_fingerprints(
+                    session, graph, allowance,
+                )?);
+            }
+            let mut inputs = Vec::new();
+            allowance.borrow_mut().reserve(&mut inputs, graphs.len())?;
+            for (graph, fingerprints) in graphs.iter().zip(&fingerprints) {
+                inputs.push(project_lock::WorkspaceInputs {
+                    graph: &graph.specs,
+                    manifests: &graph.manifests,
+                    fingerprints,
+                });
+            }
+            let expected = project_lock::expected_registry_workspace(
+                &self.root,
+                &self.snapshot.digest,
+                &inputs,
+                &mut allowance.borrow_mut(),
+            )?;
+            return expected.with_registries(
+                &self.root,
+                graphs.iter().flat_map(PackageGraph::registry_pins),
+            );
+        }
         let fingerprints = prepared
             .iter()
             .enumerate()
@@ -294,13 +422,19 @@ impl Workspace {
                 fingerprints: &fingerprints[slot],
             })
             .collect::<Vec<_>>();
-        project_lock::expected_workspace(&self.root, &self.snapshot.digest, &inputs)
+        project_lock::expected_workspace(&self.root, &self.snapshot.digest, &inputs)?
+            .with_registries(
+                &self.root,
+                graphs.iter().flat_map(PackageGraph::registry_pins),
+            )
     }
 
     pub(super) fn validate_for_doctor(&self) -> Result<String, String> {
-        let existing = project_lock::read_workspace(&self.root, false)?;
+        let mut registry_budget = self.registry_budget.clone();
+        let existing =
+            project_lock::read_with_registry(&self.root, false, true, &mut registry_budget)?;
         let scope = (0..self.members.len()).collect::<Vec<_>>();
-        let graphs = self.graphs(&scope)?;
+        let graphs = self.graphs(&scope, true, true, true, registry_budget)?;
         let mut prepared = Vec::new();
         let (mut files, mut bytes) = (0, 0);
         for graph in &graphs {
@@ -382,7 +516,7 @@ impl Workspace {
         let selected = self.selected(options)?;
         let build_options = match options.command() {
             "build" => validate_build_options(options)?,
-            "check" | "run" | "test" | "lock" => {
+            "check" | "run" | "test" | "lock" | "doc" => {
                 if options.words.len() != 1
                     && !(matches!(options.command(), "check" | "run")
                         && options.words.len() == 2
@@ -409,7 +543,9 @@ impl Workspace {
         } else {
             Vec::new()
         };
-        if matches!(options.command(), "check" | "test" | "lock") && options.entry_mode.is_some() {
+        if matches!(options.command(), "check" | "test" | "lock" | "doc")
+            && options.entry_mode.is_some()
+        {
             return Err(format!(
                 "workspace {} does not accept --entry-mode",
                 options.command()
@@ -440,13 +576,25 @@ impl Workspace {
                 true,
             ));
         }
-        let existing = project_lock::read_workspace(&self.root, options.requires_lock())?;
+        let mut registry_budget = self.registry_budget.clone();
+        let existing = project_lock::read_with_registry(
+            &self.root,
+            options.requires_lock(),
+            true,
+            &mut registry_budget,
+        )?;
         let scope = if existing.is_some() || options.command() == "lock" {
             (0..self.members.len()).collect::<Vec<_>>()
         } else {
             selected.clone()
         };
-        let graphs = self.graphs(&scope)?;
+        let graphs = self.graphs(
+            &scope,
+            options.requires_lock(),
+            options.offline || options.frozen,
+            options.command() == "doc",
+            registry_budget,
+        )?;
         let mut prepared = Vec::new();
         let mut files = 0usize;
         let mut bytes = 0usize;
@@ -502,11 +650,37 @@ impl Workspace {
         let expected = self.lock_snapshot(&graphs, &prepared)?;
         if options.command() == "lock" {
             let changed =
-                project_lock::publish(&self.root, &expected, existing.as_ref(), options.update)?;
+                if let Some(origins) = graphs.iter().find_map(|graph| graph.registries.as_ref()) {
+                    project_lock::publish_registry(
+                        &self.root,
+                        &expected,
+                        existing.as_ref(),
+                        options.update,
+                        &mut origins.allowance.borrow_mut(),
+                    )?
+                } else {
+                    project_lock::publish(&self.root, &expected, existing.as_ref(), options.update)?
+                };
             output(options, &format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"workspace-lock-summary\",\"success\":true,\"members\":{},\"changed\":{changed}}}", self.members.len()), if changed { "workspace lock written" } else { "workspace lock verified" })?;
             return Ok(0);
         }
         project_lock::verify(&expected, existing.as_ref())?;
+        if options.command() == "doc" {
+            let mut pages = Vec::new();
+            let mut remaining = documentation::remaining();
+            for &index in &selected {
+                let slot = scope
+                    .iter()
+                    .position(|candidate| *candidate == index)
+                    .expect("selected session");
+                pages.push(documentation::fragment(
+                    &prepared[slot],
+                    &self.members[index].snapshot.manifest,
+                    &mut remaining,
+                )?);
+            }
+            return documentation::publish(&self.root, &pages, options);
+        }
         if test_child {
             let index = selected[0];
             let slot = scope
@@ -522,13 +696,25 @@ impl Workspace {
                 .get(name)
                 .ok_or_else(|| format!("unknown declared project test `{name}`"))?;
             let entry = local_source(&member.root, path)?;
+            let execution = execution_policy(&member.snapshot.manifest)?;
             if !member.library() {
-                return Ok(prepared[slot].execute(frontend::PackageCommand::Run, false, true));
+                return Ok(prepared[slot].execute_with_execution(
+                    frontend::PackageCommand::Run,
+                    false,
+                    true,
+                    execution,
+                ));
             }
             let session = frontend::prepare_package_project(&graphs[slot].specs, Some(&entry))
                 .map_err(|error| error.message())?;
+            graphs[slot].verify_registries(&session)?;
             verify_test_dependencies(&prepared[slot], &session)?;
-            return Ok(session.execute(frontend::PackageCommand::Run, false, true));
+            return Ok(session.execute_with_execution(
+                frontend::PackageCommand::Run,
+                false,
+                true,
+                execution,
+            ));
         }
         if options.command() == "test" {
             return self.tests(
@@ -570,10 +756,11 @@ impl Workspace {
                 .iter()
                 .position(|candidate| *candidate == selected[0])
                 .expect("selected session");
-            return Ok(prepared[slot].execute(
+            return Ok(prepared[slot].execute_with_execution(
                 frontend::PackageCommand::Run,
                 options.json(),
                 process,
+                execution_policy(&self.members[selected[0]].snapshot.manifest)?,
             ));
         }
         let mut failed = 0;
@@ -583,14 +770,18 @@ impl Workspace {
                 .position(|candidate| *candidate == index)
                 .expect("selected session");
             let member = &self.members[index];
-            let artifact = member.root.join(".oxid/bin").join(
+            let artifact =
                 member
-                    .snapshot
-                    .manifest
-                    .name
-                    .as_deref()
-                    .expect("admitted name"),
-            );
+                    .root
+                    .join(".oxid/bin")
+                    .join(frontend::NativeBuildSettings::executable_name(
+                        member
+                            .snapshot
+                            .manifest
+                            .name
+                            .as_deref()
+                            .expect("admitted name"),
+                    ));
             let command = if options.command() == "build" && !member.library() {
                 frontend::PackageCommand::Compile {
                     output: artifact
@@ -659,6 +850,7 @@ impl Workspace {
                 let entry = local_source(&member.root, path)?;
                 let session = frontend::prepare_package_project(&graphs[slot].specs, Some(&entry))
                     .map_err(|error| error.message())?;
+                graphs[slot].verify_registries(&session)?;
                 add_usage(&session, &mut files, &mut bytes)?;
                 verify_test_dependencies(&prepared[slot], &session)?;
                 let status = session.workspace_preflight(options.json(), true, false, false);

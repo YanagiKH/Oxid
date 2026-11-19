@@ -156,7 +156,6 @@ fn unsupported_typed_operations_reject_before_any_effects() {
         &["install"],
         &["watch", "main.ox"],
         &["clean"],
-        &["doc"],
         &["doctor"],
         &["diagnose"],
         &["fetch"],
@@ -189,6 +188,28 @@ fn unsupported_typed_operations_reject_before_any_effects() {
             args.splice(position..position, ["--edition", "typed-preview"]);
             project.rejected_without_effects(&args, "typed-preview");
         }
+    }
+}
+
+#[test]
+fn typed_project_docs_check_sources_without_executing_legacy_at_any_option_placement() {
+    for position in 0..=1 {
+        let mut args = vec!["doc"];
+        args.splice(position..position, ["--edition", "typed-preview"]);
+        let invalid = Project::new(LEGACY_SOURCE);
+        invalid.rejected_without_effects(&args, "parameter requires an explicit type");
+
+        let valid = Project::new(TYPED_SOURCE);
+        let output = valid.command(&args);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        let html = fs::read_to_string(valid.0.join(".oxid/doc/index.html")).unwrap();
+        assert!(html.contains("API documentation"));
+        assert!(!valid.0.join("docs/API.md").exists());
+        assert_eq!(
+            fs::read_to_string(valid.0.join(".oxid/keep.txt")).unwrap(),
+            "do not clean"
+        );
+        assert!(!valid.0.join("sentinel.txt").exists());
     }
 }
 

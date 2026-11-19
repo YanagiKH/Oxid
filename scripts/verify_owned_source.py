@@ -38,6 +38,9 @@ UNARY_CLI_AMENDMENT_SHA256 = "7dbd02df148782fa32edf313d219861429ec8e72d21a1cb1fe
 PROJECTED_CLI_AMENDMENT_ID = "projected-array-slices-v1"
 PROJECTED_CLI_AMENDMENT_PATH = Path(__file__).with_name("owned_source_projected_array_slices_cli_v1.json")
 PROJECTED_CLI_AMENDMENT_SHA256 = "24b627591e68b89eaea04b21a35ff64d186086c8f9014714d11fa8ed4d19c0cd"
+LOCAL_REFERENCE_CLI_AMENDMENT_ID = "local-reference-bindings-v1"
+LOCAL_REFERENCE_CLI_AMENDMENT_PATH = Path(__file__).with_name("owned_source_local_reference_bindings_cli_v1.json")
+LOCAL_REFERENCE_CLI_AMENDMENT_SHA256 = "f828423920a6eb2c6dd4afd685539cda52eb1d424ab0a9d6d14f2b18a4d8f1fe"
 
 
 @dataclass(frozen=True)
@@ -146,6 +149,8 @@ def load_cli_amendment(selection, directory, *, mode):
         path, expected_sha = UNARY_CLI_AMENDMENT_PATH, UNARY_CLI_AMENDMENT_SHA256
     elif selection == PROJECTED_CLI_AMENDMENT_ID:
         path, expected_sha = PROJECTED_CLI_AMENDMENT_PATH, PROJECTED_CLI_AMENDMENT_SHA256
+    elif selection == LOCAL_REFERENCE_CLI_AMENDMENT_ID:
+        path, expected_sha = LOCAL_REFERENCE_CLI_AMENDMENT_PATH, LOCAL_REFERENCE_CLI_AMENDMENT_SHA256
     else:
         raise ValueError("unknown current CLI amendment")
     encoded = path.read_bytes()
@@ -177,7 +182,14 @@ def apply_cli_amendment(item, amendment):
             or (row["function_count"] is not None and type(item.get("function_count")) is not int)
             or not RawInspector.equal(item["expected"], row["old_expected"])):
         raise ValueError("CLI amendment does not match the historical case: " + item["id"])
-    return {**item, "expected": dict(row["effective_expected"])}
+    effective = {**item, "expected": dict(row["effective_expected"])}
+    if "effective_function_count" in row:
+        count = row["effective_function_count"]
+        if (item.get("function_count") is not None or type(count) is not int or count < 1
+                or row["effective_expected"].get("status") != "accept"):
+            raise ValueError("CLI amendment function count override requires a newly accepted source-only case")
+        effective["function_count"] = count
+    return effective
 
 
 def signal_group(process, sig):
@@ -1363,7 +1375,7 @@ def main(argv=None):
     parser.add_argument("--frozen", type=Path)
     parser.add_argument("--candidate-observations", type=Path)
     parser.add_argument("--collection-manifest", type=Path)
-    parser.add_argument("--cli-amendment", choices=(CLI_AMENDMENT_ID, COMPOSITION_CLI_AMENDMENT_ID, UNARY_CLI_AMENDMENT_ID, PROJECTED_CLI_AMENDMENT_ID),
+    parser.add_argument("--cli-amendment", choices=(CLI_AMENDMENT_ID, COMPOSITION_CLI_AMENDMENT_ID, UNARY_CLI_AMENDMENT_ID, PROJECTED_CLI_AMENDMENT_ID, LOCAL_REFERENCE_CLI_AMENDMENT_ID),
                         help="explicit current-CLI expectations; requires --mode cli and preserves the frozen model")
     parser.add_argument("--jobs", type=int, choices=(1, 2), default=1)
     parser.add_argument("--timeout", type=float, default=1800)

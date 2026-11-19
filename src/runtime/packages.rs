@@ -42,6 +42,45 @@ enum DependencySource {
     },
 }
 
+/// Typed package identities include both repository and immutable revision.
+/// Reuse the legacy cache admission without invoking its name-based resolver
+/// or reading/writing its incompatible lock format.
+pub(crate) fn materialize_typed_git(
+    project_root: &Path,
+    source: &str,
+    locked: bool,
+    offline: bool,
+) -> Result<PathBuf, String> {
+    reject_unsafe_text(source, "dependency source")?;
+    let DependencySource::Git { url, revision, .. } = parse_git_source(source)? else {
+        unreachable!("Git source parser only returns Git dependencies")
+    };
+    let mut identity = Sha256::new();
+    for part in [
+        b"oxid-typed-git-v1".as_slice(),
+        url.as_bytes(),
+        revision.as_bytes(),
+    ] {
+        identity.update((part.len() as u64).to_le_bytes());
+        identity.update(part);
+    }
+    let name = format!("git-{:x}", identity.finalize());
+    materialize_git_dependency(
+        project_root,
+        &name,
+        &url,
+        &revision,
+        // Locked/offline typed sessions require an existing checkout even for
+        // file URLs. They never fetch or create a checkout from any transport.
+        true,
+        ResolveOptions {
+            locked,
+            offline,
+            update: false,
+        },
+    )
+}
+
 #[derive(Debug)]
 struct MaterializedPackage {
     root: PathBuf,

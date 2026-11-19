@@ -54,7 +54,7 @@ pub enum Kind {
     Invalid,
     Eof,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Token {
     pub kind: Kind,
     pub span: Span,
@@ -275,6 +275,21 @@ pub(super) fn lex_with_allocator(
         limit,
         allocator,
         &mut ReservationObserver::default(),
+        false,
+    )
+}
+
+pub(super) fn lex_current_with_allocator(
+    source: &SourceFile,
+    limit: usize,
+    allocator: &mut Allocator,
+) -> Result<Vec<Token>, Failure> {
+    lex_core(
+        source,
+        limit,
+        allocator,
+        &mut ReservationObserver::default(),
+        true,
     )
 }
 
@@ -283,6 +298,7 @@ fn lex_core(
     limit: usize,
     allocator: &mut Allocator,
     observer: &mut ReservationObserver,
+    characters: bool,
 ) -> Result<Vec<Token>, Failure> {
     let limit = limit.min(MAX_TOKENS);
     let text = source.text();
@@ -363,6 +379,9 @@ fn lex_core(
                 // Preserve the whole candidate, including unsupported Unicode,
                 // suffix/radix/float spelling. Parsing accepts ASCII digits only.
                 while cursor < bytes.len() {
+                    if bytes[cursor..].starts_with(b"..") {
+                        break;
+                    }
                     let next = text[cursor..].chars().next().unwrap();
                     if !next.is_alphanumeric() && !matches!(next, '_' | '.') {
                         break;
@@ -370,6 +389,21 @@ fn lex_core(
                     cursor += next.len_utf8();
                 }
                 Kind::Number
+            }
+            '\'' if characters => {
+                // Keep the entire candidate together, including an embedded
+                // double quote. The parser validates its one-scalar contents.
+                while cursor < bytes.len() {
+                    let next = text[cursor..].chars().next().unwrap();
+                    cursor += next.len_utf8();
+                    if next == '\'' || matches!(next, '\n' | '\r') {
+                        break;
+                    }
+                    if next == '\\' && cursor < bytes.len() {
+                        cursor += text[cursor..].chars().next().unwrap().len_utf8();
+                    }
+                }
+                Kind::Unsupported
             }
             '"' => {
                 let mut closed = false;
@@ -492,7 +526,7 @@ mod tests {
             let mut allocator = Allocator::default();
             allocator.observer_trace_bound(16).unwrap();
             let mut observer = ReservationObserver::default();
-            let tape = lex_core(file, count, &mut allocator, &mut observer).unwrap();
+            let tape = lex_core(file, count, &mut allocator, &mut observer, false).unwrap();
             let expected: Vec<_> = [
                 0, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
             ]
@@ -522,7 +556,8 @@ mod tests {
                 };
                 failed.observer_trace_bound(16).unwrap();
                 let mut failed_observer = ReservationObserver::default();
-                let error = lex_core(file, count, &mut failed, &mut failed_observer).unwrap_err();
+                let error =
+                    lex_core(file, count, &mut failed, &mut failed_observer, false).unwrap_err();
                 assert_eq!(error.reason, FailureReason::StorageAllocation);
                 assert_eq!(
                     error.span,
@@ -565,7 +600,7 @@ mod tests {
                 requested_byte_limit: Some(budget),
                 ..Default::default()
             };
-            let result = lex_core(file, 3, &mut allocator, &mut observer);
+            let result = lex_core(file, 3, &mut allocator, &mut observer, false);
             if budget == exact {
                 assert_eq!(result.unwrap().len(), 4);
                 assert_eq!(allocator.attempts, 1);
@@ -750,7 +785,7 @@ mod lexer_real_null_tests {
         limit: usize,
         observer: &'s mut ReservationObserver,
     ) -> impl for<'a> FnOnce(&'a mut Allocator) -> Option<Failure> + 's {
-        move |allocator| lex_core(source, limit, allocator, observer).err()
+        move |allocator| lex_core(source, limit, allocator, observer, false).err()
     }
 
     fn sources(text: &str) -> super::super::source::SourceMap {

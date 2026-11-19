@@ -16,6 +16,7 @@ mod supervisor;
 const PRODUCER_PIPELINE_ADMITTED: bool = true;
 const OPA_BYTES: usize = 1559;
 const OBSERVATION_BYTES: usize = 2607;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 const DIAGNOSTIC_BYTES: usize = OPA_BYTES + 16;
 const SOURCE_MAX: usize = 255;
 const AST1_MAX: usize = 5 + SOURCE_MAX + OPA_BYTES;

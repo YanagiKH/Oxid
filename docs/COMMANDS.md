@@ -59,6 +59,9 @@ oxid build
 | `oxid fmt --check FILE` | Report whether formatting changes are needed. |
 | `oxid doctor --native` | Check the native tools, SDK and project inputs. |
 
+`fmt FILE` uses the package's edition and works even when its dependencies
+are unavailable.
+
 The project's manifest selects typed mode for later commands. `build` preserves
 the previous executable if compilation fails. The executable runs without the
 Oxid compiler or source files. See [native projects](TYPED_PROJECTS.md) for settings

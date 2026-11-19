@@ -67,7 +67,7 @@ fn bounded_enum_nominal_identity_and_compact_slots_are_distinct() {
 }
 
 #[test]
-fn bounded_enum_borrow_field_projection_and_static_leaves_are_closed() {
+fn bounded_enum_borrows_and_static_leaves_stay_closed_with_record_field_types() {
     let (sources, span) = source();
     let raw = [enumeration(0, span)];
     let d = Declarations::check_combined(&[], &raw, &sources).unwrap();
@@ -104,8 +104,21 @@ fn bounded_enum_borrow_field_projection_and_static_leaves_are_closed() {
             .is_err());
         let mut records = [record(0, &[hir::Ty::I32], span)];
         records[0].fields[0].ty = ParameterTy::Value(ValueTy::Owned(ty));
+        if id == 0 {
+            let checked = Declarations::check_combined(&records, &raw, &sources).unwrap();
+            assert_eq!(
+                checked.projection(AggregateTy::Record(RecordId(0)), &[records[0].fields[0].id]),
+                Ok((ValueTy::Owned(ty), 0))
+            );
+            assert!(checked.leaves(AggregateTy::Record(RecordId(0))).is_err());
+        } else {
+            assert_eq!(
+                Declarations::check_combined(&records, &raw, &sources).unwrap_err(),
+                DeclarationError::NonScalarField(records[0].fields[0].id)
+            );
+        }
         assert_eq!(
-            Declarations::check_combined(&records, &raw, &sources).unwrap_err(),
+            Declarations::check(&records, &sources).unwrap_err(),
             DeclarationError::NonScalarField(records[0].fields[0].id)
         );
         assert_eq!(

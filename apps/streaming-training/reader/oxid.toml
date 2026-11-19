@@ -1,0 +1,12 @@
+[project]
+name="tensor-stream"
+version="0.1.0"
+edition="typed-preview"
+kind="lib"
+entry="src/lib.ox"
+
+[execution]
+policy="hosted"
+
+[dependencies]
+tensor="../../cpu-training/tensor"

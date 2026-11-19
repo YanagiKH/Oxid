@@ -10,19 +10,107 @@ use super::{hir, SourceMap, Span};
 use crate::frontend::project::budget::{Allocator, ReserveFailure};
 use std::mem::size_of;
 
+mod composition;
 mod enums;
+pub(in crate::frontend::oir) mod owned_vector;
+mod resources;
+#[allow(unused_imports)]
+pub(super) use resources::{
+    enumerated_resource_walk_bytes, resource_walk_control_bytes, ResourceKind, ResourceLeaf,
+    ResourceLeaves,
+};
 #[cfg(test)]
 mod owned_enum_tests;
 #[allow(unused_imports)]
 pub(in crate::frontend) use enums::{admit_enum_counts, EnumId, EnumUsage, VariantId};
 #[allow(unused_imports)]
 pub(super) use enums::{
-    EnumDeclarationError, EnumDeclarations, PreparedEnums, RawEnumDecl, RawVariantDecl,
+    EnumDecl, EnumDeclarationError, EnumDeclarations, PreparedEnums, RawEnumDecl, RawVariantDecl,
+    VariantDecl,
 };
 
 /// Compilation-local nominal identity, assigned in declaration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::frontend) struct RecordId(pub(in crate::frontend) usize);
+
+/// Inert nominal choice for the finite owned-vector family. A root is never a
+/// cast between the independently numbered record and enum declaration tables.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::frontend) enum OwnedVectorRoot {
+    Record(RecordId),
+    Enum(EnumId),
+}
+
+impl OwnedVectorRoot {
+    pub(in crate::frontend) const fn from_vector(aggregate: AggregateTy) -> Option<Self> {
+        match aggregate {
+            AggregateTy::OwnedRecordVector(id) => Some(Self::Record(id)),
+            AggregateTy::OwnedEnumVector(id) => Some(Self::Enum(id)),
+            _ => None,
+        }
+    }
+    pub(in crate::frontend) const fn aggregate(self) -> AggregateTy {
+        match self {
+            Self::Record(id) => AggregateTy::Record(id),
+            Self::Enum(id) => AggregateTy::Enum(id),
+        }
+    }
+    pub(in crate::frontend) const fn vector(self) -> AggregateTy {
+        match self {
+            Self::Record(id) => AggregateTy::OwnedRecordVector(id),
+            Self::Enum(id) => AggregateTy::OwnedEnumVector(id),
+        }
+    }
+    pub(in crate::frontend) const fn record(self) -> Option<RecordId> {
+        match self {
+            Self::Record(id) => Some(id),
+            Self::Enum(_) => None,
+        }
+    }
+    pub(in crate::frontend) const fn enumeration(self) -> Option<EnumId> {
+        match self {
+            Self::Enum(id) => Some(id),
+            Self::Record(_) => None,
+        }
+    }
+}
+
+/// Closed storage key, not declaration or ownership authority. Legacy record
+/// roots retain their exact u32 value; enum roots have an independent high-bit
+/// domain. Remaining bits and both nominal ranges are checked before narrowing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub(in crate::frontend) struct OwnedVectorRootSlot(u32);
+impl OwnedVectorRootSlot {
+    pub(in crate::frontend) const ENUM: u32 = 0x8000_0000;
+    pub(in crate::frontend) const MAX_ROOTS: usize = 4096;
+    pub(in crate::frontend) const fn check(root: OwnedVectorRoot) -> Option<Self> {
+        let (tag, ordinal) = match root {
+            OwnedVectorRoot::Record(id) => (0, id.0),
+            OwnedVectorRoot::Enum(id) => (Self::ENUM, id.0),
+        };
+        if ordinal >= Self::MAX_ROOTS {
+            return None;
+        }
+        Some(Self(tag | ordinal as u32))
+    }
+    pub(in crate::frontend) const fn from_raw(value: u32) -> Option<Self> {
+        if value & !(Self::ENUM | 4095) != 0 {
+            return None;
+        }
+        Some(Self(value))
+    }
+    pub(in crate::frontend) const fn raw(self) -> u32 {
+        self.0
+    }
+    pub(in crate::frontend) const fn root(self) -> OwnedVectorRoot {
+        if self.0 & Self::ENUM != 0 {
+            OwnedVectorRoot::Enum(EnumId((self.0 & 4095) as usize))
+        } else {
+            OwnedVectorRoot::Record(RecordId(self.0 as usize))
+        }
+    }
+}
 
 /// Structural fixed-array type. The constructor checks before narrowing;
 /// neither a caller-supplied stride/layout nor a nominal ID can create one.
@@ -38,7 +126,23 @@ impl FixedArrayTy {
     ) -> Result<Self, DeclarationError> {
         if !matches!(
             element,
-            hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit
+            hir::Ty::Bool
+                | hir::Ty::I32
+                | hir::Ty::U8
+                | hir::Ty::Unit
+                | hir::Ty::I64
+                | hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::Char
+                | hir::Ty::F32
+                | hir::Ty::F64
+                | hir::Ty::U128
         ) {
             return Err(DeclarationError::TypeMismatch);
         }
@@ -82,6 +186,20 @@ pub(in crate::frontend) enum AggregateTy {
     Record(RecordId),
     Enum(EnumId),
     FixedArray(FixedArrayTy),
+    ByteBuf,
+    File,
+    Vector(hir::Ty),
+    RecordVector(RecordId),
+    OwnedRecordVector(RecordId),
+    OwnedEnumVector(EnumId),
+}
+
+fn check_vector_element(element: hir::Ty) -> Result<(), DeclarationError> {
+    if crate::frontend::builtin_catalog::vector::scalar_admitted(element) {
+        Ok(())
+    } else {
+        Err(DeclarationError::TypeMismatch)
+    }
 }
 
 /// A call-only borrowed view. Unsized slices are never owned value types.
@@ -89,6 +207,7 @@ pub(in crate::frontend) enum AggregateTy {
 pub(in crate::frontend) enum BorrowedTy {
     Exact(AggregateTy),
     ScalarSlice(hir::Ty),
+    RecordSlice(RecordId),
 }
 impl BorrowedTy {
     pub(in crate::frontend) fn accepts(self, authority: Self) -> bool {
@@ -100,7 +219,13 @@ impl BorrowedTy {
             (Self::Exact(AggregateTy::FixedArray(array)), Self::ScalarSlice(element)) => {
                 array.element() == element
             }
+            (Self::Exact(AggregateTy::ByteBuf), Self::ScalarSlice(hir::Ty::U8)) => true,
+            (Self::Exact(AggregateTy::Vector(actual)), Self::ScalarSlice(expected)) => {
+                actual == expected
+            }
             (Self::ScalarSlice(actual), Self::ScalarSlice(expected)) => actual == expected,
+            (Self::Exact(AggregateTy::RecordVector(actual)), Self::RecordSlice(expected))
+            | (Self::RecordSlice(actual), Self::RecordSlice(expected)) => actual == expected,
             _ => false,
         }
     }
@@ -108,7 +233,17 @@ impl BorrowedTy {
         match self {
             Self::Exact(AggregateTy::FixedArray(array)) => Some(array.element()),
             Self::ScalarSlice(element) => Some(element),
-            Self::Exact(AggregateTy::Record(_) | AggregateTy::Enum(_)) => None,
+            Self::Exact(AggregateTy::ByteBuf) => Some(hir::Ty::U8),
+            Self::Exact(AggregateTy::Vector(element)) => Some(element),
+            Self::Exact(
+                AggregateTy::Record(_)
+                | AggregateTy::Enum(_)
+                | AggregateTy::File
+                | AggregateTy::RecordVector(_)
+                | AggregateTy::OwnedRecordVector(_)
+                | AggregateTy::OwnedEnumVector(_),
+            )
+            | Self::RecordSlice(_) => None,
         }
     }
 }
@@ -121,11 +256,40 @@ enum BorrowedSlotRepr {
     Record(u32),
     FixedArray(FixedArrayTy),
     ScalarSlice(hir::Ty),
+    ByteBuf,
+    File,
+    Vector(hir::Ty),
+    RecordVector(u32),
+    RecordSlice(u32),
+    OwnedRecordVector(u32),
+    OwnedEnumVector(u32),
 }
 impl BorrowedSlot {
     pub(in crate::frontend) fn check(ty: BorrowedTy) -> Result<Self, DeclarationError> {
         Ok(Self(match ty {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => return Err(DeclarationError::TypeMismatch),
+            BorrowedTy::Exact(AggregateTy::ByteBuf) => BorrowedSlotRepr::ByteBuf,
+            BorrowedTy::Exact(AggregateTy::File) => BorrowedSlotRepr::File,
+            BorrowedTy::Exact(AggregateTy::RecordVector(id)) => BorrowedSlotRepr::RecordVector(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
+            BorrowedTy::Exact(AggregateTy::OwnedRecordVector(id)) => {
+                BorrowedSlotRepr::OwnedRecordVector(
+                    u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+                )
+            }
+            BorrowedTy::Exact(AggregateTy::OwnedEnumVector(id)) => {
+                BorrowedSlotRepr::OwnedEnumVector(
+                    u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?,
+                )
+            }
+            BorrowedTy::RecordSlice(id) => BorrowedSlotRepr::RecordSlice(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
+            BorrowedTy::Exact(AggregateTy::Vector(element)) => {
+                check_vector_element(element)?;
+                BorrowedSlotRepr::Vector(element)
+            }
             BorrowedTy::Exact(AggregateTy::Record(id)) => BorrowedSlotRepr::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
             ),
@@ -134,12 +298,41 @@ impl BorrowedSlot {
                 BorrowedSlotRepr::FixedArray(array)
             }
             BorrowedTy::ScalarSlice(
-                element @ (hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit),
+                element @ (hir::Ty::Bool
+                | hir::Ty::I32
+                | hir::Ty::U8
+                | hir::Ty::Unit
+                | hir::Ty::I64
+                | hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::Char
+                | hir::Ty::F32
+                | hir::Ty::F64
+                | hir::Ty::U128),
             ) => BorrowedSlotRepr::ScalarSlice(element),
         }))
     }
     pub(in crate::frontend) fn referent(self) -> BorrowedTy {
         match self.0 {
+            BorrowedSlotRepr::ByteBuf => BorrowedTy::Exact(AggregateTy::ByteBuf),
+            BorrowedSlotRepr::File => BorrowedTy::Exact(AggregateTy::File),
+            BorrowedSlotRepr::Vector(element) => BorrowedTy::Exact(AggregateTy::Vector(element)),
+            BorrowedSlotRepr::RecordVector(id) => {
+                BorrowedTy::Exact(AggregateTy::RecordVector(RecordId(id as usize)))
+            }
+            BorrowedSlotRepr::OwnedRecordVector(id) => {
+                BorrowedTy::Exact(AggregateTy::OwnedRecordVector(RecordId(id as usize)))
+            }
+            BorrowedSlotRepr::OwnedEnumVector(id) => {
+                BorrowedTy::Exact(AggregateTy::OwnedEnumVector(EnumId(id as usize)))
+            }
+            BorrowedSlotRepr::RecordSlice(id) => BorrowedTy::RecordSlice(RecordId(id as usize)),
             BorrowedSlotRepr::Record(id) => BorrowedTy::Exact(AggregateTy::Record(RecordId(
                 usize::try_from(id).expect("qualified ordinal width"),
             ))),
@@ -161,12 +354,33 @@ enum AggregateSlotRepr {
     Record(u32),
     Enum(u32),
     FixedArray(FixedArrayTy),
+    ByteBuf,
+    File,
+    Vector(hir::Ty),
+    RecordVector(u32),
+    OwnedRecordVector(u32),
+    OwnedEnumVector(u32),
 }
 impl AggregateSlot {
     pub(in crate::frontend) fn try_from_aggregate(
         ty: AggregateTy,
     ) -> Result<Self, DeclarationError> {
         Ok(Self(match ty {
+            AggregateTy::ByteBuf => AggregateSlotRepr::ByteBuf,
+            AggregateTy::File => AggregateSlotRepr::File,
+            AggregateTy::RecordVector(id) => AggregateSlotRepr::RecordVector(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
+            AggregateTy::OwnedRecordVector(id) => AggregateSlotRepr::OwnedRecordVector(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
+            ),
+            AggregateTy::OwnedEnumVector(id) => AggregateSlotRepr::OwnedEnumVector(
+                u32::try_from(id.0).map_err(|_| DeclarationError::InvalidEnumId(id))?,
+            ),
+            AggregateTy::Vector(element) => {
+                check_vector_element(element)?;
+                AggregateSlotRepr::Vector(element)
+            }
             AggregateTy::Record(id) => AggregateSlotRepr::Record(
                 u32::try_from(id.0).map_err(|_| DeclarationError::InvalidRecordId(id))?,
             ),
@@ -181,6 +395,16 @@ impl AggregateSlot {
     }
     pub(in crate::frontend) fn aggregate(self) -> AggregateTy {
         match self.0 {
+            AggregateSlotRepr::ByteBuf => AggregateTy::ByteBuf,
+            AggregateSlotRepr::File => AggregateTy::File,
+            AggregateSlotRepr::Vector(element) => AggregateTy::Vector(element),
+            AggregateSlotRepr::RecordVector(id) => AggregateTy::RecordVector(RecordId(id as usize)),
+            AggregateSlotRepr::OwnedRecordVector(id) => {
+                AggregateTy::OwnedRecordVector(RecordId(id as usize))
+            }
+            AggregateSlotRepr::OwnedEnumVector(id) => {
+                AggregateTy::OwnedEnumVector(EnumId(id as usize))
+            }
             // All qualified hosts are 64-bit; no truncation on supported targets.
             AggregateSlotRepr::Record(id) => AggregateTy::Record(RecordId(
                 usize::try_from(id).expect("qualified ordinal width"),
@@ -233,6 +457,7 @@ pub(in crate::frontend) enum ParameterTy {
 
 #[derive(Debug)]
 pub(super) struct RawRecordDecl {
+    pub(super) is_copy: bool,
     pub(super) id: RecordId,
     pub(super) span: Span,
     pub(super) fields: Vec<RawFieldDecl>,
@@ -241,8 +466,8 @@ pub(super) struct RawRecordDecl {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct RawFieldDecl {
     pub(super) id: FieldId,
-    // Raw input can express unsupported fields so validation, not a trusted
-    // producer, is responsible for excluding enums and references.
+    // Raw input can express unsupported fields. Validation excludes references
+    // and checks every owned nominal against the complete declaration graph.
     pub(super) ty: ParameterTy,
     pub(super) span: Span,
 }
@@ -299,10 +524,20 @@ impl Layout {
     pub(super) fn align(self) -> usize {
         self.align
     }
-    fn scalar(ty: hir::Ty) -> Self {
+    pub(super) fn scalar(ty: hir::Ty) -> Self {
         match ty {
-            hir::Ty::Bool | hir::Ty::U8 | hir::Ty::Unit => Self { size: 1, align: 1 },
-            hir::Ty::I32 => Self { size: 4, align: 4 },
+            hir::Ty::Bool | hir::Ty::U8 | hir::Ty::I8 | hir::Ty::Unit => Self { size: 1, align: 1 },
+            hir::Ty::I16 | hir::Ty::U16 => Self { size: 2, align: 2 },
+            hir::Ty::Char | hir::Ty::F32 | hir::Ty::I32 | hir::Ty::U32 => {
+                Self { size: 4, align: 4 }
+            }
+            hir::Ty::F64 | hir::Ty::I64 | hir::Ty::U64 | hir::Ty::Isize | hir::Ty::Usize => {
+                Self { size: 8, align: 8 }
+            }
+            hir::Ty::I128 | hir::Ty::U128 => Self {
+                size: 16,
+                align: 16,
+            },
         }
     }
 }
@@ -339,14 +574,35 @@ impl FieldDecl {
 
 #[derive(Debug)]
 pub(super) struct RecordDecl {
+    is_copy: bool,
+    packed_bytes: u32,
     id: RecordId,
     span: Span,
     field_start: usize,
     field_end: usize,
     layout: Layout,
-    width: usize,
+    // Width minus one needs 20 bits and the owned-field count needs 11 bits.
+    // Bit31 records enum nesting; all fit the original word on 32/64-bit hosts.
+    width_and_owned_fields: usize,
 }
 impl RecordDecl {
+    pub(super) fn is_copy(&self) -> bool {
+        self.is_copy
+    }
+    const WIDTH_BITS: u32 = 20;
+
+    fn width(&self) -> usize {
+        (self.width_and_owned_fields & ((1usize << Self::WIDTH_BITS) - 1)) + 1
+    }
+
+    pub(super) fn owned_field_count(&self) -> usize {
+        (self.width_and_owned_fields >> Self::WIDTH_BITS) & 0x7ff
+    }
+
+    pub(super) fn has_enum_record_nesting(&self) -> bool {
+        self.width_and_owned_fields & (1usize << 31) != 0
+    }
+
     pub(super) fn id(&self) -> RecordId {
         self.id
     }
@@ -355,6 +611,9 @@ impl RecordDecl {
     }
     pub(super) fn layout(&self) -> Layout {
         self.layout
+    }
+    pub(super) fn field_start(&self) -> usize {
+        self.field_start
     }
 }
 
@@ -405,6 +664,73 @@ impl Limits {
     }
 }
 
+/// An opaque checked-declaration factory can be prepaid without copying its
+/// private ceiling into a caller. This grants no type or allocation authority.
+pub(in crate::frontend::oir) const fn checked_declaration_byte_limit() -> usize {
+    Limits::DEFAULT.table_bytes
+}
+
+/// Separate logical requests of the inherited opaque helper, conservatively
+/// summing sequential graph scopes. This is not an allocator-capacity peak or
+/// RSS bound; actual retained capacities are checked independently on return.
+pub(in crate::frontend::oir) fn checked_declaration_temporary_request(
+    records: usize,
+    enums: usize,
+) -> Result<usize, DeclarationError> {
+    let count = records
+        .checked_add(enums)
+        .filter(|count| *count <= Limits::DEFAULT.records)
+        .ok_or(DeclarationError::LayoutOverflow)?;
+    // Record/owned-enum and joint graphs: flat summaries and byte states;
+    // two bounded heap work stacks. Ten Vec headers sum the record graph's
+    // three, the owned-enum helper's four (including its retained record
+    // summary), the joint graph's two and the resource-cache return's one.
+    let payload = count
+        .checked_mul(2 * (size_of::<ContainmentSummary>() + size_of::<u8>()))
+        .and_then(|bytes| {
+            count
+                .min(MAX_CONTAINMENT_DEPTH)
+                .checked_mul(2 * size_of::<(usize, usize)>())
+                .and_then(|stack| bytes.checked_add(stack))
+        })
+        .and_then(|bytes| bytes.checked_add(10 * size_of::<Vec<usize>>()))
+        .ok_or(DeclarationError::LayoutOverflow)?;
+    // The inherited joint-layout request explicitly includes 16 KiB of
+    // traversal/return controls. The resource DFS has its actual stack type.
+    payload
+        .checked_add(16 * 1024)
+        .and_then(|bytes| bytes.checked_add(resources::summary_stack_request_bytes()))
+        .and_then(|bytes| bytes.checked_add(size_of::<OpaqueRequestControls>()))
+        .ok_or(DeclarationError::LayoutOverflow)
+}
+
+pub(in crate::frontend::oir) fn retained_declaration_control_bytes() -> usize {
+    size_of::<RetainedDeclarationControls>() + EnumDeclarations::retained_query_control_bytes()
+}
+
+struct OpaqueRequestControls {
+    arguments: [usize; 2],
+    combined: Option<usize>,
+    products: [Option<usize>; 4],
+    selected: [usize; 4],
+    result: Result<usize, DeclarationError>,
+    caller_result: Result<usize, DeclarationError>,
+}
+
+struct RetainedDeclarationControls {
+    receiver: &'static Declarations,
+    pairs: [(usize, usize); 3],
+    pair_iteration: std::array::IntoIter<(usize, usize), 3>,
+    selected_pair: (usize, usize),
+    checked_product: Option<usize>,
+    product_result: Result<usize, DeclarationError>,
+    enum_result: Result<usize, DeclarationError>,
+    checked_sum: Option<usize>,
+    sums: [usize; 2],
+    result: Result<usize, DeclarationError>,
+    caller_result: Result<usize, DeclarationError>,
+}
+
 /// Only `check` constructs this immutable declaration facade. Queries do not
 /// grant a verified executable witness or expose mutable/raw table storage.
 #[derive(Debug)]
@@ -412,9 +738,48 @@ pub(super) struct Declarations {
     records: Vec<RecordDecl>,
     fields: Vec<FieldDecl>,
     enums: EnumDeclarations,
-    usage: DeclarationUsage,
+    storage: DeclarationStorage,
 }
+
+/// Counts are available from the checked vectors. The bounded byte totals fit
+/// u32, leaving room for an optional resource cache in the original facade size.
+/// Resource-free declarations retain their original allocation and accounting.
+#[derive(Debug)]
+struct DeclarationStorage {
+    table_bytes: u32,
+    layout_bytes: u32,
+    resources: Vec<resources::Presence>,
+}
+const _: () = assert!(size_of::<DeclarationStorage>() == size_of::<DeclarationUsage>());
 impl Declarations {
+    /// Complete actual retained bytes of all five flat dynamic stores and
+    /// this facade's inline headers. There are no nested owned allocations in
+    /// RecordDecl, FieldDecl, EnumDecl, VariantDecl or Presence.
+    pub(in crate::frontend::oir) fn retained_storage_bytes(
+        &self,
+    ) -> Result<usize, DeclarationError> {
+        let mut bytes = size_of::<Self>();
+        for (capacity, width) in [
+            (self.records.capacity(), size_of::<RecordDecl>()),
+            (self.fields.capacity(), size_of::<FieldDecl>()),
+            (
+                self.storage.resources.capacity(),
+                size_of::<resources::Presence>(),
+            ),
+        ] {
+            bytes = bytes
+                .checked_add(
+                    capacity
+                        .checked_mul(width)
+                        .ok_or(DeclarationError::LayoutOverflow)?,
+                )
+                .ok_or(DeclarationError::LayoutOverflow)?;
+        }
+        bytes
+            .checked_add(self.enums.retained_dynamic_bytes()?)
+            .ok_or(DeclarationError::LayoutOverflow)
+    }
+
     pub(super) fn check(
         raw: &[RawRecordDecl],
         sources: &SourceMap,
@@ -451,6 +816,30 @@ impl Declarations {
         limits: Limits,
         allocator: &mut Allocator,
     ) -> Result<Self, DeclarationError> {
+        Self::check_combined_domain::<false>(raw, raw_enums, sources, limits, allocator)
+    }
+
+    pub(in crate::frontend::oir) fn check_combined_owned_vectors(
+        raw: &[RawRecordDecl],
+        raw_enums: &[RawEnumDecl],
+        sources: &SourceMap,
+    ) -> Result<Self, DeclarationError> {
+        Self::check_combined_domain::<true>(
+            raw,
+            raw_enums,
+            sources,
+            Limits::DEFAULT,
+            &mut Allocator::default(),
+        )
+    }
+
+    fn check_combined_domain<const OWNED: bool>(
+        raw: &[RawRecordDecl],
+        raw_enums: &[RawEnumDecl],
+        sources: &SourceMap,
+        limits: Limits,
+        allocator: &mut Allocator,
+    ) -> Result<Self, DeclarationError> {
         let limits = limits.bounded();
         // Independently inventory both raw slices. The added retained enum
         // facade is charged even when both of its vectors are empty.
@@ -470,14 +859,14 @@ impl Declarations {
                         }) =>
                 {
                     (
-                        EnumDeclarations::prepare_owned(raw_enums, sources, usage)?,
+                        EnumDeclarations::prepare_owned_domain::<OWNED>(raw_enums, sources, usage)?,
                         true,
                     )
                 }
                 Err(error) => return Err(error.into()),
             };
         let enum_usage = prepared_enums.usage();
-        limited_add(
+        let aggregate_declarations = limited_add(
             usage.records,
             enum_usage.enums,
             limits.records,
@@ -495,6 +884,31 @@ impl Declarations {
             limits.table_bytes,
             "declaration table bytes",
         )?;
+        if owned_payloads {
+            for enumeration in raw_enums {
+                for variant in &enumeration.variants {
+                    if let Some(ParameterTy::Value(ValueTy::Owned(
+                        AggregateTy::OwnedRecordVector(id),
+                    ))) = variant.payload
+                    {
+                        check_owned_vector_record(raw, id)?;
+                    }
+                    if let Some(ParameterTy::Value(ValueTy::Owned(AggregateTy::OwnedEnumVector(
+                        id,
+                    )))) = variant.payload
+                    {
+                        check_owned_vector_enum(raw_enums, id)?;
+                    }
+                    if let Some(ParameterTy::Value(ValueTy::Owned(AggregateTy::RecordVector(id)))) =
+                        variant.payload
+                    {
+                        if !raw.get(id.0).is_some_and(|record| record.is_copy) {
+                            return Err(DeclarationError::TypeMismatch);
+                        }
+                    }
+                }
+            }
+        }
         usage.layout_bytes = if owned_payloads {
             0
         } else {
@@ -505,6 +919,8 @@ impl Declarations {
                 "declaration layout bytes",
             )?
         };
+        let mut resource_declarations = false;
+        let mut enum_record_fields = false;
         for (index, record) in raw.iter().enumerate() {
             if record.id != RecordId(index) {
                 return Err(DeclarationError::InvalidRecordId(record.id));
@@ -520,14 +936,56 @@ impl Declarations {
                     return Err(DeclarationError::InvalidFieldId(field.id));
                 }
                 check_span(sources, field.span)?;
-                if let ValueTy::Owned(AggregateTy::Record(id)) = value_field(field)? {
+                let ty = value_field_with_enums_domain::<OWNED>(field, raw_enums.len())?;
+                if record.is_copy {
+                    match ty {
+                        ValueTy::Scalar(_) => (),
+                        ValueTy::Owned(AggregateTy::Record(id))
+                            if raw.get(id.0).is_some_and(|nested| nested.is_copy) => {}
+                        _ => return Err(DeclarationError::NonScalarField(field.id)),
+                    }
+                }
+                if let ValueTy::Owned(AggregateTy::RecordVector(element)) = ty {
+                    if !raw.get(element.0).is_some_and(|record| record.is_copy) {
+                        return Err(DeclarationError::InvalidRecordId(element));
+                    }
+                }
+                if let ValueTy::Owned(AggregateTy::OwnedRecordVector(element)) = ty {
+                    check_owned_vector_record(raw, element)?;
+                }
+                if let ValueTy::Owned(AggregateTy::OwnedEnumVector(element)) = ty {
+                    check_owned_vector_enum(raw_enums, element)?;
+                }
+                enum_record_fields |= matches!(ty, ValueTy::Owned(AggregateTy::Enum(_)));
+                resource_declarations |= matches!(
+                    ty,
+                    ValueTy::Owned(
+                        AggregateTy::ByteBuf
+                            | AggregateTy::File
+                            | AggregateTy::Vector(_)
+                            | AggregateTy::RecordVector(_)
+                            | AggregateTy::OwnedRecordVector(_)
+                            | AggregateTy::OwnedEnumVector(_)
+                    )
+                );
+                if let ValueTy::Owned(AggregateTy::Record(id)) = ty {
                     if id.0 >= raw.len() {
                         return Err(DeclarationError::InvalidRecordId(id));
                     }
                 }
             }
         }
-        let summaries = containment_summaries(raw, limits)?;
+        if enum_record_fields {
+            return Self::check_joint_records::<OWNED>(
+                raw,
+                raw_enums,
+                prepared_enums,
+                usage,
+                limits,
+                allocator,
+            );
+        }
+        let summaries = containment_summaries_domain::<OWNED>(raw, limits)?;
         for summary in &summaries {
             usage.layout_bytes = limited_add(
                 usage.layout_bytes,
@@ -537,7 +995,7 @@ impl Declarations {
             )?;
         }
         let (prepared_enums, enum_summaries) = if owned_payloads {
-            let (prepared, summaries) = prepared_enums.with_owned_layouts(
+            let (prepared, summaries) = prepared_enums.with_owned_layouts_domain::<OWNED>(
                 &summaries,
                 usage.layout_bytes,
                 limits.layout_bytes,
@@ -556,6 +1014,34 @@ impl Declarations {
             (prepared_enums, Vec::new())
         };
 
+        // Scalar/nullary enum admission proves that no resource payload exists.
+        // Otherwise inspect only the already count-bounded direct declarations,
+        // never an expanded containment graph.
+        resource_declarations |= owned_payloads
+            && raw_enums.iter().any(|enumeration| {
+                enumeration.variants.iter().any(|variant| {
+                    matches!(
+                        variant.payload,
+                        Some(ParameterTy::Value(ValueTy::Owned(
+                            AggregateTy::ByteBuf
+                                | AggregateTy::File
+                                | AggregateTy::Vector(_)
+                                | AggregateTy::RecordVector(_)
+                                | AggregateTy::OwnedRecordVector(_)
+                                | AggregateTy::OwnedEnumVector(_)
+                        )))
+                    )
+                })
+            });
+        if resource_declarations {
+            limited_add(
+                usage.table_bytes,
+                aggregate_declarations,
+                limits.table_bytes,
+                "resource containment summary bytes",
+            )?;
+        }
+
         // All malformed declarations and all size/overflow gates above reject
         // before these output allocations. Flat fields avoid R separate
         // allocations, with O(R + F) persistent storage and O(R) graph scratch.
@@ -568,16 +1054,18 @@ impl Declarations {
             allocator.vector_exact(&mut fields, usage.fields, "checked record fields")?;
         }
         let enums = if owned_payloads {
-            prepared_enums.finish_owned_with_allocator(allocator, &enum_summaries)?
+            prepared_enums.finish_owned_domain::<OWNED>(allocator, &enum_summaries)?
         } else {
             prepared_enums.finish_with_allocator(allocator)?
         };
         for record in raw {
             let field_start = fields.len();
             let mut cursor = LayoutCursor::default();
+            let mut owned_fields = 0usize;
             for field in &record.fields {
-                let ty = value_field(field)?;
-                let offset = cursor.push(value_summary(ty, &summaries)?.layout)?;
+                let ty = value_field_domain::<OWNED>(field)?;
+                owned_fields += usize::from(matches!(ty, ValueTy::Owned(_)));
+                let offset = cursor.push(value_summary_domain::<OWNED>(ty, &summaries)?.layout)?;
                 fields.push(FieldDecl {
                     id: field.id,
                     ty,
@@ -586,20 +1074,161 @@ impl Declarations {
                 });
             }
             records.push(RecordDecl {
+                is_copy: record.is_copy,
+                packed_bytes: u32::try_from(summaries[record.id.0].packed_bytes())
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
                 id: record.id,
                 span: record.span,
                 field_start,
                 field_end: fields.len(),
                 layout: cursor.finish()?,
-                width: summaries[record.id.0].width,
+                width_and_owned_fields: (summaries[record.id.0].width - 1)
+                    | (owned_fields << RecordDecl::WIDTH_BITS),
             });
         }
-        Ok(Self {
+        let mut result = Self {
             records,
             fields,
             enums,
-            usage,
-        })
+            storage: DeclarationStorage {
+                table_bytes: u32::try_from(usage.table_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                layout_bytes: u32::try_from(usage.layout_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                resources: Vec::new(),
+            },
+        };
+        if resource_declarations {
+            let (presence, bytes) = resources::summaries(&result, limits.table_bytes, allocator)?;
+            result.storage.table_bytes =
+                u32::try_from(bytes).map_err(|_| DeclarationError::LayoutOverflow)?;
+            result.storage.resources = presence;
+        }
+        Ok(result)
+    }
+
+    /// New mixed layouts have their own traversal and pending summary owner.
+    /// The preceding record-only declaration path keeps its allocation order.
+    fn check_joint_records<const OWNED: bool>(
+        raw: &[RawRecordDecl],
+        raw_enums: &[RawEnumDecl],
+        prepared: PreparedEnums<'_>,
+        mut usage: DeclarationUsage,
+        limits: Limits,
+        allocator: &mut Allocator,
+    ) -> Result<Self, DeclarationError> {
+        let layouts = composition::layouts_domain::<OWNED>(
+            raw,
+            raw_enums,
+            usage.table_bytes,
+            limits,
+            allocator,
+        )?;
+        let prepared = prepared.with_joint_layouts(layouts.enums(), limits.layout_bytes)?;
+        usage.layout_bytes = prepared.usage().layout_bytes;
+        for record in layouts.records() {
+            usage.layout_bytes = limited_add(
+                usage.layout_bytes,
+                record.layout.size,
+                limits.layout_bytes,
+                "declaration layout bytes",
+            )?;
+        }
+        let resources = raw.iter().flat_map(|record| &record.fields).any(|field| {
+            matches!(
+                field.ty,
+                ParameterTy::Value(ValueTy::Owned(
+                    AggregateTy::ByteBuf
+                        | AggregateTy::File
+                        | AggregateTy::Vector(_)
+                        | AggregateTy::RecordVector(_)
+                        | AggregateTy::OwnedRecordVector(_)
+                        | AggregateTy::OwnedEnumVector(_)
+                ))
+            )
+        }) || raw_enums
+            .iter()
+            .flat_map(|enumeration| &enumeration.variants)
+            .any(|variant| {
+                matches!(
+                    variant.payload,
+                    Some(ParameterTy::Value(ValueTy::Owned(
+                        AggregateTy::ByteBuf
+                            | AggregateTy::File
+                            | AggregateTy::Vector(_)
+                            | AggregateTy::RecordVector(_)
+                            | AggregateTy::OwnedRecordVector(_)
+                            | AggregateTy::OwnedEnumVector(_)
+                    )))
+                )
+            });
+        if resources {
+            limited_add(
+                usage.table_bytes,
+                raw.len() + raw_enums.len(),
+                limits.table_bytes,
+                "resource containment summary bytes",
+            )?;
+        }
+        let mut records = Vec::new();
+        allocator.vector_exact(&mut records, usage.records, "checked record declarations")?;
+        let mut fields = Vec::new();
+        allocator.vector_exact(&mut fields, usage.fields, "checked record fields")?;
+        let mut enums = prepared.finish_owned_domain::<OWNED>(allocator, layouts.enums())?;
+        enums.mark_joint_shapes(layouts.enum_shapes())?;
+        for record in raw {
+            let field_start = fields.len();
+            let mut cursor = LayoutCursor::default();
+            let mut owned_fields = 0usize;
+            for field in &record.fields {
+                let ty = value_field_with_enums_domain::<OWNED>(field, raw_enums.len())?;
+                let summary = composition::value_summary_domain::<OWNED>(
+                    ty,
+                    layouts.records(),
+                    layouts.enums(),
+                )?;
+                let offset = cursor.push(summary.layout)?;
+                owned_fields += usize::from(matches!(ty, ValueTy::Owned(_)));
+                fields.push(FieldDecl {
+                    id: field.id,
+                    ty,
+                    span: field.span,
+                    offset,
+                });
+            }
+            records.push(RecordDecl {
+                is_copy: record.is_copy,
+                packed_bytes: u32::try_from(layouts.records()[record.id.0].packed_bytes())
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                id: record.id,
+                span: record.span,
+                field_start,
+                field_end: fields.len(),
+                layout: cursor.finish()?,
+                width_and_owned_fields: (layouts.records()[record.id.0].width - 1)
+                    | (owned_fields << RecordDecl::WIDTH_BITS)
+                    | (usize::from(layouts.record_has_enum_nesting(record.id)) << 31),
+            });
+        }
+        let mut result = Self {
+            records,
+            fields,
+            enums,
+            storage: DeclarationStorage {
+                table_bytes: u32::try_from(usage.table_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                layout_bytes: u32::try_from(usage.layout_bytes)
+                    .map_err(|_| DeclarationError::LayoutOverflow)?,
+                resources: Vec::new(),
+            },
+        };
+        if resources {
+            let (presence, bytes) = resources::summaries(&result, limits.table_bytes, allocator)?;
+            result.storage.table_bytes =
+                u32::try_from(bytes).map_err(|_| DeclarationError::LayoutOverflow)?;
+            result.storage.resources = presence;
+        }
+        Ok(result)
     }
 
     /// A field path is a bounded access description, never a new owner. Offsets
@@ -633,7 +1262,18 @@ impl Declarations {
         aggregate: AggregateTy,
     ) -> Result<ScalarLeaves<'_>, DeclarationError> {
         self.check_aggregate_type(aggregate)?;
-        if matches!(aggregate, AggregateTy::Enum(_)) {
+        if self.has_enum_record_nesting(aggregate)?
+            || matches!(
+                aggregate,
+                AggregateTy::Enum(_)
+                    | AggregateTy::OwnedRecordVector(_)
+                    | AggregateTy::OwnedEnumVector(_)
+                    | AggregateTy::ByteBuf
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)
+                    | AggregateTy::RecordVector(_)
+            )
+        {
             return Err(DeclarationError::TypeMismatch);
         }
         let mut stack = [None; MAX_CONTAINMENT_DEPTH + 1];
@@ -646,7 +1286,12 @@ impl Declarations {
     }
 
     pub(super) fn usage(&self) -> DeclarationUsage {
-        self.usage
+        DeclarationUsage {
+            records: self.records.len(),
+            fields: self.fields.len(),
+            table_bytes: self.storage.table_bytes as usize,
+            layout_bytes: self.storage.layout_bytes as usize,
+        }
     }
     pub(super) fn enums(&self) -> &EnumDeclarations {
         &self.enums
@@ -682,13 +1327,53 @@ impl Declarations {
     }
     pub(super) fn check_aggregate_type(&self, ty: AggregateTy) -> Result<(), DeclarationError> {
         match ty {
+            // Inert identity/layout facts grant no executable declaration
+            // authority before the new sidecar and both consumers are ready.
+            AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => {
+                Err(DeclarationError::TypeMismatch)
+            }
+            AggregateTy::ByteBuf | AggregateTy::File => Ok(()),
+            AggregateTy::Vector(element) => check_vector_element(element),
+            AggregateTy::RecordVector(id) => {
+                if self.is_copy(AggregateTy::Record(id)) {
+                    Ok(())
+                } else {
+                    Err(DeclarationError::InvalidRecordId(id))
+                }
+            }
             AggregateTy::Record(id) => self.record(id).map(|_| ()),
             AggregateTy::Enum(id) => self.enums.enumeration(id).map(|_| ()).map_err(Into::into),
             AggregateTy::FixedArray(array) => array.layout().map(|_| ()),
         }
     }
+    pub(super) fn is_copy(&self, aggregate: AggregateTy) -> bool {
+        match aggregate {
+            AggregateTy::Record(id) => self.records.get(id.0).is_some_and(RecordDecl::is_copy),
+            _ => false,
+        }
+    }
+    /// Dense initialized-leaf extent, independent of owner alignment padding.
+    pub(super) fn record_packed_bytes(&self, id: RecordId) -> Result<usize, DeclarationError> {
+        let record = self.record(id)?;
+        if !record.is_copy || record.packed_bytes == 0 {
+            return Err(DeclarationError::TypeMismatch);
+        }
+        Ok(record.packed_bytes as usize)
+    }
     pub(super) fn aggregate_layout(&self, ty: AggregateTy) -> Result<Layout, DeclarationError> {
         match ty {
+            AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => {
+                Err(DeclarationError::TypeMismatch)
+            }
+            AggregateTy::ByteBuf | AggregateTy::File => Ok(Layout { size: 16, align: 8 }),
+            AggregateTy::Vector(element) => {
+                check_vector_element(element)?;
+                Ok(Layout { size: 16, align: 8 })
+            }
+            AggregateTy::RecordVector(id) => {
+                self.check_aggregate_type(AggregateTy::RecordVector(id))?;
+                Ok(Layout { size: 16, align: 8 })
+            }
             AggregateTy::Record(id) => self.record(id).map(RecordDecl::layout),
             AggregateTy::Enum(id) => self
                 .enums
@@ -700,7 +1385,20 @@ impl Declarations {
     }
     pub(super) fn aggregate_width(&self, ty: AggregateTy) -> Result<usize, DeclarationError> {
         match ty {
-            AggregateTy::Record(id) => self.record(id).map(|record| record.width),
+            AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => {
+                Err(DeclarationError::TypeMismatch)
+            }
+            AggregateTy::ByteBuf => Ok(3),
+            AggregateTy::Vector(element) => {
+                check_vector_element(element)?;
+                Ok(3)
+            }
+            AggregateTy::RecordVector(id) => {
+                self.check_aggregate_type(AggregateTy::RecordVector(id))?;
+                Ok(3)
+            }
+            AggregateTy::File => Ok(2),
+            AggregateTy::Record(id) => self.record(id).map(RecordDecl::width),
             AggregateTy::Enum(id) => self
                 .enums
                 .enumeration(id)
@@ -709,6 +1407,24 @@ impl Declarations {
             AggregateTy::FixedArray(array) => {
                 FixedArrayTy::check(array.element(), array.length())?;
                 Ok(array.length().max(1))
+            }
+        }
+    }
+
+    pub(super) fn has_enum_record_nesting(
+        &self,
+        ty: AggregateTy,
+    ) -> Result<bool, DeclarationError> {
+        match ty {
+            AggregateTy::Record(id) => self.record(id).map(RecordDecl::has_enum_record_nesting),
+            AggregateTy::Enum(id) => self
+                .enums
+                .enumeration(id)
+                .map(|enumeration| enumeration.has_enum_record_nesting())
+                .map_err(Into::into),
+            _ => {
+                self.check_aggregate_type(ty)?;
+                Ok(false)
             }
         }
     }
@@ -730,9 +1446,26 @@ impl Declarations {
         match ty {
             BorrowedTy::Exact(AggregateTy::Enum(_)) => Err(DeclarationError::TypeMismatch),
             BorrowedTy::Exact(aggregate) => self.check_aggregate_type(aggregate),
-            BorrowedTy::ScalarSlice(hir::Ty::Bool | hir::Ty::I32 | hir::Ty::U8 | hir::Ty::Unit) => {
-                Ok(())
-            }
+            BorrowedTy::RecordSlice(id) => self.check_aggregate_type(AggregateTy::RecordVector(id)),
+            BorrowedTy::ScalarSlice(
+                hir::Ty::Bool
+                | hir::Ty::I32
+                | hir::Ty::U8
+                | hir::Ty::Unit
+                | hir::Ty::I64
+                | hir::Ty::I8
+                | hir::Ty::I16
+                | hir::Ty::U16
+                | hir::Ty::U32
+                | hir::Ty::U64
+                | hir::Ty::Isize
+                | hir::Ty::Usize
+                | hir::Ty::I128
+                | hir::Ty::U128
+                | hir::Ty::Char
+                | hir::Ty::F32
+                | hir::Ty::F64,
+            ) => Ok(()),
         }
     }
     pub(super) fn same_borrowed_type(
@@ -813,6 +1546,18 @@ impl Iterator for ScalarLeaves<'_> {
                 ValueTy::Owned(AggregateTy::Enum(_)) => {
                     unreachable!("enum excluded from static leaves")
                 }
+                ValueTy::Owned(
+                    AggregateTy::ByteBuf
+                    | AggregateTy::File
+                    | AggregateTy::Vector(_)
+                    | AggregateTy::RecordVector(_)
+                    | AggregateTy::OwnedRecordVector(_)
+                    | AggregateTy::OwnedEnumVector(_),
+                ) => {
+                    // Resources have their own checked traversal. A descriptor
+                    // is never reinterpreted as scalar storage or a pointer leaf.
+                    self.length -= 1;
+                }
                 ValueTy::Owned(AggregateTy::FixedArray(array)) => {
                     if next < array.length().max(1) {
                         self.stack[position] = Some((ty, offset, next + 1));
@@ -867,21 +1612,64 @@ fn check_nominal_span(sources: &SourceMap, span: Span) -> Result<(), Declaration
     Ok(())
 }
 
+fn check_owned_vector_record(raw: &[RawRecordDecl], id: RecordId) -> Result<(), DeclarationError> {
+    match raw.get(id.0) {
+        Some(record) if !record.is_copy => Ok(()),
+        Some(_) => Err(DeclarationError::TypeMismatch),
+        None => Err(DeclarationError::InvalidRecordId(id)),
+    }
+}
+
+fn check_owned_vector_enum(raw: &[RawEnumDecl], id: EnumId) -> Result<(), DeclarationError> {
+    raw.get(id.0)
+        .filter(|enumeration| enumeration.id == id)
+        .map(|_| ())
+        .ok_or(DeclarationError::InvalidEnumId(id))
+}
+
 fn value_field(field: &RawFieldDecl) -> Result<ValueTy, DeclarationError> {
+    value_field_domain::<false>(field)
+}
+
+fn value_field_domain<const OWNED: bool>(
+    field: &RawFieldDecl,
+) -> Result<ValueTy, DeclarationError> {
     match field.ty {
-        ParameterTy::Value(ValueTy::Scalar(hir::Ty::U8)) => {
-            Err(DeclarationError::NonScalarField(field.id))
-        }
-        ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array)))
-            if array.element() == hir::Ty::U8 =>
-        {
-            Err(DeclarationError::NonScalarField(field.id))
+        ParameterTy::Value(
+            value @ ValueTy::Owned(
+                AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_),
+            ),
+        ) => {
+            if OWNED {
+                Ok(value)
+            } else {
+                Err(DeclarationError::TypeMismatch)
+            }
         }
         ParameterTy::Value(ValueTy::Owned(AggregateTy::Enum(_))) => {
             Err(DeclarationError::NonScalarField(field.id))
         }
         ParameterTy::Value(ty) => Ok(ty),
         _ => Err(DeclarationError::NonScalarField(field.id)),
+    }
+}
+
+fn value_field_with_enums(
+    field: &RawFieldDecl,
+    enum_count: usize,
+) -> Result<ValueTy, DeclarationError> {
+    value_field_with_enums_domain::<false>(field, enum_count)
+}
+
+fn value_field_with_enums_domain<const OWNED: bool>(
+    field: &RawFieldDecl,
+    enum_count: usize,
+) -> Result<ValueTy, DeclarationError> {
+    match field.ty {
+        ParameterTy::Value(value @ ValueTy::Owned(AggregateTy::Enum(id))) if id.0 < enum_count => {
+            Ok(value)
+        }
+        _ => value_field_domain::<OWNED>(field),
     }
 }
 
@@ -892,27 +1680,77 @@ pub(super) const MAX_CONTAINMENT_DEPTH: usize = 64;
 struct ContainmentSummary {
     layout: Layout,
     width: usize,
-    depth: usize,
+    depth_and_packed: usize,
+}
+impl ContainmentSummary {
+    fn depth(self) -> usize {
+        self.depth_and_packed & 255
+    }
+    fn packed_bytes(self) -> usize {
+        self.depth_and_packed >> 8
+    }
+    fn pack(depth: usize, bytes: usize) -> Result<usize, DeclarationError> {
+        if depth > MAX_CONTAINMENT_DEPTH || bytes > (usize::MAX >> 8) {
+            return Err(DeclarationError::LayoutOverflow);
+        }
+        Ok(depth | (bytes << 8))
+    }
 }
 
 fn value_summary(
     ty: ValueTy,
     summaries: &[ContainmentSummary],
 ) -> Result<ContainmentSummary, DeclarationError> {
+    value_summary_domain::<false>(ty, summaries)
+}
+
+fn value_summary_domain<const OWNED: bool>(
+    ty: ValueTy,
+    summaries: &[ContainmentSummary],
+) -> Result<ContainmentSummary, DeclarationError> {
     Ok(match ty {
-        ValueTy::Scalar(hir::Ty::U8) => return Err(DeclarationError::TypeMismatch),
+        ValueTy::Owned(AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)) => {
+            if !OWNED {
+                return Err(DeclarationError::TypeMismatch);
+            }
+            ContainmentSummary {
+                layout: Layout { size: 16, align: 8 },
+                width: 3,
+                depth_and_packed: ContainmentSummary::pack(0, 16)?,
+            }
+        }
         ValueTy::Scalar(ty) => ContainmentSummary {
             layout: Layout::scalar(ty),
             width: 1,
-            depth: 0,
+            depth_and_packed: ContainmentSummary::pack(0, Layout::scalar(ty).size)?,
         },
-        ValueTy::Owned(AggregateTy::FixedArray(array)) if array.element() == hir::Ty::U8 => {
-            return Err(DeclarationError::TypeMismatch)
-        }
         ValueTy::Owned(AggregateTy::FixedArray(array)) => ContainmentSummary {
             layout: array.layout()?,
             width: array.length().max(1),
-            depth: 0,
+            depth_and_packed: ContainmentSummary::pack(0, array.layout()?.size)?,
+        },
+        ValueTy::Owned(AggregateTy::File) => ContainmentSummary {
+            layout: Layout { size: 16, align: 8 },
+            width: 2,
+            depth_and_packed: ContainmentSummary::pack(0, 16)?,
+        },
+        ValueTy::Owned(AggregateTy::ByteBuf) => ContainmentSummary {
+            layout: Layout { size: 16, align: 8 },
+            width: 3,
+            depth_and_packed: ContainmentSummary::pack(0, 16)?,
+        },
+        ValueTy::Owned(AggregateTy::Vector(element)) => {
+            check_vector_element(element)?;
+            ContainmentSummary {
+                layout: Layout { size: 16, align: 8 },
+                width: 3,
+                depth_and_packed: ContainmentSummary::pack(0, 16)?,
+            }
+        }
+        ValueTy::Owned(AggregateTy::RecordVector(_)) => ContainmentSummary {
+            layout: Layout { size: 16, align: 8 },
+            width: 3,
+            depth_and_packed: ContainmentSummary::pack(0, 16)?,
         },
         ValueTy::Owned(AggregateTy::Enum(_)) => return Err(DeclarationError::TypeMismatch),
         ValueTy::Owned(AggregateTy::Record(id)) => *summaries
@@ -925,14 +1763,30 @@ fn containment_summaries(
     raw: &[RawRecordDecl],
     limits: Limits,
 ) -> Result<Vec<ContainmentSummary>, DeclarationError> {
-    containment_graph(
+    containment_summaries_domain::<false>(raw, limits)
+}
+
+fn containment_summaries_domain<const OWNED: bool>(
+    raw: &[RawRecordDecl],
+    limits: Limits,
+) -> Result<Vec<ContainmentSummary>, DeclarationError> {
+    containment_graph_domain::<OWNED>(
         raw.len(),
         |id| raw[id].fields.len(),
-        |id, field| value_field(&raw[id].fields[field]),
+        |id, field| value_field_domain::<OWNED>(&raw[id].fields[field]),
         limits,
     )
 }
 fn containment_graph(
+    record_count: usize,
+    field_count: impl Fn(usize) -> usize,
+    field_type: impl Fn(usize, usize) -> Result<ValueTy, DeclarationError>,
+    limits: Limits,
+) -> Result<Vec<ContainmentSummary>, DeclarationError> {
+    containment_graph_domain::<false>(record_count, field_count, field_type, limits)
+}
+
+fn containment_graph_domain<const OWNED: bool>(
     record_count: usize,
     field_count: impl Fn(usize) -> usize,
     field_type: impl Fn(usize, usize) -> Result<ValueTy, DeclarationError>,
@@ -981,9 +1835,9 @@ fn containment_graph(
                 continue;
             }
             let mut cursor = LayoutCursor::default();
-            let (mut width, mut depth) = (0usize, 1usize);
+            let (mut width, mut depth, mut packed) = (0usize, 1usize, 0usize);
             for field in 0..field_count(id) {
-                let child = value_summary(field_type(id, field)?, &summaries)?;
+                let child = value_summary_domain::<OWNED>(field_type(id, field)?, &summaries)?;
                 cursor.push(child.layout)?;
                 width = limited_add(
                     width,
@@ -991,7 +1845,13 @@ fn containment_graph(
                     limits.layout_bytes,
                     "record expanded width",
                 )?;
-                depth = depth.max(child.depth + 1);
+                packed = limited_add(
+                    packed,
+                    child.packed_bytes(),
+                    limits.layout_bytes,
+                    "packed record bytes",
+                )?;
+                depth = depth.max(child.depth() + 1);
                 if depth > MAX_CONTAINMENT_DEPTH {
                     return Err(DeclarationError::ResourceLimit("record containment depth"));
                 }
@@ -1003,7 +1863,7 @@ fn containment_graph(
             summaries[id] = ContainmentSummary {
                 layout,
                 width: width.max(1),
-                depth,
+                depth_and_packed: ContainmentSummary::pack(depth, packed.max(1))?,
             };
             state[id] = 2;
             stack.pop();
@@ -1047,6 +1907,16 @@ pub(in crate::frontend) fn admit_declaration_counts(
 /// bounded flat input inventory, never expanded leaves or an execution witness.
 /// ExactSizeIterator claims are checked against actual visits before use.
 pub(super) fn admit_value_layouts<R, F>(records: R) -> Result<usize, DeclarationError>
+where
+    R: ExactSizeIterator<Item = F> + Clone,
+    F: ExactSizeIterator<Item = ValueTy>,
+{
+    admit_value_layouts_domain::<false, R, F>(records)
+}
+
+pub(super) fn admit_value_layouts_domain<const OWNED: bool, R, F>(
+    records: R,
+) -> Result<usize, DeclarationError>
 where
     R: ExactSizeIterator<Item = F> + Clone,
     F: ExactSizeIterator<Item = ValueTy>,
@@ -1102,12 +1972,21 @@ where
     if visited != count {
         return Err(DeclarationError::ResourceLimit("record declarations"));
     }
-    let summaries = containment_graph(
-        count,
-        |id| starts[id + 1] - starts[id],
-        |id, field| Ok(values[starts[id] + field]),
-        limits,
-    )?;
+    let summaries = if OWNED {
+        containment_graph_domain::<true>(
+            count,
+            |id| starts[id + 1] - starts[id],
+            |id, field| Ok(values[starts[id] + field]),
+            limits,
+        )?
+    } else {
+        containment_graph(
+            count,
+            |id| starts[id + 1] - starts[id],
+            |id, field| Ok(values[starts[id] + field]),
+            limits,
+        )?
+    };
     let mut total = 0;
     for summary in summaries {
         total = limited_add(
@@ -1118,6 +1997,65 @@ where
         )?;
     }
     Ok(total)
+}
+
+/// Source layout inventory only. No source spans or nominal identities are
+/// authenticated here and no checked declaration or execution witness escapes.
+pub(super) fn admit_joint_value_layouts(
+    records: &[RawRecordDecl],
+    enums: &[RawEnumDecl],
+    allocator: &mut Allocator,
+) -> Result<(DeclarationUsage, usize), DeclarationError> {
+    admit_joint_value_layouts_domain::<false>(records, enums, allocator)
+}
+
+pub(super) fn admit_joint_value_layouts_domain<const OWNED: bool>(
+    records: &[RawRecordDecl],
+    enums: &[RawEnumDecl],
+    allocator: &mut Allocator,
+) -> Result<(DeclarationUsage, usize), DeclarationError> {
+    let mut usage = preflight(records, Limits::DEFAULT)?;
+    let enum_usage = admit_enum_counts(
+        enums.iter().map(|enumeration| enumeration.variants.len()),
+        usage,
+    )
+    .map_err(DeclarationError::from)?;
+    let table_bytes = limited_add(
+        usage.table_bytes,
+        enum_usage.table_bytes,
+        Limits::DEFAULT.table_bytes,
+        "declaration table bytes",
+    )?;
+    let layouts = if OWNED {
+        composition::layouts_domain::<true>(
+            records,
+            enums,
+            table_bytes,
+            Limits::DEFAULT,
+            allocator,
+        )?
+    } else {
+        composition::layouts(records, enums, table_bytes, Limits::DEFAULT, allocator)?
+    };
+    usage.layout_bytes = 0;
+    for summary in layouts.records() {
+        usage.layout_bytes = limited_add(
+            usage.layout_bytes,
+            summary.layout.size,
+            Limits::DEFAULT.layout_bytes,
+            "declaration layout bytes",
+        )?;
+    }
+    let mut enum_bytes = 0;
+    for summary in layouts.enums() {
+        enum_bytes = limited_add(
+            enum_bytes,
+            summary.layout.size,
+            Limits::DEFAULT.layout_bytes,
+            "declaration layout bytes",
+        )?;
+    }
+    Ok((usage, enum_bytes))
 }
 
 /// Count scalar layouts without building declarations. The private cursor is
@@ -1148,7 +2086,26 @@ where
                 "fields per record",
             )?;
             fields = limited_add(fields, 1, limits.fields, "field declarations")?;
-            if !matches!(ty, hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit) {
+            if !matches!(
+                ty,
+                hir::Ty::Bool
+                    | hir::Ty::I32
+                    | hir::Ty::U8
+                    | hir::Ty::Unit
+                    | hir::Ty::I64
+                    | hir::Ty::I8
+                    | hir::Ty::I16
+                    | hir::Ty::U16
+                    | hir::Ty::U32
+                    | hir::Ty::U64
+                    | hir::Ty::Isize
+                    | hir::Ty::Usize
+                    | hir::Ty::I128
+                    | hir::Ty::Char
+                    | hir::Ty::F32
+                    | hir::Ty::F64
+                    | hir::Ty::U128
+            ) {
                 return Err(DeclarationError::TypeMismatch);
             }
             cursor.push(Layout::scalar(ty))?;
@@ -1258,6 +2215,7 @@ mod tests {
 
     pub(super) fn record(id: usize, types: &[hir::Ty], span: Span) -> RawRecordDecl {
         RawRecordDecl {
+            is_copy: false,
             id: RecordId(id),
             span,
             fields: types
@@ -1297,6 +2255,53 @@ mod tests {
             table.record(RecordId(0)).unwrap_err(),
             DeclarationError::InvalidRecordId(RecordId(0))
         );
+    }
+
+    #[test]
+    fn checked_copy_record_header_and_cached_field_counts_at_both_limits() {
+        #[allow(dead_code)]
+        struct OriginalRecordDecl {
+            id: RecordId,
+            span: Span,
+            field_start: usize,
+            field_end: usize,
+            layout: Layout,
+            width: usize,
+        }
+        #[allow(dead_code)]
+        struct CopyRecordDecl {
+            id: RecordId,
+            span: Span,
+            field_start: usize,
+            field_end: usize,
+            layout: Layout,
+            width: usize,
+            is_copy: bool,
+        }
+        assert_eq!(size_of::<RecordDecl>(), size_of::<CopyRecordDecl>());
+        assert!(size_of::<RecordDecl>() >= size_of::<OriginalRecordDecl>());
+        assert_eq!(
+            std::mem::align_of::<RecordDecl>(),
+            std::mem::align_of::<CopyRecordDecl>()
+        );
+        let (sources, span) = source();
+        let array = FixedArrayTy::check(hir::Ty::U8, 1024).unwrap();
+        for owned in [0, 1, 1024] {
+            let mut raw = record(0, &vec![hir::Ty::Bool; 1024], span);
+            for field in &mut raw.fields[..owned] {
+                field.ty = ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array)));
+            }
+            let declarations = Declarations::check(&[raw], &sources).unwrap();
+            let record = declarations.record(RecordId(0)).unwrap();
+            assert_eq!(record.owned_field_count(), owned);
+            assert_eq!(record.width(), (1024 - owned) + owned * 1024);
+            assert_eq!(
+                declarations
+                    .aggregate_width(AggregateTy::Record(RecordId(0)))
+                    .unwrap(),
+                record.width()
+            );
+        }
     }
 
     #[test]
@@ -2071,3 +3076,9 @@ mod u8_tests;
 
 #[cfg(test)]
 mod byte_storage_tests;
+
+#[cfg(test)]
+mod copy_tests;
+
+#[cfg(test)]
+mod owned_enum_vector_tests;

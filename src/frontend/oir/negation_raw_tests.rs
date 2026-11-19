@@ -249,7 +249,12 @@ fn raw_negation_native_checks_before_extracting_and_embeds_minus_diagnostic() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run in the native CI job"]
 fn raw_negation_scalar_witnesses_use_real_llvm() {
@@ -286,7 +291,12 @@ fn raw_negation_scalar_witnesses_use_real_llvm() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 pub(super) fn run_native(module: &str, expected: &Result<Scalar, RunFailure>, sources: &SourceMap) {
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -457,7 +467,12 @@ fn raw_negation_scalar_native_phi_exits_and_branch_dominance() {
     );
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run in the native CI job"]
 fn raw_negation_scalar_phi_uses_real_llvm() {

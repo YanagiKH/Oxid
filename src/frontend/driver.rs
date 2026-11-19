@@ -1,6 +1,6 @@
 use super::project::packages::{self, LoadedSourceInput, PackageSources, PackageSpec};
 use super::{
-    build_config::{NativeBuildSettings, NativeSourceNames},
+    build_config::{ExecutionPolicy, NativeBuildSettings, NativeSourceNames},
     declaration_index::{IndexLimits, WorkMeter},
     diagnostic::{json_string, Diagnostic},
     oir,
@@ -170,6 +170,15 @@ fn prepare_package_with_limits<'a>(
     entry_override: Option<&Path>,
     limits: ProjectLimits,
 ) -> Result<PreparedPackageProject<'a>, PackagePreparationError> {
+    prepare_package_with_editor(packages, entry_override, limits, None)
+}
+
+fn prepare_package_with_editor<'a>(
+    packages: &'a [PackageSpec],
+    entry_override: Option<&Path>,
+    limits: ProjectLimits,
+    overlay: Option<&super::project::editor_sources::SourceOverlay<'_>>,
+) -> Result<PreparedPackageProject<'a>, PackagePreparationError> {
     packages::validate_graph(packages, entry_override).map_err(|error| {
         PackagePreparationError {
             sources: SourceMap::new(),
@@ -181,13 +190,29 @@ fn prepare_package_with_limits<'a>(
             .unwrap_or(&packages[0].entry)
             .to_str()
             .expect("validated UTF-8 entry");
-        let project = ProjectSources::load_typed(entry, limits)?;
+        #[cfg(not(windows))]
+        let project = if let Some(overlay) = overlay {
+            ProjectSources::load_typed_editor(entry, limits, overlay)?
+        } else {
+            ProjectSources::load_typed(entry, limits)?
+        };
+        #[cfg(windows)]
+        let project = ProjectSources::load_local_package_entry(
+            &packages[0],
+            Path::new(entry),
+            limits,
+            overlay,
+        )?;
         return Ok(PreparedPackageProject {
             sources: PreparedSources::Single(project),
             dependencies: Vec::new(),
         });
     }
-    let sources = PackageSources::load(packages, entry_override, limits)?;
+    let sources = if overlay.is_some() {
+        PackageSources::load_with_editor(packages, entry_override, limits, overlay)?
+    } else {
+        PackageSources::load(packages, entry_override, limits)?
+    };
     let dependencies = match dependency_fingerprints(&sources, packages.len()) {
         Ok(dependencies) => dependencies,
         Err(error) => {
@@ -201,6 +226,135 @@ fn prepare_package_with_limits<'a>(
         sources: PreparedSources::Packages(sources),
         dependencies,
     })
+}
+
+/// Editor checking has the same grammar, package namespaces, type checking,
+/// ownership and verified OIR as project checking. It performs no execution,
+/// native compilation, artifact publication or lock update.
+pub(super) fn editor_check(
+    packages: &[PackageSpec],
+    entry_override: Option<&Path>,
+    overlay: &super::project::editor_sources::SourceOverlay<'_>,
+) -> super::editor::EditorCheck {
+    match prepare_package_with_editor(
+        packages,
+        entry_override,
+        ProjectLimits::default(),
+        Some(overlay),
+    ) {
+        Err(error) => super::editor::checked_sources(&error.sources, &error.diagnostics, false),
+        Ok(prepared) => match prepared.checked() {
+            Ok(_) => super::editor::checked_sources(prepared.project().sources(), &[], true),
+            Err(errors) => {
+                super::editor::checked_sources(prepared.project().sources(), &errors, true)
+            }
+        },
+    }
+}
+
+pub(super) fn editor_complete(
+    packages: &[PackageSpec],
+    entry: Option<&Path>,
+    overlay: &super::project::editor_sources::SourceOverlay<'_>,
+    path: &Path,
+    offset: usize,
+) -> Result<super::editor::EditorCompletions, Vec<super::editor::EditorDiagnostic>> {
+    if overlay
+        .text(path)
+        .is_some_and(|text| super::editor::members::hint(text, offset))
+    {
+        return super::editor::members::complete(packages, entry, overlay, path, offset)
+            .map(|result| result.completions);
+    }
+    if overlay
+        .text(path)
+        .is_some_and(|text| super::editor::completion::qualified_hint(text, offset))
+    {
+        let session = super::project::editor_sources::QuerySources::load(packages, entry, overlay)
+            .map_err(|error| super::editor::diagnostics(&error.sources, &error.diagnostics))?;
+        return super::editor::completion::complete_qualified(&session, path, offset)
+            .map_err(|errors| super::editor::diagnostics(session.project().sources(), &errors));
+    }
+    let prepared =
+        match prepare_package_with_editor(packages, entry, ProjectLimits::default(), Some(overlay))
+        {
+            Ok(prepared) => prepared,
+            Err(error)
+                if !error.diagnostics.is_empty()
+                    && error
+                        .diagnostics
+                        .iter()
+                        .all(|diagnostic| matches!(diagnostic.code, "E0100" | "E0101")) =>
+            {
+                return super::editor::completion::fallback(&error.sources, path, offset)
+                    .map_err(|errors| super::editor::diagnostics(&error.sources, &errors))
+            }
+            Err(error) => {
+                return Err(super::editor::diagnostics(
+                    &error.sources,
+                    &error.diagnostics,
+                ))
+            }
+        };
+    let owner = match &prepared.sources {
+        PreparedSources::Single(project) => super::declaration_index::SourceOwner::project(project),
+        PreparedSources::Packages(package) => {
+            super::declaration_index::SourceOwner::packaged(package)
+        }
+    };
+    let sources = prepared.project().sources();
+    super::editor::completion::complete(owner, sources, path, offset)
+        .map_err(|errors| super::editor::diagnostics(sources, &errors))
+}
+
+pub(super) fn editor_definition(
+    packages: &[PackageSpec],
+    entry: Option<&Path>,
+    overlay: &super::project::editor_sources::SourceOverlay<'_>,
+    path: &Path,
+    offset: usize,
+) -> Result<super::editor::EditorDefinition, Vec<super::editor::EditorDiagnostic>> {
+    let prepared =
+        prepare_package_with_editor(packages, entry, ProjectLimits::default(), Some(overlay))
+            .map_err(|error| super::editor::diagnostics(&error.sources, &error.diagnostics))?;
+    let owner = match &prepared.sources {
+        PreparedSources::Single(project) => super::declaration_index::SourceOwner::project(project),
+        PreparedSources::Packages(package) => {
+            super::declaration_index::SourceOwner::packaged(package)
+        }
+    };
+    let sources = prepared.project().sources();
+    let location = super::editor::navigation::definition(owner, sources, path, offset)
+        .map_err(|errors| super::editor::diagnostics(sources, &errors))?;
+    Ok(super::editor::EditorDefinition {
+        location,
+        files: sources.files().len(),
+        bytes: sources
+            .files()
+            .iter()
+            .map(|source| source.text().len())
+            .sum(),
+    })
+}
+
+pub(super) fn editor_symbols(
+    packages: &[PackageSpec],
+    entry: Option<&Path>,
+    overlay: &super::project::editor_sources::SourceOverlay<'_>,
+    path: Option<&Path>,
+    query: &str,
+) -> Result<super::editor::EditorSymbols, Vec<super::editor::EditorDiagnostic>> {
+    let prepared =
+        prepare_package_with_editor(packages, entry, ProjectLimits::default(), Some(overlay))
+            .map_err(|error| super::editor::diagnostics(&error.sources, &error.diagnostics))?;
+    let owner = match &prepared.sources {
+        PreparedSources::Single(project) => super::declaration_index::SourceOwner::project(project),
+        PreparedSources::Packages(package) => {
+            super::declaration_index::SourceOwner::packaged(package)
+        }
+    };
+    super::editor::navigation::symbols(owner, prepared.project().sources(), path, query)
+        .map_err(|errors| super::editor::diagnostics(prepared.project().sources(), &errors))
 }
 
 fn fingerprint_error() -> Box<Diagnostic> {
@@ -248,10 +402,12 @@ fn input_fingerprint<'a>(
         sorted[index] = input;
     }
     let entry = sorted[0].path;
-    sorted[..files].sort_unstable_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
+    sorted[..files].sort_unstable_by(|a, b| {
+        fingerprint_path_bytes(a.path).cmp(fingerprint_path_bytes(b.path))
+    });
     if sorted[..files]
         .windows(2)
-        .any(|pair| pair[0].path == pair[1].path)
+        .any(|pair| fingerprint_path_bytes(pair[0].path).eq(fingerprint_path_bytes(pair[1].path)))
     {
         return Err(fingerprint_error());
     }
@@ -259,13 +415,24 @@ fn input_fingerprint<'a>(
         hash.update((bytes.len() as u64).to_le_bytes());
         hash.update(bytes);
     }
+    fn lp_path(hash: &mut Sha256, path: &str) {
+        hash.update((path.len() as u64).to_le_bytes());
+        // Native Windows separators are one byte, so normalization preserves
+        // the existing length framing. No per-file String is allocated.
+        #[cfg(windows)]
+        for byte in fingerprint_path_bytes(path) {
+            hash.update([byte]);
+        }
+        #[cfg(not(windows))]
+        hash.update(path.as_bytes());
+    }
     let mut hash = Sha256::new();
     lp(&mut hash, b"oxid-typed-local-source-v1");
-    lp(&mut hash, entry.as_bytes());
+    lp_path(&mut hash, entry);
     hash.update((files as u64).to_le_bytes());
     for input in &sorted[..files] {
         hash.update(b"F");
-        lp(&mut hash, input.path.as_bytes());
+        lp_path(&mut hash, input.path);
         lp(&mut hash, input.bytes);
     }
     let digest = hash.finalize();
@@ -284,6 +451,16 @@ fn input_fingerprint<'a>(
         checksum,
         files,
         bytes,
+    })
+}
+
+fn fingerprint_path_bytes(path: &str) -> impl Iterator<Item = u8> + '_ {
+    path.bytes().map(|byte| {
+        if cfg!(windows) && byte == b'\\' {
+            b'/'
+        } else {
+            byte
+        }
     })
 }
 
@@ -391,24 +568,47 @@ impl PreparedPackageProject<'_> {
         settings: &NativeBuildSettings,
         logical_root: &Path,
     ) -> Result<String, Box<Diagnostic>> {
-        if !settings.reproducible() {
-            return if process {
-                checked.native_process_module()
-            } else {
-                checked.native_module()
-            };
-        }
-        if process {
-            // Preserve the existing host and checked-entry guards before the
-            // additional presentation allocation. The sealed emitter repeats
-            // these guards for every caller of its new entry point.
+        super::windows_native::preflight(self.project(), process, Some(settings))?;
+        if process && (settings.reproducible() || settings.debug_info()) {
             checked.process_preflight()?;
         }
-        let names = self.native_source_names(logical_root)?;
-        if process {
-            checked.native_process_module_with_source_names(&names)
+        let names = if settings.reproducible() {
+            Some(self.native_source_names(logical_root)?)
         } else {
-            checked.native_module_with_source_names(&names)
+            None
+        };
+        if settings.debug_info() {
+            let marked = if settings.optimized() {
+                checked.native_optimized_module_with_execution(
+                    process,
+                    settings.execution(),
+                    names.as_ref(),
+                    true,
+                )?
+            } else {
+                checked.native_debug_module_with_execution(
+                    process,
+                    settings.execution(),
+                    names.as_ref(),
+                )?
+            };
+            return super::native_debug::add(
+                &marked,
+                self.project(),
+                names.as_ref(),
+                settings.optimized(),
+                checked.debug_records(),
+            );
+        }
+        if settings.optimized() {
+            checked.native_optimized_module_with_execution(
+                process,
+                settings.execution(),
+                names.as_ref(),
+                false,
+            )
+        } else {
+            checked.native_module_with_execution(process, settings.execution(), names.as_ref())
         }
     }
 
@@ -421,7 +621,7 @@ impl PreparedPackageProject<'_> {
         settings: &NativeBuildSettings,
         logical_root: &Path,
     ) -> i32 {
-        if !settings.reproducible() {
+        if !settings.reproducible() && !settings.execution().hosted() && !settings.debug_info() {
             return self.workspace_preflight(json, process, true, false);
         }
         let admitted = self.checked().and_then(|checked| {
@@ -451,6 +651,8 @@ impl PreparedPackageProject<'_> {
     ) -> i32 {
         let admitted = self.checked().and_then(|checked| {
             if native {
+                super::windows_native::preflight(self.project(), process, None)
+                    .map_err(|error| vec![*error])?;
                 if process {
                     checked.native_process_module()
                 } else {
@@ -544,6 +746,35 @@ impl PreparedPackageProject<'_> {
         }
     }
 
+    /// API output consumes only the checked session's retained source bytes.
+    /// Dependencies are checked but documented only when selected themselves.
+    pub(crate) fn documentation(
+        &self,
+        name: &str,
+        version: Option<&str>,
+        maximum: usize,
+    ) -> Result<String, String> {
+        let _checked = self
+            .checked()
+            .map_err(|errors| preparation_message(self.project().sources(), &errors))?;
+        let modules = match &self.sources {
+            PreparedSources::Single(project) => 0..project.modules().len(),
+            PreparedSources::Packages(packages) => {
+                let start = packages
+                    .context
+                    .target(0)
+                    .ok_or("missing documentation package root")?
+                    .0;
+                let end = packages
+                    .context
+                    .target(1)
+                    .map_or(packages.project.modules().len(), |module| module.0);
+                start..end
+            }
+        };
+        super::documentation::fragment(self.project(), modules, name, version, maximum)
+    }
+
     fn checked(&self) -> Result<oir::CheckedSourceProgram<'_>, Vec<Diagnostic>> {
         match &self.sources {
             PreparedSources::Single(project) => check_loaded_project(project),
@@ -556,6 +787,22 @@ impl PreparedPackageProject<'_> {
                     &mut Allocator::default(),
                 )
             }
+        }
+    }
+
+    /// Execute only an explicitly selected declared pure test. The caller owns
+    /// declared-entry selection; the sealed program owns its typed entry facts.
+    pub(crate) fn execute_test(&self, execution: ExecutionPolicy) -> i32 {
+        let project = self.project();
+        let result = (|| {
+            let checked = self.checked()?;
+            super::windows_native::test_preflight(project, execution)
+                .map_err(|error| vec![*error])?;
+            checked.run_test_i32().map_err(|error| vec![*error])
+        })();
+        match result {
+            Ok(status) => status,
+            Err(errors) => report(project.sources(), errors, false, Summary::Run(None)),
         }
     }
 
@@ -592,6 +839,8 @@ impl PreparedPackageProject<'_> {
         {
             let result = (|| {
                 let checked = executable?;
+                super::windows_native::preflight(project, process, None)
+                    .map_err(|error| vec![*error])?;
                 let module = if process {
                     checked.native_process_module()
                 } else {
@@ -617,6 +866,48 @@ impl PreparedPackageProject<'_> {
         process_loaded(project, json, operation, None, executable)
     }
 
+    pub(crate) fn execute_with_execution(
+        &self,
+        command: PackageCommand<'_>,
+        json: bool,
+        process: bool,
+        execution: ExecutionPolicy,
+    ) -> i32 {
+        if !execution.hosted() || !matches!(command, PackageCommand::Run) {
+            return self.execute(command, json, process);
+        }
+        if process && json {
+            return process_option_error("process-mode run does not support --message-format=json");
+        }
+        if process && !oir::process::setup() {
+            return 74;
+        }
+        let project = self.project();
+        let executable = self.checked();
+        if process {
+            return match executable {
+                Ok(checked) => match checked.run_process_with_execution(execution) {
+                    Ok(status) => status,
+                    Err(oir::ProcessFailure::Setup) => 74,
+                    Err(oir::ProcessFailure::Diagnostic(error)) => {
+                        report_process(project.sources(), &[*error])
+                    }
+                },
+                Err(errors) => report_process(project.sources(), &errors),
+            };
+        }
+        let result = executable.and_then(|checked| {
+            checked
+                .run_result(execution)
+                .map(|value| Summary::Run(Some(value)))
+                .map_err(|error| vec![*error])
+        });
+        match result {
+            Ok(summary) => report(project.sources(), Vec::new(), json, summary),
+            Err(errors) => report(project.sources(), errors, json, Summary::Run(None)),
+        }
+    }
+
     /// Typed project builds consume one resolved plan. Non-native operations
     /// keep their original execution and reporting paths; explicit-file callers
     /// continue using execute and the historical native wrapper entry points.
@@ -634,7 +925,7 @@ impl PreparedPackageProject<'_> {
             incremental,
         } = command
         else {
-            return self.execute(command, json, process);
+            return self.execute_with_execution(command, json, process, settings.execution());
         };
         let result = (|| {
             let checked = self.checked()?;
@@ -810,6 +1101,7 @@ pub fn dispatch(args: &mut Vec<String>) -> Option<i32> {
 
 fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
     match route {
+        Route::TypedLibrary { request } => Some(process_library(&request[0])),
         Route::TypedLexical { request }
             if request[0].operation == Operation::Run
                 && request[0].entry_policy == EntryPolicy::Process
@@ -883,6 +1175,52 @@ fn dispatch_route(route: Route, args: &mut Vec<String>) -> Option<i32> {
             Some(&output),
             entry_policy,
         )),
+    }
+}
+
+fn process_library(options: &super::native_library::Options) -> i32 {
+    if let Err(error) = super::native_library::require_host() {
+        return report(
+            &SourceMap::new(),
+            vec![*error],
+            options.json,
+            Summary::Compile(None),
+        );
+    }
+    let project = match ProjectSources::load_typed(&options.path, ProjectLimits::default()) {
+        Ok(project) => project,
+        Err(failure) => {
+            return report(
+                &failure.sources,
+                failure.diagnostics,
+                options.json,
+                Summary::Compile(None),
+            )
+        }
+    };
+    let result = (|| {
+        let limits = super::native_library::limits(options).map_err(|e| vec![*e])?;
+        let work = WorkMeter::new(limits.work);
+        let mut allocator = Allocator::default();
+        let library =
+            oir::check_scalar_library(&project, &options.export, limits, &work, &mut allocator)?;
+        let module = library
+            .native_module(options.fuel, &work, &mut allocator)
+            .map_err(|e| vec![*e])?;
+        let header = super::native_library::header(library.parameters(), &mut allocator)
+            .map_err(|e| vec![*e])?;
+        super::native::library::compile(&module, &header, &project, library.parameters(), options)
+            .map_err(|e| vec![*e])?;
+        Ok(Summary::Compile(Some(options.output.clone())))
+    })();
+    match result {
+        Ok(summary) => report(project.sources(), Vec::new(), options.json, summary),
+        Err(errors) => report(
+            project.sources(),
+            errors,
+            options.json,
+            Summary::Compile(None),
+        ),
     }
 }
 /// Actual bridge-only I/O/result carriers, debited by the import facade. The
@@ -969,7 +1307,7 @@ fn process_import(request: &options::ImportOptions) -> i32 {
         }
         match oir::import_checked(&project, &observation[..length], request.operation)? {
             oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),
-            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value))),
+            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value.into()))),
             oir::Imported::Emitted(module) => {
                 let output = request
                     .output
@@ -1061,7 +1399,7 @@ fn process_producer(request: &options::ProducerOptions) -> i32 {
         };
         match oir::import_produced(&project, observation.as_bytes(), request.operation)? {
             oir::Imported::Checked(functions) => Ok(Summary::Check(Some(functions))),
-            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value))),
+            oir::Imported::Ran(value) => Ok(Summary::Run(Some(value.into()))),
             oir::Imported::Emitted(module) => {
                 let output = request
                     .output
@@ -1085,7 +1423,7 @@ fn process_producer(request: &options::ProducerOptions) -> i32 {
 
 enum Summary {
     Check(Option<usize>),
-    Run(Option<oir::Scalar>),
+    Run(Option<oir::RuntimeValue>),
     Compile(Option<String>),
 }
 impl Summary {
@@ -1097,23 +1435,7 @@ impl Summary {
         }
     }
 }
-fn report(
-    sources: &SourceMap,
-    mut diagnostics: Vec<Diagnostic>,
-    json: bool,
-    summary: Summary,
-) -> i32 {
-    let summary = if matches!(summary, Summary::Run(Some(oir::Scalar::U8(_)))) {
-        diagnostics.push(*Diagnostic::new(
-            "E0500",
-            "oir-run",
-            "invalid byte entry result",
-            None,
-        ));
-        Summary::Run(None)
-    } else {
-        summary
-    };
+fn report(sources: &SourceMap, diagnostics: Vec<Diagnostic>, json: bool, summary: Summary) -> i32 {
     let success = diagnostics.is_empty();
     for diagnostic in &diagnostics {
         if json {
@@ -1141,10 +1463,17 @@ fn report(
             }
         }
         Summary::Run(result) => {
-            if json {
-                println!("{}", run_summary(diagnostics.len(), result));
+            use std::io::Write;
+            let mut output = std::io::stdout().lock();
+            let written = if json {
+                writeln!(output, "{}", run_runtime_summary(diagnostics.len(), result))
             } else if let Some(result) = result.filter(|_| success) {
-                println!("{result}");
+                writeln!(output, "{result}")
+            } else {
+                Ok(())
+            };
+            if written.and_then(|()| output.flush()).is_err() {
+                return 74;
             }
         }
     }
@@ -1156,14 +1485,16 @@ fn check_summary(errors: usize, functions: Option<usize>) -> String {
         functions.filter(|_| errors == 0).map_or("null".to_string(), |n| n.to_string()))
 }
 
+#[cfg(test)]
 fn run_summary(errors: usize, result: Option<oir::Scalar>) -> String {
-    let errors = if matches!(result, Some(oir::Scalar::U8(_))) {
-        errors.max(1)
-    } else {
-        errors
-    };
+    if matches!(result, Some(oir::Scalar::U8(_))) {
+        return run_runtime_summary(errors.max(1), None);
+    }
+    run_runtime_summary(errors, result.map(oir::RuntimeValue::from))
+}
+fn run_runtime_summary(errors: usize, result: Option<oir::RuntimeValue>) -> String {
     format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"run-summary\",\"success\":{},\"errors\":{errors},\"result\":{}}}",
-        errors == 0, result.filter(|_| errors == 0).and_then(oir::Scalar::json).unwrap_or_else(|| "null".into()))
+        errors == 0, result.filter(|_| errors == 0).and_then(oir::RuntimeValue::json).unwrap_or_else(|| "null".into()))
 }
 
 fn exit_status(diagnostics: &[Diagnostic]) -> i32 {
@@ -1226,7 +1557,7 @@ fn process_file_with_lexical(
         let diagnostic = *Diagnostic::new(
             "E0608",
             "oir-run",
-            "process execution requires Linux x86_64",
+            "process execution requires Linux or macOS on x86_64 or ARM64",
             None,
         );
         return if process_run {
@@ -1345,6 +1676,7 @@ pub(crate) fn build_project(path: &str, output: &str, json: bool, process: bool)
     };
     let result = (|| {
         let verified = check_loaded_project(&project)?;
+        super::windows_native::preflight(&project, process, None).map_err(|error| vec![*error])?;
         let module = if process {
             verified.native_process_module()
         } else {
@@ -1374,13 +1706,15 @@ fn process_loaded(
         match operation {
             Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
             Operation::Compile => {
+                super::windows_native::preflight(project, false, None)
+                    .map_err(|error| vec![*error])?;
                 let module = verified.native_module().map_err(|e| vec![*e])?;
                 let output = output.expect("compile route validates output");
                 super::native::compile(&module, output).map_err(|e| vec![*e])?;
                 Ok(Summary::Compile(Some(output.to_string())))
             }
             Operation::Run => verified
-                .run()
+                .run_result(crate::frontend::build_config::ExecutionPolicy::Bounded)
                 .map(|value| Summary::Run(Some(value)))
                 .map_err(|error| vec![*error]),
         }
@@ -1401,6 +1735,7 @@ fn process_compile_loaded(
 ) -> i32 {
     let result = (|| {
         let verified = executable?;
+        super::windows_native::preflight(project, true, None).map_err(|error| vec![*error])?;
         let module = verified.native_process_module().map_err(|e| vec![*e])?;
         let output = output.expect("compile route validates output");
         super::native::compile(&module, output).map_err(|e| vec![*e])?;
@@ -1425,6 +1760,42 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn source_fingerprint_normalizes_both_path_order_and_framed_bytes() {
+        #[cfg(not(windows))]
+        let paths = ["src/main.ox", "src/a0.ox", "src/a/b.ox"];
+        #[cfg(windows)]
+        let paths = [r"src\main.ox", r"src\a0.ox", r"src\a\b.ox"];
+        let inputs = [
+            LoadedSourceInput {
+                path: paths[0],
+                bytes: b"entry\n",
+            },
+            LoadedSourceInput {
+                path: paths[1],
+                bytes: b"B\r\n",
+            },
+            LoadedSourceInput {
+                path: paths[2],
+                bytes: b"\0A",
+            },
+        ];
+        // Independent wire bytes: lp(domain), lp(src/main.ox), u64(3),
+        // then F+lp(path)+lp(bytes) in a/b.ox, a0.ox, main.ox order.
+        // A native backslash sorts after '0'; the portable slash sorts before it.
+        let actual = input_fingerprint(9, inputs.into_iter().map(Ok)).unwrap();
+        assert_eq!(
+            actual,
+            PackageInputFingerprint {
+                package: 9,
+                checksum: "sha256:adb2dc8d7d1ac6a009c66c91e487301d3497032395d7db269c7f78a0727c7e59"
+                    .into(),
+                files: 3,
+                bytes: 11,
+            }
+        );
+    }
+
     use crate::frontend::project::packages::PackageDependency;
     use std::{
         path::PathBuf,
@@ -1432,6 +1803,63 @@ mod tests {
     };
 
     static NEXT_PREPARED: AtomicUsize = AtomicUsize::new(0);
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn import_free_scalar_ranges_use_fresh_typing_in_both_driver_flavors() {
+        // Independent results exercise direct owners, projected owners and
+        // forwarded exclusive slices without enums, generics or Vec imports.
+        for (text, expected, functions) in [
+            (
+                "fn score(p:&[i32])->i32{let a=p[0];let b=p[1];return a+b+p.len();}fn main()->i32{let a=[10,20,30,40];return score(&a[1..3]);}",
+                52,
+                2,
+            ),
+            (
+                "struct R{values:[i32;4]}fn score(p:&[i32])->i32{let a=p[0];let b=p[1];return a+b+p.len();}fn projected(p:&R)->i32{return score(&*p.values[1..3]);}fn main()->i32{let r=R{values:[1,2,3,4]};return projected(&r);}",
+                7,
+                3,
+            ),
+            (
+                "fn put(p:&mut[i32])->(){p[0]=77;return;}fn forward(p:&mut[i32])->(){put(&mut *p[1..2]);return;}fn main()->i32{let mut a=[10,20,30,40];forward(&mut a[1..4]);let x=a[2];let y=a[1];return x+y;}",
+                97,
+                3,
+            ),
+            (
+                "struct R{values:[i32;4]}fn put(p:&mut[i32])->(){p[0]=77;return;}fn projected(p:&mut R)->(){put(&mut *p.values[1..3]);return;}fn main()->i32{let mut r=R{values:[1,2,3,4]};projected(&mut r);let x=r.values[1];let y=r.values[2];return x+y;}",
+                80,
+                3,
+            ),
+        ] {
+            for project_syntax in [false, true] {
+                let fixture = PreparedFixture::new();
+                let source = if project_syntax {
+                    fixture.write("app/src/child.ox", "fn unused()->(){return;}");
+                    format!("mod child;{text}")
+                } else {
+                    text.to_owned()
+                };
+                fixture.write("app/src/main.ox", &source);
+                let entry = fixture.0.join("app/src/main.ox");
+                let project = ProjectSources::load_typed(
+                    entry.to_str().unwrap(),
+                    ProjectLimits::default(),
+                )
+                .unwrap();
+                assert_eq!(
+                    project.syntax_flavor(),
+                    if project_syntax { SyntaxFlavor::ProjectSyntax }
+                    else { SyntaxFlavor::OriginalSingleFile },
+                );
+                // Call the actual production selector used by file commands
+                // and manifest builds; do not duplicate its dispatch here.
+                let checked = check_loaded_project(&project).unwrap();
+                assert_eq!(checked.route(), oir::project::ProjectRoute::Owned);
+                assert_eq!(checked.function_count(), functions + usize::from(project_syntax));
+                assert_eq!(checked.run().unwrap(), oir::Scalar::I32(expected), "{source}");
+            }
+        }
+    }
 
     struct PreparedFixture(PathBuf);
     impl PreparedFixture {
@@ -1462,7 +1890,16 @@ mod tests {
                     .collect(),
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                windows,
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        ))]
         fn pair(&self, library_entry: &str) -> [PackageSpec; 2] {
             [
                 self.spec("app", "src/main.ox", &[("lib", 1)]),
@@ -1490,7 +1927,27 @@ mod tests {
             prepared.project().syntax_flavor(),
             SyntaxFlavor::OriginalSingleFile
         );
+        #[cfg(not(windows))]
         assert_eq!(prepared.project().usage(), old.usage());
+        #[cfg(windows)]
+        {
+            let observed = prepared.project().usage();
+            let original = old.usage();
+            assert_eq!(observed.source_bytes, original.source_bytes);
+            assert_eq!(observed.non_eof_tokens, original.non_eof_tokens);
+            assert_eq!(observed.syntax_nodes, original.syntax_nodes);
+            assert_eq!(observed.line_starts, original.line_starts);
+            assert_eq!(observed.modules, original.modules);
+            assert_eq!(observed.probes, 2);
+            assert_eq!(observed.directory_entries, 2);
+            assert_eq!(observed.directory_name_units, "src".len() + "main.ox".len());
+            assert_eq!(
+                observed.retained_path_bytes,
+                original.retained_path_bytes
+                    + specs[0].entry.as_os_str().len()
+                    + specs[0].entry.parent().unwrap().as_os_str().len()
+            );
+        }
         assert!(prepared.dependency_fingerprints().is_empty());
         fixture.write("app/src/main.ox", "fn main()->i32{return 99;}");
         let changed = prepare_package_project(&specs, None).unwrap();
@@ -1504,6 +1961,72 @@ mod tests {
             oir::Scalar::I32(42)
         );
         assert_eq!(prepared.execute(PackageCommand::Check, false, false), 0);
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    #[test]
+    fn optional_debug_metadata_preserves_every_instruction_and_uses_retained_sources() {
+        fn instructions(text: &str) -> Vec<String> {
+            text.lines()
+                .filter(|line| !line.trim().is_empty() && !line.starts_with('!'))
+                .filter(|line| {
+                    // Debug intrinsics describe values without executing a
+                    // program operation. Keep every other declaration/call.
+                    let line = line.trim_start();
+                    ![
+                        "declare void @llvm.dbg.value(",
+                        "declare void @llvm.dbg.declare(",
+                        "call void @llvm.dbg.value(",
+                        "call void @llvm.dbg.declare(",
+                    ]
+                    .iter()
+                    .any(|prefix| line.starts_with(prefix))
+                })
+                .map(|line| {
+                    if let Some((before, _)) = line
+                        .strip_prefix("define ")
+                        .and_then(|_| line.split_once(" !dbg !"))
+                    {
+                        format!("{before} {{")
+                    } else {
+                        line.split_once(", !dbg !")
+                            .map_or(line, |(before, _)| before)
+                            .to_owned()
+                    }
+                })
+                .collect()
+        }
+        for source in [
+            "fn main()->i32{return 40+2;}",
+            "use alloc::bytes::new;use alloc::bytes::try_push;use alloc::bytes::len;enum Decision<T>{Keep(T),Empty}fn main()->i32{let mut bytes=new();for index in 0..3{try_push(&mut bytes,index.to_u8_checked());}let value=Decision::Keep(bytes);match value{Decision::Keep(b)=>{return len(&b);},Decision::Empty=>{return 0;}}}",
+        ] {
+            let fixture = PreparedFixture::new();
+            fixture.write("app/src/main.ox", source);
+            let specs = [fixture.spec("app", "src/main.ox", &[])];
+            let prepared = prepare_package_project(&specs, None).unwrap();
+            let checked = prepared.checked().unwrap();
+            let usage = prepared.project().usage();
+            for relative in [false, true] {
+                for policy in [ExecutionPolicy::Bounded, ExecutionPolicy::Hosted] {
+                    for process in [false, true] {
+                        let settings = NativeBuildSettings::new(relative).with_execution(policy);
+                        let plain = prepared.native_module_with_settings(&checked, process, &settings, &specs[0].root).unwrap();
+                        let settings = settings.with_debug_info(true);
+                        let debug = prepared.native_module_with_settings(&checked, process, &settings, &specs[0].root).unwrap();
+                        assert_eq!(instructions(&debug), instructions(&plain));
+                        assert!(debug.contains("!DICompileUnit") && debug.contains("!DISubprogram(name: \"main\""));
+                        if specs[0].root.exists() { std::fs::remove_dir_all(&specs[0].root).unwrap(); }
+                        assert_eq!(prepared.native_module_with_settings(&checked, process, &settings, &specs[0].root).unwrap(), debug);
+                    }
+                }
+            }
+            assert_eq!(prepared.project().usage(), usage);
+        }
     }
 
     #[test]
@@ -1673,7 +2196,12 @@ mod tests {
         );
     }
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
     #[ignore = "requires LLVM 19.1.7 and the qualified native SDK"]
     fn prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal() {
@@ -1714,7 +2242,16 @@ mod tests {
         assert!(!stderr.contains(fixture.0.to_str().unwrap()), "{stderr}");
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            windows,
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    ))]
     #[test]
     fn prepared_fingerprint_known_answer_covers_raw_bytes_and_loaded_target_modules() {
         let fixture = PreparedFixture::new();
@@ -1784,7 +2321,11 @@ mod tests {
                 ),
             ]
         );
-        if cfg!(target_arch = "x86_64") {
+        if cfg!(all(
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )) {
             prepared.source_package_preflight(Some(true)).unwrap();
         } else {
             assert!(prepared
@@ -2066,7 +2607,12 @@ mod tests {
         assert!(message.ends_with('λ'));
     }
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     #[test]
     #[ignore = "requires pinned LLVM 19.1.7 tools"]
     fn prepared_native_uses_loaded_sources_after_removal() {

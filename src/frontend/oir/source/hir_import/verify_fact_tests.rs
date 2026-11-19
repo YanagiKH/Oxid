@@ -1,7 +1,7 @@
 //! Supplied STF1 facts are compared only against genuinely checked candidate HIR.
 //! These controls use private Verify/Run leaves and return fixed facts/rejections.
 //! Original-owner fixtures apply on every host. Genuine ProjectSources loading
-//! is qualified on Linux only; the public fixture is explicitly ignored elsewhere.
+//! is qualified on Linux and macOS; the public fixture is explicitly ignored elsewhere.
 use super::{candidate, leaf, verify_tests::LeafMode, SourceOwner, Wire, CELLS, COLUMN_STARTS};
 use crate::frontend::{
     declaration_index::IndexLimits,
@@ -345,8 +345,8 @@ fn checked_hir_import_verify_and_run_every_active_scalar_fact_rejects_before_low
 
 #[test]
 #[cfg_attr(
-    not(target_os = "linux"),
-    ignore = "genuine ProjectSources admission is Linux-only; no original-owner substitution qualifies public syntax"
+    not(any(target_os = "linux", target_os = "macos")),
+    ignore = "genuine ProjectSources admission requires Linux or macOS; no original-owner substitution qualifies public syntax"
 )]
 fn checked_hir_import_verify_and_run_public_project_facts_reject_before_lower_and_runtime() {
     let fixture = fixture!("public", 29, 16);
@@ -437,8 +437,8 @@ fn checked_hir_import_emit_every_active_fact_rejects_before_lowering() {
 
 #[test]
 #[cfg_attr(
-    not(target_os = "linux"),
-    ignore = "genuine ProjectSources admission is Linux-only; public Emit host denial is tested separately"
+    not(any(target_os = "linux", target_os = "macos")),
+    ignore = "genuine ProjectSources admission requires Linux or macOS; public Emit host denial is tested separately"
 )]
 fn checked_hir_import_emit_public_facts_reject_before_lowering() {
     let fixture = fixture!("public", 29, 16);

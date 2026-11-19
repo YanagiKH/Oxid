@@ -13,7 +13,12 @@ use crate::frontend::{
 };
 use std::path::Path;
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 const CHILD: &str = concat!(
     "frontend::oir::owned::source::output_source_tests::",
     "output_source_subprocess_child"
@@ -489,7 +494,16 @@ fn output_source_module_policy_and_local_aliases_are_preserved() {
         ProjectLimits::default(),
         &mut Allocator::default(),
     );
-    if cfg!(target_os = "linux") {
+    if cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
         let project = result.unwrap();
         assert_eq!(project.sources().files().len(), 2);
         assert!(emitted_module(&project).contains("@__oxid_write_stdout_byte"));
@@ -503,7 +517,12 @@ fn output_source_module_policy_and_local_aliases_are_preserved() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 mod subprocess {
     use super::*;
     use std::os::{fd::AsRawFd, unix::process::CommandExt};

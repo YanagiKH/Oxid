@@ -1,6 +1,7 @@
 //! Deterministic scalar reference execution. Only an immutable verified witness
 //! can enter here. Fuel counts abstract-machine work, not wall-clock time.
 use super::*;
+use crate::frontend::build_config::{ExecutionPolicy, HOSTED_FUEL};
 
 #[cfg(test)]
 #[path = "execute_measurement.rs"]
@@ -163,7 +164,9 @@ fn frame(
     Ok(frame)
 }
 fn charge(fuel: &mut usize, cost: usize, origin: Span) -> Result<(), RunFailure> {
-    *fuel = fuel.checked_sub(cost).ok_or(RunFailure::Fuel(origin))?;
+    if *fuel != HOSTED_FUEL {
+        *fuel = fuel.checked_sub(cost).ok_or(RunFailure::Fuel(origin))?;
+    }
     Ok(())
 }
 // Only fuel accounting changes before this preflight succeeds; no activation
@@ -190,6 +193,22 @@ fn preflight(
 
 pub(super) fn run(program: &VerifiedProgram, entry: hir::DefId) -> Result<Scalar, RunFailure> {
     invoke(program, entry, &[], Limits::default())
+}
+
+pub(super) fn run_with_execution(
+    program: &VerifiedProgram,
+    entry: hir::DefId,
+    execution: ExecutionPolicy,
+) -> Result<Scalar, RunFailure> {
+    execute_with_execution(
+        program,
+        entry,
+        &[],
+        Limits::default(),
+        execution,
+        #[cfg(test)]
+        &mut |_| {},
+    )
 }
 #[cfg(test)]
 pub(super) fn run_with_fuel(
@@ -242,6 +261,25 @@ fn execute(
     limits: Limits,
     #[cfg(test)] observe: &mut dyn FnMut(Event),
 ) -> Result<Scalar, RunFailure> {
+    execute_with_execution(
+        program,
+        entry,
+        args,
+        limits,
+        ExecutionPolicy::Bounded,
+        #[cfg(test)]
+        observe,
+    )
+}
+
+fn execute_with_execution(
+    program: &VerifiedProgram,
+    entry: hir::DefId,
+    args: &[Scalar],
+    limits: Limits,
+    execution: ExecutionPolicy,
+    #[cfg(test)] observe: &mut dyn FnMut(Event),
+) -> Result<Scalar, RunFailure> {
     let limits = Limits {
         fuel: limits.fuel.min(MAX_FUEL),
         frames: limits.frames.min(MAX_FRAMES),
@@ -249,7 +287,7 @@ fn execute(
     };
     let entry = function(program, entry, None)?;
     arguments(entry, args, entry.span)?;
-    let mut fuel = limits.fuel;
+    let mut fuel = execution.initial_fuel(limits.fuel);
     let mut live_slots = preflight(
         &mut fuel,
         add(1, entry.slot_count(), entry.span)?,
@@ -316,6 +354,28 @@ fn execute(
                 }
             };
             let value = match assign.value {
+                Rvalue::I64(_)
+                | Rvalue::WidenI64 { .. }
+                | Rvalue::CheckedI64ToI32 { .. }
+                | Rvalue::CheckedI64ToU8 { .. }
+                | Rvalue::CheckedNegateI64 { .. }
+                | Rvalue::Integer { .. }
+                | Rvalue::CharacterConvert { .. }
+                | Rvalue::FloatConvert { .. }
+                | Rvalue::Character(_)
+                | Rvalue::Float { .. }
+                | Rvalue::FloatArithmetic { .. }
+                | Rvalue::FloatNegate { .. }
+                | Rvalue::Integer128 { .. }
+                | Rvalue::Bitwise { .. }
+                | Rvalue::BitNot { .. }
+                | Rvalue::CheckedInteger { .. }
+                | Rvalue::CheckedNegateInteger { .. }
+                | Rvalue::CheckedIntegerCast { .. }
+                | Rvalue::CheckedI64 { .. } => {
+                    return Err(internal(FailureKind::TypeMismatch, Some(assign.span)));
+                }
+                Rvalue::U8(value) => Scalar::U8(value),
                 Rvalue::Load(place) => load(active, place)?,
                 Rvalue::CheckedI32ToU8 {
                     operand, name_span, ..

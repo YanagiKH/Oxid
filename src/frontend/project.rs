@@ -11,6 +11,7 @@ mod builtin_tests;
 #[path = "project/array_syntax_tests.rs"]
 mod array_syntax_tests;
 pub(super) mod budget;
+pub(crate) mod editor_sources;
 #[cfg(test)]
 #[path = "project/enum_carrier_tests.rs"]
 mod enum_carrier_tests;
@@ -18,6 +19,9 @@ mod enum_carrier_tests;
 #[path = "project/enum_index_tests.rs"]
 mod enum_index_tests;
 mod filesystem;
+mod module_syntax;
+use editor_sources::SourceOverlay;
+use module_syntax::ModuleSyntax;
 pub(super) mod packages;
 #[cfg(test)]
 mod tests;
@@ -32,6 +36,8 @@ use super::{
     source::{SourceFile, SourceFileId, SourceMap, Span, MAX_SOURCE_BYTES},
 };
 use budget::{Allocator, ReserveFailure};
+#[cfg(windows)]
+pub(crate) use filesystem::{verify_windows_workspace_member, with_windows_regular_file};
 use std::mem::size_of;
 use std::{
     fs::File,
@@ -141,9 +147,9 @@ pub(super) struct ModuleHeader {
 }
 
 #[derive(Debug)]
-pub(super) struct ProjectSources {
+pub(super) struct ProjectSources<S = ast::Program> {
     sources: SourceMap,
-    programs: Vec<ast::Program>,
+    programs: Vec<S>,
     modules: Vec<ModuleHeader>,
     canonical_root: Option<PathBuf>,
     usage: SourceUsage,
@@ -323,6 +329,23 @@ impl ProjectSources {
             ProjectEnumSyntax::Enabled,
         )
     }
+    #[cfg(not(windows))]
+    pub(super) fn load_typed_editor(
+        entry: &str,
+        limits: ProjectLimits,
+        overlay: &SourceOverlay<'_>,
+    ) -> Result<Self, LoadFailure> {
+        Self::load_with_syntax_inputs(
+            entry,
+            limits,
+            parser::SourceMode::ProjectCandidate,
+            &mut Allocator::default(),
+            parser::ArraySyntaxPolicy::Enabled,
+            ProjectEnumSyntax::Enabled,
+            None,
+            Some(overlay),
+        )
+    }
     pub(super) fn load_typed_with_provider(
         entry: &str,
         limits: ProjectLimits,
@@ -464,44 +487,13 @@ impl ProjectSources {
         allocator: &mut Allocator,
         arrays: parser::ArraySyntaxPolicy,
         enums: ProjectEnumSyntax,
-        mut provider: Option<&mut dyn LexicalProvider>,
+        provider: Option<&mut dyn LexicalProvider>,
     ) -> Result<Self, LoadFailure> {
-        let mut builder = SourceSetBuilder {
-            entry,
-            limits,
-            allocator,
-            mode,
-            arrays,
-            enums,
-            project: Self {
-                sources: SourceMap::new(),
-                programs: Vec::new(),
-                modules: Vec::new(),
-                canonical_root: None,
-                usage: SourceUsage::default(),
-                syntax_flavor: SyntaxFlavor::OriginalSingleFile,
-            },
-        };
-        match builder.load_all_with_provider(&mut provider) {
-            Ok(()) => Ok(builder.project),
-            Err(diagnostics) => Err(LoadFailure {
-                sources: builder.project.sources,
-                diagnostics,
-                usage: builder.project.usage,
-                #[cfg(test)]
-                allocator: std::mem::take(builder.allocator),
-            }),
-        }
+        Self::load_with_syntax_inputs(
+            entry, limits, mode, allocator, arrays, enums, provider, None,
+        )
     }
-    pub fn sources(&self) -> &SourceMap {
-        &self.sources
-    }
-    pub fn usage(&self) -> SourceUsage {
-        self.usage
-    }
-    pub fn syntax_flavor(&self) -> SyntaxFlavor {
-        self.syntax_flavor
-    }
+
     pub fn uses_owned_syntax(&self) -> bool {
         self.programs
             .iter()
@@ -511,12 +503,7 @@ impl ProjectSources {
     pub fn modules(&self) -> &[ModuleHeader] {
         &self.modules
     }
-    pub fn try_text(&self, span: Span) -> Option<&str> {
-        self.sources.try_text(span)
-    }
-    pub fn text(&self, span: Span) -> &str {
-        self.sources.text(span)
-    }
+
     pub fn try_file_ast(&self, file: SourceFileId) -> Option<&ast::Program> {
         self.modules
             .get(file.0)
@@ -591,6 +578,69 @@ impl ProjectSources {
         (self.syntax_flavor == SyntaxFlavor::OriginalSingleFile && self.programs.len() == 1)
             .then(|| (self.sources.get(SourceFileId(0)), &self.programs[0]))
     }
+}
+
+impl<S: ModuleSyntax> ProjectSources<S> {
+    // Test failures retain the existing sources and metered allocator ledger.
+    #[cfg_attr(test, allow(clippy::result_large_err))]
+    #[allow(clippy::too_many_arguments)]
+    fn load_with_syntax_inputs(
+        entry: &str,
+        limits: ProjectLimits,
+        mode: parser::SourceMode,
+        allocator: &mut Allocator,
+        arrays: parser::ArraySyntaxPolicy,
+        enums: ProjectEnumSyntax,
+        mut provider: Option<&mut dyn LexicalProvider>,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<Self, LoadFailure> {
+        let mut builder = SourceSetBuilder {
+            entry,
+            limits,
+            allocator,
+            mode,
+            arrays,
+            enums,
+            project: Self {
+                sources: SourceMap::new(),
+                programs: Vec::new(),
+                modules: Vec::new(),
+                canonical_root: None,
+                usage: SourceUsage::default(),
+                syntax_flavor: SyntaxFlavor::OriginalSingleFile,
+            },
+        };
+        let loaded = if overlay.is_some() {
+            builder.load_all_with_inputs(&mut provider, overlay)
+        } else {
+            builder.load_all_with_provider(&mut provider)
+        };
+        match loaded {
+            Ok(()) => Ok(builder.project),
+            Err(diagnostics) => Err(LoadFailure {
+                sources: builder.project.sources,
+                diagnostics,
+                usage: builder.project.usage,
+                #[cfg(test)]
+                allocator: std::mem::take(builder.allocator),
+            }),
+        }
+    }
+    pub fn sources(&self) -> &SourceMap {
+        &self.sources
+    }
+    pub fn usage(&self) -> SourceUsage {
+        self.usage
+    }
+    pub fn syntax_flavor(&self) -> SyntaxFlavor {
+        self.syntax_flavor
+    }
+    pub fn try_text(&self, span: Span) -> Option<&str> {
+        self.sources.try_text(span)
+    }
+    pub fn text(&self, span: Span) -> &str {
+        self.sources.text(span)
+    }
     /// Exact requested retained lengths. Vec capacity/allocator/OS storage excluded.
     pub fn inventory(&self) -> Option<Inventory> {
         let mut result = Inventory {
@@ -602,13 +652,47 @@ impl ProjectSources {
                 .len()
                 .checked_mul(size_of::<super::source::SourceFile>())?,
             line_starts: self.usage.line_starts.checked_mul(size_of::<usize>())?,
-            ast_headers: self.programs.len().checked_mul(size_of::<ast::Program>())?,
+            ast_headers: self.programs.len().checked_mul(size_of::<S>())?,
             module_headers: self.modules.len().checked_mul(size_of::<ModuleHeader>())?,
             path_bytes: self.usage.retained_path_bytes,
             fixed_loader_scratch: size_of::<[u8; 8192]>().checked_add(size_of::<[Frame; 33]>())?,
             ..Inventory::default()
         };
-        for program in &self.programs {
+        #[cfg(windows)]
+        if self.canonical_root.is_some() {
+            result.fixed_loader_scratch = result
+                .fixed_loader_scratch
+                .checked_add(filesystem::fixed_scratch_bytes()?)?;
+        }
+        for parsed in &self.programs {
+            let program = parsed.ordinary()?;
+            if !program.generic_headers().is_empty() {
+                result.ast_payload = result
+                    .ast_payload
+                    .checked_add(size_of::<Vec<ast::GenericHeader>>())?;
+            }
+            result.ast_payload = result.ast_payload.checked_add(
+                program
+                    .generic_headers()
+                    .len()
+                    .checked_mul(size_of::<ast::GenericHeader>())?,
+            )?;
+            for header in program.generic_headers() {
+                result.ast_payload = result.ast_payload.checked_add(
+                    header
+                        .parameters
+                        .len()
+                        .checked_mul(size_of::<ast::GenericParam>())?,
+                )?;
+                for parameter in &header.parameters {
+                    result.ast_payload = result.ast_payload.checked_add(
+                        parameter
+                            .bounds
+                            .len()
+                            .checked_mul(size_of::<ast::ItemPath>())?,
+                    )?;
+                }
+            }
             result.tokens = result.tokens.checked_add(
                 program
                     .tokens
@@ -790,7 +874,7 @@ fn io_error(error: io::Error, display: &str, origin: Option<Span>) -> Box<Diagno
 }
 
 #[derive(Clone, Copy)]
-enum ProjectEnumSyntax {
+pub(super) enum ProjectEnumSyntax {
     #[cfg(test)]
     OutputCandidate,
     #[cfg(test)]
@@ -804,14 +888,14 @@ enum ProjectEnumSyntax {
     Candidate,
 }
 
-struct SourceSetBuilder<'a> {
+struct SourceSetBuilder<'a, S = ast::Program> {
     entry: &'a str,
     limits: ProjectLimits,
     allocator: &'a mut Allocator,
     mode: parser::SourceMode,
     arrays: parser::ArraySyntaxPolicy,
     enums: ProjectEnumSyntax,
-    project: ProjectSources,
+    project: ProjectSources<S>,
 }
 #[derive(Clone, Copy)]
 struct Frame {
@@ -819,7 +903,7 @@ struct Frame {
     next: usize,
 }
 
-impl SourceSetBuilder<'_> {
+impl<S: ModuleSyntax> SourceSetBuilder<'_, S> {
     fn load_all(&mut self) -> Result<(), Errors> {
         self.load_all_with_provider(&mut None)
     }
@@ -827,8 +911,15 @@ impl SourceSetBuilder<'_> {
         &mut self,
         provider: &mut Option<&mut dyn LexicalProvider>,
     ) -> Result<(), Errors> {
+        self.load_all_with_inputs(provider, None)
+    }
+    fn load_all_with_inputs(
+        &mut self,
+        provider: &mut Option<&mut dyn LexicalProvider>,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<(), Errors> {
         let text = self
-            .read_source(Path::new(self.entry), self.entry, None)
+            .read_source_input(Path::new(self.entry), self.entry, None, overlay)
             .map_err(one)?;
         let mut display = String::new();
         self.allocator
@@ -853,11 +944,11 @@ impl SourceSetBuilder<'_> {
         });
         self.project.usage.modules = 1;
         // No additional path policy, including host capability checks, for one file.
-        if self.project.programs[0].modules.is_empty() {
+        if self.project.programs[0].modules().is_empty() {
             return Ok(());
         }
         self.project.syntax_flavor = SyntaxFlavor::ProjectSyntax;
-        let origin = self.project.programs[0].modules[0].name;
+        let origin = self.project.programs[0].modules()[0].name;
         // Root canonicalization is deferred until the first declared child has
         // passed the earlier M/D/component/relative-path dimensional checks.
         let first_name_bytes = self.project.text(origin).len();
@@ -877,6 +968,8 @@ impl SourceSetBuilder<'_> {
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or(Path::new("."));
+        #[cfg(windows)]
+        filesystem::admit_invoked_entry(Path::new(self.entry), origin).map_err(one)?;
         // OS-returned canonicalization storage is outside controlled reserve accounting.
         let root_path = parent
             .canonicalize()
@@ -908,12 +1001,16 @@ impl SourceSetBuilder<'_> {
         let mut height = 1;
         while height != 0 {
             let frame = stack[height - 1];
-            if frame.next == self.project.programs[frame.module.0].modules.len() {
+            if frame.next == self.project.programs[frame.module.0].modules().len() {
                 height -= 1;
                 continue;
             }
             stack[height - 1].next += 1;
-            let child = self.load_child_with_provider(frame.module, frame.next, provider)?;
+            let child = if overlay.is_some() {
+                self.load_child_with_inputs(frame.module, frame.next, provider, overlay)?
+            } else {
+                self.load_child_with_provider(frame.module, frame.next, provider)?
+            };
             if height == stack.len() {
                 return Err(one(Diagnostic::new(
                     "E0500",
@@ -935,7 +1032,7 @@ impl SourceSetBuilder<'_> {
         // Count and byte products for both tables are admitted before either grows.
         let count = add(self.project.programs.len(), 1, origin)?;
         count
-            .checked_mul(size_of::<ast::Program>())
+            .checked_mul(size_of::<S>())
             .and_then(|_| count.checked_mul(size_of::<ModuleHeader>()))
             .ok_or_else(|| overflow(origin))?;
         self.allocator
@@ -953,6 +1050,15 @@ impl SourceSetBuilder<'_> {
         origin: Option<Span>,
     ) -> Result<String, Box<Diagnostic>> {
         let mut file = File::open(path).map_err(|e| io_error(e, display, origin))?;
+        self.read_open_source(&mut file, display, origin)
+    }
+
+    fn read_open_source(
+        &mut self,
+        file: &mut File,
+        display: &str,
+        origin: Option<Span>,
+    ) -> Result<String, Box<Diagnostic>> {
         let mut bytes = Vec::new();
         let mut scratch = [0u8; 8192];
         let remaining = self
@@ -1032,7 +1138,7 @@ impl SourceSetBuilder<'_> {
         display: String,
         text: String,
         origin: Option<Span>,
-    ) -> Result<ast::Program, Errors> {
+    ) -> Result<S, Errors> {
         self.parse_file_with_provider(display, text, origin, &mut None)
     }
     fn parse_file_with_provider(
@@ -1041,7 +1147,7 @@ impl SourceSetBuilder<'_> {
         text: String,
         origin: Option<Span>,
         provider: &mut Option<&mut dyn LexicalProvider>,
-    ) -> Result<ast::Program, Errors> {
+    ) -> Result<S, Errors> {
         let path_bytes = add(
             self.project.usage.retained_path_bytes,
             display.len(),
@@ -1087,7 +1193,12 @@ impl SourceSetBuilder<'_> {
                 })?
                 .map_err(one)?
         } else {
-            lexer::lex_with_allocator(source, remaining_tokens, self.allocator)
+            let lex = if matches!(self.enums, ProjectEnumSyntax::Enabled) {
+                lexer::lex_current_with_allocator
+            } else {
+                lexer::lex_with_allocator
+            };
+            lex(source, remaining_tokens, self.allocator)
                 .map_err(|failure| one(failure.diagnostic()))?
         };
         self.project.usage.non_eof_tokens =
@@ -1103,72 +1214,15 @@ impl SourceSetBuilder<'_> {
                 .selected_for_parser(source, &tokens, tokens.capacity())
                 .map_err(one)?;
         }
-        let (program, nodes) = match self.enums {
-            #[cfg(test)]
-            ProjectEnumSyntax::StdClosed => parser::parse_typed_closed_std_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-            #[cfg(test)]
-            ProjectEnumSyntax::OutputCandidate => parser::parse_output_candidate_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-            #[cfg(test)]
-            ProjectEnumSyntax::BuiltinCandidate => parser::parse_builtin_candidate_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-            ProjectEnumSyntax::Closed => {
-                if self.arrays == parser::ArraySyntaxPolicy::Closed {
-                    parser::parse_counted(
-                        source,
-                        tokens,
-                        self.mode,
-                        remaining_nodes,
-                        self.allocator,
-                    )?
-                } else {
-                    parser::parse_counted_with_arrays(
-                        source,
-                        tokens,
-                        self.mode,
-                        remaining_nodes,
-                        self.allocator,
-                        self.arrays,
-                    )?
-                }
-            }
-            ProjectEnumSyntax::Enabled => parser::parse_typed_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-            #[cfg(test)]
-            ProjectEnumSyntax::Candidate => parser::parse_enum_candidate_counted(
-                source,
-                tokens,
-                self.mode,
-                remaining_nodes,
-                self.allocator,
-                &mut Default::default(),
-            )?,
-        };
+        let (program, nodes) = S::parse(
+            source,
+            tokens,
+            self.mode,
+            self.arrays,
+            self.enums,
+            remaining_nodes,
+            self.allocator,
+        )?;
         self.project.usage.syntax_nodes =
             add(self.project.usage.syntax_nodes, nodes, origin).map_err(one)?;
         if program.uses_project_syntax() {
@@ -1186,7 +1240,16 @@ impl SourceSetBuilder<'_> {
         local: usize,
         provider: &mut Option<&mut dyn LexicalProvider>,
     ) -> Result<ModuleId, Errors> {
-        let declaration = self.project.programs[parent.0].modules[local];
+        self.load_child_with_inputs(parent, local, provider, None)
+    }
+    fn load_child_with_inputs(
+        &mut self,
+        parent: ModuleId,
+        local: usize,
+        provider: &mut Option<&mut dyn LexicalProvider>,
+        overlay: Option<&SourceOverlay<'_>>,
+    ) -> Result<ModuleId, Errors> {
+        let declaration = self.project.programs[parent.0].modules()[local];
         let at = Some(declaration.name);
         let name = self.project.text(declaration.name);
         let parent_header = &self.project.modules[parent.0];
@@ -1210,20 +1273,39 @@ impl SourceSetBuilder<'_> {
             name.len(),
             add(
                 display_parent.len(),
-                usize::from(!display_parent.is_empty() && !display_parent.ends_with('/')),
+                usize::from({
+                    #[cfg(not(windows))]
+                    {
+                        !display_parent.is_empty() && !display_parent.ends_with('/')
+                    }
+                    #[cfg(windows)]
+                    {
+                        !display_parent.is_empty()
+                            && filesystem::separator_units(Path::new(display_parent)) != 0
+                    }
+                }),
                 at,
             )
             .map_err(one)?,
             add(
                 filesystem::path_units(root_path),
-                usize::from(!root_path.as_os_str().as_encoded_bytes().ends_with(b"/")),
+                {
+                    #[cfg(not(windows))]
+                    {
+                        usize::from(!root_path.as_os_str().as_encoded_bytes().ends_with(b"/"))
+                    }
+                    #[cfg(windows)]
+                    {
+                        filesystem::separator_units(root_path)
+                    }
+                },
                 at,
             )
             .map_err(one)?,
             at,
         )
         .map_err(one)?;
-        for earlier in &self.project.programs[parent.0].modules[..local] {
+        for earlier in &self.project.programs[parent.0].modules()[..local] {
             let old = self.project.text(earlier.name);
             if old == name {
                 return Err(one(owned_diagnostic::secondary(
@@ -1263,10 +1345,31 @@ impl SourceSetBuilder<'_> {
             .string(&mut display, plan.display_bytes, "module display")
             .map_err(|error| one(reserve_error(error, at)))?;
         display.push_str(display_parent);
+        #[cfg(not(windows))]
         if !display_parent.is_empty() && !display_parent.ends_with('/') {
             display.push('/');
         }
+        #[cfg(not(windows))]
         display.push_str(&relative);
+        #[cfg(windows)]
+        {
+            // Verbatim Win32 paths require native separators even in labels:
+            // editor lookup also resolves these labels back to real files.
+            let verbatim = display_parent.starts_with(r"\\?\");
+            let separator = if verbatim { '\\' } else { '/' };
+            if !display_parent.is_empty()
+                && filesystem::separator_units(Path::new(display_parent)) != 0
+            {
+                display.push(separator);
+            }
+            if verbatim {
+                for character in relative.chars() {
+                    display.push(if character == '/' { '\\' } else { character });
+                }
+            } else {
+                display.push_str(&relative);
+            }
+        }
         // ChildPlan uses exact joining lengths, including an existing root slash.
         if relative.len() != plan.relative_bytes || display.len() != plan.display_bytes {
             return Err(one(Diagnostic::new(
@@ -1276,7 +1379,18 @@ impl SourceSetBuilder<'_> {
                 at,
             )));
         }
+        #[cfg(not(windows))]
         let canonical = filesystem::verify(
+            root_path,
+            &relative,
+            self.limits,
+            &mut self.project.usage,
+            self.allocator,
+            declaration.name,
+        )
+        .map_err(one)?;
+        #[cfg(windows)]
+        let (canonical, mut verified_child) = filesystem::verify(
             root_path,
             &relative,
             self.limits,
@@ -1307,7 +1421,20 @@ impl SourceSetBuilder<'_> {
             }
         }
         self.reserve_file(at).map_err(one)?;
-        let text = self.read_source(&canonical, &display, at).map_err(one)?;
+        #[cfg(not(windows))]
+        let text = self
+            .read_source_input(&canonical, &display, at, overlay)
+            .map_err(one)?;
+        #[cfg(windows)]
+        let text = self
+            .read_verified_child_input(
+                &mut verified_child,
+                &canonical,
+                &display,
+                Some(declaration.name),
+                overlay,
+            )
+            .map_err(one)?;
         // display is charged when admitted into SourceMap; these two owned paths here.
         self.project.usage.retained_path_bytes =
             add(self.project.usage.retained_path_bytes, relative.len(), at)
@@ -1538,7 +1665,7 @@ impl ProjectSources {
 #[allow(dead_code)]
 mod lexical_loader_layout_tests {
     use super::*;
-    use std::mem::{align_of, size_of};
+    use std::mem::{align_of, offset_of, size_of};
     // Exact retained baseline carriers. The optional mutable provider belongs
     // only to call frames; changing these layouts is not part of this route.
     struct BaselineProjectSources {
@@ -1583,6 +1710,80 @@ mod lexical_loader_layout_tests {
         assert_eq!(
             align_of::<SourceSetBuilder<'_>>(),
             align_of::<BaselineBuilder<'_>>()
+        );
+    }
+
+    #[test]
+    fn editor_query_loader_keeps_ordinary_field_types_and_offsets() {
+        // Exhaustive patterns also reject added fields; the explicit reference
+        // types reject a default that silently switches executable syntax.
+        let _project_types = |value: &ProjectSources| {
+            let ProjectSources {
+                sources,
+                programs,
+                modules,
+                canonical_root,
+                usage,
+                syntax_flavor,
+            } = value;
+            let _: &SourceMap = sources;
+            let _: &Vec<ast::Program> = programs;
+            let _: &Vec<ModuleHeader> = modules;
+            let _: &Option<PathBuf> = canonical_root;
+            let _: &SourceUsage = usage;
+            let _: &SyntaxFlavor = syntax_flavor;
+        };
+        let _builder_types = |value: &SourceSetBuilder<'_>| {
+            let SourceSetBuilder {
+                entry,
+                limits,
+                allocator,
+                mode,
+                arrays,
+                enums,
+                project,
+            } = value;
+            let _: &&str = entry;
+            let _: &ProjectLimits = limits;
+            let _: &&mut Allocator = allocator;
+            let _: &parser::SourceMode = mode;
+            let _: &parser::ArraySyntaxPolicy = arrays;
+            let _: &ProjectEnumSyntax = enums;
+            let _: &ProjectSources<ast::Program> = project;
+        };
+        macro_rules! same_offsets {
+            ($current:ty, $previous:ty, $($field:ident),+ $(,)?) => {
+                $(assert_eq!(offset_of!($current, $field), offset_of!($previous, $field), stringify!($field));)+
+            };
+        }
+        same_offsets!(
+            ProjectSources,
+            BaselineProjectSources,
+            sources,
+            programs,
+            modules,
+            canonical_root,
+            usage,
+            syntax_flavor,
+        );
+        same_offsets!(
+            SourceSetBuilder<'_>,
+            BaselineBuilder<'_>,
+            entry,
+            limits,
+            allocator,
+            mode,
+            arrays,
+            enums,
+            project,
+        );
+        same_offsets!(
+            LoadFailure,
+            BaselineLoadFailure,
+            sources,
+            diagnostics,
+            usage,
+            allocator,
         );
     }
 }

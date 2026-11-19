@@ -5,8 +5,9 @@
 #[cfg(any(
     all(
         target_os = "linux",
-        target_arch = "x86_64",
-        target_pointer_width = "64"
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
     ),
     all(
         target_os = "macos",
@@ -26,8 +27,9 @@ pub(in crate::frontend) fn setup() -> bool {
 #[cfg(not(any(
     all(
         target_os = "linux",
-        target_arch = "x86_64",
-        target_pointer_width = "64"
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
     ),
     all(
         target_os = "macos",
@@ -44,8 +46,9 @@ pub(in crate::frontend) fn setup() -> bool {
 #[cfg(any(
     all(
         target_os = "linux",
-        target_arch = "x86_64",
-        target_pointer_width = "64"
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
     ),
     all(
         target_os = "macos",
@@ -75,8 +78,9 @@ pub(in crate::frontend) fn diagnostic(message: &[u8]) -> i32 {
 #[cfg(not(any(
     all(
         target_os = "linux",
-        target_arch = "x86_64",
-        target_pointer_width = "64"
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
     ),
     all(
         target_os = "macos",
@@ -88,11 +92,12 @@ pub(in crate::frontend) fn diagnostic(_message: &[u8]) -> i32 {
     74
 }
 
-/// Runtime qualification does not follow the wider diagnostic capability.
+/// Source process execution uses the supported 64-bit POSIX host ABIs.
 pub(in crate::frontend) fn supported_host() -> bool {
     cfg!(all(
-        target_os = "linux",
-        target_arch = "x86_64",
-        target_pointer_width = "64"
+        any(target_os = "linux", target_os = "macos"),
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
     ))
 }

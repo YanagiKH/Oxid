@@ -19,8 +19,20 @@ use crate::frontend::{
 };
 use std::{cmp::Ordering, mem::size_of};
 
-pub(super) const KINDS: usize = 18;
-pub(super) const RETAINED_KINDS: usize = 13;
+pub(super) const KINDS: usize = 19;
+pub(super) const RETAINED_KINDS: usize = 14;
+
+/// Keep predecessor accounting fixtures exact while requiring the new kind to
+/// remain absent in those fixtures. This projection never accepts byte data.
+#[cfg(test)]
+pub(super) fn predecessor_values<const N: usize>(values: &[usize]) -> [usize; N] {
+    assert!(N == 13 || N == 18);
+    assert_eq!(values.len(), N + 1);
+    let inserted = Kind::ByteStrings as usize;
+    assert_eq!(inserted, 13);
+    assert_eq!(values[inserted], 0);
+    std::array::from_fn(|index| values[index + usize::from(index >= inserted)])
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]
@@ -38,6 +50,7 @@ pub(super) enum Kind {
     FieldInitializers,
     ArrayEntries,
     MatchArms,
+    ByteStrings,
     Names,
     Exits,
     Marks,
@@ -60,6 +73,7 @@ impl Kind {
             Self::FieldInitializers => "paid HIR field initializers",
             Self::ArrayEntries => "paid HIR array entries",
             Self::MatchArms => "paid HIR match arms",
+            Self::ByteStrings => "paid HIR byte string data",
             Self::Names => "paid HIR scope names",
             Self::Exits => "paid HIR scope exits",
             Self::Marks => "paid HIR scope marks",
@@ -82,6 +96,7 @@ pub(super) const WIDTHS: [usize; KINDS] = [
     size_of::<FieldInit>(),
     size_of::<ExprId>(),
     size_of::<MatchArm>(),
+    size_of::<u8>(),
     size_of::<ScopeName>(),
     size_of::<usize>(),
     size_of::<usize>(),
@@ -103,6 +118,7 @@ fn limits(c: HirCounts) -> [usize; KINDS] {
         c.field_initializers,
         c.array_entries,
         c.match_arms,
+        c.byte_string_bytes,
         c.bindings,
         c.bindings,
         c.scope_marks,
@@ -233,13 +249,6 @@ impl ResolverInventory {
         Ok(())
     }
 }
-fn inventory_field_value(ty: &ValueTy, at: Span) -> Result<(), Box<Diagnostic>> {
-    if matches!(ty, ValueTy::Owned(AggregateTy::Enum(_))) {
-        Err(invalid(at))
-    } else {
-        Ok(())
-    }
-}
 /// No copied rows, auxiliary tables, recursion or heap allocation on success.
 /// Charge before every vector/row inspected, and retain only scalar totals.
 pub(super) fn inventory_parts(
@@ -257,7 +266,8 @@ pub(super) fn inventory_parts(
         inventory.vector(Kind::Fields, &record.fields, work, record.span)?;
         for field in &record.fields {
             work.debit(1, field.span, "paid resolver inventory row")?;
-            inventory_field_value(&field.ty, field.span)?;
+            // This pass counts storage only. Resolution and the independent
+            // joint layout pass validate each field's nominal type.
         }
     }
     for signature in signatures {
@@ -297,6 +307,9 @@ pub(super) fn inventory_parts(
                 ExprKind::ArrayLiteral { elements } => {
                     inventory.vector(Kind::ArrayEntries, elements, work, expression.span)?
                 }
+                ExprKind::ByteString { bytes } => {
+                    inventory.vector(Kind::ByteStrings, bytes, work, expression.span)?
+                }
                 _ => (),
             }
         }
@@ -305,6 +318,9 @@ pub(super) fn inventory_parts(
             inventory.vector(Kind::Statements, &block.body, work, block.span)?;
             for statement in &block.body {
                 work.debit(1, statement.span, "paid resolver inventory row")?;
+                if let StmtKind::DestructureRecord { fields, .. } = &statement.kind {
+                    inventory.vector(Kind::FieldInitializers, fields, work, statement.span)?;
+                }
                 if let StmtKind::Match { arms, .. } = &statement.kind {
                     inventory.vector(Kind::MatchArms, arms, work, statement.span)?;
                     if arms.is_empty() || arms.len() > 256 {
@@ -466,7 +482,17 @@ impl PaidScope {
             for statement in &block.body {
                 work.debit(1, statement.span, "paid resolver name inventory")?;
                 match &statement.kind {
-                    ast::StmtKind::Let { name, .. } => {
+                    ast::StmtKind::DestructureRecord { fields, .. } => {
+                        for field in fields {
+                            work.debit(1, field.binding, "paid resolver name inventory")?;
+                            room(&names, names.capacity(), true, field.binding)?;
+                            names.push(ScopeName {
+                                name: field.binding,
+                                active: None,
+                            });
+                        }
+                    }
+                    ast::StmtKind::Let { name, .. } | ast::StmtKind::ForRange { name, .. } => {
                         room(&names, names.capacity(), true, *name)?;
                         names.push(ScopeName {
                             name: *name,

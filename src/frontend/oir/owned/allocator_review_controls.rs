@@ -46,7 +46,12 @@ fn allocator_review_controls_each_observer_works_while_the_other_is_disabled() {
     assert_eq!(stats, (3, 0, 384));
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 fn allocator_review_controls_null_allocations_remain_attempts_but_not_successes() {
     // Above this target's address space, so libc cannot reserve these requests.

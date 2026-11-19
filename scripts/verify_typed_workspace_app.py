@@ -5,6 +5,7 @@ Copies the existing three-package application outside the repository. Native
 mode checks object reuse, failure preservation and source-free ELF deployment.
 This is R1 workspace regression evidence, not v1 or reproducible-artifact proof.
 """
+import linux_native_target as native_target
 import argparse
 import copy
 import hashlib
@@ -188,7 +189,7 @@ class WorkspaceRunner(Runner):
         executable = project / ".oxid/bin/byte-count"
         header = executable.read_bytes()[:64]
         require(len(header) == 64 and header[:7] == b"\x7fELF\x02\x01\x01"
-                and header[16:20] == bytes([3, 0, 62, 0]), "native output must be an x86_64 ELF PIE")
+                and header[16:20] == native_target.elf_identity(3), "native output must be a host ELF PIE")
         return executable
 
     def check(self, native):

@@ -8,6 +8,11 @@ use std::{
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 const SENTINEL: &[u8] = b"existing output remains intact\n";
+const WINDOWS_SCALAR_NATIVE: bool = cfg!(all(
+    target_os = "windows",
+    target_arch = "x86_64",
+    target_env = "msvc"
+));
 
 struct Scratch(PathBuf);
 impl Scratch {
@@ -95,16 +100,31 @@ fn owned_source_reaches_check_reference_and_native_admission() {
         "{}",
         text(&run)
     );
-    // Valid owned source reaches the native toolchain on every host. Linux
-    // rejects the existing output before tools, then the missing tool path for
-    // a fresh output; other hosts reject the unsupported build host first.
+    // Linux and macOS reject the existing output before tools, then the missing
+    // tool path for a fresh output. Windows refuses owned native values before
+    // tools or output checks; other hosts reject the build host first.
     for output in ["output", "new-output"] {
         let compile = scratch.typed_with_output("compile", output);
-        diagnostic(&compile, "E0701", "native-toolchain");
+        if WINDOWS_SCALAR_NATIVE {
+            diagnostic(&compile, "E0700", "native-admission");
+        } else {
+            diagnostic(&compile, "E0701", "native-toolchain");
+        }
         let json = text(&compile);
         assert_eq!(json.lines().count(), 2, "{json}");
         assert!(json.contains("\"errors\":1,\"output\":null"), "{json}");
-        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        if WINDOWS_SCALAR_NATIVE {
+            assert!(
+                json.contains("Windows native builds currently support bounded result-entry bool, i32 and unit scalar functions"),
+                "{json}"
+            );
+            assert!(!json.contains("E0701"), "{json}");
+        } else if cfg!(all(
+            any(target_os = "linux", target_os = "macos"),
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )) {
             if output == "output" {
                 assert!(json.contains("native output already exists"), "{json}");
             } else {
@@ -113,7 +133,7 @@ fn owned_source_reaches_check_reference_and_native_admission() {
             }
         } else {
             assert!(
-                json.contains("native preview requires a Linux x86_64 build host"),
+                json.contains("native builds require Linux or macOS on x86_64 or ARM64"),
                 "{json}"
             );
         }
@@ -126,7 +146,7 @@ fn owned_source_reaches_check_reference_and_native_admission() {
 #[test]
 fn source_errors_precede_native_tools_and_preserve_existing_outputs() {
     let cases = [
-        ("struct T {} fn main() -> () { let x = T {}; let p = &x; return; }", "E0101", "parse"),
+        ("struct T {} fn main() -> () { let x = T {}; let p = &x; p = &x; return; }", "E0101", "parse"),
         ("struct T {} fn main() -> Missing { return T {}; }", "E0202", "resolve"),
         ("struct T { n: i32 } fn main() -> () { let x = T { n: true }; return; }", "E0300", "type"),
         ("struct T {} fn unused(x: T) -> () { x; x; return; } fn main() -> () { return; }", "E0310", "ownership"),

@@ -140,8 +140,10 @@ pub(super) fn borrowed(s: Span, kind: BorrowKind) -> RawOwnedProgram {
     });
     f.loans.push(LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(source),
         kind,
         referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0)))).unwrap(),
@@ -672,8 +674,10 @@ fn conflicting_borrow_captures_requested_mode_for_owners_and_references() {
         f.calls[0].arguments.push(ArgumentSlot::Borrow(LoanId(1)));
         f.loans.push(LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(0),
-            argument: 1,
+            region: LoanRegion::Call {
+                call: CallSiteId(0),
+                argument: 1,
+            },
             authority,
             kind: BorrowKind::Exclusive,
             referent: BorrowedSlot::check(BorrowedTy::Exact(AggregateTy::Record(RecordId(0))))

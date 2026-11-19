@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_enum_payload_compatibility.py \
+          python3 -B scripts/verify_windows_local_package_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -60,6 +60,22 @@ jobs:
           python3 scripts/verify_owned_witness_privacy.py
           python3 scripts/verify_i32_literals.py target/release/oxid
           python3 scripts/verify_i32_arithmetic.py target/debug/oxid target/release/oxid
+          python3 -B scripts/verify_i64.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-i64-reference" --reference-only
+          python3 -B scripts/verify_integer_widths.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-widths-reference" --reference-only
+          python3 -B scripts/verify_byte_integers.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-byte-integer-reference" --reference-only
+          python3 -B scripts/verify_integer128.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer128-reference" --reference-only
+          python3 -B scripts/verify_integer_bits.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-bits-reference" --reference-only
+          python3 -B scripts/verify_floats.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-reference" --reference-only
+          python3 -B scripts/verify_float_roots.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-roots-reference" --reference-only
+          python3 -B scripts/verify_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-character-reference" --reference-only
           python3 scripts/verify_repo.py target/release/oxid
           python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-interpreter"
@@ -69,6 +85,20 @@ jobs:
             --output "$RUNNER_TEMP/current-workspace-interpreter"
           python3 -B scripts/verify_typed_package_bundle.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-bundle-interpreter"
+          python3 -B scripts/verify_utf8_text_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-text-interpreter" --reference-only
+          python3 -B scripts/verify_utf8_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-characters-interpreter" --reference-only
+          python3 -B scripts/verify_float_vector.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-vector-interpreter" --reference-only
+          python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-typed-vector-interpreter" --reference-only
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-interpreter" --reference-only
+          python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-vector-interpreter" --reference-only
+          python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-matrix-interpreter" --reference-only
       - name: Retain current source qualification
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,6 +106,13 @@ jobs:
           name: current-project-unit2
           path: |
             ${{ runner.temp }}/current-project-unit2
+            ${{ runner.temp }}/current-i64-reference
+            ${{ runner.temp }}/current-integer-widths-reference
+            ${{ runner.temp }}/current-byte-integer-reference
+            ${{ runner.temp }}/current-integer128-reference
+            ${{ runner.temp }}/current-integer-bits-reference
+            ${{ runner.temp }}/current-character-reference
+            ${{ runner.temp }}/current-float-reference
             !${{ runner.temp }}/current-project-unit2/**/target/**
           if-no-files-found: warn
           retention-days: 14
@@ -111,6 +148,19 @@ jobs:
           path: ${{ runner.temp }}/current-package-bundle-interpreter
           if-no-files-found: warn
           retention-days: 14
+      - name: Retain current UTF-8 interpreter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-utf8-text-interpreter
+          path: |
+            ${{ runner.temp }}/current-utf8-text-interpreter
+            ${{ runner.temp }}/current-utf8-characters-interpreter
+            ${{ runner.temp }}/current-typed-vector-interpreter
+            ${{ runner.temp }}/current-copy-record-interpreter
+            ${{ runner.temp }}/current-copy-record-vector-interpreter
+          if-no-files-found: warn
+          retention-days: 14
       - name: Verify current source installation
         run: |
           cargo install --path . --locked --root "$RUNNER_TEMP/oxid-install"
@@ -120,12 +170,959 @@ jobs:
           docker build --tag oxid:current .
           docker run --rm oxid:current --version
 
+  source-policy-predecessor:
+    name: ByteBuf source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_predecessor_script_tests.py "$RUNNER_TEMP/source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 2e3fe21f76d0027d2b24cb5c7f02ba38ad354809
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/source-policy-replay.py" --repo . --output "$RUNNER_TEMP/source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: byte-buffer-source-policy-predecessor
+          path: ${{ runner.temp }}/source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  hosted-source-policy-predecessor:
+    name: Hosted source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_hosted_predecessor_tests.py "$RUNNER_TEMP/hosted-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 559a6e6aa0b2ab2022d8fa37546ac62aeac9954e
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/hosted-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/hosted-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hosted-source-policy-predecessor
+          path: ${{ runner.temp }}/hosted-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  buffer-transfer-source-policy-predecessor:
+    name: Buffer-transfer source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_buffer_transfer_predecessor_tests.py "$RUNNER_TEMP/buffer-transfer-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: c45d519127d314f522762c35879c0c485994ea42
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/buffer-transfer-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/buffer-transfer-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buffer-transfer-source-policy-predecessor
+          path: ${{ runner.temp }}/buffer-transfer-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  byte-string-source-policy-predecessor:
+    name: Byte-string source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_byte_string_predecessor_tests.py "$RUNNER_TEMP/byte-string-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 22d04a015a444edcb600a6011cdb0e2c8529cb34
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/byte-string-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/byte-string-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: byte-string-source-policy-predecessor
+          path: ${{ runner.temp }}/byte-string-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  arm64-host-source-policy-predecessor:
+    name: ARM64 host-test source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_arm64_host_predecessor_tests.py "$RUNNER_TEMP/arm64-host-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 18314e95d6afa3d8a4da7970dbddc828f4f6cbac
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/arm64-host-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/arm64-host-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-host-source-policy-predecessor
+          path: ${{ runner.temp }}/arm64-host-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  record-vector-source-policy-predecessor:
+    name: Vector and Copy source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_record_vector_predecessor_tests.py "$RUNNER_TEMP/record-vector-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 6c3161640dbcc36a484ebdd23eb2594ccde4e16a
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/record-vector-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/record-vector-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: record-vector-source-policy-predecessor
+          path: ${{ runner.temp }}/record-vector-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  qualified-completion-source-policy-predecessor:
+    name: Qualified completion source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_qualified_completion_predecessor_tests.py "$RUNNER_TEMP/qualified-completion-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 20ea8ba102975d2e8ac0c667b96ce835a1bc6ef9
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/qualified-completion-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/qualified-completion-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qualified-completion-source-policy-predecessor
+          path: ${{ runner.temp }}/qualified-completion-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  copy-record-debug-source-policy-predecessor:
+    name: Copy debug source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_copy_record_debug_predecessor_tests.py "$RUNNER_TEMP/copy-record-debug-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 9a5ecaaeb5fa50aff2296bf990d63167143cf312
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/copy-record-debug-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/copy-record-debug-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: copy-record-debug-source-policy-predecessor
+          path: ${{ runner.temp }}/copy-record-debug-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-native-source-policy-predecessor:
+    name: Windows native source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_windows_native_predecessor_tests.py "$RUNNER_TEMP/windows-native-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 8180b1bbcbcf9ccd4d648ff5ba0ec9ea3d5b971f
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/windows-native-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/windows-native-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-native-source-policy-predecessor
+          path: ${{ runner.temp }}/windows-native-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  record-field-completion-source-policy-predecessor:
+    name: Record-field source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_record_field_completion_predecessor_tests.py "$RUNNER_TEMP/record-field-completion-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: b273b71237cc6a1d2db76dfe7c971e073d1d5cb3
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/record-field-completion-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/record-field-completion-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: record-field-completion-source-policy-predecessor
+          path: ${{ runner.temp }}/record-field-completion-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  file-seek-source-policy-predecessor:
+    name: File seek source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/run_file_seek_predecessor_tests.py "$RUNNER_TEMP/file-seek-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 104c900222ead9d9177025102a90520b08e761a4
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/file-seek-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/file-seek-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-seek-source-policy-predecessor
+          path: ${{ runner.temp }}/file-seek-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  scalar-library-source-policy-predecessor:
+    name: Scalar library source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_scalar_library_source_policy.py "$RUNNER_TEMP/scalar-library-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 8f2c29eaffabbd90c591bbdc440ae6e23acf1353
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/scalar-library-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/scalar-library-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scalar-library-source-policy-predecessor
+          path: ${{ runner.temp }}/scalar-library-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-download-source-policy-predecessor:
+    name: Windows setup source-policy controls on their frozen successor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_windows_download_source_policy.py "$RUNNER_TEMP/windows-download-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: c693662501c7629c67aabaa2675dbb6b5a76d460
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/windows-download-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/windows-download-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-download-source-policy-predecessor
+          path: ${{ runner.temp }}/windows-download-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  registry-source-policy-predecessor:
+    name: Registry source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_registry_source_policy.py "$RUNNER_TEMP/registry-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: e77402de69911a9d45a55fff5a8a0dd8de61f3e5
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/registry-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/registry-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: registry-source-policy-predecessor
+          path: ${{ runner.temp }}/registry-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  owned-record-vector-source-policy-predecessor:
+    name: Owned-record vector source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_owned_record_vector_source_policy.py "$RUNNER_TEMP/owned-vector-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 0e8f23f7481c7ec4e24cd416ed30607f8eb75daf
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/owned-vector-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/owned-vector-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owned-record-vector-source-policy-predecessor
+          path: ${{ runner.temp }}/owned-vector-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  owned-text-source-policy-predecessor:
+    name: Owned-text source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_owned_text_source_policy.py "$RUNNER_TEMP/owned-text-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 7279208226a3d4185c0b996491332519971e916e
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/owned-text-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/owned-text-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owned-text-source-policy-predecessor
+          path: ${{ runner.temp }}/owned-text-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  offline-vendor-source-policy-predecessor:
+    name: Offline-export source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_offline_vendor_source_policy.py "$RUNNER_TEMP/offline-vendor-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 5917f581e69c0a0c69e4b5b059bb97dced55331d
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/offline-vendor-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/offline-vendor-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-vendor-source-policy-predecessor
+          path: ${{ runner.temp }}/offline-vendor-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  owned-enum-vector-source-policy-predecessor:
+    name: Enum-vector source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_owned_enum_vector_source_policy.py "$RUNNER_TEMP/owned-enum-vector-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 698043182916dda7276c363e20a98dfbb5b22ed3
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/owned-enum-vector-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/owned-enum-vector-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owned-enum-vector-source-policy-predecessor
+          path: ${{ runner.temp }}/owned-enum-vector-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  generic-owned-vector-source-policy-predecessor:
+    name: Generic-vector source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_generic_owned_vector_source_policy.py "$RUNNER_TEMP/generic-owned-vector-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/generic-owned-vector-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/generic-owned-vector-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: generic-owned-vector-source-policy-predecessor
+          path: ${{ runner.temp }}/generic-owned-vector-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
+  macos-native:
+    name: Current macOS native (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install LLVM 19 and the Mach-O linker
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This revision contains 19.1.7 bottles for both Intel and Apple Silicon.
+          # Current formula revisions may omit the Intel bottle.
+          core="$(brew --repository)/Library/Taps/homebrew/homebrew-core"
+          mkdir -p "$(dirname "$core")"
+          core_workspace="$(mktemp -d "$(dirname "$core")/.oxid-llvm19.XXXXXX")"
+          pinned_core="$core_workspace/pinned"
+          saved_core="$core_workspace/original"
+          revision=6a00b97b93bfc245d7083e4a90c7459ff5325222
+          git init "$pinned_core"
+          git -C "$pinned_core" remote add origin https://github.com/Homebrew/homebrew-core.git
+          git -C "$pinned_core" fetch --filter=blob:none --depth=1 origin "$revision"
+          test "$(git -C "$pinned_core" rev-parse FETCH_HEAD)" = "$revision"
+          git -C "$pinned_core" checkout --detach FETCH_HEAD
+          # Current Homebrew rejects this obsolete update-bot metadata. Keep
+          # every source, bottle, dependency and build byte unchanged.
+          python3 - "$pinned_core" <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path, PurePosixPath
+          import stat
+          import subprocess
+          import sys
+
+          formula_tree = "072eb5593e65cd9374940a2a183e18b656f57543"
+          formula_file_count = 7674
+          formula_inventory_sha = "d54485054853a163d3b5835b3403131eece818c7509fae4a570a7a35861e35b3"
+          adaptation_file_count = 1156
+          adaptation_inventory_sha = "df40f1369bb73ae9e9f489877dbd9137558d12f3048af29945cd91bdb304252a"
+          formulas = {
+              "llvm@19.rb": ("14c7ae5879dff4c4d3fab077671d924a56605c24e2fef252ca343d49029efa59",
+                             "9672f3b5b565b7b5e310bd0aa4698540712ff5b74955d1716b8127825517eb95"),
+              "lld@19.rb": ("bda99a28eec9b9e4986220751dd0c622566619d5071b9df9dcb3f315a92358a1",
+                            "5fa2731e9bf2027ecb569817b3934cfb07e2684f7d41bd0e3310eda0de3d84fe"),
+          }
+          metadata_stanzas = {
+              b'  no_autobump! because: :requires_manual_review\n': 1125,
+              b'  no_autobump! because: :incompatible_version_format\n': 17,
+              b'  no_autobump! because: :bumped_by_upstream\n': 10,
+              b'  no_autobump! because: "some resources have to be updated manually"\n': 1,
+              b'  no_autobump! because: "unable to get versions"\n': 1,
+              b'  no_autobump! because: "resources cannot be updated automatically"\n': 1,
+              b'  no_autobump! because: "\'playwright\' resource lacks PyPI sdist"\n': 1,
+          }
+          # These calls are inside deferred strategy bodies, not class metadata.
+          # Keep their complete bodies and return values unchanged.
+          nested_livechecks = (
+              "Formula/b/bash.rb", "Formula/b/blastem.rb", "Formula/c/calabash.rb",
+              "Formula/f/frege.rb", "Formula/h/http_load.rb",
+          )
+          nested_stanza = b"      no_autobump! because: :requires_manual_review\n"
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(message)
+
+          def digest(body):
+              return hashlib.sha256(body).hexdigest()
+
+          def encoded(value):
+              return json.dumps(value, ensure_ascii=True, separators=(",", ":")).encode() + b"\n"
+
+          root = Path(sys.argv[1])
+          command = ["git", "-C", str(root)]
+          actual_tree = subprocess.check_output(command + ["rev-parse", "HEAD:Formula"]).decode().strip()
+          require(actual_tree == formula_tree, "changed pinned Formula tree")
+          entries = subprocess.check_output(command + ["ls-tree", "-rlz", "HEAD", "--", "Formula"])
+          rows, prepared, changes, actual_names, nested_seen = [], [], [], set(), set()
+          counts = dict.fromkeys(metadata_stanzas, 0)
+          for entry in entries.split(b"\0"):
+              if not entry:
+                  continue
+              details, path_bytes = entry.split(b"\t", 1)
+              mode, kind, object_id, length = details.split()
+              name = path_bytes.decode()
+              relative = PurePosixPath(name)
+              require(not relative.is_absolute() and relative.parts[0] == "Formula"
+                      and ".." not in relative.parts and name.endswith(".rb")
+                      and kind == b"blob" and mode in (b"100644", b"100755")
+                      and name not in actual_names, "invalid pinned formula member")
+              path = root / name
+              before_stat = path.lstat()
+              require(stat.S_ISREG(before_stat.st_mode) and before_stat.st_nlink == 1
+                      and bool(before_stat.st_mode & 0o111) == (mode == b"100755"),
+                      "nonregular or changed-mode pinned formula: " + name)
+              before = path.read_bytes()
+              fields = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+              require(all(getattr(before_stat, field) == getattr(path.lstat(), field) for field in fields),
+                      "pinned formula changed during read: " + name)
+              blob = b"blob " + str(len(before)).encode() + b"\0" + before
+              require(len(before) == int(length)
+                      and hashlib.sha1(blob, usedforsecurity=False).hexdigest().encode() == object_id,
+                      "changed pinned formula: " + name)
+              actual_names.add(name)
+              rows.append([name, mode.decode(), object_id.decode(), len(before)])
+              found = [line for line in before.splitlines(keepends=True) if b"no_autobump!" in line]
+              require(len(found) <= 1, "repeated formula update metadata: " + name)
+              after = before
+              if found:
+                  stanza = found[0]
+                  if name in nested_livechecks:
+                      require(stanza == nested_stanza, "changed nested livecheck: " + name)
+                      nested_seen.add(name)
+                  else:
+                      require(stanza in metadata_stanzas, "unknown formula update metadata: " + name)
+                      counts[stanza] += 1
+                      position = before.index(stanza)
+                      after = b"".join(line for line in before.splitlines(keepends=True) if line != stanza)
+                      require(after[:position] + stanza + after[position:] == before,
+                              "invalid formula metadata inverse: " + name)
+                      changes.append([name, mode.decode(), object_id.decode(), len(before), digest(before),
+                                      len(after), digest(after), digest(stanza)])
+                      prepared.append((path, after, before_stat.st_mode))
+              if relative.name in formulas and name == "Formula/l/" + relative.name:
+                  require((digest(before), digest(after)) == formulas[relative.name],
+                          "invalid target formula adaptation: " + name)
+          require(len(rows) == formula_file_count and digest(encoded(rows)) == formula_inventory_sha,
+                  "changed pinned formula inventory")
+          require(counts == metadata_stanzas and nested_seen == set(nested_livechecks)
+                  and len(changes) == adaptation_file_count
+                  and digest(encoded(changes)) == adaptation_inventory_sha,
+                  "changed formula adaptation inventory")
+          actual = set()
+          for directory, directories, files in os.walk(root / "Formula", followlinks=False):
+              require(all(not (Path(directory) / name).is_symlink() for name in directories),
+                      "symlink pinned formula directory")
+              actual.update((Path(directory) / name).relative_to(root).as_posix() for name in files)
+          require(actual == actual_names, "untracked or missing pinned formula member")
+          for path, body, mode in prepared:
+              path.write_bytes(body)
+              require(path.read_bytes() == body and path.stat().st_mode == mode,
+                      "formula metadata write differed: " + str(path))
+          report = {"formula_tree": formula_tree, "formula_files": len(rows),
+                    "formula_inventory_sha256": formula_inventory_sha,
+                    "adapted_formulas": len(changes), "adaptation_inventory_sha256": adaptation_inventory_sha,
+                    "unchanged_nested_livechecks": sorted(nested_seen), "changes": changes}
+          report_path = root.parent / "formula-adaptation.json"
+          report_path.write_text(json.dumps(report, indent=2) + "\n")
+          print("Verified metadata-only formula adaptation: " + str(report_path))
+          PY
+          # Install through a clean core checkout, then restore the runner's tap intact.
+          install_pid=
+          install_started=0
+          install_signal=TERM
+          restore_core() {
+            install_status=$?
+            trap - EXIT
+            trap '' INT TERM
+            if test "$install_started" = 1; then
+              # Cover a signal between launching the job and assigning its PID.
+              install_pid="${install_pid:-${!:-}}"
+              if test -n "$install_pid"; then
+                kill "-$install_signal" -- "-$install_pid" 2>/dev/null || true
+                # Async descendants may ignore INT; bound their shutdown too.
+                if test "$install_signal" = INT; then
+                  kill -TERM -- "-$install_pid" 2>/dev/null || true
+                fi
+                install_waits=10
+                while kill -0 -- "-$install_pid" 2>/dev/null && test "$install_waits" -gt 0; do
+                  sleep 0.1
+                  install_waits=$((install_waits - 1))
+                done
+                kill -KILL -- "-$install_pid" 2>/dev/null || true
+                wait "$install_pid" 2>/dev/null || true
+              fi
+            fi
+            if ! test -e "$pinned_core" && { test -e "$core" || test -L "$core"; }; then
+              mv "$core" "$pinned_core" || exit 1
+            fi
+            if test -e "$saved_core" || test -L "$saved_core"; then
+              mv "$saved_core" "$core" || exit 1
+            fi
+            exit "$install_status"
+          }
+          trap restore_core EXIT
+          trap 'install_signal=INT; exit 130' INT
+          trap 'exit 143' TERM
+          if test -e "$core" || test -L "$core"; then
+            mv "$core" "$saved_core"
+          fi
+          mv "$pinned_core" "$core"
+          # Foreground commands defer shell-PID cancellation traps. Isolate the
+          # install job's group, then wait interruptibly without job control.
+          set -m
+          install_started=1
+          HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 \
+            brew install --force-bottle llvm@19 lld@19 &
+          install_pid=$!
+          set +m
+          wait "$install_pid"
+          install_started=0
+          install_pid=
+          llvm_bin="$(brew --prefix llvm@19)/bin"
+          lld_bin="$(brew --prefix lld@19)/bin"
+          test "$("$llvm_bin/llvm-config" --version)" = "19.1.7"
+          tools="$RUNNER_TEMP/oxid-llvm-19"
+          mkdir "$tools"
+          ln -s "$llvm_bin/clang" "$tools/clang"
+          ln -s "$llvm_bin/opt" "$tools/opt"
+          ln -s "$lld_bin/ld64.lld" "$tools/ld64.lld"
+          "$tools/clang" --version
+          "$tools/opt" --version
+          "$tools/ld64.lld" --version
+          oxid_sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          test -n "$oxid_sdkroot"
+          echo "OXID_LLVM_BIN=$tools" >> "$GITHUB_ENV"
+          echo "SDKROOT=$oxid_sdkroot" >> "$GITHUB_ENV"
+      - name: Build both current compiler profiles
+        run: |
+          cargo build --locked
+          cargo build --release --locked
+      - name: Verify native diagnosis on the actual host
+        run: cargo test --locked --test native_doctor -- --include-ignored --test-threads=1
+      - name: Verify native file lifetime and failure contracts
+        run: python3 -B scripts/test_native_files_runtime.py
+      - name: Verify Mach-O execution and deployment
+        run: |
+          python3 -B scripts/verify_macos_native.py target/debug/oxid target/release/oxid \
+            --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/current-macos-native"
+          python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-macos-native/typed-vectors" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-macos-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-macos-native/copy-record-vectors" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify generic vector source-free packages in both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            set -- --locked
+            if test "$profile" = release; then set -- "$@" --release; fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
+              --test typed_owned_vector_wrappers -- --ignored --test-threads=1
+          done
+      - name: Retain native programs and raw transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-macos-native-${{ matrix.os }}
+          path: ${{ runner.temp }}/current-macos-native
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  current-windows-native:
+    name: Current Windows MSVC x64 scalar native programs
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Initialize the installed x64 Visual Studio and Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -B scripts/test_windows_native_ci.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$installation) { throw 'Installed MSVC x64 tools are required' }
+          $devcmd = Join-Path $installation 'Common7/Tools/VsDevCmd.bat'
+          $sdkStart = [System.Diagnostics.ProcessStartInfo]::new()
+          $sdkStart.FileName = $env:ComSpec
+          $sdkStart.UseShellExecute = $false
+          $sdkStart.CreateNoWindow = $true
+          $sdkStart.RedirectStandardInput = $true
+          $sdkStart.RedirectStandardOutput = $true
+          $sdkStart.RedirectStandardError = $true
+          $sdkStart.StandardOutputEncoding = [System.Text.Encoding]::Unicode
+          $sdkStart.StandardErrorEncoding = [System.Text.Encoding]::Unicode
+          $sdkStart.Arguments = '/d /u /s /c ""' + $devcmd + '" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+          $sdk = [System.Diagnostics.Process]::new()
+          $sdk.StartInfo = $sdkStart
+          $sdkStarted = $false
+          try {
+            if (!$sdk.Start()) { throw 'Visual Studio environment initialization did not start' }
+            $sdkStarted = $true
+            $sdk.StandardInput.Close()
+            $sdkOut = [System.Text.StringBuilder]::new()
+            $sdkErr = [System.Text.StringBuilder]::new()
+            $outBuffer = [char[]]::new(4096)
+            $errBuffer = [char[]]::new(4096)
+            $outRead = $sdk.StandardOutput.ReadAsync($outBuffer, 0, $outBuffer.Length)
+            $errRead = $sdk.StandardError.ReadAsync($errBuffer, 0, $errBuffer.Length)
+            $outDone = $false
+            $errDone = $false
+            $sdkTimer = [System.Diagnostics.Stopwatch]::StartNew()
+            while (!$outDone -or !$errDone -or !$sdk.HasExited) {
+              if ($sdkTimer.Elapsed.TotalSeconds -ge 120) { throw 'Visual Studio environment initialization timed out' }
+              if (!$outDone -and $outRead.IsCompleted) {
+                $count = $outRead.GetAwaiter().GetResult()
+                if ($count -eq 0) { $outDone = $true } else {
+                  if ($sdkOut.Length + $count -gt 1048576) { throw 'Visual Studio environment output exceeded its limit' }
+                  [void]$sdkOut.Append($outBuffer, 0, $count)
+                  $outRead = $sdk.StandardOutput.ReadAsync($outBuffer, 0, $outBuffer.Length)
+                }
+              }
+              if (!$errDone -and $errRead.IsCompleted) {
+                $count = $errRead.GetAwaiter().GetResult()
+                if ($count -eq 0) { $errDone = $true } else {
+                  if ($sdkErr.Length + $count -gt 65536) { throw 'Visual Studio environment error output exceeded its limit' }
+                  [void]$sdkErr.Append($errBuffer, 0, $count)
+                  $errRead = $sdk.StandardError.ReadAsync($errBuffer, 0, $errBuffer.Length)
+                }
+              }
+              if (!$outDone -or !$errDone -or !$sdk.HasExited) { Start-Sleep -Milliseconds 10 }
+            }
+            $sdk.WaitForExit()
+            if ($sdk.ExitCode -ne 0) {
+              $sdkErrorText = $sdkErr.ToString().Replace("`r", " ").Replace("`n", " ")
+              $sdkErrorText = $sdkErrorText.Substring(0, [Math]::Min(256, $sdkErrorText.Length))
+              throw "Visual Studio environment initialization failed (cmd exit code $($sdk.ExitCode); captured stderr characters $($sdkErr.Length); first error: $sdkErrorText)"
+            }
+            $settings = $sdkOut.ToString() -split '\r?\n'
+          } finally {
+            try {
+              if ($sdkStarted -and !$sdk.HasExited) {
+                try { $sdk.Kill($true) } catch [System.InvalidOperationException] {
+                  if (!$sdk.HasExited) { throw }
+                }
+                if (!$sdk.WaitForExit(5000)) { throw 'Visual Studio environment process did not terminate' }
+              }
+            } finally {
+              $sdk.Dispose()
+            }
+          }
+          $names = @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir',
+            'VCToolsVersion', 'WindowsSdkDir', 'WindowsSDKVersion', 'WindowsSDKLibVersion',
+            'UniversalCRTSdkDir', 'UCRTVersion', 'VSCMD_ARG_TGT_ARCH', 'VSCMD_ARG_HOST_ARCH')
+          foreach ($line in $settings) {
+            if ($line -match '^([^=][^=]*)=(.*)$' -and $names -contains $Matches[1]) {
+              Add-Content -LiteralPath $env:GITHUB_ENV -Value "$($Matches[1])=$($Matches[2])" -Encoding utf8
+            }
+          }
+      - name: Verify and extract the complete LLVM 19.1.7 toolchain
+        shell: pwsh
+        timeout-minutes: 45
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'clang+llvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
+          $url = 'https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/clang%2Bllvm-19.1.7-x86_64-pc-windows-msvc.tar.xz'
+          Write-Host 'Downloading the pinned LLVM archive'
+          curl.exe --proto '=https' --tlsv1.2 --location --fail --silent --show-error --connect-timeout 30 --max-time 900 --retry 2 --retry-delay 5 --retry-max-time 900 --output $archive $url
+          if ($LASTEXITCODE -ne 0) { throw "LLVM download failed (curl exit code $LASTEXITCODE)" }
+          Write-Host 'Download complete; verifying archive length and SHA256'
+          if ((Get-Item -LiteralPath $archive).Length -ne 845236708) { throw 'LLVM archive length differs' }
+          # Digest from the fixed bazel-contrib/toolchains_llvm catalog:
+          # 7c6f33bf0ec0345e5c75fefeceb37d1b2177a2c6/toolchain/distributions/github.jsonc
+          $digest = 'b4557b4f012161f56a2f5d9e877ab9635cafd7a08f7affe14829bd60c9d357f0'
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -ne $digest) {
+            throw 'LLVM archive SHA256 differs'
+          }
+          $sevenZip = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
+          if (!(Test-Path -LiteralPath $sevenZip -PathType Leaf)) { throw 'The preinstalled Windows 7-Zip is required' }
+          function Invoke-LlvmSevenZip {
+            param(
+              [string]$Stage,
+              [ValidateSet('xz', 'tar')][string]$Format,
+              [string]$InputArchive,
+              [string]$Destination,
+              [ValidateRange(1, 900)][int]$TimeoutSeconds
+            )
+            $start = [System.Diagnostics.ProcessStartInfo]::new()
+            $start.FileName = $sevenZip
+            $start.UseShellExecute = $false
+            $start.CreateNoWindow = $true
+            $start.RedirectStandardInput = $true
+            foreach ($argument in @('x', "-t$Format", '-y', '-bsp0', '-bb0', "-o$Destination", $InputArchive)) {
+              $start.ArgumentList.Add($argument)
+            }
+            $extraction = [System.Diagnostics.Process]::new()
+            $extraction.StartInfo = $start
+            $started = $false
+            try {
+              Write-Host "$Stage started (deadline $TimeoutSeconds seconds)"
+              if (!$extraction.Start()) { throw "$Stage did not start" }
+              $started = $true
+              $extraction.StandardInput.Close()
+              if (!$extraction.WaitForExit($TimeoutSeconds * 1000)) { throw "$Stage timed out" }
+              if ($extraction.ExitCode -ne 0) { throw "$Stage failed (7-Zip exit code $($extraction.ExitCode))" }
+              Write-Host "$Stage complete"
+            } finally {
+              try {
+                if ($started -and !$extraction.HasExited) {
+                  try { $extraction.Kill($true) } catch [System.InvalidOperationException] {
+                    if (!$extraction.HasExited) { throw }
+                  }
+                  if (!$extraction.WaitForExit(5000)) { throw "$Stage process did not terminate" }
+                }
+              } finally {
+                $extraction.Dispose()
+              }
+            }
+          }
+          $staging = Join-Path $env:RUNNER_TEMP ('oxid-llvm-msvc-' + [Guid]::NewGuid().ToString('N'))
+          $tarDirectory = Join-Path $staging 'tar'
+          $extract = Join-Path $staging 'toolchain'
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          New-Item -ItemType Directory -Path $tarDirectory | Out-Null
+          New-Item -ItemType Directory -Path $extract | Out-Null
+          Write-Host 'Archive verified; decompressing the complete LLVM XZ stream'
+          Invoke-LlvmSevenZip -Stage 'LLVM XZ decompression' -Format xz -InputArchive $archive -Destination $tarDirectory -TimeoutSeconds 600
+          $tarArchive = Join-Path $tarDirectory 'clang+llvm-19.1.7-x86_64-pc-windows-msvc.tar'
+          if (!(Test-Path -LiteralPath $tarArchive -PathType Leaf) -or (Get-Item -LiteralPath $tarArchive).Length -le 0) { throw 'LLVM XZ decompression produced no TAR archive' }
+          Write-Host 'XZ decompression complete; extracting every LLVM TAR member'
+          Invoke-LlvmSevenZip -Stage 'LLVM TAR extraction' -Format tar -InputArchive $tarArchive -Destination $extract -TimeoutSeconds 900
+          Remove-Item -LiteralPath $tarArchive
+          Write-Host 'Extraction complete; verifying LLVM tools'
+          $bin = Join-Path $extract 'clang+llvm-19.1.7-x86_64-pc-windows-msvc/bin'
+          foreach ($tool in @('clang.exe', 'opt.exe', 'lld-link.exe')) {
+            $version = & (Join-Path $bin $tool) --version
+            if ($LASTEXITCODE -ne 0 -or ($version -join "`n") -notmatch '(?m)(clang version|LLVM version|LLD) 19\.1\.7(?:[ (]|$)') {
+              throw "Wrong LLVM tool: $tool"
+            }
+            $version
+          }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "OXID_LLVM_BIN=$bin" -Encoding utf8
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $bin -Encoding utf8
+      - name: Build both compiler profiles
+        run: |
+          cargo build --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows diagnosis, capture limits and source admission
+        run: |
+          cargo test --locked --bin oxid frontend::native::doctor::windows::tests:: -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --test native_doctor --test typed_windows_native -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify PE execution, publication and standalone deployment
+        run: |
+          python -B scripts/verify_windows_native.py target/debug/oxid.exe target/release/oxid.exe `
+            --llvm-bin "$env:OXID_LLVM_BIN" --output "$env:RUNNER_TEMP/current-windows-native"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain PE programs and raw transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-windows-native-msvc-x64
+          path: |
+            ${{ runner.temp }}/current-windows-native
+            !${{ runner.temp }}/current-windows-native/tools/opt.exe
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
   cross-platform:
     name: Current compiler tests (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-14]
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -137,8 +1134,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build and test current compiler
+      - name: Verify Windows installer and recovery
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
+          $shells = @((Get-Command pwsh).Source, (Get-Command powershell.exe).Source)
+          foreach ($installerShell in $shells) {
+            $env:OXID_TEST_POWERSHELL = $installerShell
+            python -B -m unittest discover -s scripts -p test_windows_installer.py
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Build and test current compiler
+        shell: bash
+        run: |
+          set -euo pipefail
           cargo build --release --locked
           cargo test --all-targets --all-features --locked
           cargo run --release --locked -- test
@@ -153,7 +1162,9 @@ jobs:
           if test "$RUNNER_OS" = Windows; then binary=target/release/oxid.exe; fi
           python scripts/verify_typed_formatter.py "$binary"
       - name: Exercise current benchmark reporting
+        shell: bash
         run: |
+          set -euo pipefail
           cargo run --release --locked -- bench --iterations 3 --json target/oxid-benchmark.json
           python scripts/verify_benchmark_report.py target/oxid-benchmark.json 3
       - name: Retain current compiler demonstration artifacts
@@ -182,24 +1193,35 @@ jobs:
     name: Current native project and source-free regression tests
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    container: debian:trixie-slim
+    container:
+      image: debian:trixie-slim
+      options: --cap-add=SYS_PTRACE
     env:
       OXID_LLVM_BIN: /usr/lib/llvm-19/bin
       OXID_TEST_LLVM_BIN: /usr/lib/llvm-19/bin
     steps:
+      - name: Record the native evidence root inside the container
+        run: printf 'OXID_NATIVE_EVIDENCE_ROOT=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Install pinned LLVM and host tools
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace gdb \
             clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
             libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
             libclang-common-19-dev=1:19.1.7-3+b1
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Allow Git access to the checked out workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: dtolnay/rust-toolchain@1.99.0
       - name: Run public native tests in both compiler profiles
+        env:
+          OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/current-local-reference-bindings
+          OXID_GENERIC_FIELD_BORROWS_NATIVE_EVIDENCE: ${{ runner.temp }}/current-generic-field-borrows
+          OXID_NATIVE_REACHABILITY_EVIDENCE: ${{ runner.temp }}/current-native-reachability
         shell: bash
         run: |
           for profile in debug release; do
@@ -208,31 +1230,37 @@ jobs:
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_native --test typed_process --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion
+            cargo test --locked "${profile_flags[@]}" --test typed_copy_records --test typed_copy_record_vectors
             cargo test --locked "${profile_flags[@]}" \
               --test project_workflow --test typed_path_dependencies --test typed_package_lock --test typed_workspace --test typed_package --test native_incremental --test native_doctor \
               --test typed_fixed_arrays --test typed_division \
               --test typed_unary_negation --test typed_slices --test typed_projected_slices \
               --test typed_record_composition --test typed_hir_import --test reproducible_native --test native_profiles \
-              --test owned_enum_payloads --test owned_enum_payload_acceptance -- --ignored
+              --test owned_enum_payloads --test owned_enum_payload_acceptance --test byte_record_fields --test bytebuf_binary --test hosted_execution --test byte_buffer_transfer --test byte_strings --test native_files --test process_arguments --test typed_i64 --test typed_integer_widths --test typed_byte_integers --test typed_integer128 --test typed_integer_bits --test typed_floats --test typed_float_roots --test typed_characters --test record_field_borrows --test local_references --test typed_git_dependencies --test hosted_recursion --test typed_generics --test typed_nominal_generics --test typed_record_patterns --test typed_record_enum_fields --test typed_constructor_inference --test typed_range_for --test native_debug_info -- --include-ignored
+            mkdir "$RUNNER_TEMP/current-copy-record-debug-$profile"
+            TMPDIR="$RUNNER_TEMP/current-copy-record-debug-$profile" OXID_TEST_KEEP_ARTIFACTS=1 \
+              cargo test --locked "${profile_flags[@]}" --test native_copy_record_debug \
+              -- --include-ignored --test-threads=1 --nocapture
+            cargo test --locked "${profile_flags[@]}" --bin oxid \
+              record_enum_native_helpers_validate_active_cells -- --ignored
             cargo test --locked "${profile_flags[@]}" --bin oxid owned_enum -- --ignored
+            cargo test --locked "${profile_flags[@]}" --bin oxid \
+              native::copy_record_tests:: -- --ignored --test-threads=1
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
             OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-storage-$profile" \
               cargo test --locked "${profile_flags[@]}" --bin oxid \
               byte_storage_native_source_free_ -- --ignored --test-threads=1
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-fields-$profile" \
+              cargo test --locked "${profile_flags[@]}" --bin oxid byte_record_ \
+              -- --ignored --test-threads=1
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/current-byte-buffers-$profile" \
+              cargo test --locked "${profile_flags[@]}" --bin oxid bytebuf_native_ \
+              -- --ignored --test-threads=1
             cargo test --locked "${profile_flags[@]}" --bin oxid \
               frontend::driver::tests::prepared_reproducible_native_uses_retained_paths_and_bytes_after_source_removal \
               -- --ignored --exact
           done
-      - name: Verify real package application and source-free deployment
-        run: |
-          python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-package-application" --native
-          python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-package-lock-application" --native
-          python3 -B scripts/verify_typed_workspace_app.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-workspace-application" --native
-          python3 -B scripts/verify_typed_package_bundle.py target/debug/oxid target/release/oxid \
-            --output "$RUNNER_TEMP/current-package-bundle-application" --native
       - name: Verify relocatable native builds against raw executable bytes
         run: |
           python3 -B scripts/verify_reproducible_native.py target/debug/oxid target/release/oxid \
@@ -241,32 +1269,402 @@ jobs:
         run: |
           python3 -B scripts/verify_native_profiles.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-native-profiles" --llvm-bin "$OXID_LLVM_BIN"
-      - name: Verify owned enum payloads in the frame filter application
+      - name: Verify enum payloads and byte fields in the frame filter application
         run: |
           python3 -B scripts/verify_owned_enum_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-owned-enum-application" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify growable buffers, binary I/O and source-free byte reversal
+        run: |
+          python3 -B scripts/verify_byte_reverse_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-byte-reverse-application" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify UTF-8 text, newline conversion and source-free Unicode processing
+        run: |
+          python3 -B scripts/verify_utf8_text_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-text-application" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_utf8_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-utf8-characters-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_float_vector.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-vector-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-typed-vector-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-copy-record-vector-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_owned_record_vectors.py \
+            --repo . --expected-head "$(git rev-parse HEAD)" \
+            --oxid-debug target/debug/oxid --oxid-release target/release/oxid \
+            --output "$RUNNER_TEMP/current-owned-record-vector-native" \
+            --llvm-bin "$OXID_LLVM_BIN" --native
+          python3 -B scripts/verify_matrices.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-matrix-native" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify owned UTF-8 text package workflows and standalone executables
+        run: |
+          python3 -B scripts/verify_owned_text.py \
+            --repo . --expected-head "$(git rev-parse HEAD)" \
+            --oxid-debug target/debug/oxid --oxid-release target/release/oxid \
+            --output "$RUNNER_TEMP/current-owned-text-native" \
+            --llvm-bin "$OXID_LLVM_BIN" --native
+      - name: Verify offline exports rebuild and deploy with both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            cargo test --locked "${profile_flags[@]}" --test typed_vendor -- --ignored --test-threads=1
+          done
+      - name: Verify generic vector source-free packages in both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            set -- --locked
+            if test "$profile" = release; then set -- "$@" --release; fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
+              --test typed_owned_vector_wrappers -- --ignored --test-threads=1
+          done
+      - name: Verify enum-vector C contracts with real compiler schemas and native CLI cases
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 -B scripts/verify_native_owned_enum_vectors.py \
+            --repo . --expected-head "$EXPECTED_HEAD" \
+            --output "$RUNNER_TEMP/current-owned-enum-vector-native" \
+            --llvm-bin "$OXID_LLVM_BIN"
+      - name: Retain enum-vector schemas C binaries and raw native test commands
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-owned-enum-vector-native
+          path: ${{ runner.temp }}/current-owned-enum-vector-native
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify native CPU training, gradients and checkpoint recovery
+        run: |
+          python3 -B scripts/verify_cpu_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-cpu-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_optimizer_math.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-optimizer-math" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_optimizer_checkpoints.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-optimizer-checkpoints" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_optimizer_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-optimizer-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_data_pipeline.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-data-pipeline" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_minibatch_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-minibatch-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_streaming_training.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-streaming-training" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_seekable_streaming.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-seekable-streaming" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Check buffer runtime components at O0 and O2 with memory checking
+        run: |
+          python3 -B scripts/test_bytebuf_runtime.py
+          python3 -B scripts/test_binary_delivery.py
+          python3 -B scripts/test_hosted_bytebuf.py
+          python3 -B scripts/test_bytebuf_transfer.py
+          python3 -B scripts/test_native_files_runtime.py
+          python3 -B scripts/test_native_file_seek_runtime.py
+          python3 -B scripts/test_process_arguments_runtime.py
+          python3 -B scripts/test_i64_output_runtime.py
+          python3 -B scripts/test_integer_output_runtime.py
+          python3 -B scripts/test_integer128_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_bytebuf_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_binary_delivery.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_owned_record_vectors.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_hosted_bytebuf.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_bytebuf_transfer.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_files_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_native_file_seek_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_process_arguments_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_i64_output_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer_output_runtime.py
+          OXID_BYTEBUF_SANITIZE=1 python3 -B scripts/test_integer128_runtime.py
+      - name: Verify returning native libraries from C Rust and Python
+        env:
+          TMPDIR: ${{ runner.temp }}/current-native-libraries
+          OXID_TEST_KEEP_ARTIFACTS: '1'
+        run: |
+          mkdir -p "$TMPDIR"
+          cargo test --locked --test native_library actual_same_library -- --ignored --nocapture
+          cargo test --release --locked --test native_library actual_same_library -- --ignored --nocapture
+      - name: Verify source-free file copies larger than the process memory limit
+        run: |
+          python3 -B scripts/verify_native_files.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-native-files" --llvm-bin "$OXID_LLVM_BIN"
       - name: Run current independent native oracles and private LLVM regressions
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           python3 -B scripts/verify_current_native.py --repo . \
             --output "$RUNNER_TEMP/current-native" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify the Oxid-authored scalar compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s scripts -p test_native_compiler_registration.py -v
+          (
+            cd compiler/native
+            "$GITHUB_WORKSPACE/target/release/oxid" build --profile=release
+          )
+          python3 -B compiler/native/tests/verify.py \
+            --compiler compiler/native/.oxid/bin/oxid-scalar-compiler \
+            --clang "$OXID_LLVM_BIN/clang" --reference target/release/oxid \
+            --output "$RUNNER_TEMP/current-scalar-compiler"
       - name: Retain current native evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: current-native
           path: |
-            ${{ runner.temp }}/current-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-scalar-compiler
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-reproducible-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-profiles
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-owned-enum-application
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-local-references-debug
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-local-references-release
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-local-reference-bindings
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-generic-field-borrows
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-reachability
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-storage-debug
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-storage-release
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-fields-debug
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-fields-release
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-buffers-debug
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-buffers-release
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-byte-reverse-application
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-typed-vector-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-copy-record-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-copy-record-vector-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-owned-record-vector-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-owned-text-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-utf8-characters-native
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-utf8-text-application
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-files
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-cpu-training
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-optimizer-math
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-optimizer-checkpoints
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-optimizer-training
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-data-pipeline
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-minibatch-training
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-streaming-training
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-seekable-streaming
+            ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-native-libraries
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+
+      - name: Retain Copy record debugger binaries and transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-copy-record-debug
+          path: ${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-copy-record-debug-*
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  native-numeric-and-packages:
+    name: Current native numeric and package conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: debian:trixie-slim
+      options: --cap-add=SYS_PTRACE
+    env:
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+      OXID_TEST_LLVM_BIN: /usr/lib/llvm-19/bin
+    steps:
+      - name: Install pinned LLVM and host tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace gdb \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Build both current compiler profiles
+        run: |
+          cargo build --locked
+          cargo build --release --locked
+      - name: Verify real package application and source-free deployment
+        run: |
+          python3 -B scripts/verify_i64.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-i64-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer_widths.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-widths-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_byte_integers.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-byte-integer-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer128.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer128-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_integer_bits.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-integer-bits-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_floats.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_float_roots.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-roots-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_hosted_capacity.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-hosted-capacity-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_float_output.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-float-output" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_characters.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-character-native" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-package-application" --native
+          python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-package-lock-application" --native
+          python3 -B scripts/verify_typed_workspace_app.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-workspace-application" --native
+          python3 -B scripts/verify_typed_package_bundle.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-package-bundle-application" --native
+      - name: Verify private registry publication offline builds and deployment
+        run: |
+          python3 -B scripts/verify_typed_registry.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/current-typed-registry" --native
+      - name: Retain native numeric and package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-native-numeric-and-packages
+          path: |
+            ${{ runner.temp }}/current-i64-native
+            ${{ runner.temp }}/current-integer-widths-native
+            ${{ runner.temp }}/current-byte-integer-native
+            ${{ runner.temp }}/current-integer128-native
+            ${{ runner.temp }}/current-integer-bits-native
+            ${{ runner.temp }}/current-float-native
+            ${{ runner.temp }}/current-float-roots-native
+            ${{ runner.temp }}/current-hosted-capacity-native
+            ${{ runner.temp }}/current-float-output
+            ${{ runner.temp }}/current-character-native
             ${{ runner.temp }}/current-package-application
             ${{ runner.temp }}/current-package-lock-application
             ${{ runner.temp }}/current-workspace-application
             ${{ runner.temp }}/current-package-bundle-application
-            ${{ runner.temp }}/current-reproducible-native
-            ${{ runner.temp }}/current-native-profiles
-            ${{ runner.temp }}/current-owned-enum-application
-            ${{ runner.temp }}/current-byte-storage-debug
-            ${{ runner.temp }}/current-byte-storage-release
-          if-no-files-found: warn
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain private registry evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-typed-registry
+          path: ${{ runner.temp }}/current-typed-registry
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+  linux-arm64-native:
+    name: Current Linux ARM64 native programs
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    container:
+      image: debian:trixie-slim
+      options: --cap-add=SYS_PTRACE
+    env:
+      OXID_LLVM_BIN: /usr/lib/llvm-19/bin
+      OXID_TEST_LLVM_BIN: /usr/lib/llvm-19/bin
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - name: Install pinned ARM64 LLVM and host tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git gcc g++ libc6-dev python3 binutils strace gdb \
+            clang-19=1:19.1.7-3+b1 llvm-19=1:19.1.7-3+b1 lld-19=1:19.1.7-3+b1 \
+            libllvm19=1:19.1.7-3+b1 libclang-cpp19=1:19.1.7-3+b1 \
+            libclang-common-19-dev=1:19.1.7-3+b1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Allow Git access to the checked out workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check ARM64 code and ordinary regressions
+        run: |
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --all-targets --all-features
+      - name: Verify native ARM64 builds and source-free execution
+        env:
+          OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/local-reference-bindings
+          OXID_GENERIC_FIELD_BORROWS_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/generic-field-borrows
+          OXID_NATIVE_REACHABILITY_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/native-reachability
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD
+          python3 -B scripts/verify_linux_arm64_native.py \
+            --repo . --expected-head "$EXPECTED_HEAD" \
+            --llvm-bin "$OXID_LLVM_BIN" --output "$RUNNER_TEMP/linux-arm64-native"
+          python3 -B scripts/verify_typed_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/linux-arm64-native/typed-vectors" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_records.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/linux-arm64-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
+            --output "$RUNNER_TEMP/linux-arm64-native/copy-record-vectors" --llvm-bin "$OXID_LLVM_BIN"
+          python3 -B scripts/verify_owned_text.py \
+            --repo . --expected-head "$EXPECTED_HEAD" \
+            --oxid-debug target/debug/oxid --oxid-release target/release/oxid \
+            --output "$RUNNER_TEMP/linux-arm64-native/owned-text" \
+            --llvm-bin "$OXID_LLVM_BIN" --native
+      - name: Verify offline ARM64 exports rebuild and deploy with both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            cargo test --locked "${profile_flags[@]}" --test typed_vendor -- --ignored --test-threads=1
+          done
+      - name: Verify generic vector source-free packages in both compiler profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            set -- --locked
+            if test "$profile" = release; then set -- "$@" --release; fi
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
+              --test typed_owned_vector_wrappers -- --ignored --test-threads=1
+          done
+      - name: Verify ARM64 enum-vector C contracts with real compiler schemas and native CLI cases
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 -B scripts/verify_native_owned_enum_vectors.py \
+            --repo . --expected-head "$EXPECTED_HEAD" \
+            --output "$RUNNER_TEMP/linux-arm64-native/owned-enum-vectors" \
+            --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify local reference lifetimes on ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          for profile in debug release; do
+            profile_flags=()
+            if test "$profile" = release; then profile_flags=(--release); fi
+            OXID_OWNED_NATIVE_EVIDENCE="$RUNNER_TEMP/linux-arm64-native/local-references-$profile" cargo test --locked "${profile_flags[@]}" --bin oxid native_local_reference_lifetimes_and_every_fuel_boundary_use_real_llvm -- --ignored --test-threads=1
+            cargo test --locked "${profile_flags[@]}" --bin oxid \
+              native::copy_record_tests:: -- --ignored --test-threads=1
+            mkdir "$RUNNER_TEMP/linux-arm64-native/copy-record-debug-$profile"
+            TMPDIR="$RUNNER_TEMP/linux-arm64-native/copy-record-debug-$profile" OXID_TEST_KEEP_ARTIFACTS=1 \
+              cargo test --locked "${profile_flags[@]}" --test native_copy_record_debug \
+              -- --include-ignored --test-threads=1 --nocapture
+          done
+      - name: Retain ARM64 native results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-linux-arm64-native
+          path: ${{ runner.temp }}/linux-arm64-native
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 14
 
   workflow-lint:

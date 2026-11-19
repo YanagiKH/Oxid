@@ -8,15 +8,15 @@ use std::ops::Range;
 // descriptor/return/iterator role plus a conservative scalar-counter reserve.
 pub(in super::super) const FIXED_CARRIER_ALLOWANCE: usize = 1024;
 
-pub(in super::super) struct NativeStoragePlan<'p, 'w> {
-    execution: &'p ExecutionPlan<'w>,
+pub(in super::super) struct NativeStoragePlan<'p, 'w, W: PlanWitness = VerifiedOwnedProgram> {
+    execution: &'p ExecutionPlan<'w, W>,
     guarded: bool,
 }
 
 /// Fixed, borrowed view, derived one function at a time. There is no F-sized
 /// native table alongside the execution plan.
-pub(in super::super) struct NativeFunctionStorage<'p, 'w> {
-    execution: &'p ExecutionPlan<'w>,
+pub(in super::super) struct NativeFunctionStorage<'p, 'w, W: PlanWitness = VerifiedOwnedProgram> {
+    execution: &'p ExecutionPlan<'w, W>,
     id: hir::DefId,
     scalar_slots: usize,
     owner_bytes: usize,
@@ -52,7 +52,10 @@ impl Iterator for NativeSliceMappings<'_> {
             (true, logical, self.function.loans.get(logical)?.referent())
         };
         self.pointer += 1;
-        let offset = if matches!(referent, BorrowedTy::ScalarSlice(_)) {
+        let offset = if matches!(
+            referent,
+            BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+        ) {
             let offset = self
                 .length
                 .checked_mul(4)
@@ -78,9 +81,9 @@ fn require(ok: bool) -> Result<(), AdmissionFailure> {
     }
 }
 
-impl<'p, 'w> NativeStoragePlan<'p, 'w> {
+impl<'p, 'w, W: PlanWitness> NativeStoragePlan<'p, 'w, W> {
     pub(in super::super) fn checked(
-        execution: &'p ExecutionPlan<'w>,
+        execution: &'p ExecutionPlan<'w, W>,
         guarded: bool,
     ) -> Result<Self, AdmissionFailure> {
         require(execution.functions.len() == execution.witness.functions().len())?;
@@ -92,7 +95,7 @@ impl<'p, 'w> NativeStoragePlan<'p, 'w> {
         Ok(Self { execution, guarded })
     }
 
-    pub(in super::super) fn execution(&self) -> &'p ExecutionPlan<'w> {
+    pub(in super::super) fn execution(&self) -> &'p ExecutionPlan<'w, W> {
         self.execution
     }
 
@@ -108,14 +111,17 @@ impl<'p, 'w> NativeStoragePlan<'p, 'w> {
         }
     }
 
-    pub(in super::super) fn function(&self, id: hir::DefId) -> NativeFunctionStorage<'p, 'w> {
+    pub(in super::super) fn function(&self, id: hir::DefId) -> NativeFunctionStorage<'p, 'w, W> {
         // Immutable tables: all derivation arithmetic was checked above.
         NativeFunctionStorage::derive(self.execution, id).expect("checked native storage")
     }
 }
 
-impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
-    fn derive(execution: &'p ExecutionPlan<'w>, id: hir::DefId) -> Result<Self, AdmissionFailure> {
+impl<'p, 'w, W: PlanWitness> NativeFunctionStorage<'p, 'w, W> {
+    fn derive(
+        execution: &'p ExecutionPlan<'w, W>,
+        id: hir::DefId,
+    ) -> Result<Self, AdmissionFailure> {
         let f = execution
             .witness
             .functions()
@@ -128,18 +134,31 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         let slices = f
             .references
             .iter()
-            .filter(|r| matches!(r.referent(), BorrowedTy::ScalarSlice(_)))
+            .filter(|r| {
+                matches!(
+                    r.referent(),
+                    BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                )
+            })
             .count();
         let loans = f
             .loans
             .iter()
-            .filter(|l| matches!(l.referent(), BorrowedTy::ScalarSlice(_)))
+            .filter(|l| {
+                matches!(
+                    l.referent(),
+                    BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                )
+            })
             .count();
         Ok(Self {
             execution,
             id,
             scalar_slots: add(p.usage.scalar_slots, p.usage.arguments)?,
-            owner_bytes: align(p.usage.payload_bytes, 4)?,
+            owner_bytes: align(
+                p.usage.payload_bytes,
+                native_owner_alignment_for(execution.witness, f),
+            )?,
             reference_slots: add(p.usage.references, p.usage.loans)?,
             slice_slots: add(slices, loans)?,
         })
@@ -161,7 +180,6 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
             let layout = self
                 .execution
                 .witness
-                .declarations()
                 .aggregate_layout(owner.aggregate())
                 .map_err(|_| AdmissionFailure::new("native storage aggregate", Some(owner.span)))?;
             end = align(end, layout.align())?;
@@ -171,7 +189,6 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
                 cells,
                 self.execution
                     .witness
-                    .declarations()
                     .aggregate_width(owner.aggregate())
                     .map_err(|_| AdmissionFailure::new("native storage width", Some(owner.span)))?,
             )?;
@@ -201,7 +218,22 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
                 require(range.is_none())?;
             }
         }
-        require(end == u.payload_bytes && align(end, 4)? == self.owner_bytes)?;
+        let record_scratch = super::plan::native_vector_layout::record_scratch_bytes(
+            self.execution.witness.declarations(),
+            f,
+        )?;
+        if record_scratch == 0 {
+            require(
+                self.execution
+                    .record_vector_scratch_range(self.id)
+                    .is_none(),
+            )?;
+        } else {
+            let next = add(end, record_scratch)?;
+            require(self.execution.record_vector_scratch_range(self.id) == Some(end..next))?;
+            end = next;
+        }
+        require(end == u.payload_bytes && align(end, self.owner_alignment())? == self.owner_bytes)?;
         let (mut arguments, mut owned, mut borrowed) = (0, 0, 0);
         for (call, cp) in f.calls.iter().zip(&p.calls) {
             require(
@@ -224,7 +256,6 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
                             width,
                             self.execution
                                 .witness
-                                .declarations()
                                 .aggregate_width(owner.aggregate())
                                 .map_err(|_| {
                                     AdmissionFailure::new("native storage stage width", None)
@@ -260,7 +291,7 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
             .map(|r| r.referent())
             .chain(f.loans.iter().map(|l| l.referent()))
         {
-            if matches!(ty, BorrowedTy::ScalarSlice(_)) {
+            if matches!(ty, BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)) {
                 slices = add(slices, 1)?;
             }
         }
@@ -270,7 +301,14 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         // independently reconciled, without replacing their admission policy.
         let scalar = add(u.scalar_slots, arguments)?;
         let mut expanded = add(scalar, cells)?;
-        let mut reference_bytes = add(mul(scalar, size_of::<Option<Scalar>>())?, end)?;
+        let scalar_bytes = if self.execution.uses_quad_scalars() {
+            size_of::<Option<RuntimeValue>>()
+        } else if self.execution.uses_wide_scalars() {
+            size_of::<Option<RuntimeScalar>>()
+        } else {
+            size_of::<Option<Scalar>>()
+        };
+        let mut reference_bytes = add(mul(scalar, scalar_bytes)?, end)?;
         for (count, width, bytes) in [
             (f.owners.len(), 4, size_of::<OwnerRuntime>()),
             (f.references.len(), 10, size_of::<ReferenceHandle>()),
@@ -304,13 +342,14 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
                 } else {
                     self.raw().references[logical].referent()
                 };
-                let expected = if matches!(ty, BorrowedTy::ScalarSlice(_)) {
-                    let offset = mul(next, 4)?;
-                    next = add(next, 1)?;
-                    Some(offset)
-                } else {
-                    None
-                };
+                let expected =
+                    if matches!(ty, BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)) {
+                        let offset = mul(next, 4)?;
+                        next = add(next, 1)?;
+                        Some(offset)
+                    } else {
+                        None
+                    };
                 let row = mappings
                     .next()
                     .ok_or_else(|| AdmissionFailure::new("native slice mapping", None))?;
@@ -328,7 +367,7 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         }
     }
 
-    pub(in super::super) fn execution(&self) -> &'p ExecutionPlan<'w> {
+    pub(in super::super) fn execution(&self) -> &'p ExecutionPlan<'w, W> {
         self.execution
     }
     pub(in super::super) fn id(&self) -> hir::DefId {
@@ -343,6 +382,9 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
     pub(in super::super) fn owner_bytes(&self) -> usize {
         self.owner_bytes
     }
+    pub(in super::super) fn owner_alignment(&self) -> usize {
+        native_owner_alignment_for(self.execution.witness, self.raw())
+    }
     pub(in super::super) fn reference_slots(&self) -> usize {
         self.reference_slots
     }
@@ -350,14 +392,34 @@ impl<'p, 'w> NativeFunctionStorage<'p, 'w> {
         self.slice_slots
     }
     pub(in super::super) fn native_bytes(&self) -> Result<usize, AdmissionFailure> {
-        add(
-            add(mul(self.scalar_slots, 8)?, self.owner_bytes)?,
+        let ordinary = add(
+            add(
+                add(
+                    mul(self.scalar_slots, self.execution.native_scalar_bytes())?,
+                    self.owner_bytes,
+                )?,
+                if self.execution.uses_quad_scalars() {
+                    32
+                } else {
+                    0
+                },
+            )?,
             add(mul(self.reference_slots, 8)?, mul(self.slice_slots, 4)?)?,
+        )?;
+        add(
+            ordinary,
+            super::native_vector_layout::frame_bytes_with_witness(
+                self.execution.witness,
+                self.raw(),
+            )?,
         )
+    }
+    pub(in super::super) fn scalar_width(&self) -> usize {
+        self.execution.native_scalar_bytes()
     }
     pub(in super::super) fn scalar_offset(&self, slot: usize) -> usize {
         assert!(slot < self.scalar_slots);
-        slot * 8
+        slot * self.execution.native_scalar_bytes()
     }
     pub(in super::super) fn reference_offset(&self, slot: usize) -> usize {
         assert!(slot < self.reference_slots);
@@ -395,8 +457,8 @@ pub(in super::super) struct NativeInventories {
 }
 
 impl NativeInventories {
-    pub(in super::super) fn checked(
-        execution: &ExecutionPlan<'_>,
+    pub(in super::super) fn checked<W: PlanWitness>(
+        execution: &ExecutionPlan<'_, W>,
     ) -> Result<Self, AdmissionFailure> {
         let mut inventory = Self {
             items: 0,
@@ -424,7 +486,10 @@ impl NativeInventories {
     // of cached FrameUsage fields. The whole-program totals include unused and
     // untaken declarations; an argument descriptor counts even when its native
     // scalar arena position is an owned/borrow hole.
-    fn check(&self, execution: &ExecutionPlan<'_>) -> Result<(), AdmissionFailure> {
+    fn check<W: PlanWitness>(
+        &self,
+        execution: &ExecutionPlan<'_, W>,
+    ) -> Result<(), AdmissionFailure> {
         require(execution.functions.len() == execution.witness.functions().len())?;
         let (mut items, mut owner_width) = (0, 0);
         for (index, function) in execution.witness.functions().iter().enumerate() {
@@ -447,7 +512,6 @@ impl NativeInventories {
                     owner_width,
                     execution
                         .witness
-                        .declarations()
                         .aggregate_width(owner.aggregate())
                         .map_err(|_| {
                             AdmissionFailure::new("native inventory owner width", Some(owner.span))

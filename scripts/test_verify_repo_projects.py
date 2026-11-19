@@ -25,6 +25,7 @@ EXPRESSION_MEMBERS = (
 STDIN_ENTRY = 'fixtures/typed-expression-samples/stdin.ox'
 STACK_MAIN_ENTRY = 'fixtures/typed-expression-samples/stack_main.ox'
 STACK_STDIN_ENTRY = 'fixtures/typed-expression-samples/stack_stdin.ox'
+PYTHON_LIBRARY_ENTRY = 'apps/python-pricing/src/pricing.ox'
 ARTIFACT_MAIN_ENTRY = "fixtures/typed-expression-samples/artifact_main.ox"
 ARTIFACT_LOAD_ENTRY = "fixtures/typed-expression-samples/artifact_load.ox"
 ARTIFACT_ADDED_FILES = (
@@ -97,25 +98,72 @@ class ProjectRegistrationTests(unittest.TestCase):
         self.root = Path(temporary.name)
         for data in (Path('tests/fixtures/fixed_array_source_unit3'),
                      Path('tests/qualification/bounded_u8_current'),
-                     Path('tests/qualification/byte_storage_current')):
+                     Path('tests/qualification/byte_storage_current'),
+                     Path('tests/fixtures/typed_vectors')):
             shutil.copytree(verify_repo.ROOT / data, self.root / data)
+        copy_names = ('tests/fixtures/copy_records/all_scalars.ox',
+                      'tests/fixtures/copy_records/wide_unicode.ox')
+        for name in copy_names:
+            destination = self.root / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(verify_repo.ROOT / name, destination)
+        owned_vector_names = tuple('scripts/owned_record_vector_acceptance/' + name + '.ox' for name in (
+            'aliases', 'bytebuf', 'conflicting_borrows', 'copy_operation', 'double_move',
+            'empty_new', 'enum16', 'failed_reserve', 'fault_pop', 'fault_push_file', 'files',
+            'generic_record', 'index_read', 'nested_vector', 'package_main', 'package_model',
+            'unused_pop', 'unused_push', 'unused_template', 'zero_key',
+        ))
+        for name in owned_vector_names:
+            destination = self.root / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(verify_repo.ROOT / name, destination)
         self.data_sources = list(verify_repo.fixture_data_sources(self.root))
+        owned_vector_data = verify_repo.owned_record_vector_fixture_data_sources(self.root)
+        self.assertEqual(owned_vector_data, {self.root / name for name in owned_vector_names})
+        self.assertEqual(len(owned_vector_data), 20)
+        self.assertTrue(owned_vector_data <= set(self.data_sources))
+        copy_data = verify_repo.copy_record_fixture_data_sources(self.root)
+        self.assertEqual(copy_data, {self.root / name for name in copy_names})
+        self.assertEqual(len(copy_data), 2)
+        self.assertTrue(copy_data <= set(self.data_sources))
+        vector_data = verify_repo.typed_vector_fixture_data_sources(self.root)
+        expected_vectors = {self.root / 'tests/fixtures/typed_vectors' / group / (name + '.ox')
+                            for group, names in (
+            ('accept', ('bool', 'i8', 'i16', 'i32', 'i64', 'i128', 'u8', 'u16', 'u32', 'u64',
+                        'u128', 'isize', 'usize', 'char', 'f32', 'f64', 'unit')),
+            ('reject', ('moved_owner', 'wrong_element', 'owned_element', 'unused_unconstrained_generic',
+                        'bare_vector_type', 'wrong_type_arity', 'missing_new_type', 'vector_is_not_byte_buffer',
+                        'overlapping_call_loans', 'vector_not_copy')),
+            ('scenarios', ('projected-vector', 'dynamic-range', 'array-ranges')),
+        ) for name in names}
+        self.assertEqual(vector_data, expected_vectors)
+        self.assertEqual(len(vector_data), 30)
+        self.assertTrue(vector_data <= set(self.data_sources))
+        predecessor_data = set(self.data_sources) - owned_vector_data - copy_data - vector_data
         byte_data = verify_repo.byte_storage_fixture_data_sources(self.root)
+        self.assertFalse(owned_vector_data & (copy_data | vector_data | byte_data))
+        self.assertFalse(copy_data & (vector_data | byte_data))
+        self.assertFalse(vector_data & byte_data)
         self.assertEqual(len(byte_data), 325)
-        self.assertEqual(len(self.data_sources), 188 + 325)
-        self.assertEqual(len(set(self.data_sources) - byte_data), 188)
+        self.assertEqual(len(predecessor_data), 188 + 325)
+        self.assertEqual(len(predecessor_data - byte_data), 188)
         u8_root = self.root / 'tests/qualification/bounded_u8_current/oracle'
         u8_expected = {u8_root / ('pairs-' + mode + '-' + format(index, '02d') + '.ox')
                        for mode in ('owned', 'scalar') for index in range(32)}
         u8_expected |= {u8_root / 'roundtrip-owned.ox', u8_root / 'roundtrip-scalar.ox'}
         self.assertEqual({path for path in self.data_sources if u8_root in path.parents}, u8_expected)
-        self.assertEqual(len(set(self.data_sources) - u8_expected - byte_data), 122)
+        self.assertEqual(len(predecessor_data - u8_expected - byte_data), 122)
         self.members = [self.root / p for p in verify_repo.TYPED_SOURCE_FILES]
         self.members += [self.root / p for ps in verify_repo.TYPED_PROJECTS.values() for p in ps]
         self.members += [self.root / p for p in verify_repo.TYPED_CHECK_ONLY_FILES]
         self.members = sorted(set(self.members))
 
     def assert_static_addition(self, checks, entries, count):
+        library = self.root / PYTHON_LIBRARY_ENTRY
+        self.assertEqual([row for row in checks if row[0] == library], [(library, True)])
+        self.assertNotIn(library, entries)
+        checks = [row for row in checks if row[0] != library]
+        count -= 1
         # Strip only the RFC0031 runnable pilot before replaying historical totals.
         byte_entry = self.root / "fixtures/typed-byte-storage/main.ox"
         self.assertEqual([row for row in checks if row[0] == byte_entry], [(byte_entry, True)])
@@ -188,7 +236,8 @@ class ProjectRegistrationTests(unittest.TestCase):
 
     def assert_stack_addition(self, checks, entries, count):
         checks, entries, count = self.assert_artifact_addition(checks, entries, count)
-        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES, (STDIN_ENTRY, STACK_STDIN_ENTRY))
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_FILES,
+                         (STDIN_ENTRY, STACK_STDIN_ENTRY, PYTHON_LIBRARY_ENTRY))
         self.assertEqual(verify_repo.TYPED_PROJECTS[STACK_MAIN_ENTRY], STACK_MEMBERS)
         self.assertEqual({pair: members for pair, members in verify_repo.TYPED_PROJECT_SHARED_MEMBERS.items()
                           if not pair.intersection(STATIC_ROOTS)}, {

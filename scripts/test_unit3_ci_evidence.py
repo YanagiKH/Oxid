@@ -211,11 +211,25 @@ class EvidenceTests(unittest.TestCase):
         self.assert_archive('partial')
 
     def test_unrelated_io_and_permission_errors_propagate(self):
+        real_stat = evidence.os.stat
         for error in (PermissionError('denied'), OSError(5, 'I/O failure')):
             with self.subTest(error=error):
-                with mock.patch.object(evidence.os, 'stat', side_effect=error):
-                    with self.assertRaises(type(error)):
+                failed_calls = []
+
+                def source_stat(path, *args, **kwargs):
+                    # Fail an anchored source lookup, not pathlib's unrelated
+                    # root existence/mkdir checks (which suppress OSError in
+                    # Python 3.14). Keep the filesystem setup real.
+                    if kwargs.get('dir_fd') is not None:
+                        failed_calls.append(path)
+                        raise error
+                    return real_stat(path, *args, **kwargs)
+
+                with mock.patch.object(evidence.os, 'stat', side_effect=source_stat):
+                    with self.assertRaises(type(error)) as raised:
                         self.run_preserve('cancelled')
+                self.assertIs(raised.exception, error)
+                self.assertEqual(len(failed_calls), 1)
                 self.assertFalse((self.base / evidence.ARCHIVE).exists())
 
     def test_unrelated_snapshot_storage_errors_propagate(self):

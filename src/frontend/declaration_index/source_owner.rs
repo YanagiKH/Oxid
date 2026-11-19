@@ -287,7 +287,7 @@ impl<'s> SourceOwner<'s> {
             || first.start != row.span.start
             || last.end != row.span.end
             || (row.root == ast::PathRoot::Crate && self.text(*first)? != "crate")
-            || (row.root == ast::PathRoot::Std && self.text(*first)? != "std")
+            || (row.root == ast::PathRoot::Std && !matches!(self.text(*first)?, "std" | "alloc"))
         {
             return Err(bad(self.eof()));
         }
@@ -303,7 +303,11 @@ impl<'s> SourceOwner<'s> {
             let module = ModuleId(m);
             let program = self.ast(module)?;
             work.preflight(self.file(module)?.span(0, 0))?;
-            if !program.records.is_empty() || !program.enums.is_empty() {
+            if !program.records.is_empty()
+                || !program.enums.is_empty()
+                || program.has_generics()
+                || program.has_parsed_copy_records()
+            {
                 owned = true;
                 continue;
             }
@@ -337,7 +341,8 @@ impl<'s> SourceOwner<'s> {
                                 annotation: Some(ty),
                                 ..
                             } => owned |= self.owned_type(ty, work)?,
-                            ast::StmtKind::FieldAssign { .. }
+                            ast::StmtKind::DestructureRecord { .. }
+                            | ast::StmtKind::FieldAssign { .. }
                             | ast::StmtKind::IndexAssign { .. }
                             | ast::StmtKind::Match { .. } => owned = true,
                             _ => (),
@@ -348,11 +353,20 @@ impl<'s> SourceOwner<'s> {
             for expression in &program.expressions {
                 work.preflight(expression.span)?;
                 match &expression.kind {
-                    ast::ExprKind::StructLiteral { .. }
+                    ast::ExprKind::Borrow { .. }
+                    | ast::ExprKind::StructLiteral { .. }
                     | ast::ExprKind::FieldRead { .. }
                     | ast::ExprKind::ArrayLiteral { .. }
                     | ast::ExprKind::IndexRead { .. }
-                    | ast::ExprKind::ArrayLength { .. } => owned = true,
+                    | ast::ExprKind::ArrayLength { .. }
+                    | ast::ExprKind::ByteString { .. }
+                    | ast::ExprKind::I64Number { .. }
+                    | ast::ExprKind::FloatNumber { .. }
+                    | ast::ExprKind::Character(_)
+                    | ast::ExprKind::IntegerNumber { .. }
+                    | ast::ExprKind::Bitwise { .. }
+                    | ast::ExprKind::BitNot { .. }
+                    | ast::ExprKind::Conversion { .. } => owned = true,
                     ast::ExprKind::Call { args, .. } => {
                         for argument in args {
                             work.preflight(expression.span)?;
@@ -380,14 +394,40 @@ impl<'s> SourceOwner<'s> {
         work.preflight(ty.span)?;
         match ty.kind {
             ast::TypeSyntaxKind::Unit => Ok(false),
+            ast::TypeSyntaxKind::GenericSliceReference { element, .. } => {
+                match element {
+                    ast::ItemPath::Unqualified(name) => {
+                        work.preflight(name)?;
+                        self.text(name)?;
+                    }
+                    ast::ItemPath::Absolute(id) => {
+                        work.preflight(ty.span)?;
+                        let path = self.qualified_path(QualifiedPathRef {
+                            file: ty.span.file,
+                            path: id,
+                        })?;
+                        if path.root() != ast::PathRoot::Crate {
+                            return Err(bad(ty.span));
+                        }
+                        for &segment in path.segments() {
+                            work.preflight(segment)?;
+                            self.text(segment)?;
+                        }
+                    }
+                }
+                // Routing inspects syntax only. A name never admits an owned
+                // slice element; scalar/Copy checks belong to type resolution.
+                Ok(true)
+            }
             ast::TypeSyntaxKind::Reference { .. }
+            | ast::TypeSyntaxKind::Applied(_)
+            | ast::TypeSyntaxKind::AppliedReference { .. }
             | ast::TypeSyntaxKind::Array(_)
             | ast::TypeSyntaxKind::ArrayReference { .. }
             | ast::TypeSyntaxKind::SliceReference { .. }
             | ast::TypeSyntaxKind::Name(ast::ItemPath::Absolute(_)) => Ok(true),
             ast::TypeSyntaxKind::Name(ast::ItemPath::Unqualified(name)) => {
                 let text = self.text(name)?;
-                let mut builtin = false;
                 for spelling in ["bool", "i32", "u8"] {
                     work.preflight(name)?;
                     let mut equal = text.len() == spelling.len();
@@ -400,12 +440,11 @@ impl<'s> SourceOwner<'s> {
                             }
                         }
                     }
-                    builtin |= equal;
-                    if builtin {
-                        break;
+                    if equal {
+                        return Ok(spelling == "u8");
                     }
                 }
-                Ok(!builtin)
+                Ok(true)
             }
         }
     }
@@ -424,7 +463,7 @@ mod enum_carrier_tests {
         for (name, owned, predecessor, added) in [
             ("bool", false, 1 + 1 + 4, 0),
             ("i32", false, 1 + 1 + 1 + 3, 0),
-            ("u8", false, 1 + 1 + 1, 1 + 2),
+            ("u8", true, 1 + 1 + 1, 1 + 2),
             ("Zebra", true, 1 + 1 + 1, 1),
         ] {
             let mut sources = SourceMap::new();

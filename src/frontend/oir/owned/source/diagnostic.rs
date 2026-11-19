@@ -28,14 +28,15 @@ fn mutable(owner: OwnerSubject) -> bool {
 fn named_subject(subject: DeniedSubject) -> bool {
     match subject {
         DeniedSubject::Owner(owner) => named(owner),
-        DeniedSubject::Reference { .. } => true,
+        DeniedSubject::Reference { .. } | DeniedSubject::LocalReference { .. } => true,
     }
 }
 
 fn writable(subject: DeniedSubject) -> bool {
     match subject {
         DeniedSubject::Owner(owner) => mutable(owner),
-        DeniedSubject::Reference { granted, .. } => granted == BorrowKind::Exclusive,
+        DeniedSubject::Reference { granted, .. }
+        | DeniedSubject::LocalReference { granted, .. } => granted == BorrowKind::Exclusive,
     }
 }
 
@@ -44,9 +45,10 @@ fn writable(subject: DeniedSubject) -> bool {
 fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> {
     use DeniedOperation as Op;
     use DeniedRole as Role;
-    let named_move = facts.operation == Op::MoveInitialize
-        && facts.role == Role::SourceConsume
-        && matches!((facts.subject, facts.counterpart),
+    let named_move = matches!(
+        (facts.operation, facts.role),
+        (Op::MoveInitialize, Role::SourceConsume) | (Op::CopyInitialize, Role::SourceCopy)
+    ) && matches!((facts.subject, facts.counterpart),
             (DeniedSubject::Owner(source), Some(destination))
                 if named(source) && destination.class == OwnerKind::Temporary
                     && source.aggregate() == destination.aggregate() && source.id != destination.id)
@@ -57,11 +59,26 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
         && facts.requested_borrow.is_none();
     let array = matches!(
         facts.operation,
-        Op::ReadIndex | Op::WriteIndex | Op::ArrayLength
+        Op::ReadIndex
+            | Op::WriteIndex
+            | Op::ArrayLength
+            | Op::CopyIndexInitialize
+            | Op::CopyIndexWrite
     ) && facts.role == Role::ArrayBase
         && facts.counterpart.is_none()
         && facts.requested_borrow.is_none()
-        && facts.subject.referent().element().is_some()
+        && (facts.subject.referent().element().is_some()
+            || matches!(
+                facts.subject.referent(),
+                BorrowedTy::Exact(AggregateTy::RecordVector(_)) | BorrowedTy::RecordSlice(_)
+            )
+            || (matches!(
+                facts.operation,
+                Op::CopyIndexInitialize | Op::CopyIndexWrite
+            ) && matches!(
+                facts.subject.referent(),
+                BorrowedTy::Exact(AggregateTy::Record(_))
+            )))
         && named_subject(facts.subject);
     let borrow = facts.operation == Op::PrepareBorrow
         && facts.role == Role::BorrowAuthority
@@ -91,7 +108,10 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
                         && named_subject(facts.subject)
                         && (matches!(
                             facts.operation,
-                            Op::ReadField | Op::ReadIndex | Op::ArrayLength
+                            Op::ReadField
+                                | Op::ReadIndex
+                                | Op::CopyIndexInitialize
+                                | Op::ArrayLength
                         ) || writable(facts.subject)))
                     || (facts.operation == Op::Replace
                         && facts.role == Role::ReplacementDestination
@@ -114,10 +134,14 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
                     DeniedSubject::Reference {
                         granted: BorrowKind::Shared,
                         ..
+                    } | DeniedSubject::LocalReference {
+                        granted: BorrowKind::Shared,
+                        ..
                     }
                 )
                 && ((field && facts.operation == Op::WriteField)
-                    || (array && facts.operation == Op::WriteIndex)
+                    || (array
+                        && matches!(facts.operation, Op::WriteIndex | Op::CopyIndexWrite))
                     || (borrow && facts.requested_borrow == Some(BorrowKind::Exclusive))) =>
         {
             Some("E0313")
@@ -129,7 +153,8 @@ fn classify(kind: OwnedFailureKind, facts: DenialFacts) -> Option<&'static str> 
 fn subject_declaration(facts: DenialFacts) -> Span {
     match facts.subject {
         DeniedSubject::Owner(owner) => owner.declaration,
-        DeniedSubject::Reference { declaration, .. } => declaration,
+        DeniedSubject::Reference { declaration, .. }
+        | DeniedSubject::LocalReference { declaration, .. } => declaration,
     }
 }
 
@@ -164,6 +189,11 @@ fn present(
         .filter(|span| sources.is_valid_span(*span));
     let (code, stage, message) = match failure.kind {
         OwnedFailureKind::Resource(_) => ("E0400", internal_stage, "owned resource limit exceeded"),
+        OwnedFailureKind::UnsupportedOwnedVectorElement => (
+            "E0300",
+            "type",
+            "owned vector elements cannot contain owned vectors",
+        ),
         _ => match source_code {
             Some("E0310") => (
                 "E0310",

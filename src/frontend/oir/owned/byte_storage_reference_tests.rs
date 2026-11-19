@@ -96,6 +96,7 @@ fn empty_moves(read: bool) -> (SourceMap, RawOwnedProgram, Vec<(Span, usize)>, S
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],

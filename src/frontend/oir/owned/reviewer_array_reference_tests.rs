@@ -100,6 +100,21 @@ fn block(statements: Vec<OwnedStatement>, kind: OwnedTerminatorKind, span: Span)
 }
 fn value(ty: hir::Ty, j: usize) -> Scalar {
     match ty {
+        hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128
+        | hir::Ty::Char
+        | hir::Ty::F32
+        | hir::Ty::F64 => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::I32 => Scalar::I32(37 * j as i32 - 91),
         hir::Ty::Bool => Scalar::Bool(j.is_multiple_of(2)),
@@ -108,6 +123,21 @@ fn value(ty: hir::Ty, j: usize) -> Scalar {
 }
 fn replacement(ty: hir::Ty) -> Scalar {
     match ty {
+        hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128
+        | hir::Ty::Char
+        | hir::Ty::F32
+        | hir::Ty::F64 => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::I32 => Scalar::I32(-123456789),
         hir::Ty::Bool => Scalar::Bool(false),
@@ -262,6 +292,7 @@ fn sequence_fixture(
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -553,6 +584,7 @@ fn chain_fixture(ty: hir::Ty, n: usize) -> (SourceMap, RawOwnedProgram, Vec<(Spa
     ));
     schedule.extend([(s(base, 80), 1), (s(base, 81), 8 + 6 * w)]);
     let record = RawRecordDecl {
+        is_copy: false,
         id: RecordId(0),
         span: base,
         fields: vec![RawFieldDecl {
@@ -564,6 +596,7 @@ fn chain_fixture(ty: hir::Ty, n: usize) -> (SourceMap, RawOwnedProgram, Vec<(Spa
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![record],
@@ -849,8 +882,10 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
         });
         f.loans.push(LoanDecl {
             projection: Vec::new(),
-            call: CallSiteId(j),
-            argument: 0,
+            region: LoanRegion::Call {
+                call: CallSiteId(j),
+                argument: 0,
+            },
             authority: AccessBase::Owner(OwnerPlaceId(0)),
             kind: BorrowKind::Exclusive,
             referent: BorrowedSlot::check(BorrowedTy::Exact(slot.aggregate())).unwrap(),
@@ -993,6 +1028,7 @@ fn effects_fixture(failure: usize) -> (SourceMap, RawOwnedProgram, Vec<(Span, us
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -1293,14 +1329,21 @@ fn reference_fixture(
     mode: usize,
     other: AggregateTy,
     negative: bool,
-) -> (SourceMap, RawOwnedProgram, Span) {
+) -> Option<(SourceMap, RawOwnedProgram, Span)> {
     let (sources, mut raw, _) = effects_fixture(0);
     let base = raw.functions[0].span;
     let a = array(ty, n);
     let (other_ty, other_n) = match other {
+        AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => return None,
         AggregateTy::FixedArray(t) => (t.element(), t.length()),
         AggregateTy::Record(_) => (hir::Ty::I32, 1),
-        AggregateTy::Enum(_) => unreachable!("enum executable gate"),
+        AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::File
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_) => {
+            unreachable!("aggregate executable gate")
+        }
     };
     let f = &mut raw.functions[0];
     f.calls.truncate(1);
@@ -1320,7 +1363,14 @@ fn reference_fixture(
         s(base, 3),
     );
     let other_constructor = match other {
-        AggregateTy::Enum(_) => unreachable!("enum executable gate"),
+        AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_) => return None,
+        AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::File
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_) => {
+            unreachable!("aggregate executable gate")
+        }
         AggregateTy::FixedArray(_) => OwnedInstruction::ConstructArray {
             destination: OwnerPlaceId(1),
             elements: vec![op(4, base); other_n],
@@ -1328,6 +1378,7 @@ fn reference_fixture(
         AggregateTy::Record(record) => {
             let field = FieldId { record, index: 0 };
             raw.records = vec![RawRecordDecl {
+                is_copy: false,
                 id: record,
                 span: base,
                 fields: vec![RawFieldDecl {
@@ -1383,7 +1434,7 @@ fn reference_fixture(
         },
         s(base, 103),
     );
-    (sources, raw, s(base, 103))
+    Some((sources, raw, s(base, 103)))
 }
 fn fault_observed(
     raw: RawOwnedProgram,
@@ -1424,7 +1475,8 @@ fn independent_unit2c_stale_identity_permission_and_full_type_checks() {
     for ty in [hir::Ty::Bool, hir::Ty::I32, hir::Ty::Unit] {
         for n in [0usize, 4] {
             for mode in 0..3 {
-                let (sources, raw, at) = reference_fixture(ty, n, mode, array(ty, n), false);
+                let (sources, raw, at) = reference_fixture(ty, n, mode, array(ty, n), false)
+                    .expect("registered scalar array fixture");
                 let expected = if n == 0 && mode != 2 {
                     Err(OwnedRunFailure::Bounds(at))
                 } else {
@@ -1436,7 +1488,8 @@ fn independent_unit2c_stale_identity_permission_and_full_type_checks() {
                 );
                 inputs += 1;
                 for (kind, message) in faults {
-                    let (sources, raw, at) = reference_fixture(ty, n, mode, array(ty, n), true);
+                    let (sources, raw, at) = reference_fixture(ty, n, mode, array(ty, n), true)
+                        .expect("registered scalar array fixture");
                     let actual = fault_observed(raw, &sources, kind, at);
                     assert_eq!(
                         actual.result,
@@ -1468,7 +1521,8 @@ fn independent_unit2c_stale_identity_permission_and_full_type_checks() {
         (hir::Ty::Unit, 4, array(hir::Ty::I32, 1)),
     ] {
         for mode in 0..3 {
-            let (sources, raw, at) = reference_fixture(ty, n, mode, other, true);
+            let (sources, raw, at) = reference_fixture(ty, n, mode, other, true)
+                .expect("registered scalar array or record fixture");
             let actual = fault_observed(raw, &sources, ArrayReferenceDifferentType, at);
             assert_eq!(
                 actual.result,
@@ -1477,7 +1531,8 @@ fn independent_unit2c_stale_identity_permission_and_full_type_checks() {
             );
             inputs += 1;
         }
-        let (sources, raw, _) = reference_fixture(ty, n, 2, other, false);
+        let (sources, raw, _) = reference_fixture(ty, n, 2, other, false)
+            .expect("registered scalar array or record fixture");
         let at = s(raw.functions[0].span, 12);
         let actual = fault_observed(raw, &sources, IncomingReferenceDifferentType, at);
         assert_eq!(
@@ -1526,15 +1581,18 @@ fn independent_unit2c_late_constructor_snapshot_is_atomic() {
 #[test]
 fn independent_unit2c_incoming_exclusive_alias_is_rejected() {
     let (sources, mut raw, _) =
-        reference_fixture(hir::Ty::I32, 1, 2, array(hir::Ty::I32, 1), false);
+        reference_fixture(hir::Ty::I32, 1, 2, array(hir::Ty::I32, 1), false)
+            .expect("registered scalar array fixture");
     let base = raw.functions[0].span;
     raw.functions[0].calls[0]
         .arguments
         .push(ArgumentSlot::Borrow(LoanId(1)));
     raw.functions[0].loans.push(LoanDecl {
         projection: Vec::new(),
-        call: CallSiteId(0),
-        argument: 1,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 1,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(1)),
         kind: BorrowKind::Exclusive,
         referent: BorrowedSlot::check(BorrowedTy::Exact(array(hir::Ty::I32, 1))).unwrap(),
@@ -1691,6 +1749,7 @@ fn observer_scalar_cap_fixture(statements: usize) -> (SourceMap, RawOwnedProgram
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -1736,6 +1795,7 @@ fn observer_storage_cap_fixture(owners: usize, n: usize) -> (SourceMap, RawOwned
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],

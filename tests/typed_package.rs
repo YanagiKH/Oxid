@@ -1,6 +1,11 @@
 //! Public source-bundle contracts. Python's independent tar oracle lives in
 //! scripts/verify_typed_package_bundle.py; these tests exercise the actual CLI.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 
 use sha2::{Digest, Sha256};
 use std::{

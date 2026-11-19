@@ -1,6 +1,11 @@
 //! Explicit closed-source enum/native gates. Expectations are frozen source
 //! oracles, never a reconstructed execution schedule. Artifacts are retained.
-#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#![cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 
 use super::{resolve, reviewer_source};
 use crate::frontend::{

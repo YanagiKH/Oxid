@@ -72,8 +72,10 @@ pub(super) fn program(
         span: s(6),
     }];
     main.loans = vec![LoanDecl {
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Owner(OwnerPlaceId(0)),
         projection: vec![],
         kind: BorrowKind::Exclusive,
@@ -334,6 +336,7 @@ pub(super) fn program(
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::ReadStdin,
             enums: vec![e::enumeration(&[Some(hir::Ty::I32), None, None], anchor)],
             records: vec![],
@@ -372,6 +375,7 @@ pub(super) fn projected_record_program() -> (SourceMap, RawOwnedProgram, hir::De
     };
     let array = raw.functions[0].owners[0].aggregate;
     raw.records = vec![RawRecordDecl {
+        is_copy: false,
         id: RecordId(0),
         span: s(100),
         fields: [
@@ -515,8 +519,10 @@ pub(super) fn forwarded_program(
         span: s(1),
     }];
     forward.loans = vec![LoanDecl {
-        call: CallSiteId(0),
-        argument: 0,
+        region: LoanRegion::Call {
+            call: CallSiteId(0),
+            argument: 0,
+        },
         authority: AccessBase::Parameter(ReferenceParamId(0)),
         projection: vec![],
         kind: BorrowKind::Exclusive,

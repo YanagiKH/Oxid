@@ -1,0 +1,14 @@
+[project]
+name = "unicode-range"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+text = "../../packages/utf8_text"
+
+[build]
+entry-mode = "process"
+reproducible = true
+
+[execution]
+policy = "hosted"

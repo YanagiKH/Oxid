@@ -2,10 +2,47 @@
 //! source provenance nor an executable witness, and do not replace the ordinary
 //! declaration, shape, CFG, or ownership proof.
 use super::*;
-use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
+use crate::frontend::builtin_catalog::{experimental, BuiltinEnum, BuiltinFunction};
 
 pub(super) const INPUT_SCRATCH_BYTES: usize = 1024;
 pub(super) const OUTPUT_SCRATCH_BYTES: usize = 1024;
+
+/// The closed scalar/operation domain bounds duplicate comparisons before
+/// any canonical row is inspected. This never synthesizes unused functions.
+pub(super) fn vector_descriptor_visits(
+    keys: &[crate::frontend::builtin_catalog::vector::Function],
+    records: usize,
+) -> Result<usize, OwnedFailure> {
+    // Scalar claims keep their153-key bound even when nominal declarations
+    // exist. Only real declaration ordinals contribute a separate record domain.
+    if records > 4096 || keys.len() > 9 * (17 + records) {
+        return Err(missing());
+    }
+    let mut visits = keys.len() * keys.len().saturating_sub(1) / 2;
+    let (mut scalars, mut record_keys) = (0usize, 0usize);
+    for key in keys {
+        if let Some(record) = key.record_id() {
+            record_keys += 1;
+            if record.0 >= records || record_keys > 9 * records {
+                return Err(missing());
+            }
+        } else {
+            scalars += 1;
+            if scalars > 153 {
+                return Err(missing());
+            }
+        }
+        let signature = key.signature(EnumId(0));
+        visits += 7
+            + 2 * signature.parameters().len()
+            + if matches!(signature.result, ValueTy::Owned(_)) {
+                2
+            } else {
+                1
+            };
+    }
+    Ok(visits)
+}
 
 /// Header + enum + three variants; the function adds its declaration,
 /// reference, owner, block, two statements and terminator. Work units count
@@ -15,7 +52,26 @@ pub(super) fn descriptor_visits(origin: BuiltinOrigins) -> usize {
     if origin == BuiltinOrigins::None {
         0
     } else {
-        1 + 4 * origin.extra_enums() + 7 * origin.extra_functions()
+        let mut visits =
+            1 + 4 * origin.legacy().extra_enums() + 7 * origin.legacy().extra_functions();
+        for item in experimental::Enumeration::ALL {
+            if origin.experimental().contains(item.item()) {
+                visits += 1 + item.members().len();
+            }
+        }
+        for item in experimental::Function::ALL {
+            if origin.experimental().contains(item.item()) {
+                let signature = item.signature(|_| EnumId(0));
+                visits += 5
+                    + 2 * signature.parameters().len()
+                    + if matches!(signature.result, ValueTy::Owned(_)) {
+                        2
+                    } else {
+                        1
+                    };
+            }
+        }
+        visits
     }
 }
 
@@ -24,8 +80,31 @@ pub(super) struct BuiltinIds {
     enumeration_base: EnumId,
     function_base: hir::DefId,
     inventory: BuiltinOrigins,
+    vector_count: usize,
 }
 impl BuiltinIds {
+    pub(super) fn vector_function_at(&self, rank: usize) -> Option<hir::DefId> {
+        if rank >= self.vector_count {
+            return None;
+        }
+        self.function_base
+            .0
+            .checked_add(self.inventory.extra_functions())?
+            .checked_add(rank)
+            .map(hir::DefId)
+    }
+    pub(super) fn experimental_enum(&self, kind: experimental::Enumeration) -> Option<EnumId> {
+        self.enumeration_base
+            .0
+            .checked_add(self.inventory.experimental_enum_rank(kind)?)
+            .map(EnumId)
+    }
+    pub(super) fn experimental_function(&self, kind: experimental::Function) -> Option<hir::DefId> {
+        self.function_base
+            .0
+            .checked_add(self.inventory.experimental_function_rank(kind)?)
+            .map(hir::DefId)
+    }
     pub(super) fn enumeration(&self, kind: BuiltinEnum) -> Option<EnumId> {
         self.enumeration_base
             .0
@@ -52,48 +131,67 @@ pub(super) fn check(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
 /// Complete inert descriptor validation for both closed builtin families.
 /// This cannot produce an executable witness or bypass ordinary proofs. The
 /// production entry above remains the sole builtin admission gate.
-pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
-    let ids = BuiltinIds {
-        enumeration_base: EnumId(
-            raw.enums
-                .len()
-                .checked_sub(raw.builtins.extra_enums())
-                .ok_or_else(missing)?,
-        ),
-        function_base: hir::DefId(
-            raw.functions
-                .len()
-                .checked_sub(raw.builtins.extra_functions())
-                .ok_or_else(missing)?,
-        ),
-        inventory: raw.builtins,
-    };
-    if raw.builtins == BuiltinOrigins::None {
-        return Ok(ids);
-    }
+// Share the complete predicate body without adding another transport frame
+// to the existing zero-extension entry's accounting or changing its arguments.
+macro_rules! candidate_body {
+    ($raw:ident, $base:expr) => {{
+        vector_descriptor_visits(&$raw.vector_functions, $raw.records.len())?;
+        let ids = BuiltinIds {
+            enumeration_base: EnumId(
+                $raw.enums
+                    .len()
+                    .checked_sub($raw.builtins.extra_enums())
+                    .ok_or_else(missing)?,
+            ),
+            function_base: hir::DefId($base.ok_or_else(missing)?),
+            inventory: $raw.builtins,
+            vector_count: $raw.vector_functions.len(),
+        };
+        if $raw.builtins == BuiltinOrigins::None {
+            if !$raw.vector_functions.is_empty() {
+                return Err(missing());
+            }
+            return Ok(ids);
+        }
 
-    for kind in BuiltinEnum::ALL {
-        if let Some(id) = ids.enumeration(kind) {
-            check_enumeration(raw.enums.get(id.0).ok_or_else(missing)?, id, kind)?;
+        for kind in BuiltinEnum::ALL {
+            if let Some(id) = ids.enumeration(kind) {
+                check_enumeration($raw.enums.get(id.0).ok_or_else(missing)?, id, kind)?;
+            }
         }
-    }
-    for kind in BuiltinFunction::ALL {
-        if let Some(id) = ids.function(kind) {
-            let enumeration = ids
-                .enumeration(match kind {
-                    BuiltinFunction::ReadStdin => BuiltinEnum::ReadStatus,
-                    BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
-                })
-                .ok_or_else(missing)?;
-            check_function(
-                raw.functions.get(id.0).ok_or_else(missing)?,
-                id,
-                enumeration,
-                kind,
-            )?;
+        for kind in BuiltinFunction::ALL {
+            if let Some(id) = ids.function(kind) {
+                let enumeration = ids
+                    .enumeration(match kind {
+                        BuiltinFunction::ReadStdin => BuiltinEnum::ReadStatus,
+                        BuiltinFunction::WriteStdout => BuiltinEnum::WriteStatus,
+                    })
+                    .ok_or_else(missing)?;
+                check_function(
+                    $raw.functions.get(id.0).ok_or_else(missing)?,
+                    id,
+                    enumeration,
+                    kind,
+                )?;
+            }
         }
-    }
-    Ok(ids)
+        super::experimental_descriptors::check($raw, &ids)?;
+        super::vector_descriptors::check($raw, &ids)?;
+        Ok(ids)
+    }};
+}
+
+pub(super) fn check_candidate(raw: &RawOwnedProgram) -> Result<BuiltinIds, OwnedFailure> {
+    candidate_body!(raw, raw.fixed_builtin_base())
+}
+
+/// The extension owns the omitted suffix. This reuses every ordinary old
+/// descriptor predicate at its checked actual prefix; it grants no new seal.
+pub(super) fn check_candidate_prefix(
+    raw: &RawOwnedProgram,
+    function_end: usize,
+) -> Result<BuiltinIds, OwnedFailure> {
+    candidate_body!(raw, raw.fixed_builtin_base_at(function_end))
 }
 
 fn check_enumeration(
@@ -319,6 +417,7 @@ mod transport_tests {
                 enumeration_base: EnumId(11),
                 function_base: hir::DefId(23),
                 inventory,
+                vector_count: 0,
             };
             assert_eq!(
                 ids.enumeration(BuiltinEnum::ReadStatus),
@@ -347,6 +446,7 @@ mod transport_tests {
             enumeration_base: EnumId(usize::MAX),
             function_base: hir::DefId(usize::MAX),
             inventory: BuiltinOrigins::ReadStdinWriteStdout,
+            vector_count: 0,
         };
         assert_eq!(ids.enumeration(BuiltinEnum::WriteStatus), None);
         assert_eq!(ids.function(BuiltinFunction::WriteStdout), None);

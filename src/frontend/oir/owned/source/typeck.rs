@@ -8,6 +8,7 @@ use crate::frontend::{
     declaration_index::{Access, NominalId, PreparedTypeName},
     diagnostic::Diagnostic,
     lexer::Token,
+    oir::owned_types::EnumId,
     owned_diagnostic,
     parser::MAX_DIAGNOSTICS,
     project::budget::Allocator,
@@ -95,6 +96,7 @@ impl FlowSummary {
 }
 
 pub(super) struct TypedOwnedFunction<'a> {
+    records: &'a [Record],
     admission: SourceAdmission,
     function: &'a Function,
     signatures: &'a [Signature],
@@ -111,11 +113,14 @@ impl TypedOwnedProgram<'_> {
     /// charge. Ordinary owners have no enum index; this grants no admission and
     /// exposes neither the Cell nor a way to seed/reset it.
     pub(super) fn source_storage_bytes(&self) -> Option<usize> {
+        if self.admission() == SourceAdmission::OwnedVectorPipeline {
+            return Some(self.program.type_storage_cell().get());
+        }
         #[cfg(test)]
         if self.admission() == SourceAdmission::BuiltinPipeline {
             return Some(self.program.type_storage_cell().get());
         }
-        if self.index().enum_count() != 0 {
+        if super::resolve::requires_paid_source(self.index()) {
             return Some(self.program.type_storage_cell().get());
         }
         None
@@ -125,6 +130,22 @@ impl TypedOwnedProgram<'_> {
     /// plan now with this owner's existing meter, then add its live projection
     /// payload. This neither changes nor retroactively certifies earlier phases.
     pub(super) fn conversion_association_storage_bytes(&self) -> Result<usize, Box<Diagnostic>> {
+        if self.admission() == SourceAdmission::OwnedVectorPipeline {
+            let at = self.index().sources().eof();
+            let plan =
+                super::hir_budget::preflight_owned_vector_hir(self.index(), self.program.work())?
+                    .ok_or_else(|| paid_state(at))?;
+            // Paid inventory already charged actual retained capacity and paths.
+            // Independently select the new-domain plan; it cannot be replaced by
+            // the historical signature-only preflight or a caller-supplied seed.
+            let dynamic = self
+                .program
+                .type_storage_cell()
+                .get()
+                .checked_sub(plan.total)
+                .ok_or_else(|| paid_state(at))?;
+            return plan.with_dynamic(dynamic, at);
+        }
         if let Some(seed) = self.source_storage_bytes() {
             return Ok(seed);
         }
@@ -219,6 +240,7 @@ impl TypedOwnedProgram<'_> {
                 assert!(body.block_flows[function.body.0].returns_only());
                 assert_eq!(&body.bindings[..signature.params.len()], &signature.params);
                 TypedOwnedFunction {
+                    records: self.records(),
                     admission: self.admission(),
                     function,
                     signatures: self.signatures(),
@@ -234,6 +256,12 @@ impl TypedOwnedProgram<'_> {
     }
 }
 impl<'a> TypedOwnedFunction<'a> {
+    pub(super) fn is_copy(&self, aggregate: AggregateTy) -> bool {
+        match aggregate {
+            AggregateTy::Record(id) => self.records.get(id.0).is_some_and(|record| record.is_copy),
+            _ => false,
+        }
+    }
     pub(super) fn admission(&self) -> SourceAdmission {
         self.admission
     }
@@ -300,6 +328,10 @@ impl Label for Box<Diagnostic> {
 }
 #[allow(clippy::large_enum_variant)] // Both bounded formatter frames are preaccounted; no heap allocation.
 enum TypeName<'a> {
+    ByteBuf,
+    File,
+    Vector(Ty),
+    RecordVector(PreparedTypeName<'a>),
     Scalar(Ty),
     Array(FixedArrayTy),
     Record(PreparedTypeName<'a>),
@@ -307,6 +339,10 @@ enum TypeName<'a> {
 impl std::fmt::Display for TypeName<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ByteBuf => write!(f, "alloc::bytes::ByteBuf"),
+            Self::File => write!(f, "std::fs::File"),
+            Self::Vector(element) => write!(f, "alloc::vec::Vec<{element}>"),
+            Self::RecordVector(element) => write!(f, "alloc::vec::Vec<{element}>"),
             Self::Scalar(ty) => write!(f, "{ty}"),
             Self::Array(ty) => write!(f, "[{}; {}]", ty.element(), ty.length()),
             Self::Record(name) => write!(f, "{name}"),
@@ -319,14 +355,53 @@ fn type_name<'a>(
     span: Span,
 ) -> Result<TypeName<'a>, Box<Diagnostic>> {
     match ty {
+        ValueTy::Owned(AggregateTy::OwnedRecordVector(record))
+            if program.admission() == SourceAdmission::OwnedVectorPipeline
+                && program.index().is_owned_vector_candidate_pipeline() =>
+        {
+            program
+                .prepare_name(record, span)
+                .map(TypeName::RecordVector)
+        }
+        ValueTy::Owned(AggregateTy::OwnedRecordVector(_)) => Err(error(
+            "E0300",
+            "vectors of owned records are not yet supported",
+            span,
+        )),
+        ValueTy::Owned(AggregateTy::OwnedEnumVector(enumeration))
+            if program.admission() == SourceAdmission::OwnedVectorPipeline
+                && program.index().is_owned_vector_candidate_pipeline() =>
+        {
+            program
+                .query()
+                .prepare_nominal_type_name(
+                    NominalId::Enum(program.index().template_enum_for_instance(enumeration)?),
+                    span,
+                )
+                .map(TypeName::RecordVector)
+        }
+        ValueTy::Owned(AggregateTy::OwnedEnumVector(_)) => Err(error(
+            "E0300",
+            "vectors of owned enums require the owned vector pipeline",
+            span,
+        )),
         ValueTy::Scalar(ty) => Ok(TypeName::Scalar(ty)),
+        ValueTy::Owned(AggregateTy::ByteBuf) => Ok(TypeName::ByteBuf),
+        ValueTy::Owned(AggregateTy::File) => Ok(TypeName::File),
+        ValueTy::Owned(AggregateTy::Vector(element)) => Ok(TypeName::Vector(element)),
+        ValueTy::Owned(AggregateTy::RecordVector(record)) => program
+            .prepare_name(record, span)
+            .map(TypeName::RecordVector),
         ValueTy::Owned(AggregateTy::Record(record)) => {
             program.prepare_name(record, span).map(TypeName::Record)
         }
         ValueTy::Owned(AggregateTy::FixedArray(array)) => Ok(TypeName::Array(array)),
         ValueTy::Owned(AggregateTy::Enum(enumeration)) => program
             .query()
-            .prepare_nominal_type_name(NominalId::Enum(enumeration), span)
+            .prepare_nominal_type_name(
+                NominalId::Enum(program.index().template_enum_for_instance(enumeration)?),
+                span,
+            )
             .map(TypeName::Record),
     }
 }
@@ -380,7 +455,7 @@ pub(in crate::frontend::oir) fn check(
             None,
         )]);
     }
-    if program.index().enum_count() != 0 {
+    if super::resolve::requires_paid_source(program.index()) {
         return Err(vec![*diagnostic(
             "E0500",
             "type",
@@ -778,7 +853,9 @@ pub(super) fn finish_enum_source<'s>(
     allocator: &mut Allocator,
     resolver_end: usize,
 ) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
-    if program.admission() != SourceAdmission::Executable || program.index().enum_count() == 0 {
+    if program.admission() != SourceAdmission::Executable
+        || !super::resolve::requires_paid_source(program.index())
+    {
         return Err(vec![*paid_state(program.index().sources().eof())]);
     }
     program
@@ -790,6 +867,23 @@ pub(super) fn finish_enum_source<'s>(
             .validate_function_signatures()
             .map_err(|error| vec![*error])?;
     }
+    finish_paid_source(program, source, allocator, resolver_end)
+}
+
+pub(super) fn finish_owned_vector_source<'s>(
+    program: ResolvedOwnedProgram<'s>,
+    source: &super::hir_budget::HirPlan,
+    allocator: &mut Allocator,
+    resolver_end: usize,
+) -> Result<TypedOwnedProgram<'s>, Vec<Diagnostic>> {
+    if program.admission() != SourceAdmission::OwnedVectorPipeline
+        || !program.index().is_owned_vector_candidate_pipeline()
+    {
+        return Err(vec![*paid_state(program.index().sources().eof())]);
+    }
+    program
+        .validate_function_signatures()
+        .map_err(|error| vec![*error])?;
     finish_paid_source(program, source, allocator, resolver_end)
 }
 
@@ -993,7 +1087,8 @@ fn check_bodies(
     mut paid: Option<&mut ProgramPaid<'_, '_>>,
 ) -> Result<Vec<TypedBody>, Vec<Diagnostic>> {
     let enum_types = match program.admission() {
-        SourceAdmission::Executable => program.index().enum_count() != 0,
+        SourceAdmission::OwnedVectorPipeline => true,
+        SourceAdmission::Executable => super::resolve::requires_paid_source(program.index()),
         #[cfg(test)]
         SourceAdmission::ObserveEnumTypes
         | SourceAdmission::EnumPipeline
@@ -1276,7 +1371,7 @@ pub(super) mod semantic_carriers {
         slice, vec,
     };
 
-    type ArrayProjection = (Option<Projection>, AccessBase, Ty);
+    type ArrayProjection = (Option<Projection>, AccessBase, Option<ValueTy>);
     type FrameState = (BodyBlockId, usize, FlowSummary, Option<LoopId>);
     type CallComparison =
         Enumerate<Zip<vec::IntoIter<(ParameterTy, Span)>, slice::Iter<'static, ParameterTy>>>;
@@ -1284,7 +1379,9 @@ pub(super) mod semantic_carriers {
 
     // One nonrecursive bank: array projection can enclose field projection, but
     // neither helper types a child, and each path is cached before a later child.
-    pub(in crate::frontend::oir::owned::source) struct ProjectionSemanticCarriers {
+    macro_rules! projection_carrier_model {
+        ($name:ident, $array:ty, $element:ty, $whole_element:ty, $($extra:tt)*) => {
+    pub(in crate::frontend::oir::owned::source) struct $name {
         programs: [&'static ResolvedOwnedProgram<'static>; 2],
         functions: [&'static Function; 2],
         binding_inputs: [BindingId; 2],
@@ -1328,14 +1425,15 @@ pub(super) mod semantic_carriers {
         field_span: Span,
         array_base: AccessBase,
         constructed_option: Option<Projection>,
-        constructed_array: ArrayProjection,
-        array_return: Result<ArrayProjection, Box<Diagnostic>>,
+        constructed_array: $array,
+        array_return: Result<$array, Box<Diagnostic>>,
         // FieldRead/FieldAssign are mutually exclusive roles of this type.
         direct_field_caller: Projection,
-        array_caller_tuple: ArrayProjection,
+        array_caller_tuple: $array,
         caller_projection: Option<Projection>,
         caller_access: AccessBase,
-        caller_element: Ty,
+        caller_element: $element,
+        $($extra)*
         borrow_conversion: Result<Projection, Box<Diagnostic>>,
         borrow_receiver: Projection,
         borrow_row: BorrowProjection,
@@ -1350,13 +1448,45 @@ pub(super) mod semantic_carriers {
             &'static [Option<ParameterTy>],
         ),
         whole_array_parameter: ParameterTy,
-        whole_array_constructed: (AccessBase, Ty),
-        whole_array_returned: Result<(AccessBase, Ty), Box<Diagnostic>>,
+        whole_array_constructed: (AccessBase, $whole_element),
+        whole_array_returned: Result<(AccessBase, $whole_element), Box<Diagnostic>>,
         // These are the caller's two named pattern values, not another full
         // tuple success carrier (already inside whole_array_returned).
         whole_array_caller_base: AccessBase,
-        whole_array_caller_ty: Ty,
+        whole_array_caller_ty: $whole_element,
     }
+        };
+    }
+    projection_carrier_model!(ProjectionSemanticCarriers, ArrayProjection, Option<ValueTy>, ValueTy, indexed_element: ValueTy,);
+    // Exact predecessor role types, retained only to explain the physical
+    // successor. Runtime/source admission uses the complete current model.
+    #[cfg(test)]
+    type PreFileArrayProjection = (Option<Projection>, AccessBase, Ty);
+    #[cfg(test)]
+    type ScalarArrayProjection = (Option<Projection>, AccessBase, Option<Ty>);
+    #[cfg(test)]
+    projection_carrier_model!(
+        PreFileProjectionSemanticCarriers,
+        PreFileArrayProjection,
+        Ty,
+        Ty,
+    );
+    // R1 retains the File optional element and all original scalar transports.
+    // It is a distinct predecessor, not a partly widened current bank.
+    #[cfg(test)]
+    projection_carrier_model!(ScalarProjectionSemanticCarriers, ScalarArrayProjection, Option<Ty>, Ty, indexed_element: Ty,);
+    #[cfg(test)]
+    pub(in crate::frontend::oir::owned::source) const fn file_projection_successor_bytes() -> usize
+    {
+        size_of::<ScalarProjectionSemanticCarriers>()
+            - size_of::<PreFileProjectionSemanticCarriers>()
+    }
+    #[cfg(test)]
+    pub(in crate::frontend::oir::owned::source) const fn record_vector_projection_successor_bytes(
+    ) -> usize {
+        size_of::<ProjectionSemanticCarriers>() - size_of::<ScalarProjectionSemanticCarriers>()
+    }
+
     // Closure invocation values are separate from their opaque object captures.
     // Sort's argument/key result belongs only to BodyFrameSemanticCarriers.
     pub(in crate::frontend::oir::owned::source) struct PredicateInvocationCarriers {
@@ -1694,6 +1824,106 @@ pub(super) mod semantic_carriers {
         }};
     }
     #[test]
+    fn record_vector_projection_transports_preserve_scalar_banks_and_pay_eight_value_roles() {
+        use std::mem::align_of;
+
+        // These function items are never called. Their return types check the
+        // real helper signatures against the separately declared carrier types.
+        type ProjectedHelper =
+            for<'a, 'b, 'c, 'd, 'e, 'f> fn(
+                &'a ResolvedOwnedProgram<'b>,
+                &'c Function,
+                BindingId,
+                Span,
+                Span,
+                &'d [Option<ParameterTy>],
+                bool,
+                Option<&'e mut BodyPaid<'f>>,
+            ) -> Result<ArrayProjection, Box<Diagnostic>>;
+        type WholeHelper = for<'a, 'b> fn(
+            &'a Function,
+            BindingId,
+            Span,
+            &'b [Option<ParameterTy>],
+        )
+            -> Result<(AccessBase, ValueTy), Box<Diagnostic>>;
+        let _: ProjectedHelper = projected_array_access;
+        let _: WholeHelper = array_access;
+
+        macro_rules! transport {
+            ($field:ident: $before:ty => $after:ty) => {{
+                let _: for<'a> fn(&'a ScalarProjectionSemanticCarriers) -> &'a $before =
+                    |model| &model.$field;
+                let _: for<'a> fn(&'a ProjectionSemanticCarriers) -> &'a $after =
+                    |model| &model.$field;
+                (
+                    size_of::<$before>(),
+                    size_of::<$after>(),
+                    align_of::<$before>(),
+                    align_of::<$after>(),
+                )
+            }};
+        }
+        let transports = [
+            transport!(constructed_array: ScalarArrayProjection => ArrayProjection),
+            transport!(array_return: Result<ScalarArrayProjection, Box<Diagnostic>>
+                => Result<ArrayProjection, Box<Diagnostic>>),
+            transport!(array_caller_tuple: ScalarArrayProjection => ArrayProjection),
+            transport!(caller_element: Option<Ty> => Option<ValueTy>),
+            transport!(indexed_element: Ty => ValueTy),
+            transport!(whole_array_constructed: (AccessBase, Ty) => (AccessBase, ValueTy)),
+            transport!(whole_array_returned: Result<(AccessBase, Ty), Box<Diagnostic>>
+                => Result<(AccessBase, ValueTy), Box<Diagnostic>>),
+            transport!(whole_array_caller_ty: Ty => ValueTy),
+        ];
+        // Freeze the pre-File whole-element transports as scalar types too.
+        // A shared macro change must not silently reclassify a historical bank.
+        let _: for<'a> fn(&'a PreFileProjectionSemanticCarriers) -> &'a (AccessBase, Ty) =
+            |model| &model.whole_array_constructed;
+        type ScalarWholeArrayReturn = Result<(AccessBase, Ty), Box<Diagnostic>>;
+        let _: for<'a> fn(&'a PreFileProjectionSemanticCarriers) -> &'a ScalarWholeArrayReturn =
+            |model| &model.whole_array_returned;
+        let _: for<'a> fn(&'a PreFileProjectionSemanticCarriers) -> &'a Ty =
+            |model| &model.whole_array_caller_ty;
+
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(
+                transports,
+                [
+                    (80, 88, 8, 8),
+                    (80, 88, 8, 8),
+                    (80, 88, 8, 8),
+                    (1, 16, 1, 8),
+                    (1, 16, 1, 8),
+                    (24, 32, 8, 8),
+                    (24, 32, 8, 8),
+                    (1, 16, 1, 8),
+                ]
+            );
+            assert_eq!(align_of::<ProjectionSemanticCarriers>(), 8);
+            assert_eq!(align_of::<ScalarProjectionSemanticCarriers>(), 8);
+            // The unchanged non-word roles are borrow:bool, the selected
+            // BorrowKind and FixedArrayTy. All other common roles occupy whole
+            // eight-byte units, so they do not affect the final rounding delta.
+            let common_tail =
+                size_of::<bool>() + size_of::<BorrowKind>() + size_of::<FixedArrayTy>();
+            assert_eq!(common_tail, 6);
+            let before = transports.iter().map(|row| row.0).sum::<usize>();
+            let after = transports.iter().map(|row| row.1).sum::<usize>();
+            assert_eq!((before, after, after - before), (291, 376, 85));
+            let before_padding = (before + common_tail).next_multiple_of(8) - before - common_tail;
+            let after_padding = (after + common_tail).next_multiple_of(8) - after - common_tail;
+            assert_eq!((before_padding, after_padding), (7, 2));
+            let growth = after + after_padding - before - before_padding;
+            assert_eq!(growth, 80);
+            assert_eq!(record_vector_projection_successor_bytes(), growth);
+            // The earlier File optional-element role still spends its own
+            // original aligned bank; the record successor cannot absorb it.
+            assert_eq!(file_projection_successor_bytes(), 8);
+        }
+    }
+    #[test]
     fn c3_t1_explicit_semantic_role_schemas_cover_each_named_typed_field() {
         roles!(EnumConstructorCarriers, 10, true;
             variant_pattern: &'static VariantId, payload_pattern: &'static Option<ExprId>,
@@ -1725,7 +1955,7 @@ pub(super) mod semantic_carriers {
             resumed_statement: &'static Stmt, resumed_arms: &'static Vec<MatchArm>,
             statement_scrutinee: BindingId, statement_arms: &'static Vec<MatchArm>,
         );
-        roles!(ProjectionSemanticCarriers, 60, true;
+        roles!(ProjectionSemanticCarriers, 61, true;
             programs: [&'static ResolvedOwnedProgram<'static>; 2],
             functions: [&'static Function; 2],
             binding_inputs: [BindingId; 2],
@@ -1773,7 +2003,8 @@ pub(super) mod semantic_carriers {
             array_caller_tuple: ArrayProjection,
             caller_projection: Option<Projection>,
             caller_access: AccessBase,
-            caller_element: Ty,
+            caller_element: Option<ValueTy>,
+            indexed_element: ValueTy,
             borrow_conversion: Result<Projection, Box<Diagnostic>>,
             borrow_receiver: Projection,
             borrow_row: BorrowProjection,
@@ -1782,10 +2013,10 @@ pub(super) mod semantic_carriers {
             sparse_room: Result<(), Box<Diagnostic>>,
             whole_array_input: ( &'static Function, BindingId, Span, &'static [Option<ParameterTy>], ),
             whole_array_parameter: ParameterTy,
-            whole_array_constructed: (AccessBase, Ty),
-            whole_array_returned: Result<(AccessBase, Ty), Box<Diagnostic>>,
+            whole_array_constructed: (AccessBase, ValueTy),
+            whole_array_returned: Result<(AccessBase, ValueTy), Box<Diagnostic>>,
             whole_array_caller_base: AccessBase,
-            whole_array_caller_ty: Ty,
+            whole_array_caller_ty: ValueTy,
         );
         roles!(PredicateInvocationCarriers, 8, true;
             start_inputs: [&'static Token; 2],
@@ -2133,10 +2364,11 @@ fn projection(
                     token.span,
                 )
             })?;
-        if let Access::Denied(field) = program
-            .query()
-            .field_access(requester, field.id, token.span)?
-        {
+        if let Access::Denied(field) = program.query().field_access(
+            requester,
+            program.index().template_field_for_instance(field.id)?,
+            token.span,
+        )? {
             return Err(program
                 .query()
                 .private_field_diagnostic(field, token.span, "type")?);
@@ -2162,7 +2394,7 @@ fn projected_array_access(
     bindings: &[Option<ParameterTy>],
     borrow: bool,
     paid: Option<&mut BodyPaid<'_>>,
-) -> Result<(Option<Projection>, AccessBase, Ty), Box<Diagnostic>> {
+) -> Result<(Option<Projection>, AccessBase, Option<ValueTy>), Box<Diagnostic>> {
     let requester = program.requester(function.id)?;
     let ast = program.index().sources().ast(requester)?;
     let start = ast
@@ -2176,26 +2408,36 @@ fn projected_array_access(
         .span;
     let Some(first) = identifiers.next() else {
         let (base, ty) = array_access(function, binding, access_span, bindings)?;
-        return Ok((None, base, ty));
+        return Ok((None, base, Some(ty)));
     };
     let mut field_span = first.span;
     field_span.end = base_span.end;
     let projection = projection(program, function, binding, root, field_span, bindings, paid)?;
-    let ValueTy::Owned(AggregateTy::FixedArray(array)) =
-        program.records()[projection.field.record.0].fields[projection.field.index].ty
-    else {
-        return Err(error(
-            "E0305",
-            if borrow {
-                "projected borrowing requires a fixed scalar array field"
-            } else {
-                "indexed access requires a fixed scalar array field"
-            },
-            base_span,
-        ));
+    let element = match program.records()[projection.field.record.0].fields[projection.field.index]
+        .ty
+    {
+        ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(ValueTy::Scalar(array.element())),
+        ValueTy::Owned(AggregateTy::ByteBuf) if borrow => Some(ValueTy::Scalar(Ty::U8)),
+        ValueTy::Owned(AggregateTy::Vector(element)) => Some(ValueTy::Scalar(element)),
+        ValueTy::Owned(AggregateTy::RecordVector(record)) => {
+            Some(ValueTy::Owned(AggregateTy::Record(record)))
+        }
+        ValueTy::Owned(AggregateTy::File) if borrow => None,
+        ValueTy::Owned(AggregateTy::Record(_)) if borrow => None,
+        _ => {
+            return Err(error(
+                "E0305",
+                if borrow {
+                    "projected borrowing requires a record, fixed scalar array, ByteBuf, Vec or File field"
+                } else {
+                    "indexed access requires a fixed scalar array or Vec field"
+                },
+                base_span,
+            ))
+        }
     };
     let base = projection.base;
-    Ok((Some(projection), base, array.element()))
+    Ok((Some(projection), base, element))
 }
 
 fn array_access(
@@ -2203,15 +2445,35 @@ fn array_access(
     binding: BindingId,
     access_span: Span,
     bindings: &[Option<ParameterTy>],
-) -> Result<(AccessBase, Ty), Box<Diagnostic>> {
+) -> Result<(AccessBase, ValueTy), Box<Diagnostic>> {
     match bindings[binding.0].expect("resolved array base initialized") {
         ParameterTy::Value(ValueTy::Owned(AggregateTy::FixedArray(array))) => {
-            Ok((AccessBase::Owner(binding), array.element()))
+            Ok((AccessBase::Owner(binding), ValueTy::Scalar(array.element())))
         }
-        ParameterTy::Reference { referent, kind } if referent.element().is_some() => Ok((
-            AccessBase::Reference { binding, kind },
-            referent.element().expect("array or slice"),
+        ParameterTy::Value(ValueTy::Owned(AggregateTy::Vector(element))) => {
+            Ok((AccessBase::Owner(binding), ValueTy::Scalar(element)))
+        }
+        ParameterTy::Value(ValueTy::Owned(AggregateTy::RecordVector(record))) => Ok((
+            AccessBase::Owner(binding),
+            ValueTy::Owned(AggregateTy::Record(record)),
         )),
+        ParameterTy::Reference {
+            referent:
+                BorrowedTy::RecordSlice(record) | BorrowedTy::Exact(AggregateTy::RecordVector(record)),
+            kind,
+        } => Ok((
+            AccessBase::Reference { binding, kind },
+            ValueTy::Owned(AggregateTy::Record(record)),
+        )),
+        ParameterTy::Reference { referent, kind }
+            if referent.element().is_some()
+                && referent != BorrowedTy::Exact(AggregateTy::ByteBuf) =>
+        {
+            Ok((
+                AccessBase::Reference { binding, kind },
+                ValueTy::Scalar(referent.element().expect("array or slice")),
+            ))
+        }
         _ => Err(error(
             "E0305",
             "array access requires an array binding",
@@ -2250,7 +2512,7 @@ fn borrow_type(
                 ParameterTy::Reference { .. } => {
                     return Err(error(
                         "E0312",
-                        "reference parameters require explicit &*p or &mut *p forwarding",
+                        "references require explicit &*p or &mut *p forwarding",
                         span,
                     ))
                 }
@@ -2264,7 +2526,7 @@ fn borrow_type(
                 ParameterTy::Value(_) => {
                     return Err(error(
                         "E0312",
-                        "explicit reborrow requires a reference parameter",
+                        "explicit reborrow requires a reference binding",
                         span,
                     ))
                 }
@@ -2363,25 +2625,83 @@ fn expression_type(
             ValueTy::Owned(AggregateTy::Enum(variant.enumeration))
         }
         ExprKind::Bool(_) => scalar(Ty::Bool),
+        ExprKind::Character(_) => scalar(Ty::Char),
         ExprKind::I32(_) => scalar(Ty::I32),
+        ExprKind::I64(_) => scalar(Ty::I64),
+        ExprKind::Float { ty, .. }
+        | ExprKind::Integer { ty, .. }
+        | ExprKind::Integer128 { ty, .. } => scalar(*ty),
         ExprKind::Unit => scalar(Ty::Unit),
-        ExprKind::Binding(binding) => match bindings[binding.0]
-            .expect("resolved binding initialized")
-        {
-            ParameterTy::Value(ty) => ty,
-            ParameterTy::Reference { .. } => return Err(error(
-                "E0312",
-                "reference parameter cannot be used as a value; use a field or explicit reborrow",
-                expr.span,
-            )),
-        },
+        ExprKind::Binding(binding) => {
+            match bindings[binding.0].expect("resolved binding initialized") {
+                ParameterTy::Value(ty) => ty,
+                ParameterTy::Reference { .. } => {
+                    return Err(error(
+                        "E0312",
+                        "reference cannot be used as a value; use a field or explicit reborrow",
+                        expr.span,
+                    ))
+                }
+            }
+        }
         ExprKind::Conversion { op, operand, .. } => {
-            let (input, output) = match op {
-                ConversionOp::ToU8Checked => (Ty::I32, Ty::U8),
-                ConversionOp::ToI32 => (Ty::U8, Ty::I32),
-            };
             let actual = child!(*operand)?;
-            if actual != scalar(input) {
+            let (accepted, input, output) = match op {
+                operation @ (ConversionOp::ToCharChecked | ConversionOp::CharToU32) => {
+                    let result = if let ValueTy::Scalar(ty) = actual {
+                        ty.character_conversion(*operation)
+                    } else {
+                        None
+                    };
+                    let input = if *operation == ConversionOp::CharToU32 {
+                        Ty::Char
+                    } else {
+                        Ty::U32
+                    };
+                    (result.is_some(), input, result.unwrap_or(Ty::Char))
+                }
+                operation @ (ConversionOp::ToFloat(_)
+                | ConversionOp::FloatToBits
+                | ConversionOp::FloatSqrt
+                | ConversionOp::FloatFromBits(_)) => {
+                    let result = if let ValueTy::Scalar(ty) = actual {
+                        ty.float_conversion(*operation)
+                    } else {
+                        None
+                    };
+                    let input = match operation {
+                        ConversionOp::FloatFromBits(crate::frontend::ast::FloatTypeSyntax::F32) => {
+                            Ty::U32
+                        }
+                        ConversionOp::FloatFromBits(_) => Ty::U64,
+                        ConversionOp::FloatToBits | ConversionOp::FloatSqrt => Ty::F64,
+                        _ => Ty::I32,
+                    };
+                    (result.is_some(), input, result.unwrap_or(Ty::F64))
+                }
+                ConversionOp::ToU8Checked => (
+                    matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()),
+                    Ty::I32,
+                    Ty::U8,
+                ),
+                ConversionOp::ToI32 => (actual == scalar(Ty::U8), Ty::U8, Ty::I32),
+                ConversionOp::ToI64 => (
+                    matches!(actual, ValueTy::Scalar(Ty::I32 | Ty::U8)),
+                    Ty::I32,
+                    Ty::I64,
+                ),
+                ConversionOp::ToI32Checked => (
+                    matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()),
+                    Ty::I64,
+                    Ty::I32,
+                ),
+                ConversionOp::ToIntegerChecked(kind) => (
+                    matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()),
+                    Ty::I32,
+                    Ty::from_extended_integer(*kind),
+                ),
+            };
+            if !accepted {
                 return Err(mismatch(
                     program,
                     scalar(input),
@@ -2394,7 +2714,7 @@ fn expression_type(
         ExprKind::Group(inner) => child!(*inner)?,
         ExprKind::Negate { operand, .. } => {
             let actual = child!(*operand)?;
-            if actual != scalar(Ty::I32) {
+            if !matches!(actual, ValueTy::Scalar(ty) if ty.signed_integer() || ty.floating()) {
                 return Err(mismatch(
                     program,
                     scalar(Ty::I32),
@@ -2402,7 +2722,44 @@ fn expression_type(
                     function.expressions[operand.0].span,
                 ));
             }
-            scalar(Ty::I32)
+            actual
+        }
+        ExprKind::BitNot { operand, .. } => {
+            let actual = child!(*operand)?;
+            if !matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()) {
+                return Err(mismatch(
+                    program,
+                    scalar(Ty::I32),
+                    actual,
+                    function.expressions[operand.0].span,
+                ));
+            }
+            actual
+        }
+        ExprKind::Bitwise {
+            op, left, right, ..
+        } => {
+            let actual = child!(*left)?;
+            if !matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some()) {
+                return Err(mismatch(
+                    program,
+                    scalar(Ty::I32),
+                    actual,
+                    function.expressions[left.0].span,
+                ));
+            }
+            let rhs = child!(*right)?;
+            if (op.shift() && !matches!(rhs, ValueTy::Scalar(ty) if ty.integer_bits().is_some()))
+                || (!op.shift() && rhs != actual)
+            {
+                return Err(mismatch(
+                    program,
+                    actual,
+                    rhs,
+                    function.expressions[right.0].span,
+                ));
+            }
+            actual
         }
         ExprKind::Not { operand, .. } => {
             let actual = child!(*operand)?;
@@ -2417,21 +2774,31 @@ fn expression_type(
             scalar(Ty::Bool)
         }
         ExprKind::Arithmetic { left, right, .. } | ExprKind::Logical { left, right, .. } => {
+            let actual = child!(*left)?;
             let expected = if matches!(expr.kind, ExprKind::Logical { .. }) {
                 scalar(Ty::Bool)
+            } else if matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some() || ty.floating())
+            {
+                actual
             } else {
                 scalar(Ty::I32)
             };
-            for operand in [left, right] {
-                let actual = child!(*operand)?;
-                if actual != expected {
-                    return Err(mismatch(
-                        program,
-                        expected,
-                        actual,
-                        function.expressions[operand.0].span,
-                    ));
-                }
+            if actual != expected {
+                return Err(mismatch(
+                    program,
+                    expected,
+                    actual,
+                    function.expressions[left.0].span,
+                ));
+            }
+            let actual = child!(*right)?;
+            if actual != expected {
+                return Err(mismatch(
+                    program,
+                    expected,
+                    actual,
+                    function.expressions[right.0].span,
+                ));
             }
             expected
         }
@@ -2441,7 +2808,10 @@ fn expression_type(
             let actual = child!(*left)?;
             let expected = match op {
                 ComparisonOp::Equal | ComparisonOp::NotEqual => {
-                    if !matches!(actual, ValueTy::Scalar(Ty::Bool | Ty::I32 | Ty::U8)) {
+                    if !matches!(
+                        actual,
+                        ValueTy::Scalar(ty) if ty == Ty::Bool || ty.integer_bits().is_some() || ty.floating() || ty == Ty::Char
+                    ) {
                         return Err(error(
                             "E0300",
                             "equality requires i32 or bool operands",
@@ -2451,7 +2821,8 @@ fn expression_type(
                     actual
                 }
                 _ => {
-                    if !matches!(actual, ValueTy::Scalar(Ty::I32 | Ty::U8)) {
+                    if !matches!(actual, ValueTy::Scalar(ty) if ty.integer_bits().is_some() || ty.floating() || ty == Ty::Char)
+                    {
                         return Err(mismatch(
                             program,
                             scalar(Ty::I32),
@@ -2512,7 +2883,36 @@ fn expression_type(
                         span,
                         name_span,
                         ..
+                    }
+                    | Argument::BorrowRange {
+                        kind,
+                        place,
+                        span,
+                        name_span,
+                        ..
                     } => {
+                        if let Argument::BorrowRange { start, end, .. } = arg {
+                            for endpoint in [*start, *end] {
+                                let actual = expression_type(
+                                    program,
+                                    function,
+                                    endpoint,
+                                    bindings,
+                                    expressions,
+                                    projections,
+                                    borrow_projections,
+                                    paid.as_deref_mut(),
+                                )?;
+                                if actual != ValueTy::Scalar(Ty::I32) {
+                                    return Err(mismatch(
+                                        program,
+                                        ValueTy::Scalar(Ty::I32),
+                                        actual,
+                                        function.expressions[endpoint.0].span,
+                                    ));
+                                }
+                            }
+                        }
                         let whole = borrow_type(function, *kind, *place, *span, bindings)?;
                         let actual = if program.text(*name_span).contains('.') {
                             let binding = match place {
@@ -2562,19 +2962,81 @@ fn expression_type(
                                     )
                                 })?;
                             }
+                            let projected_type = program.records()[projection.field.record.0]
+                                .fields[projection.field.index]
+                                .ty;
                             borrow_projections.push(BorrowProjection {
                                 expression: id,
                                 argument,
                                 projection,
                             });
-                            // A projected fixed array is admitted only as a scalar slice.
-                            // It cannot silently add exact-array or record field borrowing.
+                            // Arrays retain slice erasure; records and resources
+                            // preserve their exact nominal borrowed identity.
                             ParameterTy::Reference {
-                                referent: BorrowedTy::ScalarSlice(element),
+                                referent: match projected_type {
+                                    ValueTy::Owned(
+                                        resource @ (AggregateTy::Record(_)
+                                        | AggregateTy::ByteBuf
+                                        | AggregateTy::Vector(_)
+                                        | AggregateTy::RecordVector(_)
+                                        | AggregateTy::File),
+                                    ) => BorrowedTy::Exact(resource),
+                                    _ => match element.expect("array borrowing has an element") {
+                                        ValueTy::Scalar(ty) => BorrowedTy::ScalarSlice(ty),
+                                        ValueTy::Owned(AggregateTy::Record(id)) => {
+                                            BorrowedTy::RecordSlice(id)
+                                        }
+                                        _ => {
+                                            return Err(error(
+                                                "E0500",
+                                                "invalid indexed borrow element",
+                                                *span,
+                                            ))
+                                        }
+                                    },
+                                },
                                 kind: *kind,
                             }
                         } else {
                             whole
+                        };
+                        let actual = if matches!(arg, Argument::BorrowRange { .. }) {
+                            match actual {
+                                ParameterTy::Reference { referent, kind }
+                                    if referent.element() == Some(Ty::U8) =>
+                                {
+                                    ParameterTy::Reference {
+                                        referent: BorrowedTy::ScalarSlice(Ty::U8),
+                                        kind,
+                                    }
+                                }
+                                ParameterTy::Reference {
+                                    referent: BorrowedTy::Exact(AggregateTy::Vector(element))
+                                        | BorrowedTy::ScalarSlice(element),
+                                    kind,
+                                } if crate::frontend::builtin_catalog::vector::scalar_admitted(element) => {
+                                    ParameterTy::Reference {
+                                        referent: BorrowedTy::ScalarSlice(element), kind,
+                                    }
+                                }
+                                ParameterTy::Reference { referent: BorrowedTy::Exact(AggregateTy::RecordVector(record)) | BorrowedTy::RecordSlice(record), kind } => ParameterTy::Reference { referent: BorrowedTy::RecordSlice(record), kind },
+                                ParameterTy::Reference {
+                                    referent: BorrowedTy::Exact(AggregateTy::FixedArray(array)), kind,
+                                } if crate::frontend::builtin_catalog::vector::scalar_admitted(array.element()) => {
+                                    ParameterTy::Reference {
+                                        referent: BorrowedTy::ScalarSlice(array.element()), kind,
+                                    }
+                                }
+                                _ => {
+                                    return Err(error(
+                                        "E0300",
+                                        "element subranges require a scalar array, scalar slice, Vec or ByteBuf",
+                                        *span,
+                                    ))
+                                }
+                            }
+                        } else {
+                            actual
                         };
                         (actual, *span)
                     }
@@ -2627,7 +3089,9 @@ fn expression_type(
                     .owned_secondary(called.span, "function declared here"));
                 }
                 #[cfg(test)]
-                if let Argument::Borrow { place, .. } = args[_position] {
+                if let Argument::Borrow { place, .. } | Argument::BorrowRange { place, .. } =
+                    args[_position]
+                {
                     let binding = match place {
                         BorrowPlace::Owner(binding) | BorrowPlace::Forwarded(binding) => binding,
                     };
@@ -2688,6 +3152,12 @@ fn expression_type(
             }
             ValueTy::Owned(AggregateTy::Record(*record))
         }
+        ExprKind::ByteString { bytes } => {
+            program.work().debit(1, expr.span, "byte string type")?;
+            let array = FixedArrayTy::check(Ty::U8, bytes.len())
+                .map_err(|_| error("E0500", "invalid byte string array length", expr.span))?;
+            ValueTy::Owned(AggregateTy::FixedArray(array))
+        }
         ExprKind::ArrayLiteral { elements } => {
             program.work().debit(1, expr.span, "array type literal")?;
             if elements.is_empty() {
@@ -2697,9 +3167,7 @@ fn expression_type(
             for element in elements {
                 program.work().debit(1, expr.span, "array type edge")?;
                 let actual = child!(*element)?;
-                let ValueTy::Scalar(scalar_type @ (Ty::Bool | Ty::I32 | Ty::U8 | Ty::Unit)) =
-                    actual
-                else {
+                let ValueTy::Scalar(scalar_type) = actual else {
                     return Err(error(
                         "E0300",
                         "array elements must have scalar bool, i32 or () type",
@@ -2743,6 +3211,7 @@ fn expression_type(
                 paid.as_deref_mut(),
             )?;
             projections[id.0] = projection;
+            let element = element.expect("indexed access has an element");
             if actual != scalar(Ty::I32) {
                 return Err(mismatch(
                     program,
@@ -2751,7 +3220,7 @@ fn expression_type(
                     function.expressions[index.0].span,
                 ));
             }
-            scalar(element)
+            element
         }
         ExprKind::ArrayLength { base, base_span } => {
             program.work().debit(1, expr.span, "array type length")?;
@@ -3320,7 +3789,23 @@ fn check_body(
             ));
         }
         let root = match statement.kind {
+            StmtKind::BorrowLet { .. } => None,
             StmtKind::Match { .. } => None,
+            StmtKind::ForRange { start, end, .. } => {
+                for root in [start, end] {
+                    expression_type(
+                        program,
+                        function,
+                        root,
+                        &bindings,
+                        &mut expressions,
+                        &mut projections,
+                        &mut borrow_projections,
+                        paid.as_deref_mut(),
+                    )?;
+                }
+                None
+            }
             StmtKind::Let { binding, init } => {
                 initializer_type(
                     program,
@@ -3355,7 +3840,8 @@ fn check_body(
                 }
                 None
             }
-            StmtKind::Assign { value: init, .. }
+            StmtKind::DestructureRecord { init, .. }
+            | StmtKind::Assign { value: init, .. }
             | StmtKind::FieldAssign { value: init, .. }
             | StmtKind::Expr(init) => Some(init),
             StmtKind::Return(value) => value,
@@ -3375,6 +3861,68 @@ fn check_body(
             )?;
         }
         match statement.kind {
+            StmtKind::DestructureRecord {
+                record,
+                ref fields,
+                init,
+            } => {
+                let actual = expressions[init.0].expect("typed record pattern initializer");
+                let expected = ValueTy::Owned(AggregateTy::Record(record));
+                if actual != expected {
+                    return Err(mismatch(
+                        program,
+                        expected,
+                        actual,
+                        function.expressions[init.0].span,
+                    ));
+                }
+                let declared = program.records().get(record.0).ok_or_else(|| {
+                    error("E0500", "invalid record pattern identity", statement.span)
+                })?;
+                if fields.len() != declared.fields.len() {
+                    return Err(error(
+                        "E0300",
+                        "record pattern must bind every field",
+                        statement.span,
+                    ));
+                }
+                for (position, field) in fields.iter().enumerate() {
+                    program.work().debit(
+                        position as u64 + 1,
+                        field.span,
+                        "record pattern binding type",
+                    )?;
+                    if field.field.record != record
+                        || fields[..position].iter().any(|other| {
+                            other.field == field.field || other.binding == field.binding
+                        })
+                    {
+                        return Err(error(
+                            "E0500",
+                            "invalid record pattern field mapping",
+                            field.span,
+                        ));
+                    }
+                    let member = declared.fields.get(field.field.index).ok_or_else(|| {
+                        error("E0500", "invalid record pattern field", field.span)
+                    })?;
+                    let binding = function.bindings.get(field.binding.0).ok_or_else(|| {
+                        error("E0500", "invalid record pattern binding", field.span)
+                    })?;
+                    if binding.mutable
+                        || binding.parameter_position.is_some()
+                        || binding.annotation != Some(member.ty)
+                        || bindings[field.binding.0].is_some()
+                    {
+                        return Err(error(
+                            "E0500",
+                            "invalid record pattern destination",
+                            field.span,
+                        ));
+                    }
+                    bindings[field.binding.0] = Some(ParameterTy::Value(member.ty));
+                }
+            }
             StmtKind::Match {
                 scrutinee,
                 ref arms,
@@ -3399,6 +3947,42 @@ fn check_body(
                     combined: FlowSummary::new(false, false, false, false),
                 });
                 continue;
+            }
+            StmtKind::BorrowLet {
+                binding,
+                kind,
+                place,
+                borrow_span,
+                annotation,
+            } => {
+                let actual = borrow_type(function, kind, place, borrow_span, &bindings)?;
+                if let ParameterTy::Reference {
+                    referent: BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_),
+                    ..
+                } = actual
+                {
+                    return Err(error(
+                        "E0300",
+                        "local references require a complete value",
+                        borrow_span,
+                    ));
+                }
+                if annotation.is_some_and(|expected| expected != actual) {
+                    return Err(error(
+                        "E0300",
+                        "reference annotation does not match its initializer",
+                        borrow_span,
+                    ));
+                }
+                bindings[binding.0] = Some(actual);
+                #[cfg(test)]
+                program
+                    .work()
+                    .observe(crate::frontend::declaration_index::Observation::Binding {
+                        function: function.id,
+                        origin: function.bindings[binding.0].span,
+                        ty: actual,
+                    });
             }
             StmtKind::Let { binding, init } => {
                 let actual = expressions[init.0].expect("typed initializer");
@@ -3447,7 +4031,7 @@ fn check_body(
                 let ParameterTy::Value(expected) = expected else {
                     return Err(error(
                         "E0312",
-                        "reference parameters cannot be assigned",
+                        "reference bindings cannot be assigned",
                         target_span,
                     ));
                 };
@@ -3534,6 +4118,7 @@ fn check_body(
                     paid.as_deref_mut(),
                 )?;
                 statement_projections[block.0][index] = projection;
+                let element = element.expect("indexed access has an element");
                 let index = element_index;
                 let index_ty = expressions[index.0].expect("typed store index");
                 if index_ty != ValueTy::Scalar(Ty::I32) {
@@ -3545,7 +4130,7 @@ fn check_body(
                     ));
                 }
                 let actual = expressions[value.0].expect("typed store value");
-                let expected = ValueTy::Scalar(element);
+                let expected = element;
                 if actual != expected {
                     return Err(mismatch(
                         program,
@@ -3587,6 +4172,59 @@ fn check_body(
                     FlowSummary::CONTINUE
                 };
                 flow = flow.then(transfer);
+            }
+            StmtKind::ForRange {
+                loop_id,
+                binding,
+                start,
+                end,
+                body,
+            } => {
+                let expected = expressions[start.0].expect("typed range bound");
+                if !matches!(expected, ValueTy::Scalar(ty) if ty.integer_bits().is_some()) {
+                    return Err(diagnostic(
+                        "E0300",
+                        "type",
+                        "range bounds require matching integer types",
+                        Some(function.expressions[start.0].span),
+                    ));
+                }
+                for root in [start, end] {
+                    let actual = expressions[root.0].expect("typed range bound");
+                    if actual != expected {
+                        return Err(mismatch(
+                            program,
+                            expected,
+                            actual,
+                            function.expressions[root.0].span,
+                        ));
+                    }
+                }
+                bindings[binding.0] = Some(ParameterTy::Value(expected));
+                assert_eq!(
+                    loop_id.0, body.0,
+                    "resolved range loop ID is its unique body block"
+                );
+                if let Some(paid) = paid.as_deref() {
+                    storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
+                }
+                frames.push(TypeFrame::WhileJoin {
+                    block,
+                    index: index + 1,
+                    before: flow,
+                    active_loop,
+                    body,
+                });
+                if let Some(paid) = paid.as_deref() {
+                    storage::room(&frames, paid.quota.counts.type_frames, statement.span)?;
+                }
+                frames.push(TypeFrame::Block {
+                    block: body,
+                    index: 0,
+                    flow: FlowSummary::FALLTHROUGH,
+                    active_loop: Some(loop_id),
+                });
+                continue;
             }
             StmtKind::While {
                 loop_id,
@@ -4358,7 +4996,10 @@ mod typed_inventory {
                 let ExprKind::Call { args, .. } = &expression.kind else {
                     return Err(invalid(origin));
                 };
-                if !matches!(args.get(entry.argument), Some(Argument::Borrow { .. })) {
+                if !matches!(
+                    args.get(entry.argument),
+                    Some(Argument::Borrow { .. } | Argument::BorrowRange { .. })
+                ) {
                     return Err(invalid(origin));
                 }
                 projection(
@@ -4509,6 +5150,7 @@ mod typed_inventory {
         }
         fn records() -> [Record; 1] {
             [Record {
+                is_copy: false,
                 id: RecordId(0),
                 name_span: at(),
                 span: at(),
@@ -4927,6 +5569,24 @@ struct ProductionTypeCarriers {
     provenance_return: Result<(), Box<Diagnostic>>,
     provenance_normalized: Result<(), Vec<Diagnostic>>,
     admission_guard: super::resolve::PaidSourceAdmissionCarriers,
+}
+
+#[allow(dead_code)]
+struct OwnedVectorFormatterCarriers {
+    program: &'static ResolvedOwnedProgram<'static>,
+    admission: SourceAdmission,
+    index: &'static crate::frontend::declaration_index::DeclarationIndex<'static>,
+    origin: bool,
+    record: RecordId,
+    enumeration: EnumId,
+    enum_template: Result<EnumId, Box<Diagnostic>>,
+    span: Span,
+    prepared:
+        Result<crate::frontend::declaration_index::PreparedTypeName<'static>, Box<Diagnostic>>,
+    returned: Result<TypeName<'static>, Box<Diagnostic>>,
+}
+pub(super) const fn owned_vector_formatter_carrier_bytes() -> usize {
+    std::mem::size_of::<OwnedVectorFormatterCarriers>()
 }
 pub(super) const fn production_type_carrier_bytes() -> usize {
     std::mem::size_of::<ProductionTypeCarriers>()

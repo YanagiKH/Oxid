@@ -66,12 +66,21 @@ impl Fixture {
         }
     }
     fn qualified(&self) -> bool {
-        if cfg!(target_os = "linux") {
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            all(
+                windows,
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
+        )) {
             return true;
         }
         failure(
             self.run(&["lock"]),
-            "package source policy is qualified only on Linux",
+            "package source policy is not qualified on this host",
         );
         assert!(!self.0.join("app/oxid.lock").exists());
         false
@@ -147,7 +156,12 @@ fn application_sources_are_editable_but_every_manifest_is_pinned() {
         "{output:?}"
     );
     fixture.write("app/tests/smoke.ox", "fn main() -> i32 { return 0; }\n");
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
         success(fixture.run(&["test", "--frozen"]));
         fs::remove_file(fixture.0.join("app/src/main.ox")).unwrap();
         success(fixture.run(&["test", "--locked"]));
@@ -214,7 +228,12 @@ fn zero_dependency_projects_lock_without_pinning_application_code() {
     assert_eq!(text.matches("[[dependency]]").count(), 0);
     fixture.write("app/src/main.ox", "fn main() -> i32 { return 4; }\n");
     success(fixture.run(&["check", "--frozen"]));
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
         success(fixture.run(&["test", "--locked"]));
     }
     fixture.unchanged(&original);
@@ -486,7 +505,12 @@ fn stale_locks_stop_run_test_and_build_before_effects_or_artifact_replacement() 
     assert!(text.contains("\"kind\":\"check-summary\""), "{text}");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 in OXID_LLVM_BIN"]
 fn locked_native_build_uses_retained_sources_and_preserves_a_stale_rebuild() {

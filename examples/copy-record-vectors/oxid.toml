@@ -1,0 +1,14 @@
+[project]
+name = "copy-record-vectors-example"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[build]
+entry-mode = "result"
+reproducible = true
+
+[tests]
+records = "tests/records.ox"
+
+[execution]
+policy = "hosted"

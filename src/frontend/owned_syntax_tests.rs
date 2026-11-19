@@ -40,8 +40,6 @@ fn grammar_rejects_reference_storage_unsupported_roots_and_partial_borrows() {
     for text in [
         "struct C { p: &C }",
         "fn f() -> &C { return; }",
-        "fn f() -> () { let x: &C = 0; return; }",
-        "fn f() -> () { let x = &p; return; }",
         "fn f() -> () { (&p); return; }",
         "fn f() -> () { f((&p)); return; }",
         "fn f() -> () { f(&(p)); return; }",
@@ -67,6 +65,13 @@ fn grammar_rejects_reference_storage_unsupported_roots_and_partial_borrows() {
             parsed(text, parser::SourceMode::OwnedCandidate).is_err(),
             "{text}"
         );
+    }
+    for text in [
+        "fn f() -> () { let x: &C = 0; return; }",
+        "fn f() -> () { let x = &p; return; }",
+    ] {
+        // Initializers and reference types are resolved and checked after parsing.
+        assert!(parsed(text, parser::SourceMode::OwnedCandidate).is_ok());
     }
 }
 #[test]

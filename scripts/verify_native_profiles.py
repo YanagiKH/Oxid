@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Exercise real O0/O2 native builds, cache reuse and reproducible deployment.
 
-Requires Linux x86_64, LLVM 19.1.7 and its SDK. Each optimization profile must
+Requires Linux x86_64 or ARM64, LLVM 19.1.7 and its SDK. Each optimization profile must
 produce identical untouched ELF bytes across clean/cache/relocated builds and
 compiler profiles in the same recorded environment. O0 and O2 must change real
 object/ELF code, while both pass the independent byte-count oracle. No timing
 or cross-toolchain reproducibility claim is made.
 """
+import linux_native_target as native_target
 import argparse
 import hashlib
 import json
@@ -82,8 +83,8 @@ class ProfileOracle(Oracle):
                 and hashlib.sha256(container[88:]).digest() == container[56:88],
                 "cache object has an invalid retained size or checksum")
         body = container[88:]
-        require(body[:7] == b"\x7fELF\x02\x01\x01" and body[16:20] == b"\x01\x00\x3e\x00",
-                "cached program is not an actual x86_64 relocatable object")
+        require(body[:7] == b"\x7fELF\x02\x01\x01" and body[16:20] == native_target.elf_identity(1),
+                "cached program is not an actual host relocatable object")
         retained = self.output / "artifacts" / f"{compiler_profile}-{self.native_profile}-{variant}.o"
         retained.write_bytes(body)
         retained.chmod(0o444)
@@ -94,7 +95,7 @@ class ProfileOracle(Oracle):
 
 
 def verify(args):
-    require(platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"), "requires Linux x86_64")
+    require(native_target.host() is not None, "requires Linux x86_64 or ARM64")
     output = args.output.resolve()
     require(not output.exists() and not args.output.is_symlink() and ROOT not in output.parents and output != ROOT,
             "output must be a new directory outside the repository")
@@ -118,7 +119,7 @@ def verify(args):
         path.write_text("#!/bin/sh\nprintf '%s\\n' invoked >> '" + marker + "'\nexit 91\n")
         path.chmod(0o700)
     report = {"schema": "oxid-native-profiles-application-v1", "status": "running",
-              "scope": "Linux x86_64 bounded execution, same recorded SDK/environment and preserved relative layout; no speed or cross-SDK claim",
+              "scope": "Linux x86_64 or ARM64 bounded execution, same recorded SDK/environment and preserved relative layout; no speed or cross-SDK claim",
               "environment": environment, "host": platform.uname()._asdict(), "source_inputs": sources,
               "controllers_sha256": controllers, "compilers": [], "tools": [], "layouts": {}, "builds": [],
               "objects": [], "controls": [], "native_profiles": PROFILES}

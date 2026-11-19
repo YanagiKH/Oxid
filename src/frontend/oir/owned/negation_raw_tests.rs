@@ -52,6 +52,7 @@ fn raw(value: i32, guarded: bool) -> (SourceMap, RawOwnedProgram, Span) {
     (
         sources,
         RawOwnedProgram {
+            vector_functions: Vec::new(),
             builtins: BuiltinOrigins::None,
             enums: vec![],
             records: vec![],
@@ -207,7 +208,12 @@ fn raw_negation_owned_native_checks_before_store_and_accounts_diagnostic() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn raw_negation_owned_witnesses_use_real_llvm() {
@@ -360,7 +366,12 @@ fn raw_negation_owned_native_phi_exits_and_branch_dominance() {
     );
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the owned native gate"]
 fn raw_negation_owned_phi_uses_real_llvm() {

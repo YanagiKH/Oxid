@@ -1,3 +1,6 @@
+use super::owned_vector_descriptors::context::signature_queries::{
+    ShapeDeclarationQueries, SignatureDeclarationQueries,
+};
 use super::*;
 use crate::frontend::builtin_catalog::{BuiltinEnum, BuiltinFunction};
 use budget::{add, filled, reserve};
@@ -32,7 +35,7 @@ impl Shape {
     ) -> Result<Span, OwnedFailure> {
         let instruction = self.acquisitions.get(loan.0).and_then(|site| *site)
             .and_then(|site| f.blocks.get(site.block)?.statements.get(site.statement))
-            .filter(|i| matches!(i.kind, OwnedInstruction::PrepareBorrow { loan: actual, .. } if actual == loan))
+            .filter(|i| matches!(i.kind, OwnedInstruction::PrepareBorrow { loan: actual, .. } | OwnedInstruction::PrepareBorrowRange { loan: actual, .. } | OwnedInstruction::AcquireLocalBorrow(actual) if actual == loan))
             .ok_or_else(|| bad(Malformed::CanonicalSite, f.span))?;
         Ok(instruction.cause_span())
     }
@@ -90,39 +93,88 @@ fn equal<T: PartialEq>(a: T, b: T, s: Span) -> Result<(), OwnedFailure> {
 }
 /// Equality validates actual then expected, with the historical site's error
 /// category and origin. Resource failures must never become malformed types.
-fn same_aggregate(
-    d: &Declarations,
+fn same_aggregate<'facade, Q: ShapeDeclarationQueries<'facade>>(
+    d: &mut Q,
     actual: AggregateTy,
     expected: AggregateTy,
     kind: Malformed,
     s: Span,
 ) -> Result<(), OwnedFailure> {
     d.same_aggregate_type(actual, expected)
-        .map_err(|error| match error {
-            DeclarationError::InvalidRecordId(_) | DeclarationError::TypeMismatch => bad(kind, s),
-            other => other.into(),
+        .map_err(|error| match error.kind {
+            OwnedFailureKind::Malformed(Malformed::Declaration(
+                DeclarationError::InvalidRecordId(_) | DeclarationError::TypeMismatch,
+            )) => bad(kind, s),
+            _ => error,
         })
 }
 fn record(aggregate: AggregateTy, s: Span) -> Result<RecordId, OwnedFailure> {
     match aggregate {
         AggregateTy::Record(record) => Ok(record),
-        AggregateTy::FixedArray(_) | AggregateTy::Enum(_) => Err(bad(Malformed::Type, s)),
+        AggregateTy::FixedArray(_)
+        | AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_)
+        | AggregateTy::OwnedRecordVector(_)
+        | AggregateTy::OwnedEnumVector(_)
+        | AggregateTy::File => Err(bad(Malformed::Type, s)),
     }
 }
 fn array(aggregate: AggregateTy, s: Span) -> Result<FixedArrayTy, OwnedFailure> {
     match aggregate {
         AggregateTy::FixedArray(array) => Ok(array),
-        AggregateTy::Record(_) | AggregateTy::Enum(_) => Err(bad(Malformed::Type, s)),
+        AggregateTy::Record(_)
+        | AggregateTy::Enum(_)
+        | AggregateTy::ByteBuf
+        | AggregateTy::Vector(_)
+        | AggregateTy::RecordVector(_)
+        | AggregateTy::OwnedRecordVector(_)
+        | AggregateTy::OwnedEnumVector(_)
+        | AggregateTy::File => Err(bad(Malformed::Type, s)),
     }
 }
 fn borrowed_record(ty: BorrowedTy, s: Span) -> Result<RecordId, OwnedFailure> {
     match ty {
         BorrowedTy::Exact(aggregate) => record(aggregate, s),
-        BorrowedTy::ScalarSlice(_) => Err(bad(Malformed::Type, s)),
+        BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_) => Err(bad(Malformed::Type, s)),
     }
 }
 fn array_element(ty: BorrowedTy, s: Span) -> Result<hir::Ty, OwnedFailure> {
+    if ty == BorrowedTy::Exact(AggregateTy::ByteBuf) {
+        return Err(bad(Malformed::Type, s));
+    }
     ty.element().ok_or_else(|| bad(Malformed::Type, s))
+}
+fn indexed_record<'facade, Q: ShapeDeclarationQueries<'facade>>(
+    d: &mut Q,
+    f: &RawOwnedFunction,
+    authority: AccessBase,
+    path: &[FieldId],
+    s: Span,
+) -> Result<RecordId, OwnedFailure> {
+    let (referent, _) = base(f, authority, s)?;
+    let vector = if path.is_empty() {
+        match referent {
+            BorrowedTy::Exact(aggregate) => aggregate,
+            BorrowedTy::RecordSlice(id) => AggregateTy::RecordVector(id),
+            _ => return Err(bad(Malformed::Type, s)),
+        }
+    } else {
+        let BorrowedTy::Exact(root) = referent else {
+            return Err(bad(Malformed::Type, s));
+        };
+        let (value, _) = d.projection(root, path)?;
+        let ValueTy::Owned(aggregate) = value else {
+            return Err(bad(Malformed::Type, s));
+        };
+        aggregate
+    };
+    let AggregateTy::RecordVector(record) = vector else {
+        return Err(bad(Malformed::Type, s));
+    };
+    d.check_aggregate_type(vector)?;
+    Ok(record)
 }
 pub(super) fn base(
     f: &RawOwnedFunction,
@@ -143,6 +195,13 @@ pub(super) fn base(
         AccessBase::Parameter(id) => {
             let r = reference(f, id, s)?;
             Ok((r.referent(), r.kind == BorrowKind::Exclusive))
+        }
+        AccessBase::Loan(id) => {
+            let loan = loan(f, id, s)?;
+            if loan.region != LoanRegion::Local {
+                return Err(bad(Malformed::Binding, s));
+            }
+            Ok((loan.referent(), loan.kind == BorrowKind::Exclusive))
         }
     }
 }
@@ -186,12 +245,77 @@ pub(super) fn signatures(
     d: &Declarations,
     sources: &SourceMap,
 ) -> Result<(), OwnedFailure> {
+    let mut queries = d;
+    signatures_with_queries(raw, &mut queries, sources)
+}
+
+pub(super) fn signatures_with_queries<Q: SignatureDeclarationQueries>(
+    raw: &RawOwnedProgram,
+    d: &mut Q,
+    sources: &SourceMap,
+) -> Result<(), OwnedFailure> {
+    if !d.authenticates_program(raw) {
+        return Err(bad(Malformed::Binding, Origin::NONE.0));
+    }
+    // Resource authority comes from the closed canonical inventory, never from
+    // a producer's nominal spelling or a resource-bearing declaration alone.
+    let resource_authority = raw
+        .builtins
+        .experimental()
+        .contains(crate::frontend::builtin_catalog::experimental::Item::ByteBuf);
+    let file_authority = raw
+        .builtins
+        .experimental()
+        .contains(crate::frontend::builtin_catalog::experimental::Item::File);
+    let vector_authority = raw
+        .builtins
+        .contains_vector(crate::frontend::builtin_catalog::vector::Item::Vec);
+    let owned_vector_authority = vector_authority && d.permits_owned_vectors();
+    let permitted = |value| match value {
+        ValueTy::Owned(AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)) => {
+            owned_vector_authority
+        }
+        ValueTy::Owned(AggregateTy::ByteBuf) => resource_authority,
+        ValueTy::Owned(AggregateTy::File) => file_authority,
+        ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_)) => vector_authority,
+        _ => true,
+    };
+    if d.has_resource_declarations() && !resource_authority && !file_authority && !vector_authority
+    {
+        return Err(DeclarationError::TypeMismatch.into());
+    }
+    // A catalog for one resource class cannot authorize a different class in
+    // otherwise ordinary nominal declarations. Inspect direct leaves only.
+    for record in &raw.records {
+        for field in &record.fields {
+            if let ParameterTy::Value(value) = field.ty {
+                if !permitted(value) {
+                    return Err(bad(Malformed::Type, field.span));
+                }
+            }
+        }
+    }
+    for enumeration in &raw.enums {
+        for variant in &enumeration.variants {
+            if let Some(ParameterTy::Value(value)) = variant.payload {
+                if !permitted(value) {
+                    return Err(bad(Malformed::Type, variant.span));
+                }
+            }
+        }
+    }
     for (index, f) in raw.functions.iter().enumerate() {
         span(sources, f.span)?;
         if f.id != hir::DefId(index) {
             return Err(bad(Malformed::Id, f.span));
         }
         d.check_value_type(f.result)?;
+        if !permitted(f.result) || f.loans.iter().any(|loan| {
+            matches!(loan.referent(), BorrowedTy::Exact(aggregate) if !permitted(ValueTy::Owned(aggregate)))
+        })
+        {
+            return Err(bad(Malformed::Type, f.span));
+        }
         if f.blocks.is_empty() || f.entry.0 >= f.blocks.len() {
             return Err(bad(Malformed::Id, f.span));
         }
@@ -234,6 +358,9 @@ pub(super) fn signatures(
         for (id, o) in f.owners.iter().enumerate() {
             span(sources, o.span)?;
             d.check_aggregate_type(o.aggregate())?;
+            if !permitted(ValueTy::Owned(o.aggregate())) {
+                return Err(bad(Malformed::Type, o.span));
+            }
             match o.kind {
                 OwnerKind::Parameter { position } => {
                     parameter_owners += 1;
@@ -263,6 +390,10 @@ pub(super) fn signatures(
         for (id, r) in f.references.iter().enumerate() {
             span(sources, r.span)?;
             d.check_borrowed_type(r.referent())?;
+            if matches!(r.referent(), BorrowedTy::Exact(aggregate) if !permitted(ValueTy::Owned(aggregate)))
+            {
+                return Err(bad(Malformed::Type, r.span));
+            }
             if !matches!(f.parameters.get(r.position),Some(ParameterBinding::Reference(p)) if p.0==id)
             {
                 return Err(bad(Malformed::Binding, r.span));
@@ -280,6 +411,41 @@ pub(super) fn check(
 ) -> Result<Shape, OwnedFailure> {
     check_with_conversion_authority(f, raw, d, sources, meter, false)
 }
+
+fn canonical_destination(
+    f: &RawOwnedFunction,
+    destination: CallResult,
+    owners: &mut [OwnerSites],
+    site: Site,
+    s: Span,
+) -> Result<(), OwnedFailure> {
+    match destination {
+        CallResult::Owned(destination) => {
+            let owner = ordinary(f, destination, s)?;
+            if owner.kind != OwnerKind::Temporary || ValueTy::Owned(owner.aggregate()) != f.result {
+                return Err(bad(Malformed::Binding, s));
+            }
+            let previous = &mut owners[destination.0].initialize;
+            if previous.is_some() {
+                return Err(bad(Malformed::CanonicalSite, s));
+            }
+            *previous = Some(site);
+            Ok(())
+        }
+        CallResult::Scalar(destination) => {
+            equal(ValueTy::Scalar(local(f, destination, s)?), f.result, s)
+        }
+    }
+}
+
+fn query_failure(error: OwnedFailure, kind: Malformed, s: Span) -> OwnedFailure {
+    if matches!(error.kind, OwnedFailureKind::Resource(_)) {
+        error
+    } else {
+        bad(kind, s)
+    }
+}
+
 pub(super) fn check_with_conversion_authority(
     f: &RawOwnedFunction,
     raw: &RawOwnedProgram,
@@ -288,6 +454,21 @@ pub(super) fn check_with_conversion_authority(
     meter: &mut budget::Meter,
     source_associated: bool,
 ) -> Result<Shape, OwnedFailure> {
+    let mut queries = d;
+    check_with_queries(f, raw, &mut queries, sources, meter, source_associated)
+}
+
+pub(super) fn check_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
+    f: &RawOwnedFunction,
+    raw: &RawOwnedProgram,
+    d: &mut Q,
+    sources: &SourceMap,
+    meter: &mut budget::Meter,
+    source_associated: bool,
+) -> Result<Shape, OwnedFailure> {
+    if !d.authenticates_program(raw) || !d.authenticates_function(f) {
+        return Err(bad(Malformed::Binding, f.span));
+    }
     check_matches(f, d, sources, meter)?;
     let mut owners = filled(f.owners.len(), OwnerSites::default())?;
     let mut calls = filled(f.calls.len(), CallSites::default())?;
@@ -350,11 +531,11 @@ pub(super) fn check_with_conversion_authority(
                     },
                 ) => {
                     let loan = loan(f, *l, c.span)?;
-                    if loan.call != CallSiteId(id) || loan.argument != arg {
+                    if loan.call_binding() != Some((CallSiteId(id), arg)) {
                         return Err(bad(Malformed::Binding, c.span));
                     }
                     d.same_borrowed_type(loan.referent(), record)
-                        .map_err(|_| bad(Malformed::Binding, c.span))?;
+                        .map_err(|error| query_failure(error, Malformed::Binding, c.span))?;
                     if loan.kind != kind {
                         return Err(bad(Malformed::Binding, c.span));
                     }
@@ -380,9 +561,27 @@ pub(super) fn check_with_conversion_authority(
     }
     for (id, l) in f.loans.iter().enumerate() {
         span(sources, l.span)?;
-        let c = call(f, l.call, l.span)?;
-        if c.arguments.get(l.argument) != Some(&ArgumentSlot::Borrow(LoanId(id))) {
-            return Err(bad(Malformed::Binding, l.span));
+        if let Some((binding, argument)) = l.call_binding() {
+            let c = call(f, binding, l.span)?;
+            if c.arguments.get(argument) != Some(&ArgumentSlot::Borrow(LoanId(id))) {
+                return Err(bad(Malformed::Binding, l.span));
+            }
+        } else if !l.projection.is_empty() || !matches!(l.referent(), BorrowedTy::Exact(_)) {
+            return Err(bad(Malformed::Type, l.span));
+        }
+        let mut authority = l.authority;
+        let mut depth = 0;
+        while let AccessBase::Loan(parent) = authority {
+            meter.visit()?;
+            depth += 1;
+            if depth > MAX_LOCAL_REFERENCE_DEPTH || depth > f.loans.len() {
+                return Err(OwnedFailure::resource("local reference ancestry"));
+            }
+            let parent = loan(f, parent, l.span)?;
+            if parent.region != LoanRegion::Local {
+                return Err(bad(Malformed::Binding, l.span));
+            }
+            authority = parent.authority;
         }
         let (record, _) = base(f, l.authority, l.span)?;
         let record = if l.projection.is_empty() {
@@ -394,18 +593,30 @@ pub(super) fn check_with_conversion_authority(
             for _ in &l.projection {
                 meter.visit()?;
             }
-            let (ValueTy::Owned(AggregateTy::FixedArray(array)), _) =
-                d.projection(root, &l.projection)?
-            else {
-                return Err(bad(Malformed::Type, l.span));
-            };
-            if l.referent() != BorrowedTy::ScalarSlice(array.element()) {
-                return Err(bad(Malformed::Type, l.span));
+            match d.projection(root, &l.projection)?.0 {
+                ValueTy::Owned(AggregateTy::FixedArray(array)) => {
+                    if l.referent() != BorrowedTy::ScalarSlice(array.element()) {
+                        return Err(bad(Malformed::Type, l.span));
+                    }
+                    BorrowedTy::Exact(AggregateTy::FixedArray(array))
+                }
+                ValueTy::Owned(AggregateTy::Vector(element)) => {
+                    BorrowedTy::Exact(AggregateTy::Vector(element))
+                }
+                ValueTy::Owned(AggregateTy::RecordVector(record)) => {
+                    BorrowedTy::Exact(AggregateTy::RecordVector(record))
+                }
+                ValueTy::Owned(
+                    vector @ (AggregateTy::OwnedRecordVector(_) | AggregateTy::OwnedEnumVector(_)),
+                ) => BorrowedTy::Exact(vector),
+                ValueTy::Owned(AggregateTy::ByteBuf) => BorrowedTy::Exact(AggregateTy::ByteBuf),
+                ValueTy::Owned(AggregateTy::File) => BorrowedTy::Exact(AggregateTy::File),
+                ValueTy::Owned(record @ AggregateTy::Record(_)) => BorrowedTy::Exact(record),
+                _ => return Err(bad(Malformed::Type, l.span)),
             }
-            BorrowedTy::Exact(AggregateTy::FixedArray(array))
         };
         d.check_borrowed_view(record, l.referent())
-            .map_err(|_| bad(Malformed::Type, l.span))?;
+            .map_err(|error| query_failure(error, Malformed::Type, l.span))?;
         if let AccessBase::Owner(o) = l.authority {
             if !matches!(
                 owner(f, o, l.span)?.kind,
@@ -437,6 +648,36 @@ pub(super) fn check_with_conversion_authority(
                 statement: si,
             };
             match &instruction.kind {
+                OwnedInstruction::OwnedVector {
+                    operation,
+                    destination,
+                } => {
+                    if d.owned_vector_operation(f.id) != Some(*operation) {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    canonical_destination(f, *destination, &mut owners, site, s)?;
+                }
+                OwnedInstruction::Experimental {
+                    operation,
+                    destination,
+                } => {
+                    let expected = d.fixed_builtin_base(raw).and_then(|base| {
+                        base.checked_add(raw.builtins.experimental_function_rank(*operation)?)
+                    });
+                    if expected != Some(f.id.0) {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    canonical_destination(f, *destination, &mut owners, site, s)?;
+                }
+                OwnedInstruction::Vector {
+                    operation,
+                    destination,
+                } => {
+                    if d.old_vector_operation(raw, f.id) != Some(*operation) {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    canonical_destination(f, *destination, &mut owners, site, s)?;
+                }
                 OwnedInstruction::ReadStdin {
                     buffer,
                     destination,
@@ -461,13 +702,9 @@ pub(super) fn check_with_conversion_authority(
                         ),
                         _ => unreachable!("matched builtin operation"),
                     };
-                    let expected_function = raw
-                        .functions
-                        .len()
-                        .checked_sub(raw.builtins.extra_functions())
-                        .and_then(|base| {
-                            base.checked_add(raw.builtins.function_rank(function_kind)?)
-                        });
+                    let expected_function = d.fixed_builtin_base(raw).and_then(|base| {
+                        base.checked_add(raw.builtins.function_rank(function_kind)?)
+                    });
                     if expected_function != Some(f.id.0) {
                         return Err(bad(Malformed::CanonicalSite, s));
                     }
@@ -511,7 +748,8 @@ pub(super) fn check_with_conversion_authority(
                         return Err(bad(Malformed::CanonicalSite, s));
                     }
                     *prev = Some(site);
-                    d.enums()
+                    d.core()
+                        .enums()
                         .check_value_payload(
                             enumeration(o.aggregate(), s)?,
                             *variant,
@@ -547,7 +785,8 @@ pub(super) fn check_with_conversion_authority(
                     }
                     sites.live = Some(site);
                     sites.initialize = Some(site);
-                    d.enums()
+                    d.core()
+                        .enums()
                         .check_value_payload(
                             enumeration(owner(f, descriptor.source, s)?.aggregate(), s)?,
                             selected.variant,
@@ -569,7 +808,8 @@ pub(super) fn check_with_conversion_authority(
                         return Err(bad(Malformed::CanonicalSite, s));
                     }
                     *prev = Some(site);
-                    d.enums()
+                    d.core()
+                        .enums()
                         .check_payload(
                             enumeration(o.aggregate(), s)?,
                             *variant,
@@ -607,7 +847,8 @@ pub(super) fn check_with_conversion_authority(
                             Ok(l.ty)
                         })
                         .transpose()?;
-                    d.enums()
+                    d.core()
+                        .enums()
                         .check_payload(
                             enumeration(owner(f, descriptor.source, s)?.aggregate(), s)?,
                             selected.variant,
@@ -620,7 +861,13 @@ pub(super) fn check_with_conversion_authority(
                         && matches!(
                             i,
                             Statement::Assign(Assign {
-                                value: Rvalue::CheckedI32ToU8 { .. } | Rvalue::U8ToI32 { .. },
+                                value: Rvalue::CharacterConvert { .. }
+                                    | Rvalue::FloatConvert { .. }
+                                    | Rvalue::CheckedI32ToU8 { .. }
+                                    | Rvalue::U8ToI32 { .. }
+                                    | Rvalue::WidenI64 { .. }
+                                    | Rvalue::CheckedI64ToI32 { .. }
+                                    | Rvalue::CheckedI64ToU8 { .. },
                                 ..
                             })
                         )
@@ -661,13 +908,13 @@ pub(super) fn check_with_conversion_authority(
                         return Err(bad(Malformed::CanonicalSite, s));
                     }
                     *prev = Some(site);
-                    let declared = d.fields(record(o.aggregate(), s)?)?;
+                    let declared = d.core().fields(record(o.aggregate(), s)?)?;
                     if fields.len() != declared.len() {
                         return Err(bad(Malformed::Type, s));
                     }
                     field_seen[..declared.len()].fill(0);
                     for (id, value) in fields {
-                        let field = d.field(record(o.aggregate(), s)?, *id)?;
+                        let field = d.core().field(record(o.aggregate(), s)?, *id)?;
                         if field_seen[id.index] != 0 {
                             return Err(bad(Malformed::Type, s));
                         }
@@ -677,6 +924,35 @@ pub(super) fn check_with_conversion_authority(
                             field.value_ty(),
                             value.span,
                         )?;
+                    }
+                }
+                OwnedInstruction::DestructureRecord { source, fields } => {
+                    let source_decl = ordinary(f, *source, s)?;
+                    let record = record(source_decl.aggregate(), s)?;
+                    let expected = d.core().record(record)?.owned_field_count();
+                    equal(fields.len(), expected, s)?;
+                    for (position, (field, destination)) in fields.iter().enumerate() {
+                        meter.visit()?;
+                        let member = d.core().field(record, *field)?;
+                        if source == destination {
+                            return Err(bad(Malformed::Binding, s));
+                        }
+                        for (earlier, _) in &fields[..position] {
+                            meter.visit()?;
+                            if earlier == field {
+                                return Err(bad(Malformed::Binding, s));
+                            }
+                        }
+                        let target = ordinary(f, *destination, s)?;
+                        if target.kind != (OwnerKind::Local { mutable: false }) {
+                            return Err(bad(Malformed::OwnerClass, s));
+                        }
+                        d.same_value_type(member.value_ty(), ValueTy::Owned(target.aggregate()))?;
+                        let previous = &mut owners[destination.0].initialize;
+                        if previous.is_some() {
+                            return Err(bad(Malformed::CanonicalSite, s));
+                        }
+                        *previous = Some(site);
                     }
                 }
                 OwnedInstruction::ConstructComposite {
@@ -693,12 +969,12 @@ pub(super) fn check_with_conversion_authority(
                     }
                     *prev = Some(site);
                     let record = record(target.aggregate(), s)?;
-                    let declared = d.fields(record)?;
+                    let declared = d.core().fields(record)?;
                     equal(fields.len(), declared.len(), s)?;
                     field_seen[..declared.len()].fill(0);
                     for (position, (id, value)) in fields.iter().enumerate() {
                         meter.visit()?;
-                        let field = d.field(record, *id)?;
+                        let field = d.core().field(record, *id)?;
                         if field_seen[id.index] != 0 {
                             return Err(bad(Malformed::Type, s));
                         }
@@ -760,8 +1036,14 @@ pub(super) fn check_with_conversion_authority(
                     for _ in path {
                         meter.visit()?;
                     }
-                    let (ValueTy::Owned(AggregateTy::FixedArray(_)), _) =
-                        d.projection(root, path)?
+                    let (
+                        ValueTy::Owned(
+                            AggregateTy::FixedArray(_)
+                            | AggregateTy::Vector(_)
+                            | AggregateTy::RecordVector(_),
+                        ),
+                        _,
+                    ) = d.projection(root, path)?
                     else {
                         return Err(bad(Malformed::Type, s));
                     };
@@ -791,7 +1073,11 @@ pub(super) fn check_with_conversion_authority(
                         equal(operand(f, *value, sources)?, declared.element(), value.span)?;
                     }
                 }
-                OwnedInstruction::MoveInitialize {
+                OwnedInstruction::CopyInitialize {
+                    destination,
+                    source,
+                }
+                | OwnedInstruction::MoveInitialize {
                     destination,
                     source,
                 }
@@ -802,6 +1088,11 @@ pub(super) fn check_with_conversion_authority(
                     let dst = ordinary(f, *destination, s)?;
                     let src = ordinary(f, *source, s)?;
                     same_aggregate(d, dst.aggregate(), src.aggregate(), Malformed::Type, s)?;
+                    if matches!(instruction.kind, OwnedInstruction::CopyInitialize { .. })
+                        && !d.core().is_copy(src.aggregate())
+                    {
+                        return Err(bad(Malformed::Type, s));
+                    }
                     if destination == source {
                         return Err(bad(Malformed::OwnerClass, s));
                     }
@@ -828,7 +1119,7 @@ pub(super) fn check_with_conversion_authority(
                     let (r, _) = base(f, *b, s)?;
                     equal(
                         ValueTy::Scalar(local(f, *destination, s)?),
-                        d.field(borrowed_record(r, s)?, *field)?.value_ty(),
+                        d.core().field(borrowed_record(r, s)?, *field)?.value_ty(),
                         s,
                     )?;
                 }
@@ -840,9 +1131,56 @@ pub(super) fn check_with_conversion_authority(
                     let (r, _) = base(f, *b, s)?;
                     equal(
                         ValueTy::Scalar(operand(f, *value, sources)?),
-                        d.field(borrowed_record(r, s)?, *field)?.value_ty(),
+                        d.core().field(borrowed_record(r, s)?, *field)?.value_ty(),
                         value.span,
                     )?;
+                }
+                OwnedInstruction::CopyIndexInitialize {
+                    destination,
+                    base: authority,
+                    path,
+                    index,
+                } => {
+                    for _ in path {
+                        meter.visit()?;
+                    }
+                    let record = indexed_record(d, f, *authority, path, s)?;
+                    let target = ordinary(f, *destination, s)?;
+                    if !matches!(target.kind, OwnerKind::Temporary | OwnerKind::Local { .. }) {
+                        return Err(bad(Malformed::OwnerClass, s));
+                    }
+                    same_aggregate(
+                        d,
+                        target.aggregate(),
+                        AggregateTy::Record(record),
+                        Malformed::Type,
+                        s,
+                    )?;
+                    equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
+                    let previous = &mut owners[destination.0].initialize;
+                    if previous.is_some() {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    *previous = Some(site);
+                }
+                OwnedInstruction::CopyIndexWrite {
+                    base: authority,
+                    path,
+                    index,
+                    source,
+                } => {
+                    for _ in path {
+                        meter.visit()?;
+                    }
+                    let record = indexed_record(d, f, *authority, path, s)?;
+                    same_aggregate(
+                        d,
+                        ordinary(f, *source, s)?.aggregate(),
+                        AggregateTy::Record(record),
+                        Malformed::Type,
+                        s,
+                    )?;
+                    equal(operand(f, *index, sources)?, hir::Ty::I32, index.span)?;
                 }
                 OwnedInstruction::ReadIndex {
                     destination,
@@ -869,7 +1207,13 @@ pub(super) fn check_with_conversion_authority(
                     base: b,
                 } => {
                     let (aggregate, _) = base(f, *b, s)?;
-                    array_element(aggregate, s)?;
+                    if !matches!(
+                        aggregate,
+                        BorrowedTy::Exact(AggregateTy::RecordVector(_))
+                            | BorrowedTy::RecordSlice(_)
+                    ) {
+                        array_element(aggregate, s)?;
+                    }
                     equal(local(f, *destination, s)?, hir::Ty::I32, s)?;
                 }
                 OwnedInstruction::OpenCall(c) => {
@@ -925,11 +1269,50 @@ pub(super) fn check_with_conversion_authority(
                         s,
                     )?;
                 }
+                OwnedInstruction::AcquireLocalBorrow(l) => {
+                    let declaration = loan(f, *l, s)?;
+                    if declaration.region != LoanRegion::Local {
+                        return Err(bad(Malformed::Binding, s));
+                    }
+                    if declaration.span != s {
+                        return Err(bad(Malformed::CanonicalSite, s));
+                    }
+                    slot(&mut acquisitions, l.0, site, s)?;
+                }
+                OwnedInstruction::ReleaseLocalBorrow(l) => {
+                    if loan(f, *l, s)?.region != LoanRegion::Local {
+                        return Err(bad(Malformed::Binding, s));
+                    }
+                }
                 OwnedInstruction::PrepareBorrow {
                     call: c,
                     argument,
                     loan: l,
+                }
+                | OwnedInstruction::PrepareBorrowRange {
+                    call: c,
+                    argument,
+                    loan: l,
+                    ..
                 } => {
+                    if let OwnedInstruction::PrepareBorrowRange { start, end, .. } =
+                        instruction.kind
+                    {
+                        equal(operand(f, start, sources)?, hir::Ty::I32, s)?;
+                        equal(operand(f, end, sources)?, hir::Ty::I32, s)?;
+                        // The loan loop independently checks the authority,
+                        // projection and exact element type. Ranges only select
+                        // a narrower extent of that same scalar view; imports
+                        // cannot authorize a different type or byte reinterpretation.
+                        let referent = loan(f, *l, s)?.referent();
+                        if !matches!(
+                            referent,
+                            BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_)
+                        ) {
+                            return Err(bad(Malformed::Type, s));
+                        }
+                        d.check_borrowed_type(referent)?;
+                    }
                     let decl = call(f, *c, s)?;
                     if decl.arguments.get(*argument) != Some(&ArgumentSlot::Borrow(*l)) {
                         return Err(bad(Malformed::Binding, s));
@@ -1084,9 +1467,9 @@ fn diagnostic_origins(
 }
 
 #[allow(clippy::too_many_arguments)] // Same independently checked source/type/work context as instruction shape.
-fn projection_type(
+fn projection_type<'facade, Q: ShapeDeclarationQueries<'facade>>(
     f: &RawOwnedFunction,
-    d: &Declarations,
+    d: &mut Q,
     b: AccessBase,
     path: &[FieldId],
     index: Option<Operand>,
@@ -1107,6 +1490,10 @@ fn projection_type(
         (ValueTy::Owned(AggregateTy::FixedArray(array)), Some(index)) => {
             equal(operand(f, index, sources)?, hir::Ty::I32, index.span)?;
             Ok(array.element())
+        }
+        (ValueTy::Owned(AggregateTy::Vector(element)), Some(index)) => {
+            equal(operand(f, index, sources)?, hir::Ty::I32, index.span)?;
+            Ok(element)
         }
         _ => Err(bad(Malformed::Type, s)),
     }
@@ -1139,9 +1526,9 @@ pub(super) struct MatchBlockRole {
     predecessor: usize,
     incoming: usize,
 }
-fn check_matches(
+fn check_matches<'facade, Q: ShapeDeclarationQueries<'facade>>(
     f: &RawOwnedFunction,
-    d: &Declarations,
+    d: &mut Q,
     sources: &SourceMap,
     meter: &mut budget::Meter,
 ) -> Result<(), OwnedFailure> {
@@ -1179,6 +1566,7 @@ fn check_matches(
         }
         let enumeration = enumeration(source.aggregate(), s)?;
         let variants = d
+            .core()
             .enums()
             .variants(enumeration)
             .map_err(DeclarationError::from)?;
@@ -1191,7 +1579,8 @@ fn check_matches(
         seen[..descriptor.arms.len()].fill(false);
         for (arm, selected) in descriptor.arms.iter().enumerate() {
             meter.visit()?;
-            d.enums()
+            d.core()
+                .enums()
                 .variant(enumeration, selected.variant)
                 .map_err(DeclarationError::from)?;
             if seen[selected.variant.index] {

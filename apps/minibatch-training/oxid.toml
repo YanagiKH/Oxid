@@ -1,0 +1,19 @@
+[project]
+name = "minibatch-training"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[build]
+profile = "release"
+entry-mode = "process"
+
+[execution]
+policy = "hosted"
+
+[dependencies]
+tensor = "../cpu-training/tensor"
+checkpoint = "../cpu-training/checkpoint"
+
+[tests]
+data = "tests/data.ox"

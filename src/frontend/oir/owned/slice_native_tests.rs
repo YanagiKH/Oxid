@@ -204,7 +204,12 @@ fn native_slices_keep_sixty_four_source_parameters_with_bounded_flattening() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_slices_checkpoint_and_mutation_use_source_free_llvm() {
@@ -223,7 +228,12 @@ fn native_slices_checkpoint_and_mutation_use_source_free_llvm() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_slices_signed_bounds_and_fuel_use_source_free_llvm() {
@@ -289,7 +299,12 @@ fn native_slices_signed_bounds_and_fuel_use_source_free_llvm() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7 and one serialized native execution slot"]
 fn native_slices_acyclic_phi_and_rhs_failure_use_source_free_llvm() {

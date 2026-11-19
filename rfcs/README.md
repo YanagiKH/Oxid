@@ -1,5 +1,8 @@
 # Oxid RFCs
 
+[Local reference bindings](0068-local-reference-bindings.md) keep shared or
+exclusive borrows alive across statements and release them at scope exits.
+
 Use an RFC to propose a language or toolchain contract before changing its
 semantics. Record the acceptance decision explicitly; an implementation alone
 does not imply approval.
@@ -113,3 +116,26 @@ release native builds with the same language checks and execution limits.
 [RFC 0041](0041-owned-enum-payloads.md) extends consuming enum matches to
 finite record, fixed-array and nested enum payloads, with whole-value ownership
 and bounded containment analysis.
+
+[RFC 0042](0042-byte-record-fields.md) admits byte and byte-array record fields
+through the existing checked layouts, whole-value transfers and projected loans.
+
+[RFC 0043](0043-growable-byte-buffers.md) adds move-only growable byte buffers,
+checked borrowed byte ranges, resource cleanup and partial binary input/output.
+
+[Project execution policy](0044-project-execution-policy.md) adds long-running
+typed project execution without a cumulative work budget, independently of the
+selected optimization profile.
+
+[Program arguments](0049-program-arguments.md) lets typed programs receive
+literal OS arguments through `std::env::arg_count` and `arg_bytes`.
+
+[API documentation](0063-typed-api-documentation.md) generates a checked public
+reference from ordinary typed projects and selected workspace members.
+
+[Scalar debug variables](0064-native-debug-variables.md) adds GDB inspection of
+typed function parameters and local values in their source block scopes.
+
+[RFC 0067](0067-disjoint-field-borrows.md) allows simultaneous call-only
+borrows of different nested record fields while retaining whole-owner move
+protection.

@@ -16,6 +16,12 @@ mod bundle;
 mod supervisor;
 #[cfg(test)]
 mod tests;
+// The decoder's layout is still charged on hosts where executing the external
+// provider is unavailable. Keep that model without unused execution warnings.
+#[cfg_attr(
+    not(all(target_os = "linux", target_arch = "x86_64")),
+    allow(dead_code)
+)]
 mod wire;
 
 const RECEIPTS: usize = 256;

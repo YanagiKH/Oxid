@@ -21,6 +21,7 @@ mod data;
 mod network;
 #[path = "runtime/packages.rs"]
 mod packages;
+pub(crate) use packages::materialize_typed_git;
 #[path = "runtime/benchmark.rs"]
 mod benchmark;
 
@@ -117,6 +118,7 @@ struct MacroDef {
 pub(crate) struct ProjectManifest {
     pub(crate) name: Option<String>,
     pub(crate) version: Option<String>,
+    pub(crate) duplicate_version: bool,
     pub(crate) entry: Option<String>,
     pub(crate) kind: Option<String>,
     pub(crate) edition: Option<String>,
@@ -124,9 +126,13 @@ pub(crate) struct ProjectManifest {
     pub(crate) target: Option<String>,
     pub(crate) profile: Option<String>,
     pub(crate) reproducible: Option<bool>,
+    pub(crate) debug_info: Option<bool>,
     pub(crate) entry_mode: Option<String>,
+    pub(crate) execution_policy: Option<String>,
+    pub(crate) heap_limit: Option<u64>,
     pub(crate) scripts: HashMap<String, String>,
     pub(crate) dependencies: HashMap<String, String>,
+    pub(crate) registry_dependencies: Option<std::rc::Rc<crate::project_registry::Declarations>>,
     pub(crate) features: HashMap<String, bool>,
     pub(crate) tests: HashMap<String, String>,
     pub(crate) configuration_error: Option<String>,
@@ -1146,7 +1152,12 @@ fn watch_file(path: &Path, interp: &mut Interpreter) -> Result<(), String> {
 }
 
 fn parse_manifest_value(raw: &str) -> Result<String, String> {
-    let trimmed = raw.trim().trim_end_matches(',').trim();
+    parse_manifest_value_policy(raw, true)
+}
+
+fn parse_manifest_value_policy(raw: &str, legacy_comma: bool) -> Result<String, String> {
+    let trimmed = raw.trim();
+    let trimmed = if legacy_comma { trimmed.trim_end_matches(',').trim() } else { trimmed };
     if let Some(literal) = trimmed.strip_prefix('\'') {
         let end = literal.find('\'').ok_or("unterminated literal manifest string")?;
         let suffix = literal[end + 1..].trim();
@@ -1227,8 +1238,8 @@ fn manifest_delimiter(text: &str, delimiter: char) -> Option<usize> {
             else if active == '"' && character == '\\' { escaped = true; }
             else if character == active { quote = None; }
         } else if matches!(character, '"' | '\'') { quote = Some(character); }
-        else if character == '#' { return None; }
         else if character == delimiter { return Some(index); }
+        else if character == '#' { return None; }
     }
     None
 }
@@ -1243,7 +1254,7 @@ fn parse_manifest_key(raw: &str) -> Result<String, String> {
     Ok(raw.to_string())
 }
 
-fn is_test_fixture_section(line: &str) -> Result<bool, String> {
+fn parse_manifest_section(line: &str) -> Result<(bool, Vec<String>), String> {
     let array = line.starts_with("[[");
     let opening = if array { 2 } else { 1 };
     let closing = manifest_delimiter(&line[opening..], ']').ok_or("missing closing bracket")? + opening;
@@ -1265,6 +1276,11 @@ fn is_test_fixture_section(line: &str) -> Result<bool, String> {
         let Some(dot) = dot else { break; };
         remaining = &remaining[dot + 1..];
     }
+    Ok((array, names))
+}
+
+fn is_test_fixture_section(line: &str) -> Result<bool, String> {
+    let (array, names) = parse_manifest_section(line)?;
     if names[0] != "test-fixtures" { return Ok(false); }
     if array || names.len() != 1 { return Err("test-fixtures must be one ordinary table".to_string()); }
     Ok(true)
@@ -1501,28 +1517,41 @@ fn parse_workspace_text(text: &str) -> Result<Option<WorkspaceManifest>, String>
 pub(crate) fn read_typed_regular_file(path: &Path, limit: usize, kind: &str) -> Result<Vec<u8>, String> {
     use std::io::Read;
     let describe = |error| format!("cannot read {} {}: {}", kind, path.display(), error);
-    let metadata = fs::symlink_metadata(path).map_err(describe)?;
-    if !metadata.file_type().is_file() {
-        return Err(format!("{} must be a regular file, not a symbolic link or special file: {}", kind, path.display()));
-    }
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
+    #[cfg(not(windows))]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        let metadata = fs::symlink_metadata(path).map_err(describe)?;
+        if !metadata.file_type().is_file() {
+            return Err(format!("{} must be a regular file, not a symbolic link or special file: {}", kind, path.display()));
+        }
     }
-    let file = options.open(path).map_err(describe)?;
-    let metadata = file.metadata().map_err(describe)?;
-    if !metadata.is_file() || metadata.len() > limit as u64 {
-        return Err(format!("{} must be a regular file of at most {} bytes: {}", kind, limit, path.display()));
+    let read = |file: &mut fs::File| {
+        let metadata = file.metadata().map_err(describe)?;
+        if !metadata.is_file() || metadata.len() > limit as u64 {
+            return Err(format!("{} must be a regular file of at most {} bytes: {}", kind, limit, path.display()));
+        }
+        let mut bytes = Vec::new();
+        file.take(limit as u64 + 1).read_to_end(&mut bytes).map_err(describe)?;
+        if bytes.len() > limit {
+            return Err(format!("{} exceeds the {} byte limit", kind, limit));
+        }
+        Ok(bytes)
+    };
+    #[cfg(windows)]
+    {
+        crate::frontend::with_windows_regular_file(path, kind, read)
     }
-    let mut bytes = Vec::new();
-    file.take(limit as u64 + 1).read_to_end(&mut bytes).map_err(describe)?;
-    if bytes.len() > limit {
-        return Err(format!("{} exceeds the {} byte limit", kind, limit));
+    #[cfg(not(windows))]
+    {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        }
+        let mut file = options.open(path).map_err(describe)?;
+        read(&mut file)
     }
-    Ok(bytes)
 }
 
 pub(crate) fn load_typed_manifest(path: &Path) -> Result<ManifestSnapshot, String> {
@@ -1540,9 +1569,13 @@ pub(crate) fn read_typed_manifest_bytes(path: &Path, remaining: &mut usize) -> R
 }
 
 pub(crate) fn parse_typed_manifest_bytes(path: &Path, bytes: &[u8]) -> Result<ManifestSnapshot, String> {
+    parse_typed_manifest_bytes_registry(path, bytes, &mut None, false)
+}
+
+pub(crate) fn parse_typed_manifest_bytes_registry(path: &Path, bytes: &[u8], registry: &mut Option<crate::project_registry::Allowance>, prepaid: bool) -> Result<ManifestSnapshot, String> {
     use sha2::{Digest, Sha256};
     let text = std::str::from_utf8(bytes).map_err(|_| format!("typed manifest is not UTF-8: {}", path.display()))?;
-    let manifest = parse_manifest_text(text, path, false)?;
+    let manifest = parse_manifest_text_policy_spans_registry(text, path, false, true, None, Some(registry), prepaid)?;
     let digest = format!("{:x}", Sha256::digest(bytes));
     let workspace = parse_workspace_text(text)?;
     Ok(ManifestSnapshot { manifest, digest, workspace })
@@ -1558,14 +1591,93 @@ pub(crate) fn manifest_edition(path: &Path) -> Result<Option<String>, String> {
 }
 
 fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<ProjectManifest, String> {
+    parse_manifest_text_policy(text, path, edition_only, false)
+}
+
+fn parse_manifest_text_policy(text: &str, path: &Path, edition_only: bool, strict_execution: bool) -> Result<ProjectManifest, String> {
+    parse_manifest_text_policy_spans(text, path, edition_only, strict_execution, None)
+}
+
+/// Rewrite only admitted dependency values in an exported manifest. Other
+/// sections, comments, quoted keys and line endings keep their original bytes.
+pub(crate) fn rewrite_dependency_sources(path: &Path, bytes: &[u8], replacements: &HashMap<String, String>) -> Result<Vec<u8>, String> {
+    rewrite_dependency_values(path, bytes, replacements, false, false)
+}
+
+
+pub(crate) fn rewrite_registry_prepaid(path: &Path, bytes: &[u8], replacements: &HashMap<String, String>, inline: bool) -> Result<Vec<u8>, String> {
+    rewrite_dependency_values(path, bytes, replacements, inline, true)
+}
+
+fn rewrite_dependency_values(path: &Path, bytes: &[u8], replacements: &HashMap<String, String>, inline: bool, prepaid: bool) -> Result<Vec<u8>, String> {
+    if bytes.len() > 1024 * 1024 { return Err("exported manifest exceeds the 1 MiB limit".into()); }
+    let text = std::str::from_utf8(bytes).map_err(|_| "exported manifest must be UTF-8")?;
+    let mut spans = Vec::new();
+    let manifest = parse_manifest_text_policy_spans_registry(text, path, false, true, Some(&mut spans), None, prepaid)?;
+    if let Some(error) = &manifest.configuration_error { return Err(error.clone()); }
+    for (alias, value) in replacements {
+        if !manifest.dependencies.contains_key(alias) || value.len() > 4096 || value.chars().any(char::is_control) {
+            return Err("invalid exported dependency replacement".into());
+        }
+    }
+    let mut output = Vec::new();
+    let mut cursor = 0;
+    let mut replaced = HashSet::new();
+    for (alias, range) in spans {
+        output.extend_from_slice(&bytes[cursor..range.start]);
+        if let Some(value) = replacements.get(&alias) {
+            if inline { output.extend_from_slice(value.as_bytes()); }
+            else { output.extend_from_slice(quote_manifest_string(value).as_bytes()); }
+            replaced.insert(alias);
+        } else {
+            output.extend_from_slice(&bytes[range.clone()]);
+        }
+        cursor = range.end;
+    }
+    output.extend_from_slice(&bytes[cursor..]);
+    if output.len() > 1024 * 1024 || replaced.len() != replacements.len() {
+        return Err("exported manifest exceeds its limit or omits a dependency".into());
+    }
+    let parsed = parse_typed_manifest_bytes_registry(path, &output, &mut None, prepaid)?;
+    let mut expected = manifest.dependencies;
+    for (alias, value) in replacements { expected.insert(alias.clone(), value.clone()); }
+    if parsed.manifest.dependencies != expected { return Err("exported dependencies differ from their retained graph".into()); }
+    Ok(output)
+}
+
+fn parse_manifest_text_policy_spans(text: &str, path: &Path, edition_only: bool, strict_execution: bool, spans: Option<&mut Vec<(String, std::ops::Range<usize>)>>) -> Result<ProjectManifest, String> {
+    parse_manifest_text_policy_spans_registry(text, path, edition_only, strict_execution, spans, None, false)
+}
+
+fn parse_manifest_text_policy_spans_registry(text: &str, path: &Path, edition_only: bool, strict_execution: bool, mut spans: Option<&mut Vec<(String, std::ops::Range<usize>)>>, mut registry: Option<&mut Option<crate::project_registry::Allowance>>, prepaid: bool) -> Result<ProjectManifest, String> {
     let mut manifest = ProjectManifest::default();
     let mut section = String::new();
     let mut continuation = ManifestValueContinuation::default();
-    for raw_line in text.lines() {
-        if edition_only && continuation.active() { continuation.scan(raw_line); continue; }
+    let mut execution_table = false;
+    for (line_offset, raw_line) in text.split_inclusive('\n').scan(0usize, |offset, line| {
+        let start = *offset;
+        *offset += line.len();
+        let raw = line.strip_suffix('\n').unwrap_or(line);
+        Some((start, raw.strip_suffix('\r').unwrap_or(raw)))
+    }) {
+        if (edition_only || strict_execution) && continuation.active() { continuation.scan(raw_line); continue; }
         let line = raw_line.trim();
         if line.is_empty() || line.starts_with('#') { continue; }
         if line.starts_with('[') {
+            if strict_execution {
+                // Validate syntax before interpreting a namespace. Otherwise a
+                // broken quoted header can inherit the preceding section.
+                let (array, names) = parse_manifest_section(line)
+                    .map_err(|error| format!("invalid manifest section in {}: {}", path.display(), error))?;
+                if names[0] == "execution" {
+                    if array || names.len() != 1 || execution_table {
+                        return Err("execution settings require one ordinary [execution] table".into());
+                    }
+                    execution_table = true;
+                    section = "execution".into();
+                    continue;
+                }
+            }
             let array_table = line.starts_with("[[");
             let opening = if array_table { 2 } else { 1 };
             if let Some(end) = manifest_delimiter(&line[opening..], ']').map(|index| index + opening) {
@@ -1581,6 +1693,9 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                     if namespace == "build" && (array_table || first != raw.len()) {
                         manifest.configuration_error = Some("typed-preview build settings require an ordinary [build] table".into());
                     }
+                    if namespace == "execution" && (array_table || first != raw.len()) {
+                        manifest.configuration_error = Some("typed-preview execution settings require an ordinary [execution] table".into());
+                    }
                     section = parse_manifest_key(raw).unwrap_or_else(|_| raw.to_string());
                     if array_table {
                         if section == "project" {
@@ -1593,7 +1708,7 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
             }
         }
         let Some(equals) = manifest_delimiter(line, '=') else {
-            if matches!(section.as_str(), "dependencies" | "features") {
+            if matches!(section.as_str(), "dependencies" | "features" | "execution") {
                 manifest.configuration_error = Some(format!("invalid {} declaration in {}: expected name = value", section, path.display()));
             }
             continue;
@@ -1612,6 +1727,8 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                     manifest.configuration_error = Some("typed-preview dependencies and features do not support dotted declarations; use [dependencies] string local paths".to_string());
                 } else if namespace.as_deref() == Ok("build") {
                     manifest.configuration_error = Some("typed-preview build settings require an ordinary [build] table".into());
+                } else if namespace.as_deref() == Ok("execution") {
+                    manifest.configuration_error = Some("typed-preview execution settings require an ordinary [execution] table".into());
                 }
             } else if parse_manifest_key(key_raw).as_deref() == Ok("project") {
                 return Err("inline project tables are unsupported; use an ordinary [project] table".to_string());
@@ -1619,6 +1736,8 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                 manifest.configuration_error = Some("typed-preview dependencies and features do not support inline tables; use [dependencies] string local paths".to_string());
             } else if parse_manifest_key(key_raw).as_deref() == Ok("build") {
                 manifest.configuration_error = Some("typed-preview build settings require an ordinary [build] table".into());
+            } else if parse_manifest_key(key_raw).as_deref() == Ok("execution") {
+                manifest.configuration_error = Some("typed-preview execution settings require an ordinary [execution] table".into());
             }
         }
         if edition_only && !matches!(effective_section, "" | "project") {
@@ -1631,14 +1750,23 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
             continue;
         }
         let key = key.map_err(|error| format!("invalid manifest key in {}: {}", path.display(), error))?;
-        let value = parse_manifest_value(value_raw).map_err(|error| format!("invalid manifest value in {}: {}", path.display(), error))?;
+        let value = if strict_execution && effective_section == "execution" {
+            parse_manifest_value_policy(value_raw, false)
+                .map_err(|error| format!("invalid execution value in {}: {}", path.display(), error))?
+        } else {
+            parse_manifest_value(value_raw)
+                .map_err(|error| format!("invalid manifest value in {}: {}", path.display(), error))?
+        };
+        if strict_execution { continuation.scan(value_raw); }
         match (effective_section, key.as_str()) {
             ("project", "name") | ("", "name") => {
                 if manifest.name.replace(value).is_some() {
                     manifest.configuration_error = Some(format!("duplicate project name in {}", path.display()));
                 }
             }
-            ("project", "version") | ("", "version") => manifest.version = Some(value),
+            ("project", "version") | ("", "version") => {
+                manifest.duplicate_version |= manifest.version.replace(value).is_some();
+            }
             ("project", "kind") => {
                 if manifest.kind.replace(value).is_some() { manifest.configuration_error = Some(format!("duplicate project kind in {}", path.display())); }
             }
@@ -1664,6 +1792,14 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                     manifest.configuration_error = Some(format!("duplicate build setting `{}` in {}", key, path.display()));
                 }
             }
+            ("build", "debug-info") => {
+                let boolean = value_raw.split('#').next().unwrap_or("").trim();
+                if !matches!(boolean, "true" | "false") {
+                    manifest.configuration_error = Some("build debug-info requires an unquoted boolean true or false".into());
+                } else if manifest.debug_info.replace(boolean == "true").is_some() {
+                    manifest.configuration_error = Some(format!("duplicate build setting `debug-info` in {}", path.display()));
+                }
+            }
             ("build", "reproducible") => {
                 let boolean = value_raw.split('#').next().unwrap_or("").trim();
                 if !matches!(boolean, "true" | "false") {
@@ -1671,6 +1807,28 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
                 } else if manifest.reproducible.replace(boolean == "true").is_some() {
                     manifest.configuration_error = Some(format!("duplicate build setting `reproducible` in {}", path.display()));
                 }
+            }
+            ("execution", "policy") => {
+                if !value_raw.trim_start().starts_with(['"', '\'']) {
+                    manifest.configuration_error = Some("execution policy requires a quoted bounded or hosted name".into());
+                } else if manifest.execution_policy.replace(value).is_some() {
+                    manifest.configuration_error = Some(format!("duplicate execution policy in {}", path.display()));
+                }
+            }
+            ("execution", "heap-limit") => {
+                let raw = value_raw.split('#').next().unwrap_or("").trim();
+                let limit = (!raw.is_empty() && raw.bytes().all(|byte| byte.is_ascii_digit()))
+                    .then(|| raw.parse::<u64>().ok()).flatten();
+                match limit {
+                    None => manifest.configuration_error = Some("execution heap-limit requires an unquoted nonnegative decimal integer in bytes (at most 18446744073709551615)".into()),
+                    Some(limit) if manifest.heap_limit.replace(limit).is_some() => {
+                        manifest.configuration_error = Some(format!("duplicate execution heap-limit in {}", path.display()));
+                    }
+                    Some(_) => {}
+                }
+            }
+            ("execution", _) => {
+                manifest.configuration_error = Some(format!("unknown execution setting `{}` in {}", key, path.display()));
             }
             ("tests", _) => {
                 if manifest.tests.insert(key.clone(), value).is_some() {
@@ -1683,17 +1841,32 @@ fn parse_manifest_text(text: &str, path: &Path, edition_only: bool) -> Result<Pr
             }
             ("scripts", _) => { manifest.scripts.insert(key, value); }
             ("dependencies", _) => {
-                if !value_raw.trim_start().starts_with(['"', '\'']) {
-                    manifest.configuration_error = Some(format!("typed-preview dependencies require quoted local paths for `{}`; Git, registry and table specifications are unsupported", key));
+                if strict_execution && value_raw.trim_start().starts_with('{') {
+                    if manifest.registry_dependencies.is_none() {
+                        manifest.registry_dependencies = Some(crate::project_registry::Declarations::new(registry.as_deref_mut(), prepaid)?);
+                    }
+                    let entries = std::rc::Rc::get_mut(manifest.registry_dependencies.as_mut().expect("registry declarations")).ok_or("registry declarations unexpectedly shared during parsing")?;
+                    entries.insert(&key, value_raw)?;
+                } else if !value_raw.trim_start().starts_with(['"', '\'']) {
+                    manifest.configuration_error = Some(format!("typed-preview dependencies require quoted local paths or pinned Git URLs for `{}`; registry and table specifications are unsupported", key));
                 }
                 if manifest.dependencies.contains_key(&key) {
                     return Err(format!("duplicate dependency `{}` in {}", key, path.display()));
+                }
+                if let Some(spans) = spans.as_mut() {
+                    let line_start = line_offset + raw_line.len() - raw_line.trim_start().len();
+                    let end = manifest_delimiter(value_raw, '#').unwrap_or(value_raw.len());
+                    let raw = &value_raw[..end];
+                    let leading = raw.len() - raw.trim_start().len();
+                    let start = line_start + equals + 1 + leading;
+                    spans.push((key.clone(), start..start + raw.trim().len()));
                 }
                 manifest.dependencies.insert(key, value);
             }
             _ => {}
         }
     }
+    if strict_execution && continuation.active() { return Err("unterminated manifest value".into()); }
     Ok(manifest)
 }
 
@@ -2943,8 +3116,10 @@ fn help() {
     println!("  oxid build --profile dev          Build without optimization");
     println!("  oxid build --profile release      Build with optimization");
     println!("  oxid build --reproducible         Use relative runtime error locations");
+    println!("  oxid build --debug-info           Include source line information for debuggers");
     println!("  oxid build --incremental          Reuse matching native objects");
     println!("  oxid fmt <file.ox>                Print formatted source");
+    println!("  oxid lsp --stdio                 Start editor diagnostics and formatting");
     println!("  oxid doctor --native              Check native build tools");
     println!("  oxid check --workspace            Check all workspace members");
     println!("  oxid run --package <name-or-path>  Run one workspace member");
@@ -2958,6 +3133,9 @@ fn help() {
     println!("  oxid package [--frozen] [--output ARCHIVE]  Bundle native-project sources");
     println!("  oxid package --verify ARCHIVE");
     println!("  oxid package --extract ARCHIVE --output NEW_DIRECTORY");
+    println!("  oxid vendor --frozen --output NEW_DIRECTORY  Copy a project for offline use (Linux)");
+    println!("  oxid registry init NEW_DIRECTORY          Create a private file registry (Linux)");
+    println!("  oxid publish --registry file:///DIRECTORY [--package MEMBER]");
     println!();
     println!("More project tools:");
     println!("  oxid init <name>");
@@ -3433,5 +3611,36 @@ const second = join(task);
         assert!(parser.parse_program().is_err());
         let mut interpreter = Interpreter::new();
         assert!(run_source("const value = 1 / 0;", Path::new("."), &mut interpreter).is_err());
+    }
+}
+
+#[cfg(test)]
+mod dependency_export_tests {
+    use super::*;
+
+    #[test]
+    fn dependency_export_preserves_inert_tables_quoted_keys_comments_and_crlf() {
+        let original = concat!(
+            "# 雪\r\n[project]\r\nedition=\"typed-preview\"\r\n",
+            "[tool.notes]\r\ntext=\"[dependencies] dep='inert'\"\r\n",
+            "[\"dependencies\"]\r\n  \"\\u0064ep\" = 'git+https://example.invalid/lib.git#0123456789012345678901234567890123456789' # keep\r\n"
+        );
+        let replacement = ".oxid/deps/git-library";
+        let mapping = HashMap::from([("dep".to_owned(), replacement.to_owned())]);
+        let exported = rewrite_dependency_sources(Path::new("oxid.toml"), original.as_bytes(), &mapping).unwrap();
+        let expected = original.replace("'git+https://example.invalid/lib.git#0123456789012345678901234567890123456789'", &quote_manifest_string(replacement));
+        assert_eq!(exported, expected.as_bytes());
+        let parsed = parse_typed_manifest_bytes(Path::new("oxid.toml"), &exported).unwrap();
+        assert_eq!(parsed.manifest.dependencies, mapping);
+    }
+
+    #[test]
+    fn dependency_export_is_an_exact_noop_without_replacements_and_refuses_unknown_aliases() {
+        let original = b"[project]\nedition=\"typed-preview\"\n[dependencies]\ndep=\"../local\" # retain\n";
+        assert_eq!(rewrite_dependency_sources(Path::new("oxid.toml"), original, &HashMap::new()).unwrap(), original);
+        let unsupported = b"[project]\nedition=\"typed-preview\"\n[tool.notes]\ntext=\"\"\"\n[dependencies]\ndep=\"inert\"\n\"\"\"\n";
+        assert!(rewrite_dependency_sources(Path::new("oxid.toml"), unsupported, &HashMap::new()).is_err());
+        let mapping = HashMap::from([("unknown".to_owned(), "../other".to_owned())]);
+        assert!(rewrite_dependency_sources(Path::new("oxid.toml"), original, &mapping).is_err());
     }
 }

@@ -301,9 +301,9 @@ fn fixed_scalar_types_are_checked_on_every_assignment_and_initializer() {
     );
     reject(
         "fn main() -> () { let mut x: i64 = 1; return; }",
-        "E0202",
-        "resolve",
-        Some("i64"),
+        "E0300",
+        "type",
+        Some("1"),
     );
 }
 

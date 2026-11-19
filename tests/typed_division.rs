@@ -104,7 +104,12 @@ impl Project {
         }
         bounded_output(&mut command)
     }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     fn compile(&self) -> Output {
         bounded_output(
             Command::new(env!("CARGO_BIN_EXE_oxid"))
@@ -119,7 +124,12 @@ impl Project {
                 ]),
         )
     }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     fn native_without_sources(&self) -> Output {
         let compile = self.compile();
         assert!(compile.status.success(), "{compile:?}");
@@ -421,7 +431,12 @@ fn public_division_module_runtime_failure_keeps_child_file_and_operator() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM/Clang/LLD 19.1.7; run the public checked-division native gate explicitly"]
 fn public_division_source_free_native_parity() {
@@ -510,7 +525,12 @@ fn public_division_loops_remain_fuel_bounded_in_both_routes() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM/Clang/LLD 19.1.7; run the public checked-division native gate explicitly"]
 fn public_division_source_free_native_loop_fuel_parity() {

@@ -1,16 +1,33 @@
-//! Qualified Linux stable-filesystem policy, not a TOCTOU sandbox.
+//! Qualified stable-filesystem source policy, not a TOCTOU sandbox.
 use super::{
     add, budget::Allocator, io_error, policy, resource, Diagnostic, ProjectLimits, SourceUsage,
     Span,
 };
-use std::{
-    ffi::OsString,
-    fs, io,
-    path::{Path, PathBuf},
+use std::{ffi::OsString, io, path::Path};
+#[cfg(not(windows))]
+use std::{fs, path::PathBuf};
+
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+pub(super) use windows::{
+    admit_invoked_entry, admit_package_path, fixed_scratch_bytes, separator_units, verify,
+    verify_entry, VerifiedChild,
 };
+#[cfg(windows)]
+pub(crate) use windows::{verify_windows_workspace_member, with_windows_regular_file};
 
 pub(super) fn qualified_host(origin: Span) -> Result<(), Box<Diagnostic>> {
-    if cfg!(target_os = "linux") {
+    if cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        all(
+            target_os = "windows",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )
+    )) {
         Ok(())
     } else {
         Err(policy(
@@ -24,6 +41,7 @@ pub(super) fn path_units(path: &Path) -> usize {
     path.as_os_str().as_encoded_bytes().len()
 }
 
+#[cfg(not(windows))]
 pub(super) fn verify(
     root: &Path,
     relative: &str,
@@ -103,6 +121,7 @@ pub(super) fn verify(
 
 /// The production scan loop, with an iterator seam for deterministic I/O failures.
 /// OS-returned names are transient; only two flags survive each yielded entry.
+#[cfg(any(not(windows), test))]
 pub(super) fn scan_entries(
     entries: impl IntoIterator<Item = io::Result<OsString>>,
     component: &str,
@@ -110,10 +129,20 @@ pub(super) fn scan_entries(
     usage: &mut SourceUsage,
     origin: Span,
 ) -> Result<(bool, bool), Box<Diagnostic>> {
+    scan_entries_at(entries, component, limits, usage, Some(origin))
+}
+
+fn scan_entries_at(
+    entries: impl IntoIterator<Item = io::Result<OsString>>,
+    component: &str,
+    limits: ProjectLimits,
+    usage: &mut SourceUsage,
+    origin: Option<Span>,
+) -> Result<(bool, bool), Box<Diagnostic>> {
     let mut exact = false;
     let mut folded = false;
     for entry in entries {
-        let count = add(usage.directory_entries, 1, Some(origin))?;
+        let count = add(usage.directory_entries, 1, origin)?;
         let name = match entry {
             Ok(name) => name,
             Err(error) => {
@@ -121,26 +150,20 @@ pub(super) fn scan_entries(
                 // A yielded error has no name units, but its already-known E
                 // overflow/cap must be admitted before propagating metadata I/O.
                 if count > limits.directory_entries.min(100_000) {
-                    return Err(resource(
-                        "module directory scan budget exceeded",
-                        Some(origin),
-                    ));
+                    return Err(resource("module directory scan budget exceeded", origin));
                 }
-                return Err(io_error(error, "", Some(origin)));
+                return Err(io_error(error, "", origin));
             }
         };
         let units = name.as_encoded_bytes().len();
-        let names = add(usage.directory_name_units, units, Some(origin))?;
+        let names = add(usage.directory_name_units, units, origin)?;
         usage.directory_entries = count;
         usage.directory_name_units = names;
         // For an available name, both checked arithmetic operations precede caps.
         if count > limits.directory_entries.min(100_000)
             || names > limits.directory_name_units.min(16 * 1024 * 1024)
         {
-            return Err(resource(
-                "module directory scan budget exceeded",
-                Some(origin),
-            ));
+            return Err(resource("module directory scan budget exceeded", origin));
         }
         exact |= name == component;
         folded |= name

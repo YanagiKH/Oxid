@@ -66,7 +66,12 @@ impl Project {
         }
         command.output().unwrap()
     }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     fn compile(&self) -> Output {
         Command::new(env!("CARGO_BIN_EXE_oxid"))
             .current_dir(&self.0)
@@ -320,7 +325,12 @@ fn legacy_dynamic_arrays_keep_default_and_explicit_behavior() {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM/Clang/LLD 19.1.7; run the public fixed-array native gate explicitly"]
 fn public_array_cli_compiles_source_free_native_parity() {
@@ -466,7 +476,12 @@ fn public_array_loop_remains_fuel_bounded() {
     assert!(json.contains("\"stage\":\"oir-run\""), "{json}");
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires LLVM/Clang/LLD 19.1.7; run the public fixed-array native gate explicitly"]
 fn public_array_cli_native_module_and_fuel_parity() {

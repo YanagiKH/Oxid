@@ -1,0 +1,18 @@
+[build-system]
+requires = []
+build-backend = "oxid_backend"
+backend-path = ["build_backend"]
+
+[project]
+name = "oxid-pricing"
+version = "0.1.0"
+description = "Call an Oxid pricing function from Python"
+requires-python = ">=3.11"
+
+[tool.oxid]
+module = "oxid_pricing"
+source = "src/pricing.ox"
+sources = ["src/pricing.ox"]
+export = "crate::line_total"
+profile = "release"
+fuel = 1000000

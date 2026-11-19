@@ -226,10 +226,10 @@ fn bounded_enum_public_nominal_payload_and_unused_arm_checks() {
 }
 
 #[test]
-fn bounded_enum_public_unsupported_borrow_containment_array_and_patterns() {
+fn bounded_enum_public_fields_are_admitted_while_unsupported_borrows_arrays_and_patterns_stay_closed(
+) {
     for (text, code, stage) in [
         ("enum E{N} fn f(e:&E)->(){return;}", "E0202", "resolve"),
-        ("enum E{N} struct R{e:E}", "E0300", "resolve"),
         ("enum E{N} fn f(a:[E;1])->(){return;}", "E0101", "parse"),
         (
             "enum E{N} fn main()->bool{let a=E::N;let b=E::N;return a==b;}",
@@ -254,6 +254,12 @@ fn bounded_enum_public_unsupported_borrow_containment_array_and_patterns() {
     ] {
         reject(text, code, stage);
     }
+    let fixture = Fixture::new(&[(
+        "main.ox",
+        "enum E{N} struct R{e:E}fn main()->i32{return 42;}",
+    )]);
+    let project = fixture.load();
+    assert_eq!(checked(&project).unwrap().run().unwrap(), Scalar::I32(42));
 }
 
 #[test]

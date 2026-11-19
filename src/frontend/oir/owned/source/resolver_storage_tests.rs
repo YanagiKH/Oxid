@@ -52,6 +52,7 @@ fn c3a_paid_helper_each_kind_quota_is_consumable_and_exact() {
         call_arguments: 1,
         field_initializers: 1,
         array_entries: 1,
+        byte_string_bytes: 1,
         match_arms: 1,
         scope_marks: 1,
         loop_slots: 1,
@@ -92,6 +93,7 @@ fn c3a_paid_helper_each_kind_quota_is_consumable_and_exact() {
     check!(FieldInitializers, FieldInit);
     check!(ArrayEntries, ExprId);
     check!(MatchArms, MatchArm);
+    check!(ByteStrings, u8);
     check!(Names, ScopeName);
     check!(Exits, usize);
     check!(Marks, usize);

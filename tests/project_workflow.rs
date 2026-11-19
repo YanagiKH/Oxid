@@ -7,7 +7,19 @@ use std::{
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
-const PROCESS_HOST: bool = cfg!(all(target_os = "linux", target_arch = "x86_64"));
+const WINDOWS_NATIVE_HOST: bool = cfg!(all(
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+));
+const PROCESS_HOST: bool = cfg!(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+));
 
 struct Project(PathBuf);
 impl Project {
@@ -98,6 +110,17 @@ fn typed_new_records_edition_and_runs_without_repeated_flags() {
     let manifest = fs::read_to_string(project.0.join("app/oxid.toml")).unwrap();
     assert!(manifest.contains("edition = \"typed-preview\""));
     assert!(manifest.contains("[tests]"));
+    assert!(manifest.contains(if WINDOWS_NATIVE_HOST {
+        "entry-mode = \"result\""
+    } else {
+        "entry-mode = \"process\""
+    }));
+    if WINDOWS_NATIVE_HOST {
+        let readme = fs::read_to_string(project.0.join("app/README.md")).unwrap();
+        assert!(readme.contains(r".oxid\bin\app.exe"));
+        assert!(readme.contains("Windows SDK") && readme.contains("19.1.7"));
+        assert!(readme.contains("zero passes") && readme.contains("oxid test"));
+    }
     let mut check = project.command(&["check"]);
     success(
         check
@@ -105,7 +128,7 @@ fn typed_new_records_edition_and_runs_without_repeated_flags() {
             .output()
             .unwrap(),
     );
-    if PROCESS_HOST {
+    if PROCESS_HOST || WINDOWS_NATIVE_HOST {
         for args in [&["run"][..], &["test"][..]] {
             let output = project
                 .command(args)
@@ -199,7 +222,7 @@ fn unknown_editions_and_unsupported_configuration_never_fall_back() {
             "profile",
         ),
         (
-            "[project]\nedition = \"typed-preview\"\n[build]\ntarget = \"aarch64-unknown-linux-gnu\"\n",
+            "[project]\nedition = \"typed-preview\"\n[build]\ntarget = \"riscv64-unknown-linux-gnu\"\n",
             "target",
         ),
         (
@@ -428,12 +451,21 @@ fn unsupported_commands_and_directory_formatting_do_not_reach_legacy() {
 #[test]
 fn invalid_source_or_tool_failure_preserves_previous_managed_executable() {
     let project = Project::new();
-    project.typed("");
-    project.write(".oxid/bin/workflow", "previous successful executable");
+    project.typed(if WINDOWS_NATIVE_HOST {
+        "[build]\nentry-mode = \"result\"\n"
+    } else {
+        ""
+    });
+    let managed = if WINDOWS_NATIVE_HOST {
+        ".oxid/bin/workflow.exe"
+    } else {
+        ".oxid/bin/workflow"
+    };
+    project.write(managed, "previous successful executable");
     project.write("src/main.ox", "fn main() -> i32 { return true; }\n");
     failure(project.run(&["build"]), "E0300");
     assert_eq!(
-        fs::read(project.0.join(".oxid/bin/workflow")).unwrap(),
+        fs::read(project.0.join(managed)).unwrap(),
         b"previous successful executable"
     );
     project.write("src/main.ox", "fn main() -> i32 { return 0; }\n");
@@ -442,15 +474,27 @@ fn invalid_source_or_tool_failure_preserves_previous_managed_executable() {
         .env("OXID_LLVM_BIN", project.0.join("missing"))
         .output()
         .unwrap();
-    failure(output, if PROCESS_HOST { "E0701" } else { "E0608" });
+    failure(
+        output,
+        if PROCESS_HOST || WINDOWS_NATIVE_HOST {
+            "E0701"
+        } else {
+            "E0608"
+        },
+    );
     assert_eq!(
-        fs::read(project.0.join(".oxid/bin/workflow")).unwrap(),
+        fs::read(project.0.join(managed)).unwrap(),
         b"previous successful executable"
     );
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 fn managed_build_rejects_symlinks_and_directory_outputs_before_tool_invocation() {
     use std::os::unix::fs::symlink;
 
@@ -509,8 +553,13 @@ fn typed_formatter_inherits_manifest_and_preserves_stdout_contract() {
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-#[ignore = "requires Linux x86_64 and pinned LLVM 19.1.7"]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[ignore = "requires Linux x86_64 or ARM64 and pinned LLVM 19.1.7"]
 fn native_build_replaces_managed_output_after_module_edit_and_preserves_compile_contract() {
     let project = Project::new();
     project.typed("");

@@ -2,32 +2,28 @@
 //! associations, including descendants of the outer declaration_index module.
 use super::*;
 
-/// Constructor and anchor updates remain sealed. Borrowed endpoints belong to
-/// the same immutable source owner as Tables; moves never invalidate them.
-/// The constructor installs each function's dependency before its function.
+/// The sealed collector stores import ordinals, never source-supplied origins.
+/// Four legacy anchors retain their first-use ordering; each experimental family
+/// shares its first canonical import anchor. The same immutable source owner and
+/// checked ImportRow table recover the exact borrowed endpoint on demand.
 #[derive(Debug)]
+#[repr(C, align(8))]
 pub(super) struct BuiltinAdmission<'s> {
-    read_status: Option<&'s Span>,
-    read_stdin: Option<&'s Span>,
-    write_status: Option<&'s Span>,
-    write_stdout: Option<&'s Span>,
+    anchors: [u32; 10],
+    experimental: super::super::builtin_catalog::experimental::Inventory,
+    source: std::marker::PhantomData<&'s Span>,
 }
 impl<'s> BuiltinAdmission<'s> {
     fn none() -> Self {
         Self {
-            read_status: None,
-            read_stdin: None,
-            write_status: None,
-            write_stdout: None,
+            anchors: [NONE; 10],
+            experimental: Default::default(),
+            source: std::marker::PhantomData,
         }
     }
     pub(super) fn set(&self) -> BuiltinSet {
-        match (
-            self.read_status.is_some(),
-            self.read_stdin.is_some(),
-            self.write_status.is_some(),
-            self.write_stdout.is_some(),
-        ) {
+        let present = |index| self.anchors[index] != NONE;
+        let legacy = match (present(0), present(1), present(2), present(3)) {
             (false, false, false, false) => BuiltinSet::None,
             (true, false, false, false) => BuiltinSet::ReadStatus,
             (true, true, false, false) => BuiltinSet::ReadStdin,
@@ -38,70 +34,110 @@ impl<'s> BuiltinAdmission<'s> {
             (true, true, true, false) => BuiltinSet::ReadStdinWriteStatus,
             (true, true, true, true) => BuiltinSet::ReadStdinWriteStdout,
             _ => unreachable!("sealed function dependency"),
-        }
+        };
+        legacy.with_experimental(self.experimental)
     }
-    fn admit(&mut self, item: BuiltinItem, anchor: &'s Span) {
-        // Inventory is module preorder, then source order. First anchors are minima.
-        match item {
-            BuiltinItem::Enum(BuiltinEnum::ReadStatus) => {
-                if self.read_status.is_none() {
-                    self.read_status = Some(anchor);
-                }
-            }
+    fn admit(&mut self, item: BuiltinItem, import: u32) {
+        let slot = match item {
+            BuiltinItem::Enum(BuiltinEnum::ReadStatus) => 0,
             BuiltinItem::Function(BuiltinFunction::ReadStdin) => {
-                if self.read_status.is_none() {
-                    self.read_status = Some(anchor);
+                if self.anchors[0] == NONE {
+                    self.anchors[0] = import;
                 }
-                if self.read_stdin.is_none() {
-                    self.read_stdin = Some(anchor);
-                }
+                1
             }
-            BuiltinItem::Enum(BuiltinEnum::WriteStatus) => {
-                if self.write_status.is_none() {
-                    self.write_status = Some(anchor);
-                }
-            }
+            BuiltinItem::Enum(BuiltinEnum::WriteStatus) => 2,
             BuiltinItem::Function(BuiltinFunction::WriteStdout) => {
-                if self.write_status.is_none() {
-                    self.write_status = Some(anchor);
+                if self.anchors[2] == NONE {
+                    self.anchors[2] = import;
                 }
-                if self.write_stdout.is_none() {
-                    self.write_stdout = Some(anchor);
-                }
+                3
             }
+            BuiltinItem::Experimental(item) => {
+                self.experimental = self.experimental.admit(item);
+                if let Some(enumeration) = item
+                    .function()
+                    .and_then(experimental::Function::result_enum)
+                {
+                    let dependency = 4 + enumeration.item().family();
+                    if self.anchors[dependency] == NONE {
+                        self.anchors[dependency] = import;
+                    }
+                }
+                4 + item.family()
+            }
+            BuiltinItem::Vector(item) => {
+                self.experimental = self.experimental.admit_vector(item);
+                if item
+                    .operation()
+                    .is_some_and(|operation| operation.requires_grow_status())
+                    && self.anchors[4] == NONE
+                {
+                    self.anchors[4] = import;
+                }
+                9
+            }
+        };
+        if self.anchors[slot] == NONE {
+            self.anchors[slot] = import;
         }
     }
-    pub(super) fn enum_anchor(&self, item: BuiltinEnum) -> Option<Span> {
-        match item {
-            BuiltinEnum::ReadStatus => self.read_status.copied(),
-            BuiltinEnum::WriteStatus => self.write_status.copied(),
-        }
+    pub(super) fn enum_anchor(&self, item: BuiltinEnum) -> Option<u32> {
+        self.anchor(match item {
+            BuiltinEnum::ReadStatus => 0,
+            BuiltinEnum::WriteStatus => 2,
+        })
     }
-    pub(super) fn function_anchor(&self, item: BuiltinFunction) -> Option<Span> {
-        match item {
-            BuiltinFunction::ReadStdin => self.read_stdin.copied(),
-            BuiltinFunction::WriteStdout => self.write_stdout.copied(),
-        }
+    pub(super) fn function_anchor(&self, item: BuiltinFunction) -> Option<u32> {
+        self.anchor(match item {
+            BuiltinFunction::ReadStdin => 1,
+            BuiltinFunction::WriteStdout => 3,
+        })
+    }
+    fn experimental_anchor(&self, item: experimental::Item) -> Option<u32> {
+        self.experimental
+            .contains(item)
+            .then(|| self.anchor(4 + item.family()))
+            .flatten()
+    }
+    fn vector_anchor(&self, item: vector::Item) -> Option<u32> {
+        self.experimental
+            .contains_vector(item)
+            .then(|| self.anchor(9))
+            .flatten()
+    }
+    fn anchor(&self, slot: usize) -> Option<u32> {
+        (self.anchors[slot] != NONE).then_some(self.anchors[slot])
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub(super) enum CandidateOrigin {
     Current,
+    CurrentGeneric(Box<[super::generics::Plan; 1]>),
+    CurrentRanges,
+    CurrentGenericRanges(Box<[super::generics::Plan; 1]>),
+    OwnedVectorBuild(Box<[super::generics::owned_candidate::BuildOwner; 1]>),
+    OwnedVectorPlan(Box<[super::generics::owned_candidate::OwnedGenericPlan; 1]>),
     Enum(CompactSpan),
     Builtin(CompactSpan),
     #[cfg(test)]
     Output(CompactSpan),
 }
 impl CandidateOrigin {
-    pub(super) fn span(self) -> Option<Span> {
+    pub(super) fn span(&self) -> Option<Span> {
         match self {
-            Self::Current => None,
+            Self::Current
+            | Self::CurrentGeneric(_)
+            | Self::CurrentRanges
+            | Self::CurrentGenericRanges(_)
+            | Self::OwnedVectorBuild(..) => None,
+            Self::OwnedVectorPlan(plan) => Some(plan[0].origin()),
             Self::Enum(at) | Self::Builtin(at) => Some(at.span()),
             #[cfg(test)]
             Self::Output(at) => Some(at.span()),
         }
     }
-    pub(super) fn is_builtin(self) -> bool {
+    pub(super) fn is_builtin(&self) -> bool {
         matches!(self, Self::Builtin(_))
     }
 }
@@ -117,6 +153,7 @@ fn builtin_endpoint(
     let at = view.span();
     if view.root() != ast::PathRoot::Std
         || segments.len() != 3
+        || sources.text(segments[0])? != "std"
         || compare_bytes(sources.text(segments[1])?, "io", work, at)? != Ordering::Equal
     {
         return Err(diagnostic(
@@ -159,6 +196,14 @@ fn current_builtin_endpoint(
     let view = sources.import_path(path)?;
     let segments = view.segments();
     let at = view.span();
+    if view.root() == ast::PathRoot::Std
+        && segments.len() == 3
+        && (sources.text(segments[0])? == "alloc"
+            || (sources.text(segments[0])? == "std"
+                && matches!(sources.text(segments[1])?, "fs" | "env")))
+    {
+        return experimental_endpoint(sources, segments, work, at);
+    }
     if view.root() != ast::PathRoot::Std
         || segments.len() != 3
         || compare_bytes(sources.text(segments[1])?, "io", work, at)? != Ordering::Equal
@@ -199,12 +244,163 @@ fn current_builtin_endpoint(
     {
         return Ok(BuiltinItem::Function(BuiltinFunction::WriteStdout));
     }
+    experimental_endpoint(sources, segments, work, at)
+}
+fn experimental_endpoint(
+    sources: SourceOwner<'_>,
+    segments: &[Span],
+    work: &WorkMeter,
+    at: Span,
+) -> Result<BuiltinItem, Box<Diagnostic>> {
+    if segments.len() == 3 {
+        let mut alias = true;
+        for (name, segment) in ["alloc", "vec", "GrowStatus"].into_iter().zip(segments) {
+            if compare_bytes(sources.text(*segment)?, name, work, *segment)? != Ordering::Equal {
+                alias = false;
+                break;
+            }
+        }
+        if alias {
+            return Ok(BuiltinItem::Experimental(experimental::Item::GrowStatus));
+        }
+        for item in experimental::Item::ALL {
+            let mut matches = true;
+            for (name, segment) in item.path().into_iter().zip(segments) {
+                if compare_bytes(sources.text(*segment)?, name, work, *segment)? != Ordering::Equal
+                {
+                    matches = false;
+                    break;
+                }
+            }
+            if matches {
+                return Ok(BuiltinItem::Experimental(item));
+            }
+        }
+        for item in vector::Item::ALL {
+            let mut matches = true;
+            for (name, segment) in item.path().into_iter().zip(segments) {
+                if compare_bytes(sources.text(*segment)?, name, work, *segment)? != Ordering::Equal
+                {
+                    matches = false;
+                    break;
+                }
+            }
+            if matches {
+                return Ok(BuiltinItem::Vector(item));
+            }
+        }
+    }
     Err(diagnostic(
         "E0205",
         "resolve",
         "unsupported standard library import",
-        segments[2],
+        at,
     ))
+}
+
+fn owned_candidate_endpoint(
+    sources: SourceOwner<'_>,
+    path: QualifiedPathRef,
+    work: &WorkMeter,
+) -> Result<BuiltinItem, Box<Diagnostic>> {
+    let view = sources.import_path(path)?;
+    if view.root() == ast::PathRoot::Std && view.segments().len() == 3 {
+        for item in owned_vector::Item::ALL {
+            let mut selected = true;
+            for (name, segment) in item.path().into_iter().zip(view.segments()) {
+                if compare_bytes(sources.text(*segment)?, name, work, *segment)? != Ordering::Equal
+                {
+                    selected = false;
+                    break;
+                }
+            }
+            if selected {
+                return Ok(BuiltinItem::Vector(vector::Item::from_owned(item)));
+            }
+        }
+    }
+    current_builtin_endpoint(sources, path, work)
+}
+
+fn tables_builtin_endpoint(
+    tables: &Tables<'_>,
+    path: QualifiedPathRef,
+    work: &WorkMeter,
+) -> Result<BuiltinItem, Box<Diagnostic>> {
+    if matches!(
+        tables.candidate_source_origin,
+        CandidateOrigin::OwnedVectorBuild(..)
+    ) {
+        owned_candidate_endpoint(tables.sources, path, work)
+    } else {
+        current_builtin_endpoint(tables.sources, path, work)
+    }
+}
+
+/// Inert source-index candidate only. No public collector selects this route;
+/// the returned origin is deliberately rejected by executable source admission.
+pub(in crate::frontend) fn collect_owned_vector_candidate<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    metadata: usize,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+) -> Result<DeclarationIndex<'s>, Vec<Diagnostic>> {
+    let starting_work = work.used();
+    let bank = super::generics::owned_candidate::factory_bytes();
+    let fail = || {
+        vec![*resource(
+            "owned vector candidate factory metadata",
+            sources.eof(),
+        )]
+    };
+    let limits = IndexLimits {
+        retained: limits
+            .retained
+            .min(IndexLimits::default().retained)
+            .checked_sub(bank as u64)
+            .ok_or_else(fail)?,
+        scratch: limits
+            .scratch
+            .min(IndexLimits::default().scratch)
+            .checked_sub(bank as u64)
+            .ok_or_else(fail)?,
+        work: limits.work.min(IndexLimits::default().work),
+    };
+    let mut state =
+        super::generics::owned_candidate::BuildState::new(sources.eof(), metadata, limits)
+            .map_err(|e| vec![*e])?;
+    let mut facts = collect(
+        sources,
+        limits,
+        work,
+        allocator,
+        CollectionSyntax::OwnedVectorCandidate,
+    )
+    .map_err(|e| vec![*e])?;
+    state.set_collection_request(facts.plan.retained, facts.plan.scratch);
+    let ranges = matches!(
+        facts.tables.candidate_source_origin,
+        CandidateOrigin::CurrentRanges
+    );
+    let pending = allocator
+        .boxed_carrier(
+            super::generics::owned_candidate::BuildOwner::new(state, ranges),
+            "owned vector candidate planning owner",
+        )
+        .map_err(|_| fail())?;
+    facts.tables.candidate_source_origin = CandidateOrigin::OwnedVectorBuild(pending);
+    let mut index = facts.finish(work, allocator)?;
+    let used = work
+        .used()
+        .checked_sub(starting_work)
+        .ok_or_else(|| vec![*bad(sources.eof())])?;
+    if let CandidateOrigin::OwnedVectorPlan(owner) = &mut index.tables.candidate_source_origin {
+        owner[0].set_rebuild_work(used);
+    } else {
+        return Err(vec![*bad(sources.eof())]);
+    }
+    Ok(index)
 }
 
 #[derive(Debug)]
@@ -308,6 +504,7 @@ pub(in crate::frontend) fn collect_output_candidate<'s>(
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CollectionSyntax {
+    OwnedVectorCandidate,
     #[cfg(test)]
     OutputCandidate,
     #[cfg(test)]
@@ -322,7 +519,7 @@ enum CollectionSyntax {
 }
 impl CollectionSyntax {
     fn std_policy(self) -> super::super::parser::StdImportPolicy {
-        if self == Self::Enabled {
+        if self == Self::Enabled || self == Self::OwnedVectorCandidate {
             return super::super::parser::StdImportPolicy::Enabled;
         }
         #[cfg(test)]
@@ -376,6 +573,7 @@ fn collect<'s>(
     let record_usage = super::super::oir::owned_types::admit_declaration_counts(fields)
         .map_err(|_| declaration_limit())?;
     let mut builtins = BuiltinAdmission::none();
+    let mut builtin_import = 0u32;
     if syntax.std_policy().enabled()
         && (syntax != CollectionSyntax::Enabled || source_features & 2 != 0)
     {
@@ -384,6 +582,10 @@ fn collect<'s>(
             let ast = sources.ast(ModuleId(module))?;
             let mut previous = NONE;
             for import in &ast.imports {
+                let import_ordinal = builtin_import;
+                builtin_import = builtin_import
+                    .checked_add(1)
+                    .ok_or_else(|| overflow(import.span))?;
                 work.preflight(import.span)?;
                 let path = QualifiedPathRef {
                     file: import.span.file,
@@ -402,18 +604,26 @@ fn collect<'s>(
                     if syntax == CollectionSyntax::BuiltinCandidate {
                         builtin_endpoint(sources, path, work)?
                     } else {
-                        current_builtin_endpoint(sources, path, work)?
+                        if syntax == CollectionSyntax::OwnedVectorCandidate {
+                            owned_candidate_endpoint(sources, path, work)?
+                        } else {
+                            current_builtin_endpoint(sources, path, work)?
+                        }
                     }
                     #[cfg(not(test))]
                     {
-                        current_builtin_endpoint(sources, path, work)?
+                        if syntax == CollectionSyntax::OwnedVectorCandidate {
+                            owned_candidate_endpoint(sources, path, work)?
+                        } else {
+                            current_builtin_endpoint(sources, path, work)?
+                        }
                     }
                 };
                 // Complete file/start/end validation still follows catalog success.
                 // Only its validated start enters the narrower reserved-domain cursor.
                 let checked = CompactSpan::new(*endpoint)?;
                 previous = checked.start;
-                builtins.admit(item, endpoint);
+                builtins.admit(item, import_ordinal);
             }
         }
     }
@@ -454,6 +664,8 @@ fn collect<'s>(
     if syntax == CollectionSyntax::OutputCandidate {
         candidate_source_origin = CandidateOrigin::Output(CompactSpan::new(at)?);
     }
+    let mut has_element_ranges = false;
+    let mut has_source_slices = false;
     let mut c = Counts {
         modules: u64::try_from(sources.count()).map_err(|_| overflow(at))?,
         ..Counts::default()
@@ -469,7 +681,9 @@ fn collect<'s>(
         let mut failure = None;
         let mut enum_syntax = None;
         let mut std_syntax = false;
-        let valid = ast.validate_spans_and_ids_counted_with_syntax(
+        let mut features = ast::SyntaxFeatures::default();
+        let valid = ast.validate_spans_and_ids_counted_with_features(
+            Some(file),
             |span| {
                 if let Err(error) = work.preflight(span.unwrap_or(at)) {
                     failure = Some(error);
@@ -482,12 +696,18 @@ fn collect<'s>(
             &mut enum_syntax,
             syntax.std_policy(),
             &mut std_syntax,
+            &mut features,
         );
         if let Some(error) = failure {
             return Err(error);
         }
         if !valid {
             return Err(bad(at));
+        }
+        has_element_ranges |= features.element_ranges;
+        has_source_slices |= features.source_slices;
+        if ast.has_range_for() && matches!(candidate_source_origin, CandidateOrigin::Current) {
+            candidate_source_origin = CandidateOrigin::CurrentRanges;
         }
         if let Some(span) = enum_syntax {
             if syntax == CollectionSyntax::Closed {
@@ -504,7 +724,10 @@ fn collect<'s>(
                 candidate_source_origin = CandidateOrigin::Enum(CompactSpan::new(span)?);
             }
         }
-        if sources.is_original_adapter() && ast.uses_project_syntax() {
+        if sources.is_original_adapter()
+            && ast.uses_project_syntax()
+            && !ast.has_only_original_generic_syntax()
+        {
             return Err(bad(at));
         }
         c.functions = add(c.functions, ast.functions.len() as u64, at)?;
@@ -594,9 +817,25 @@ fn collect<'s>(
     for (prefix, extra) in [
         (
             c.originals,
-            builtins.set().extra_enums() + builtins.set().extra_functions(),
+            builtins.set().extra_enums()
+                + builtins.set().extra_functions()
+                + usize::from(
+                    builtins
+                        .set()
+                        .experimental()
+                        .contains(experimental::Item::ByteBuf),
+                )
+                + usize::from(
+                    builtins
+                        .set()
+                        .experimental()
+                        .contains(experimental::Item::File),
+                )
+                + builtins.set().vector_templates()
+                + builtins.set().experimental().owned_vector_templates()
+                + usize::from(builtins.set().contains_vector(vector::Item::Vec)),
         ),
-        (c.functions, builtins.set().extra_functions()),
+        (c.functions, builtins.set().extra_template_functions()),
         (c.enums, builtins.set().extra_enums()),
     ] {
         let total = prefix
@@ -606,10 +845,31 @@ fn collect<'s>(
             return Err(bad(at));
         }
     }
+    let syntax_scratch = SYNTAX_FEATURE_CONTROL_BYTES
+        .checked_add(if has_source_slices {
+            ast::SLICE_SOURCE_CONTROL_BYTES
+        } else {
+            0
+        })
+        .ok_or_else(|| overflow(at))?;
+    let fixed_scratch = FIXED_SCRATCH
+        .checked_add(VECTOR_INDEX_HEADER_GROWTH)
+        .and_then(|bytes| {
+            bytes.checked_add(super::super::builtin_catalog::builtin_set_control_bytes())
+        })
+        .and_then(|bytes| bytes.checked_add(syntax_scratch))
+        .and_then(|bytes| {
+            bytes.checked_add(if builtins.set().experimental().is_empty() {
+                0
+            } else {
+                experimental::compiler_carrier_bytes()
+            })
+        })
+        .ok_or_else(|| overflow(at))?;
     let plan = IndexPlan::calculate(
         c,
         size_of::<DeclarationIndex<'s>>(),
-        FIXED_SCRATCH,
+        fixed_scratch,
         limits,
         at,
     )?;
@@ -721,6 +981,7 @@ fn collect<'s>(
         )?,
         root_main: NONE,
         candidate_source_origin,
+        has_element_ranges,
         builtins,
     };
     let mut scratch = Scratch {
@@ -1244,7 +1505,7 @@ impl<'s> DeclarationFacts<'s> {
     pub fn finish(
         self,
         work: &WorkMeter,
-        _allocator: &mut Allocator,
+        allocator: &mut Allocator,
     ) -> Result<DeclarationIndex<'s>, Vec<Diagnostic>> {
         work.phase("original-conflicts");
         let mut errors = Vec::new();
@@ -1305,7 +1566,74 @@ impl<'s> DeclarationFacts<'s> {
         if !errors.is_empty() {
             return Err(errors);
         }
-        CleanOriginals { facts: self }.freeze(work)
+        let mut index = CleanOriginals { facts: self }.freeze(work)?;
+        // A bare vector call can omit generic syntax altogether. The sealed
+        // import inventory is a constant-time activation bit, so new() still
+        // reaches the planner's explicit/inferred element checks. Likewise, an
+        // immutable parse fact forces full syntax authentication for named
+        // slices even if all their mutable AST kinds have been replaced.
+        let has_generics = index.builtin_set().contains_vector(vector::Item::Vec)
+            || (0..index.sources().count()).any(|module| {
+                index.sources().ast(ModuleId(module)).is_ok_and(|program| {
+                    program.has_generics()
+                        || program.has_parsed_named_slice()
+                        || program.has_parsed_copy_records()
+                        || program.has_record_patterns()
+                })
+            });
+        if has_generics {
+            index
+                .require_current_source_pipeline()
+                .map_err(|error| vec![*error])?;
+            let plan = super::generics::Plan::build(&index, work, allocator)
+                .map_err(|error| vec![*error])?;
+            let ranges = index.has_range_for();
+            if matches!(
+                index.tables.candidate_source_origin,
+                CandidateOrigin::OwnedVectorBuild(..)
+            ) {
+                let pending = std::mem::replace(
+                    &mut index.tables.candidate_source_origin,
+                    CandidateOrigin::Current,
+                );
+                let CandidateOrigin::OwnedVectorBuild(pending) = pending else {
+                    unreachable!()
+                };
+                let [pending] = *pending;
+                let owner = super::generics::owned_candidate::OwnedGenericPlan::finish(
+                    plan,
+                    pending
+                        .into_state(index.sources().eof())
+                        .map_err(|e| vec![*e])?,
+                    ranges,
+                )
+                .map_err(|e| vec![*e])?;
+                let owner = allocator
+                    .boxed_carrier(owner, "owned vector candidate frozen owner")
+                    .map_err(|_| {
+                        vec![*resource(
+                            "owned vector candidate frozen allocation",
+                            index.sources().eof(),
+                        )]
+                    })?;
+                index.tables.candidate_source_origin = CandidateOrigin::OwnedVectorPlan(owner);
+                return Ok(index);
+            }
+            let plan = allocator
+                .boxed_carrier(plan, "generic instantiation owner")
+                .map_err(|_| {
+                    vec![*resource(
+                        "generic instantiation owner allocation failed",
+                        index.sources().eof(),
+                    )]
+                })?;
+            index.tables.candidate_source_origin = if ranges {
+                CandidateOrigin::CurrentGenericRanges(plan)
+            } else {
+                CandidateOrigin::CurrentGeneric(plan)
+            };
+        }
+        Ok(index)
     }
 }
 
@@ -1441,17 +1769,31 @@ fn stage_import(
             if matches!(tables.candidate_source_origin, CandidateOrigin::Builtin(_)) {
                 builtin_endpoint(tables.sources, path, work)?
             } else {
-                current_builtin_endpoint(tables.sources, path, work)?
+                tables_builtin_endpoint(tables, path, work)?
             }
             #[cfg(not(test))]
             {
-                current_builtin_endpoint(tables.sources, path, work)?
+                tables_builtin_endpoint(tables, path, work)?
             }
         };
         let handle = tables.builtin_handle(item)?;
         match item {
             BuiltinItem::Enum(_) => (Some(handle), None),
             BuiltinItem::Function(_) => (None, Some(handle)),
+            BuiltinItem::Vector(item) => {
+                if item.operation().is_some() || item.owned_item().is_some() {
+                    (None, Some(handle))
+                } else {
+                    (Some(handle), None)
+                }
+            }
+            BuiltinItem::Experimental(item) => {
+                if item.function().is_some() {
+                    (None, Some(handle))
+                } else {
+                    (Some(handle), None)
+                }
+            }
         }
     } else {
         tables.absolute_endpoint(
@@ -1605,6 +1947,33 @@ impl<'s> DeclarationIndex<'s> {
         matches!(
             self.tables.candidate_source_origin,
             CandidateOrigin::Current
+                | CandidateOrigin::CurrentGeneric(_)
+                | CandidateOrigin::CurrentRanges
+                | CandidateOrigin::CurrentGenericRanges(_)
+        )
+    }
+    /// Exact private construction origin. This is a read-only fact, not an
+    /// executable admission or permission to construct a source/raw owner.
+    pub fn is_owned_vector_candidate_pipeline(&self) -> bool {
+        matches!(
+            self.tables.candidate_source_origin,
+            CandidateOrigin::OwnedVectorPlan(_)
+        )
+    }
+    /// Independently collected during the counted source argument walk.
+    pub fn has_element_ranges(&self) -> bool {
+        self.tables.has_element_ranges
+    }
+    pub fn has_range_for(&self) -> bool {
+        if let CandidateOrigin::OwnedVectorBuild(owner) = &self.tables.candidate_source_origin {
+            return owner[0].ranges();
+        }
+        if let CandidateOrigin::OwnedVectorPlan(plan) = &self.tables.candidate_source_origin {
+            return plan[0].ranges();
+        }
+        matches!(
+            self.tables.candidate_source_origin,
+            CandidateOrigin::CurrentRanges | CandidateOrigin::CurrentGenericRanges(_)
         )
     }
     #[cfg(test)]
@@ -1621,7 +1990,38 @@ impl<'s> DeclarationIndex<'s> {
         self.source_enum_count() + self.builtin_set().extra_enums()
     }
     pub fn source_enum_count(&self) -> usize {
+        self.generic_plan()
+            .map_or(self.tables.enums.len(), |plan| plan.enum_count())
+    }
+    pub(super) fn template_enum_count(&self) -> usize {
         self.tables.enums.len()
+    }
+    pub(super) fn template_enumeration(
+        &self,
+        id: EnumId,
+    ) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
+        enumeration(&self.tables, id)
+    }
+    pub(super) fn template_builtin_enum_item(
+        &self,
+        id: EnumId,
+    ) -> Result<BuiltinItem, Box<Diagnostic>> {
+        let rank =
+            id.0.checked_sub(self.tables.enums.len())
+                .ok_or_else(|| bad(self.sources().eof()))?;
+        let read = usize::from(self.builtin_set().contains_enum(BuiltinEnum::ReadStatus));
+        if read != 0 && rank == 0 {
+            return Ok(BuiltinItem::Enum(BuiltinEnum::ReadStatus));
+        }
+        if self.builtin_set().contains_enum(BuiltinEnum::WriteStatus) && rank == read {
+            return Ok(BuiltinItem::Enum(BuiltinEnum::WriteStatus));
+        }
+        for item in experimental::Enumeration::ALL {
+            if self.builtin_set().experimental_enum_rank(item) == Some(rank) {
+                return Ok(BuiltinItem::Experimental(item.item()));
+            }
+        }
+        Err(bad(self.sources().eof()))
     }
     pub fn builtin_set(&self) -> BuiltinSet {
         self.tables.builtins.set()
@@ -1641,7 +2041,7 @@ impl<'s> DeclarationIndex<'s> {
         self.tables.require_no_builtin_candidate()
     }
     pub fn enumeration(&self, id: EnumId) -> Result<(EnumAstKey, ModuleId), Box<Diagnostic>> {
-        enumeration(&self.tables, id)
+        enumeration(&self.tables, self.template_enum_for_instance(id)?)
     }
     pub fn builtin_enum_id(&self, item: BuiltinEnum) -> Result<EnumId, Box<Diagnostic>> {
         self.tables.builtin_handle(BuiltinItem::Enum(item))?;
@@ -1668,19 +2068,72 @@ impl<'s> DeclarationIndex<'s> {
                 },
         ))
     }
+    pub fn experimental_enum_id(
+        &self,
+        item: experimental::Enumeration,
+    ) -> Result<EnumId, Box<Diagnostic>> {
+        self.tables
+            .builtin_handle(BuiltinItem::Experimental(item.item()))?;
+        self.builtin_set()
+            .experimental_enum_rank(item)
+            .map(|rank| EnumId(self.source_enum_count() + rank))
+            .ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn experimental_function_id(
+        &self,
+        item: experimental::Function,
+    ) -> Result<DefId, Box<Diagnostic>> {
+        self.tables
+            .builtin_handle(BuiltinItem::Experimental(item.item()))?;
+        self.builtin_set()
+            .experimental_function_rank(item)
+            .map(|rank| DefId(self.source_function_count() + rank))
+            .ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn experimental_anchor(&self, item: experimental::Item) -> Result<Span, Box<Diagnostic>> {
+        self.tables
+            .builtin_handle(BuiltinItem::Experimental(item))?;
+        self.tables
+            .builtin_anchor(
+                self.tables
+                    .builtins
+                    .experimental_anchor(item)
+                    .ok_or_else(|| bad(self.sources().eof()))?,
+            )
+            .copied()
+    }
+    pub fn experimental_signature(
+        &self,
+        item: experimental::Function,
+    ) -> Result<experimental::Signature, Box<Diagnostic>> {
+        self.experimental_function_id(item)?;
+        let enumeration = item
+            .result_enum()
+            .map(|item| self.experimental_enum_id(item))
+            .transpose()?;
+        Ok(item.signature(|_| enumeration.expect("checked enum dependency")))
+    }
     pub fn builtin_enum_anchor(&self, item: BuiltinEnum) -> Result<Span, Box<Diagnostic>> {
         self.builtin_enum_id(item)?;
         self.tables
-            .builtins
-            .enum_anchor(item)
-            .ok_or_else(|| bad(self.sources().eof()))
+            .builtin_anchor(
+                self.tables
+                    .builtins
+                    .enum_anchor(item)
+                    .ok_or_else(|| bad(self.sources().eof()))?,
+            )
+            .copied()
     }
     pub fn builtin_function_anchor(&self, item: BuiltinFunction) -> Result<Span, Box<Diagnostic>> {
         self.builtin_function_id(item)?;
         self.tables
-            .builtins
-            .function_anchor(item)
-            .ok_or_else(|| bad(self.sources().eof()))
+            .builtin_anchor(
+                self.tables
+                    .builtins
+                    .function_anchor(item)
+                    .ok_or_else(|| bad(self.sources().eof()))?,
+            )
+            .copied()
     }
     pub fn enum_origin(&self, id: EnumId) -> Result<DeclarationOrigin, Box<Diagnostic>> {
         if id.0 < self.source_enum_count() {
@@ -1702,6 +2155,17 @@ impl<'s> DeclarationIndex<'s> {
             return Ok(DeclarationOrigin::Builtin(BuiltinItem::Enum(
                 BuiltinEnum::WriteStatus,
             )));
+        }
+        for item in experimental::Enumeration::ALL {
+            if self
+                .builtin_set()
+                .experimental_enum_rank(item)
+                .is_some_and(|rank| id.0 == self.source_enum_count() + rank)
+            {
+                return Ok(DeclarationOrigin::Builtin(BuiltinItem::Experimental(
+                    item.item(),
+                )));
+            }
         }
         Err(bad(self.sources().eof()))
     }
@@ -1733,10 +2197,49 @@ impl<'s> DeclarationIndex<'s> {
                 BuiltinFunction::WriteStdout,
             )));
         }
+        for item in experimental::Function::ALL {
+            if self
+                .builtin_set()
+                .experimental_function_rank(item)
+                .is_some_and(|rank| id.0 == self.source_function_count() + rank)
+            {
+                return Ok(DeclarationOrigin::Builtin(BuiltinItem::Experimental(
+                    item.item(),
+                )));
+            }
+        }
+        let base = self.source_function_count() + self.builtin_set().extra_functions();
+        if let Some(key) =
+            id.0.checked_sub(base)
+                .and_then(|rank| self.vector_functions().get(rank))
+        {
+            // The sealed ordered Plan already authenticates this indexed key.
+            // No second linear key search is required to name its origin.
+            return Ok(DeclarationOrigin::Builtin(BuiltinItem::Vector(key.item())));
+        }
+        if let Some(rank) = id.0.checked_sub(base + self.vector_functions().len()) {
+            if let Some(key) = self.owned_vector_functions().get(rank) {
+                let item = match key.operation() {
+                    owned_vector::Operation::New => vector::Item::New,
+                    owned_vector::Operation::Len => vector::Item::Len,
+                    owned_vector::Operation::Capacity => vector::Item::Capacity,
+                    owned_vector::Operation::TryReserve => vector::Item::TryReserve,
+                    owned_vector::Operation::PushReserved => vector::Item::PushReserved,
+                    owned_vector::Operation::PopLast => vector::Item::PopLast,
+                    owned_vector::Operation::Truncate => vector::Item::Truncate,
+                    owned_vector::Operation::Take => vector::Item::Take,
+                };
+                return Ok(DeclarationOrigin::Builtin(BuiltinItem::Vector(item)));
+            }
+        }
         Err(bad(self.sources().eof()))
     }
     // Only checked view constructors use these narrow immutable projections.
     pub(super) fn frozen_enum_syntax(&self, id: EnumId) -> Option<&ast::EnumDecl> {
+        if id.0 >= self.source_enum_count() {
+            return None;
+        }
+        let id = self.template_enum_for_instance(id).ok()?;
         self.tables.enums.get(id.0).map(|row| {
             self.tables.sources.frozen_enum(EnumAstKey {
                 file: SourceFileId(row.file as usize),
@@ -1745,20 +2248,12 @@ impl<'s> DeclarationIndex<'s> {
         })
     }
     pub(super) fn frozen_enum_origin(&self, id: EnumId) -> DeclarationOrigin {
-        if id.0 < self.source_enum_count() {
-            DeclarationOrigin::Source
-        } else if self.builtin_set().contains_enum(BuiltinEnum::ReadStatus)
-            && id.0 == self.source_enum_count()
-        {
-            DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::ReadStatus))
-        } else {
-            DeclarationOrigin::Builtin(BuiltinItem::Enum(BuiltinEnum::WriteStatus))
-        }
+        self.enum_origin(id).expect("checked enum identity")
     }
     pub(super) fn frozen_enum_name(&self, id: EnumId) -> &str {
         self.frozen_enum_syntax(id).map_or_else(
             || match self.frozen_enum_origin(id) {
-                DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => item.name(),
+                DeclarationOrigin::Builtin(item) => item.name(),
                 _ => unreachable!("checked builtin enum"),
             },
             |syntax| self.tables.sources.frozen_text(syntax.name),
@@ -1768,21 +2263,26 @@ impl<'s> DeclarationIndex<'s> {
         self.frozen_enum_syntax(id).map_or_else(
             || match self.frozen_enum_origin(id) {
                 DeclarationOrigin::Builtin(BuiltinItem::Enum(item)) => self
-                    .tables
-                    .builtins
-                    .enum_anchor(item)
+                    .builtin_enum_anchor(item)
                     .expect("checked builtin enum"),
+                DeclarationOrigin::Builtin(BuiltinItem::Experimental(item)) => self
+                    .experimental_anchor(item)
+                    .expect("checked experimental enum"),
                 _ => unreachable!("checked builtin enum"),
             },
             |syntax| syntax.name,
         )
     }
     pub(super) fn frozen_variant_count(&self, id: EnumId) -> usize {
-        self.tables
-            .enums
-            .get(id.0)
-            .map_or(3, |row| row.variant_len as usize)
+        self.frozen_enum_syntax(id).map_or_else(
+            || match self.frozen_enum_origin(id) {
+                DeclarationOrigin::Builtin(item) => item.variant_count(),
+                _ => unreachable!("checked enum count"),
+            },
+            |syntax| syntax.variants.len(),
+        )
     }
+
     pub fn enum_for(&self, key: EnumAstKey) -> Result<EnumId, Box<Diagnostic>> {
         let module = self.tables.sources.module_for_file(key.file)?;
         let row = self.tables.modules[module.0];
@@ -1790,10 +2290,10 @@ impl<'s> DeclarationIndex<'s> {
             return Err(bad(self.tables.sources.eof()));
         }
         let id = EnumId(row.enum_base as usize + key.index);
-        if self.enumeration(id)?.0 != key {
+        if self.template_enumeration(id)?.0 != key {
             return Err(bad(self.tables.sources.eof()));
         }
-        Ok(id)
+        self.ordinary_enum_instance(id)
     }
     pub fn enum_view(&self, id: EnumId) -> Result<EnumView<'_>, Box<Diagnostic>> {
         EnumView::from_index(self, id)
@@ -1844,18 +2344,250 @@ impl<'s> DeclarationIndex<'s> {
         self.tables.sources
     }
     pub fn function_count(&self) -> usize {
-        self.source_function_count() + self.builtin_set().extra_functions()
+        self.source_function_count()
+            + self.builtin_set().extra_functions()
+            + self.vector_functions().len()
+            + self.owned_vector_functions().len()
+    }
+    pub fn vector_functions(&self) -> &[vector::Function] {
+        self.generic_plan()
+            .map_or(&[], |plan| plan.vector_functions())
+    }
+    /// Interpret source-template IDs only. Executable specialization IDs are
+    /// assigned after the generic worklist and use vector_function_id instead.
+    pub(super) fn vector_template(
+        &self,
+        id: DefId,
+        work: &WorkMeter,
+        at: Span,
+    ) -> Result<Option<vector::Operation>, Box<Diagnostic>> {
+        let Some(wanted) =
+            id.0.checked_sub(self.template_function_count() + self.builtin_set().extra_functions())
+        else {
+            return Ok(None);
+        };
+        let mut rank = 0;
+        for operation in vector::Operation::ALL {
+            work.debit(1, at, "vector template selection")?;
+            if self.builtin_set().contains_vector(operation.item()) {
+                if rank == wanted {
+                    return Ok(Some(operation));
+                }
+                rank += 1;
+            }
+        }
+        Ok(None)
+    }
+    pub fn vector_function_id(&self, key: vector::Function) -> Result<DefId, Box<Diagnostic>> {
+        self.tables
+            .builtin_handle(BuiltinItem::Vector(key.item()))?;
+        self.generic_plan()
+            .and_then(|plan| plan.vector_function_rank(key))
+            .map(|rank| {
+                DefId(self.source_function_count() + self.builtin_set().extra_functions() + rank)
+            })
+            .ok_or_else(|| bad(self.sources().eof()))
+    }
+    pub fn vector_anchor(&self, item: vector::Item) -> Result<Span, Box<Diagnostic>> {
+        self.tables.builtin_handle(BuiltinItem::Vector(item))?;
+        self.tables
+            .builtin_anchor(
+                self.tables
+                    .builtins
+                    .vector_anchor(item)
+                    .ok_or_else(|| bad(self.sources().eof()))?,
+            )
+            .copied()
+    }
+    pub fn vector_signature(
+        &self,
+        key: vector::Function,
+    ) -> Result<vector::Signature, Box<Diagnostic>> {
+        self.vector_function_id(key)?;
+        if let Some(record) = key.record_id() {
+            if !self.record_is_copy(record)? {
+                return Err(bad(self.sources().eof()));
+            }
+        }
+        let status = if key.operation().requires_grow_status() {
+            self.experimental_enum_id(experimental::Enumeration::Grow)?
+        } else {
+            EnumId(0)
+        };
+        Ok(key.signature(status))
     }
     pub fn source_function_count(&self) -> usize {
+        self.generic_plan()
+            .map_or(self.tables.functions.len(), |plan| plan.len())
+    }
+    pub(super) fn generic_plan(&self) -> Option<&super::generics::Plan> {
+        match &self.tables.candidate_source_origin {
+            CandidateOrigin::CurrentGeneric(plan) | CandidateOrigin::CurrentGenericRanges(plan) => {
+                Some(&plan[0])
+            }
+            CandidateOrigin::OwnedVectorPlan(plan) => Some(plan[0].ordinary()),
+            _ => None,
+        }
+    }
+    pub(super) fn owned_vector_builder(
+        &self,
+    ) -> Option<&std::sync::Mutex<super::generics::owned_candidate::BuildState>> {
+        match &self.tables.candidate_source_origin {
+            CandidateOrigin::OwnedVectorBuild(owner) => Some(owner[0].state()),
+            _ => None,
+        }
+    }
+    pub(super) fn owned_vector_plan(
+        &self,
+    ) -> Option<&super::generics::owned_candidate::OwnedGenericPlan> {
+        match &self.tables.candidate_source_origin {
+            CandidateOrigin::OwnedVectorPlan(plan) => Some(&plan[0]),
+            _ => None,
+        }
+    }
+    #[cfg(test)]
+    pub(super) fn alter_owned_candidate_for_test(
+        &mut self,
+        change: impl FnOnce(&mut super::generics::owned_candidate::OwnedGenericPlan),
+    ) {
+        let CandidateOrigin::OwnedVectorPlan(owner) = &mut self.tables.candidate_source_origin
+        else {
+            panic!("not an owned vector candidate");
+        };
+        change(&mut owner[0]);
+    }
+    #[cfg(test)]
+    pub(super) fn substitute_owned_candidate_source_for_test(&mut self, source: SourceOwner<'s>) {
+        assert!(self.owned_vector_plan().is_some());
+        self.tables.sources = source;
+    }
+    /// Inert source facts only. The candidate origin cannot pass the current
+    /// executable source guard and this lookup issues no raw or owned proof.
+    pub(in crate::frontend) fn owned_vector_function_id(
+        &self,
+        key: owned_vector::Function,
+        work: &WorkMeter,
+    ) -> Result<DefId, Box<Diagnostic>> {
+        let at = self.sources().eof();
+        if self.owned_vector_plan().is_none() {
+            return Err(bad(at));
+        }
+        let mut selected = None;
+        for (rank, candidate) in self.owned_vector_functions().iter().enumerate() {
+            work.debit(1, at, "owned vector source key identity")?;
+            if *candidate == key && selected.replace(rank).is_some() {
+                return Err(bad(at));
+            }
+        }
+        let rank = selected.ok_or_else(|| bad(at))?;
+        self.source_function_count()
+            .checked_add(self.builtin_set().extra_functions())
+            .and_then(|n| n.checked_add(self.vector_functions().len()))
+            .and_then(|n| n.checked_add(rank))
+            .map(DefId)
+            .ok_or_else(|| overflow(at))
+    }
+    pub(in crate::frontend) fn owned_vector_signature(
+        &self,
+        key: owned_vector::Function,
+        work: &WorkMeter,
+    ) -> Result<owned_vector::Signature, Box<Diagnostic>> {
+        self.owned_vector_function_id(key, work)?;
+        match key.element() {
+            crate::frontend::oir::owned_types::OwnedVectorRoot::Record(record) => {
+                if self.record_is_copy(record)? {
+                    return Err(bad(self.sources().eof()));
+                }
+            }
+            crate::frontend::oir::owned_types::OwnedVectorRoot::Enum(enumeration) => {
+                // Candidate-only builtin keys were rebound before the frozen
+                // plan was published. Authenticate this final source/catalog ID.
+                self.enum_origin(enumeration)?;
+            }
+        }
+        let grow = if key.operation().requires_grow_status() {
+            self.experimental_enum_id(experimental::Enumeration::Grow)?
+        } else {
+            EnumId(0)
+        };
+        Ok(key.concrete_signature(grow))
+    }
+    pub(in crate::frontend) fn owned_vector_anchor(
+        &self,
+        key: owned_vector::Function,
+        work: &WorkMeter,
+    ) -> Result<Span, Box<Diagnostic>> {
+        self.owned_vector_function_id(key, work)?;
+        let item = match key.operation() {
+            owned_vector::Operation::New => vector::Item::New,
+            owned_vector::Operation::Len => vector::Item::Len,
+            owned_vector::Operation::Capacity => vector::Item::Capacity,
+            owned_vector::Operation::TryReserve => vector::Item::TryReserve,
+            owned_vector::Operation::PushReserved => vector::Item::PushReserved,
+            owned_vector::Operation::PopLast => vector::Item::PopLast,
+            owned_vector::Operation::Truncate => vector::Item::Truncate,
+            owned_vector::Operation::Take => vector::Item::Take,
+        };
+        self.vector_anchor(item)
+    }
+    pub(super) fn owned_candidate_index_bytes(
+        &self,
+        work: &WorkMeter,
+    ) -> Result<usize, Box<Diagnostic>> {
+        let at = self.sources().eof();
+        let mut bytes = size_of::<Self>();
+        for (capacity, width) in [
+            (self.tables.originals.capacity(), size_of::<OriginalRow>()),
+            (self.tables.original_order.capacity(), size_of::<u32>()),
+            (self.tables.functions.capacity(), size_of::<FunctionRow>()),
+            (self.tables.records.capacity(), size_of::<RecordRow>()),
+            (self.tables.fields.capacity(), size_of::<FieldRow>()),
+            (self.tables.enums.capacity(), size_of::<EnumRow>()),
+            (self.tables.variants.capacity(), size_of::<VariantRow>()),
+            (self.tables.modules.capacity(), size_of::<ModuleRow>()),
+            (self.tables.children.capacity(), size_of::<u32>()),
+            (self.tables.imports.capacity(), size_of::<ImportRow>()),
+            (self.tables.aliases.capacity(), size_of::<AliasCell>()),
+            (self.tables.alias_order.capacity(), size_of::<u32>()),
+        ] {
+            work.debit(1, at, "owned vector retained index capacity")?;
+            bytes = bytes
+                .checked_add(capacity.checked_mul(width).ok_or_else(|| overflow(at))?)
+                .ok_or_else(|| overflow(at))?;
+        }
+        Ok(bytes)
+    }
+    pub(super) fn template_function_count(&self) -> usize {
         self.tables.functions.len()
     }
-    pub fn record_count(&self) -> usize {
-        self.tables.records.len()
-    }
-    pub fn function(&self, id: DefId) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
+    pub(super) fn template_function(
+        &self,
+        id: DefId,
+    ) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
         function(&self.tables, id)
     }
+    pub(super) fn template_record_count(&self) -> usize {
+        self.tables.records.len()
+    }
+    pub(super) fn template_record(
+        &self,
+        id: RecordId,
+    ) -> Result<(RecordAstKey, ModuleId), Box<Diagnostic>> {
+        record(&self.tables, id)
+    }
+    pub fn record_count(&self) -> usize {
+        self.generic_plan()
+            .map_or(self.tables.records.len(), |plan| plan.record_count())
+    }
+    pub fn function(&self, id: DefId) -> Result<(FunctionAstKey, ModuleId), Box<Diagnostic>> {
+        let definition = match self.generic_plan() {
+            Some(plan) => plan.definition(id)?,
+            None => id,
+        };
+        function(&self.tables, definition)
+    }
     pub fn record(&self, id: RecordId) -> Result<(RecordAstKey, ModuleId), Box<Diagnostic>> {
+        let id = self.template_record_for_instance(id)?;
         record(&self.tables, id)
     }
     pub fn def_for(&self, key: FunctionAstKey) -> Result<DefId, Box<Diagnostic>> {
@@ -1865,10 +2597,15 @@ impl<'s> DeclarationIndex<'s> {
             return Err(bad(self.tables.sources.eof()));
         }
         let id = DefId(row.function_base as usize + key.index);
-        if self.function(id)?.0 != key {
+        if self.template_function(id)?.0 != key {
             return Err(bad(self.tables.sources.eof()));
         }
-        Ok(id)
+        match self.generic_plan() {
+            Some(plan) => plan
+                .non_generic(id)
+                .ok_or_else(|| bad(self.tables.sources.eof())),
+            None => Ok(id),
+        }
     }
     pub fn record_for(&self, key: RecordAstKey) -> Result<RecordId, Box<Diagnostic>> {
         let module = self.tables.sources.module_for_file(key.file)?;
@@ -1877,13 +2614,18 @@ impl<'s> DeclarationIndex<'s> {
             return Err(bad(self.tables.sources.eof()));
         }
         let id = RecordId(row.record_base as usize + key.index);
-        if self.record(id)?.0 != key {
+        if self.template_record(id)?.0 != key {
             return Err(bad(self.tables.sources.eof()));
         }
-        Ok(id)
+        self.ordinary_record_instance(id)
     }
     pub fn root_original_main(&self) -> Option<DefId> {
-        (self.tables.root_main != NONE).then_some(DefId(self.tables.root_main as usize))
+        let definition =
+            (self.tables.root_main != NONE).then_some(DefId(self.tables.root_main as usize))?;
+        match self.generic_plan() {
+            Some(plan) => plan.non_generic(definition),
+            None => Some(definition),
+        }
     }
     pub fn query<'i>(&'i self, work: &'i WorkMeter) -> QuerySession<'i, 's> {
         QuerySession {
@@ -2165,12 +2907,12 @@ fn bounded_enum_public_index_rejects_every_unpaid_scalar_producer() {
 impl<'s> DeclarationIndex<'s> {
     /// Read-only pointer evidence for the sealed source-owner association.
     pub(super) fn builtin_anchor_borrows_for_test(&self) -> [Option<&'s Span>; 4] {
-        [
-            self.tables.builtins.read_status,
-            self.tables.builtins.read_stdin,
-            self.tables.builtins.write_status,
-            self.tables.builtins.write_stdout,
-        ]
+        [0, 1, 2, 3].map(|slot| {
+            self.tables
+                .builtins
+                .anchor(slot)
+                .and_then(|import| self.tables.builtin_anchor(import).ok())
+        })
     }
 }
 
@@ -2185,5 +2927,332 @@ impl DeclarationIndex<'_> {
         } else {
             self.tables.modules[0].import_start = NONE;
         }
+    }
+}
+
+#[cfg(test)]
+mod vector_source_authority_tests {
+    use super::*;
+    use crate::frontend::project::ProjectLimits;
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering as AtomicOrdering},
+    };
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new(source: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "oxid-vector-source-authority-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, AtomicOrdering::Relaxed),
+            ));
+            fs::create_dir(&root).unwrap();
+            fs::write(root.join("main.ox"), source).unwrap();
+            Self(root)
+        }
+        fn load(&self) -> ProjectSources {
+            ProjectSources::load_typed(
+                self.0.join("main.ox").to_str().unwrap(),
+                ProjectLimits::default(),
+            )
+            .unwrap()
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn imported_vector_new_without_generic_syntax_reaches_element_validation() {
+        for text in [
+            "use alloc::vec::new;fn main()->i32{new();return 0;}",
+            "use alloc::vec::new;fn main()->i32{let values=new();return 0;}",
+            "use alloc::vec::new as create;fn main()->i32{create();return 0;}",
+        ] {
+            let fixture = Fixture::new(text);
+            let project = fixture.load();
+            let owner = SourceOwner::project(&project);
+            let program = owner.ast(ModuleId(0)).unwrap();
+            assert!(!program.has_generics());
+            assert!(!program.has_record_patterns());
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let facts =
+                collect_originals(owner, IndexLimits::default(), &work, &mut allocator).unwrap();
+            let errors = facts.finish(&work, &mut allocator).unwrap_err();
+            assert_eq!(errors.len(), 1, "{text}: {errors:?}");
+            assert_eq!((errors[0].code, errors[0].stage), ("E0300", "generics"));
+            assert_eq!(
+                errors[0].message,
+                "cannot infer new element; specify new::<T>"
+            );
+        }
+        for (imports, planned) in [("", false), ("use alloc::vec::new;", true)] {
+            let fixture = Fixture::new(&format!("{imports}fn main()->i32{{return 0;}}"));
+            let project = fixture.load();
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let index = collect_originals(
+                SourceOwner::project(&project),
+                IndexLimits::default(),
+                &work,
+                &mut allocator,
+            )
+            .unwrap()
+            .finish(&work, &mut allocator)
+            .unwrap();
+            assert_eq!(index.generic_plan().is_some(), planned);
+            if let Some(plan) = index.generic_plan() {
+                assert!(
+                    plan.vector_functions().is_empty(),
+                    "unused imports cannot manufacture instances"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn primitive_and_named_slice_authentication_share_an_enforced_scratch_row() {
+        let mut scratch = [0; 3];
+        for (position, parameter) in ["i32", "&[i32]", "&[T]"].into_iter().enumerate() {
+            let fixture = Fixture::new(&format!(
+                "fn f<T:Copy>(items:{parameter})->i32{{return 0;}}fn main()->i32{{return 0;}}"
+            ));
+            let project = fixture.load();
+            let facts = collect_originals(
+                SourceOwner::project(&project),
+                IndexLimits::default(),
+                &WorkMeter::default(),
+                &mut Allocator::default(),
+            )
+            .unwrap();
+            scratch[position] = facts.plan().scratch;
+            let limits = IndexLimits {
+                scratch: scratch[position] - 1,
+                ..IndexLimits::default()
+            };
+            let error = collect_originals(
+                SourceOwner::project(&project),
+                limits,
+                &WorkMeter::default(),
+                &mut Allocator::default(),
+            )
+            .unwrap_err();
+            assert_eq!(error.code, "E0400");
+            assert!(error.message.contains("scratch"), "{error:?}");
+        }
+        assert_eq!(
+            scratch[1] - scratch[0],
+            ast::SLICE_SOURCE_CONTROL_BYTES as u64
+        );
+        assert_eq!(scratch[2], scratch[1]);
+    }
+
+    #[test]
+    fn original_adapter_refuses_nongeneric_named_slice_relabelled_as_primitive() {
+        use crate::frontend::{lexer, parser, source::SourceMap};
+        let mut map = SourceMap::new();
+        let file = map.add(
+            "relabelled-slice.ox".into(),
+            "struct T{x:i32} fn f(p:&[T])->i32{return 0;} fn main()->i32{let a=[1];return f(&a);}"
+                .into(),
+        );
+        let source = map.get(file);
+        let (mut program, _) = parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap();
+        assert!(!program.has_generics());
+        assert!(!program.has_record_patterns());
+        assert!(!program.uses_project_syntax());
+        let parameter = program.functions[0].params[0].ty;
+        assert!(matches!(
+            parameter.kind,
+            ast::TypeSyntaxKind::GenericSliceReference { .. }
+        ));
+        {
+            // The original source's record element is semantically inadmissible.
+            let work = WorkMeter::default();
+            let mut allocator = Allocator::default();
+            let owner = SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap();
+            let facts =
+                collect_originals(owner, IndexLimits::default(), &work, &mut allocator).unwrap();
+            let error = facts
+                .signature_view(&work)
+                .parameter_type(ModuleId(0), parameter)
+                .unwrap_err();
+            assert_eq!(error.code, "E0300");
+            assert_eq!(error.message, "slice elements must be scalar Copy types");
+            // The immutable parse fact now also rejects this semantic error
+            // while finishing, rather than returning an unchecked index.
+            let errors = facts.finish(&work, &mut allocator).unwrap_err();
+            assert_eq!(errors[0].code, "E0300");
+        }
+        program.functions[0].params[0].ty.kind = ast::TypeSyntaxKind::SliceReference {
+            mutable: false,
+            element: ast::ArrayElementTypeSyntax::I32,
+        };
+        assert!(program.belongs_to(source), "cheap provenance is unchanged");
+        assert_eq!(program.functions[0].params[0].ty.span, parameter.span);
+        let mut features = ast::SyntaxFeatures::default();
+        assert!(!program.validate_spans_and_ids_counted_with_features(
+            Some(source),
+            |at| at.is_none_or(|at| source.try_text(at).is_some()),
+            &mut None,
+            parser::StdImportPolicy::Enabled,
+            &mut false,
+            &mut features,
+        ));
+        assert!(features.source_slices);
+        assert!(
+            !features.generic_slices,
+            "forged variant cannot select its authentication budget"
+        );
+        let owner = SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap();
+        let mut allocator = Allocator::default();
+        let error = collect_originals(
+            owner,
+            IndexLimits::default(),
+            &WorkMeter::default(),
+            &mut allocator,
+        )
+        .unwrap_err();
+        assert_eq!((error.code, error.stage), ("E0500", "resolve-project"));
+        assert_eq!(allocator.attempts, 0, "reject before allocating index rows");
+    }
+
+    #[test]
+    fn nongeneric_named_slice_relabels_cannot_remove_paid_full_authentication() {
+        use crate::frontend::{lexer, parser, source::SourceMap};
+        for mixed in [false, true] {
+            let parameters = if mixed { "p:&[T],q:&[T]" } else { "p:&[T]" };
+            for replacement in 0..7 {
+                let mut map = SourceMap::new();
+                let file = map.add(
+                    "relabelled-named-slice.ox".into(),
+                    format!(
+                        "struct T{{x:i32}} fn f({parameters})->i32{{return 0;}} fn main()->i32{{return 0;}}"
+                    ),
+                );
+                let source = map.get(file);
+                let (mut program, _) = parser::parse_typed_counted(
+                    source,
+                    lexer::lex(source).unwrap(),
+                    parser::SourceMode::ProjectCandidate,
+                    parser::MAX_NODES,
+                    &mut Allocator::default(),
+                    &mut Default::default(),
+                )
+                .unwrap();
+                assert!(!program.has_generics());
+                assert!(!program.has_record_patterns());
+                assert!(!program.uses_project_syntax());
+                assert!(program.has_parsed_named_slice());
+                let parameter = program.functions[0].params[0].ty;
+                let ast::TypeSyntaxKind::GenericSliceReference { element, .. } = parameter.kind
+                else {
+                    panic!("expected the source's named slice");
+                };
+                let array = ast::FixedArraySyntax {
+                    element: ast::ArrayElementTypeSyntax::I32,
+                    length: 1,
+                };
+                program.functions[0].params[0].ty.kind = match replacement {
+                    0 | 1 => ast::TypeSyntaxKind::ArrayReference {
+                        mutable: replacement == 1,
+                        array,
+                    },
+                    2 | 3 => ast::TypeSyntaxKind::Reference {
+                        mutable: replacement == 3,
+                        referent: element,
+                    },
+                    4 => ast::TypeSyntaxKind::Unit,
+                    5 => ast::TypeSyntaxKind::Array(array),
+                    6 => ast::TypeSyntaxKind::Name(element),
+                    _ => unreachable!(),
+                };
+                assert_eq!(program.functions[0].params[0].ty.span, parameter.span);
+                assert!(program.belongs_to(source), "provenance remains cheap");
+                assert!(program.has_parsed_named_slice());
+                let mut features = ast::SyntaxFeatures::default();
+                assert!(program.validate_spans_and_ids_counted_with_features(
+                    Some(source),
+                    |at| at.is_none_or(|at| source.try_text(at).is_some()),
+                    &mut None,
+                    parser::StdImportPolicy::Enabled,
+                    &mut false,
+                    &mut features,
+                ));
+                // A single relabel can erase all mutable slice observations;
+                // leaving another named parameter cannot authorize this one.
+                assert_eq!(features.source_slices, mixed);
+                assert_eq!(features.generic_slices, mixed);
+                let owner = SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap();
+                let work = WorkMeter::default();
+                work.enable_observation();
+                let mut allocator = Allocator::default();
+                let facts = collect_originals(owner, IndexLimits::default(), &work, &mut allocator)
+                    .unwrap();
+                let errors = facts.finish(&work, &mut allocator).unwrap_err();
+                assert_eq!(errors.len(), 1, "mixed={mixed} replacement={replacement}");
+                assert_eq!(
+                    (errors[0].code, errors[0].stage),
+                    ("E0500", "resolve-project"),
+                    "mixed={mixed} replacement={replacement}: {errors:?}"
+                );
+                assert!(work.events.borrow().iter().any(|event| {
+                    event.operation == "generic syntax authentication" && event.units > 0
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn original_primitive_slices_do_not_activate_named_slice_planning() {
+        use crate::frontend::{lexer, parser, source::SourceMap};
+        let mut map = SourceMap::new();
+        let file = map.add(
+            "original-primitive-slices.ox".into(),
+            "fn f(p:&[i32],q:&mut[bool])->i32{return 0;} fn main()->i32{return 0;}".into(),
+        );
+        let source = map.get(file);
+        let (program, _) = parser::parse_typed_counted(
+            source,
+            lexer::lex(source).unwrap(),
+            parser::SourceMode::ProjectCandidate,
+            parser::MAX_NODES,
+            &mut Allocator::default(),
+            &mut Default::default(),
+        )
+        .unwrap();
+        assert!(!program.has_parsed_named_slice());
+        let work = WorkMeter::default();
+        work.enable_observation();
+        let mut allocator = Allocator::default();
+        let index = collect_originals(
+            SourceOwner::original(source, &program, SourceView::Map(&map)).unwrap(),
+            IndexLimits::default(),
+            &work,
+            &mut allocator,
+        )
+        .unwrap()
+        .finish(&work, &mut allocator)
+        .unwrap();
+        assert!(index.generic_plan().is_none());
+        assert!(work
+            .events
+            .borrow()
+            .iter()
+            .all(|event| { event.operation != "generic syntax authentication" }));
     }
 }

@@ -12,6 +12,8 @@ const MAX_DELIMITERS: usize = 128;
 const MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 const TIGHT_AFTER: u8 = 1;
 const PATH_COLON: u8 = 2;
+const BITWISE_AND: u8 = 4;
+const TIGHT_BEFORE: u8 = 8;
 
 #[derive(Clone, Copy)]
 struct Limits {
@@ -313,7 +315,7 @@ fn parse_with_syntax(
             parse(source, allocator).map(|program| (program, ParseMetrics::default()))
         }
         _ => {
-            let tokens = lexer::lex_with_allocator(source, lexer::MAX_TOKENS, allocator)
+            let tokens = lexer::lex_current_with_allocator(source, lexer::MAX_TOKENS, allocator)
                 .map_err(|error| vec![*error.diagnostic()])?;
             let token_bytes = tokens
                 .capacity()
@@ -409,6 +411,43 @@ fn roles_with_syntax(
         return Err(resource("formatter work table capacity exceeded admission"));
     }
     roles.resize(length, 0);
+    for header in program.generic_headers() {
+        roles[header.declaration.start] |= TIGHT_AFTER;
+        let start = program
+            .tokens
+            .partition_point(|token| token.span.end <= header.declaration.end);
+        let mut tokens = program.tokens[start..]
+            .iter()
+            .filter(|token| token.kind != Kind::Trivia);
+        let open = tokens
+            .next()
+            .ok_or_else(|| invariant("missing generic parameter delimiter"))?;
+        if open.kind != Kind::Less {
+            return Err(invariant("invalid generic parameter delimiter"));
+        }
+        roles[open.span.start] |= TIGHT_AFTER;
+        let close = tokens
+            .find(|token| token.kind == Kind::Greater)
+            .ok_or_else(|| invariant("missing generic parameter delimiter"))?;
+        roles[close.span.start] |= TIGHT_BEFORE;
+    }
+    for call in program.generic_calls() {
+        let first = program
+            .tokens
+            .partition_point(|token| token.span.start < call.span.start);
+        for token in program.tokens[first..]
+            .iter()
+            .take_while(|token| token.span.start < call.span.end)
+        {
+            match token.kind {
+                Kind::Colon | Kind::Less | Kind::Greater => {
+                    roles[token.span.start] |= TIGHT_BEFORE | TIGHT_AFTER
+                }
+                Kind::GreaterEqual => roles[token.span.start] |= TIGHT_BEFORE,
+                _ => (),
+            }
+        }
+    }
     if syntax.candidate() {
         // Preserve the unchanged two-token arrow; do not skip raw trivia.
         for pair in program.tokens.windows(2) {
@@ -422,7 +461,68 @@ fn roles_with_syntax(
     }
     for expression in &program.expressions {
         match &expression.kind {
-            ExprKind::Negate { .. } | ExprKind::Number { negative: true, .. } => {
+            ExprKind::Borrow {
+                forwarded: true,
+                name,
+                ..
+            } => {
+                let first = program
+                    .tokens
+                    .partition_point(|token| token.span.end <= expression.span.start);
+                for token in program.tokens[first..]
+                    .iter()
+                    .take_while(|token| token.span.end <= name.start)
+                {
+                    if token.kind == Kind::Star {
+                        roles[token.span.start] |= TIGHT_AFTER;
+                    }
+                }
+            }
+            ExprKind::BitNot { operator_span, .. } => roles[operator_span.start] |= TIGHT_AFTER,
+            ExprKind::Bitwise {
+                op, operator_span, ..
+            } => {
+                if op.shift() {
+                    roles[operator_span.start] |= TIGHT_AFTER;
+                }
+                if *op == crate::frontend::ast::BitwiseOp::And {
+                    roles[operator_span.start] |= BITWISE_AND;
+                }
+            }
+            ExprKind::ByteString { .. } => {
+                roles[expression.span.start] |= TIGHT_AFTER;
+            }
+            ExprKind::Conversion {
+                op: crate::frontend::ast::ConversionOp::FloatFromBits(_),
+                name_span,
+                ..
+            } => {
+                for token in program.tokens.iter().filter(|t| {
+                    t.span.start >= expression.span.start && t.span.end <= name_span.start
+                }) {
+                    if token.kind == Kind::Colon {
+                        roles[token.span.start] |= TIGHT_AFTER;
+                    }
+                }
+            }
+            ExprKind::FloatNumber {
+                digits, negative, ..
+            } => {
+                if *negative {
+                    roles[expression.span.start] |= TIGHT_AFTER;
+                }
+                for token in program
+                    .tokens
+                    .iter()
+                    .filter(|t| t.span.start >= digits.start && t.span.end < digits.end)
+                {
+                    roles[token.span.start] |= TIGHT_AFTER;
+                }
+            }
+            ExprKind::Negate { .. }
+            | ExprKind::Number { negative: true, .. }
+            | ExprKind::I64Number { negative: true, .. }
+            | ExprKind::IntegerNumber { negative: true, .. } => {
                 roles[expression.span.start] |= TIGHT_AFTER;
             }
             ExprKind::IndexRead { base, .. } => {
@@ -441,6 +541,23 @@ fn roles_with_syntax(
                 args: Some(args), ..
             } => {
                 for argument in args {
+                    if let Argument::Borrow {
+                        place: BorrowPlace::Range { name, star, .. },
+                        ..
+                    } = argument
+                    {
+                        if let Some(star) = star {
+                            roles[*star as usize] |= TIGHT_AFTER;
+                        }
+                        let end = program
+                            .tokens
+                            .partition_point(|token| token.span.end <= name.end);
+                        let receiver = program
+                            .tokens
+                            .get(end.saturating_sub(1))
+                            .ok_or_else(|| invariant("missing range receiver"))?;
+                        roles[receiver.span.start] |= TIGHT_AFTER;
+                    }
                     if let Argument::Borrow {
                         place: BorrowPlace::ForwardedParameter { star_span, .. },
                         ..
@@ -590,14 +707,17 @@ fn horizontal_space(source: &SourceFile, left: &Token, right: &Token, roles: &[u
         || left.kind == LParen
         || matches!(delimiter(source, left), Some(Delimiter::Open(b'[')))
         || matches!(delimiter(source, right), Some(Delimiter::Close(b'[')))
-        || (right.kind == LParen && left.kind == Ident)
+        || (right.kind == LParen
+            && (left.kind == Ident || roles[left.span.start] & TIGHT_BEFORE != 0))
         || left.kind == Dot
         || right.kind == Dot
         || (left.kind == Colon && roles[left.span.start] & PATH_COLON != 0)
         || (right.kind == Colon && roles[right.span.start] & PATH_COLON != 0)
         || right.kind == Colon
-        || matches!(left.kind, Ampersand | Not)
+        || left.kind == Not
+        || (left.kind == Ampersand && roles[left.span.start] & BITWISE_AND == 0)
         || roles[left.span.start] & TIGHT_AFTER != 0
+        || roles[right.span.start] & TIGHT_BEFORE != 0
         || (left.kind == LBrace && right.kind == RBrace)
     {
         return false;

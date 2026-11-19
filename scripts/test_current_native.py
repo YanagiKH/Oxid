@@ -1,5 +1,7 @@
 """Failure controls for the current native runner; native oracle bodies are unchanged."""
 import json
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 import subprocess
 import sys
@@ -67,19 +69,36 @@ class CurrentNativeControls(unittest.TestCase):
     def test_command_failure_and_timeout_retain_streams_and_failure_receipts(self):
         output = self.root / "evidence"
         output.mkdir()
-        runner = gate.Runner(self.repo, output, Path("/unused"), 0.2)
-        with self.assertRaises(ValueError):
+        runner = gate.Runner(self.repo, output, Path("/unused"), 10)
+        diagnostics = StringIO()
+        with redirect_stdout(diagnostics), self.assertRaises(ValueError):
             runner.command("failed", [sys.executable, "-c",
-                "import sys; print('kept'); print('diagnostic', file=sys.stderr); sys.exit(7)"])
+                "import sys; print('kept'); print('prefix' + 'x' * 9000 + '\\n::error::diagnostic', file=sys.stderr); sys.exit(7)"])
         receipt = json.loads((output / "commands/failed/command.json").read_text())
         self.assertEqual((receipt["status"], receipt["exit_code"]), ("failed", 7))
         self.assertEqual((output / "commands/failed/stdout").read_text(), "kept\n")
-        self.assertEqual((output / "commands/failed/stderr").read_text(), "diagnostic\n")
-        with self.assertRaises(subprocess.TimeoutExpired):
-            runner.command("timeout", [sys.executable, "-c", "import time; time.sleep(10)"])
+        stderr = (output / "commands/failed/stderr").read_bytes()
+        self.assertTrue(stderr.startswith(b"prefix"))
+        self.assertTrue(stderr.endswith(b"\n::error::diagnostic\n"))
+        lines = diagnostics.getvalue().splitlines()
+        self.assertEqual(json.loads(lines[1].split(" tail: ", 1)[1]), "kept\n")
+        self.assertEqual(json.loads(lines[2].split(" tail: ", 1)[1]), stderr[-8192:].decode())
+        self.assertEqual(len(lines), 3)
+        diagnostics = StringIO()
+        with redirect_stdout(diagnostics), self.assertRaises(subprocess.TimeoutExpired):
+            runner.command("timeout", [sys.executable, "-c",
+                "import time; print('waiting marker', flush=True); time.sleep(10)"], timeout=0.2)
         receipt = json.loads((output / "commands/timeout/command.json").read_text())
         self.assertEqual(receipt["status"], "failed")
         self.assertIn("timed out", receipt["error"])
+        self.assertIsNotNone(receipt["exit_code"])
+        self.assertEqual(receipt["timeout_seconds"], 0.2)
+        self.assertIn('"waiting marker\\n"', diagnostics.getvalue())
+        self.assertEqual((output / "commands/timeout/stdout").read_text(), "waiting marker\n")
+        for timeout in (0, -1, float("inf"), float("nan")):
+            with self.assertRaisesRegex(ValueError, "positive and finite"):
+                runner.command("invalid", [sys.executable], timeout=timeout)
+        self.assertFalse((output / "commands/invalid").exists())
 
     def test_missing_native_artifacts_do_not_count_as_evidence(self):
         output = self.root / "native"

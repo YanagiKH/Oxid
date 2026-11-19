@@ -378,7 +378,12 @@ fn source_array_project_uses_original_root_main_and_child_diagnostic_origins() {
     fs::remove_dir_all(directory).unwrap();
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the source array native gate"]
 fn source_array_consumers_use_real_llvm() {

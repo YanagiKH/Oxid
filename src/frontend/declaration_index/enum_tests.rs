@@ -101,7 +101,7 @@ fn enum_index_interleaved_identity_views_and_original_alias_targets() {
         + 2 * 4
         + 2 * 40;
     assert_eq!(plan.retained, expected);
-    assert_eq!(plan.scratch, FIXED_SCRATCH as u64 + 96);
+    assert_eq!(plan.scratch, CURRENT_BASE_SCRATCH as u64 + 96);
     let index = facts.finish(&work, &mut allocator).unwrap();
     assert_eq!(
         index.complete_row_lengths(),
@@ -509,7 +509,7 @@ fn enum_index_actual_carriers_and_enum_free_header_growth() {
         plan.retained,
         size_of::<DeclarationIndex<'_>>() as u64 + 40 + 12 + 68
     );
-    assert_eq!(plan.scratch, FIXED_SCRATCH as u64 + 8);
+    assert_eq!(plan.scratch, CURRENT_BASE_SCRATCH as u64 + 8);
     assert!(facts.require_current_source_pipeline().is_ok());
 }
 

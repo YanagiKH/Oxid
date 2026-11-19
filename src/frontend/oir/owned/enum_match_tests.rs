@@ -1,6 +1,7 @@
 //! Independent B2a raw proof fixtures. No source lowerer, executable witness,
 //! consumer plan, or production canonical-match builder supplies these graphs.
 use super::consumer_fixtures as f;
+use super::enum_admission_tests::VECTOR_RAW_HEADER_GROWTH;
 use super::*;
 use std::mem::size_of;
 
@@ -42,6 +43,21 @@ fn block(statements: Vec<OwnedStatement>, kind: OwnedTerminatorKind, span: Span)
 }
 fn literal(ty: hir::Ty) -> Rvalue {
     match ty {
+        hir::Ty::I8
+        | hir::Ty::I16
+        | hir::Ty::U16
+        | hir::Ty::U32
+        | hir::Ty::U64
+        | hir::Ty::Isize
+        | hir::Ty::Usize
+        | hir::Ty::I128
+        | hir::Ty::U128
+        | hir::Ty::Char
+        | hir::Ty::F32
+        | hir::Ty::F64 => {
+            panic!("integer width is outside this retained narrow fixture or observer")
+        }
+        hir::Ty::I64 => panic!("i64 is outside this retained narrow fixture or observer"),
         hir::Ty::U8 => unreachable!("u8 is outside this predecessor fixture or observation domain"),
         hir::Ty::Bool => Rvalue::Bool(true),
         hir::Ty::I32 => Rvalue::I32(-71),
@@ -148,6 +164,7 @@ fn fixture(
         ));
     }
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![enumeration(payloads, span)],
         records: vec![],
@@ -1113,6 +1130,7 @@ fn scalar_program(span: Span) -> RawOwnedProgram {
         span,
     ));
     RawOwnedProgram {
+        vector_functions: Vec::new(),
         builtins: BuiltinOrigins::None,
         enums: vec![],
         records: vec![],
@@ -1200,7 +1218,10 @@ fn enum_raw_empty_match_headers_preserve_old_program_proofs() {
     assert_eq!(usage, verify_owned(raw, &sources).unwrap().usage());
     assert_eq!(
         usage.metadata_bytes,
-        size_of::<Vec<RawEnumDecl>>() + size_of::<usize>() + size_of::<Vec<MatchDecl>>()
+        size_of::<Vec<RawEnumDecl>>()
+            + size_of::<usize>()
+            + size_of::<Vec<MatchDecl>>()
+            + VECTOR_RAW_HEADER_GROWTH
     );
     assert_eq!(
         (
@@ -1245,7 +1266,8 @@ fn enum_raw_descriptor_inventory_is_independent_and_precedes_allocation() {
     assert_eq!(usage.owners, 1);
     assert_eq!(usage.expanded_events, 3 + 7 + 1 + 2);
     assert_eq!(usage.work, 4 * 3 + 36 * (1 + 8 + 3 + 7 + 1 + 6 + 1 + 1));
-    let metadata = size_of::<Vec<RawEnumDecl>>()
+    let metadata = VECTOR_RAW_HEADER_GROWTH
+        + size_of::<Vec<RawEnumDecl>>()
         + size_of::<usize>()
         + size_of::<RawEnumDecl>()
         + 2 * size_of::<RawVariantDecl>()

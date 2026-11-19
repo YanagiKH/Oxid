@@ -1,0 +1,14 @@
+[project]
+name = "copy-records-example"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[build]
+entry-mode = "result"
+reproducible = true
+
+[tests]
+copies = "tests/copies.ox"
+
+[execution]
+policy = "hosted"

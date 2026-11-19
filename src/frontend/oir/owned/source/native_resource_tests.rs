@@ -197,7 +197,122 @@ fn source_native_owner_classes_have_independent_aggregate_and_path_seams() {
     // inventory and owner-width limits, including builtin and wrapper scratch.
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn source_native_arguments_charge_main_inputs_validation_and_return_before_emission() {
+    let case = source::checked_enum_project("use std::env::arg_bytes;use std::env::ArgStatus;fn main()->i32{let mut bytes=b\"xxxxxx\";arg_bytes(1,&mut bytes);return 0;}");
+    let plan = ExecutionPlan::build(&case.witness).unwrap();
+    assert_eq!(plan.functions().len(), 2);
+    // C ABI roles: fuel 8, heap 64, prepared delivery 16, argument control 312.
+    // The argument control includes both main parameters, immutable context,
+    // start/copy/hosted/descriptor/overlap frames and returned count.
+    let required = plan
+        .functions()
+        .iter()
+        .map(|function| function.usage().native_bytes)
+        .sum::<usize>()
+        + 8
+        + 64
+        + 16
+        + 312;
+    let limits = Limits {
+        bytes: required,
+        live_bytes: required,
+        ..Limits::DEFAULT
+    };
+    admit(&plan, limits).unwrap();
+    assert!(native_module_limits(
+        &case.witness,
+        Some(case.entry),
+        case.project.sources(),
+        plan::MAX_FUEL,
+        limits
+    )
+    .is_ok());
+    denial(
+        &admit(
+            &plan,
+            Limits {
+                bytes: required - 1,
+                ..limits
+            },
+        )
+        .unwrap_err(),
+        "aggregate storage bytes",
+        required - 1,
+        case.witness.functions()[0].span,
+    );
+    denial(
+        &admit(
+            &plan,
+            Limits {
+                live_bytes: required - 1,
+                ..limits
+            },
+        )
+        .unwrap_err(),
+        "live storage bytes",
+        required - 1,
+        case.witness.functions()[case.entry.0].span,
+    );
+}
+
+#[test]
+fn source_native_i64_prices_the_full_output_frames_before_emission() {
+    let case = source::checked_enum_project(
+        "enum Tag{Done}fn main()->i64{return -9223372036854775808i64;}",
+    );
+    let plan = ExecutionPlan::build(&case.witness).unwrap();
+    assert_eq!(plan.functions().len(), 1);
+    // Printer: 56 bytes; common output call: 40; returned status plus padding: 8.
+    let required = plan.function(case.entry).usage().native_bytes + 104;
+    let limits = Limits {
+        bytes: required,
+        live_bytes: required,
+        ..Limits::DEFAULT
+    };
+    admit(&plan, limits).unwrap();
+    assert!(native_module_limits(
+        &case.witness,
+        Some(case.entry),
+        case.project.sources(),
+        plan::MAX_FUEL,
+        limits
+    )
+    .is_ok());
+    denial(
+        &admit(
+            &plan,
+            Limits {
+                bytes: required - 1,
+                ..limits
+            },
+        )
+        .unwrap_err(),
+        "aggregate storage bytes",
+        required - 1,
+        case.witness.functions()[0].span,
+    );
+    denial(
+        &admit(
+            &plan,
+            Limits {
+                live_bytes: required - 1,
+                ..limits
+            },
+        )
+        .unwrap_err(),
+        "live storage bytes",
+        required - 1,
+        case.witness.functions()[0].span,
+    );
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "requires pinned LLVM 19.1.7; explicitly run the source resource native gate"]
 fn source_native_actual_slot_and_cell_boundaries_use_real_llvm() {

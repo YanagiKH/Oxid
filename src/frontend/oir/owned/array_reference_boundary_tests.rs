@@ -86,6 +86,23 @@ fn add_other_root(
             raw::assign(
                 local,
                 literal(match ty {
+                    hir::Ty::I8
+                    | hir::Ty::I16
+                    | hir::Ty::U16
+                    | hir::Ty::U32
+                    | hir::Ty::U64
+                    | hir::Ty::Isize
+                    | hir::Ty::Usize
+                    | hir::Ty::I128
+                    | hir::Ty::U128
+                    | hir::Ty::Char
+                    | hir::Ty::F32
+                    | hir::Ty::F64 => {
+                        panic!("integer width is outside this retained narrow fixture or observer")
+                    }
+                    hir::Ty::I64 => {
+                        panic!("i64 is outside this retained narrow fixture or observer")
+                    }
                     hir::Ty::U8 => {
                         unreachable!("u8 is outside this predecessor fixture or observation domain")
                     }

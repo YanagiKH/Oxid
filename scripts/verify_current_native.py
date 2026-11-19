@@ -105,14 +105,16 @@ class Runner:
         self.commands = []
         (output / "commands").mkdir()
 
-    def command(self, name, argv, extra=None):
+    def command(self, name, argv, extra=None, timeout=None):
         require(name not in [r["name"] for r in self.commands], "duplicate command name")
+        timeout = self.timeout if timeout is None else timeout
+        require(math.isfinite(timeout) and timeout > 0, "timeout must be positive and finite")
         directory = self.output / "commands" / name
         directory.mkdir()
         environment = {**self.environment, **(extra or {})}
         row = {"name": name, "argv": [str(a) for a in argv], "cwd": str(self.repo),
                "environment_overrides": environment, "status": "running",
-               "timeout_seconds": self.timeout}
+               "timeout_seconds": timeout}
         self.commands.append(row)
         save(directory / "command.json", row)
         started = time.monotonic()
@@ -123,7 +125,7 @@ class Runner:
                 process = subprocess.Popen(row["argv"], cwd=self.repo, stdin=subprocess.DEVNULL,
                                            stdout=stdout, stderr=stderr,
                                            env={**os.environ, **environment}, start_new_session=True)
-                row["exit_code"] = process.wait(timeout=self.timeout)
+                row["exit_code"] = process.wait(timeout=timeout)
             require(row["exit_code"] == 0, name + ": command failed; inspect " + str(directory))
             row["status"] = "passed"
         except BaseException as error:
@@ -134,6 +136,8 @@ class Runner:
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
+            if process is not None:
+                row["exit_code"] = process.returncode
             row.update(status="failed", error=str(error))
             raise
         finally:
@@ -142,6 +146,12 @@ class Runner:
                 path = directory / stream
                 if path.is_file():
                     row[stream + "_sha256"] = digest(path)
+                    if row["status"] == "failed":
+                        with path.open("rb") as diagnostic:
+                            diagnostic.seek(0, os.SEEK_END)
+                            diagnostic.seek(max(0, diagnostic.tell() - 8192))
+                            tail = diagnostic.read().decode("utf-8", errors="replace")
+                        print(name + ": " + stream + " tail: " + json.dumps(tail), flush=True)
             save(directory / "command.json", row)
         print(name + ": passed", flush=True)
         return directory
@@ -224,7 +234,7 @@ def verify(args):
                 "missing complete native-suite result")
         owned = output / "owned-cli"
         runner.command("owned-cli", [*python, "scripts/verify_owned_source.py", *binaries, "--mode", "cli",
-                       "--cli-amendment", "projected-array-slices-v1", "--jobs", "2", "--evidence", owned])
+                       "--cli-amendment", "local-reference-bindings-v1", "--jobs", "2", "--evidence", owned])
         result = json.loads((owned / "production-cli-result.json").read_bytes())
         require(result.get("status") == "CLI_ELF_PASS" and result.get("full_qualification") is False,
                 "missing owned-source CLI result")

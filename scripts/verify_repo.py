@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -14,19 +16,95 @@ from pathlib import Path
 from verify_feature_status import verify_feature_status
 from verify_fixture_data import fixture_data_sources as predecessor_fixture_data_sources
 from verify_bounded_byte_storage import fixture_data_sources as byte_storage_fixture_data_sources
+from verify_typed_vector_fixture_data import fixture_data_sources as typed_vector_fixture_data_sources
+from verify_copy_record_fixture_data import fixture_data_sources as copy_record_fixture_data_sources
+from verify_owned_record_vector_fixture_data import fixture_data_sources as owned_record_vector_fixture_data_sources
 from verify_typed_formatter import verify as verify_typed_formatter
+from verify_native_compiler_fixture_data import fixture_data_sources as native_compiler_fixture_data_sources
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
+OWNED_TEXT_FIXTURE_DATA = (
+    ("examples/typed-owned-text/tests/reject/moved-text.ox", 339,
+     "db08b59ca6f6db3ab3ccb3c8eb895cdca48ee943eb9ad4b3c10e284d265d4ae0"),
+    ("examples/typed-owned-text/tests/reject/private-bytes.ox", 118,
+     "da3414761377dd29ca4bd675eed764c129e21d74b5dd422e62fa7a314795bfd7"),
+    ("examples/typed-owned-text/tests/reject/returned-borrow.ox", 115,
+     "6a75df1de672eb374b66254f3dd72dc6b4affb2be3ffa70c0e299563cf352bf7"),
+    ("examples/typed-owned-text/tests/reject/self-append.ox", 159,
+     "de3d0d6de585e85771d3a77ffa554f50fd8795bdcab6dcd57c45d852cfe506da"),
+)
+
+
+def owned_text_fixture_data_sources(root: Path) -> set[Path]:
+    """Authenticate only the four exact rejection sources, never their neighbors."""
+    expected = {"examples/typed-owned-text/tests/reject/" + name + ".ox" for name in
+                ("moved-text", "private-bytes", "returned-borrow", "self-append")}
+    if (not isinstance(OWNED_TEXT_FIXTURE_DATA, tuple) or len(OWNED_TEXT_FIXTURE_DATA) != 4
+            or any(not isinstance(row, tuple) or len(row) != 3 or type(row[0]) is not str
+                   or type(row[1]) is not int or row[1] < 0 or type(row[2]) is not str
+                   or re.fullmatch(r"[0-9a-f]{64}", row[2]) is None for row in OWNED_TEXT_FIXTURE_DATA)
+            or {row[0] for row in OWNED_TEXT_FIXTURE_DATA} != expected):
+        raise RuntimeError("invalid exact owned-text fixture-data inventory")
+    paths = {root / name for name in expected}
+    if (not (root / "examples/typed-owned-text/oxid.toml").exists()
+            and not any(path.exists() or path.is_symlink() for path in paths)):
+        return set()
+
+    def metadata(value):
+        return (value.st_dev, value.st_ino, value.st_mode, value.st_nlink,
+                value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+    def no_symlink(path):
+        if any(parent.is_symlink() for parent in (path, *path.parents)):
+            raise RuntimeError("symlink in owned-text fixture-data input: " + str(path))
+
+    try:
+        for name, length, digest in OWNED_TEXT_FIXTURE_DATA:
+            path = root / name
+            no_symlink(path)
+            before = path.stat()
+            if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                    or before.st_mode & 0o111 or before.st_size != length):
+                raise RuntimeError("nonregular or changed owned-text fixture-data input: " + name)
+            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(descriptor, "rb") as stream:
+                if metadata(os.fstat(stream.fileno())) != metadata(before):
+                    raise RuntimeError("owned-text fixture-data changed before read: " + name)
+                body = stream.read(length + 1)
+                after = os.fstat(stream.fileno())
+            no_symlink(path)
+            if (metadata(before) != metadata(after) or metadata(path.stat()) != metadata(before)
+                    or len(body) != length or hashlib.sha256(body).hexdigest() != digest):
+                raise RuntimeError("owned-text fixture-data body identity mismatch: " + name)
+        return paths
+    except OSError as error:
+        raise RuntimeError("unreadable owned-text fixture-data input: " + str(error)) from error
+
 
 def fixture_data_sources(root: Path) -> set[Path]:
-    """Explicit RFC0031 DATA successor; predecessor registration stays intact."""
+    """Explicit DATA successors; predecessor registrations stay intact."""
     previous = predecessor_fixture_data_sources(root)
     current = byte_storage_fixture_data_sources(root)
     if previous & current:
         raise RuntimeError("byte-storage DATA overlaps predecessor inventory")
-    return previous | current
+    vectors = typed_vector_fixture_data_sources(root)
+    if vectors & (previous | current):
+        raise RuntimeError("typed-vector DATA overlaps predecessor inventory")
+    copies = copy_record_fixture_data_sources(root)
+    if copies & (previous | current | vectors):
+        raise RuntimeError("Copy record DATA overlaps predecessor inventory")
+    owned_vectors = owned_record_vector_fixture_data_sources(root)
+    if owned_vectors & (previous | current | vectors | copies):
+        raise RuntimeError("owned-record vector DATA overlaps predecessor inventory")
+    text = owned_text_fixture_data_sources(root)
+    if text & (previous | current | vectors | copies | owned_vectors):
+        raise RuntimeError("owned-text DATA overlaps predecessor inventory")
+    compiler_inputs = native_compiler_fixture_data_sources(root)
+    if compiler_inputs & (previous | current | vectors | copies | owned_vectors | text):
+        raise RuntimeError("scalar compiler DATA overlaps predecessor inventory")
+    return previous | current | vectors | copies | owned_vectors | text | compiler_inputs
 
 RUNNABLE_GROUPS = ("tests", "examples", "tools", "apps")
 RUNNABLE_PACKAGE_FILES = (
@@ -54,6 +132,18 @@ TYPED_MANIFEST_PROJECTS = {
         "apps/frame-filter/packages/codec/src/lib.ox",
         "apps/frame-filter/packages/output/src/lib.ox",
     ),
+    "apps/byte-reverse": (
+        "apps/byte-reverse/app/src/main.ox",
+        "apps/byte-reverse/binary/src/lib.ox",
+        "apps/byte-reverse/reverse/src/lib.ox",
+    ),
+    "packages/utf8_text": (
+        "packages/utf8_text/src/lib.ox",
+    ),
+    "apps/utf8-normalize": (
+        "apps/utf8-normalize/app/src/main.ox",
+        "apps/utf8-normalize/contracts/src/main.ox",
+    ),
     "examples/projects/owned_enum_payload_acceptance/ready": (
         "examples/projects/owned_enum_payload_acceptance/ready/src/main.ox",
         "examples/projects/owned_enum_payload_acceptance/ready/src/flow.ox",
@@ -69,18 +159,113 @@ TYPED_MANIFEST_PROJECTS = {
         "examples/projects/owned_enum_payload_acceptance/library/src/lib.ox",
         "examples/projects/owned_enum_payload_acceptance/library/src/model.ox",
     ),
+    "examples/typed-unicode-range": ("examples/typed-unicode-range/src/main.ox",),
+    "packages/float_vector": ("packages/float_vector/src/lib.ox",),
+    "examples/typed-float-vector": (
+        "examples/typed-float-vector/src/main.ox",
+        "examples/typed-float-vector/tests/vector.ox",
+    ),
+    "examples/typed-vectors": (
+        "examples/typed-vectors/src/main.ox",
+        "examples/typed-vectors/tests/vectors.ox",
+    ),
+    "examples/copy-records": (
+        "examples/copy-records/src/main.ox",
+        "examples/copy-records/tests/copies.ox",
+    ),
+    "examples/copy-record-vectors": (
+        "examples/copy-record-vectors/src/main.ox",
+        "examples/copy-record-vectors/tests/records.ox",
+    ),
+    "examples/owned-record-vectors": (
+        "examples/owned-record-vectors/src/main.ox",
+        "examples/owned-record-vectors/tests/messages.ox",
+    ),
+    "examples/typed-owned-text": (
+        "examples/typed-owned-text/src/main.ox",
+        "examples/typed-owned-text/tests/text.ox",
+    ),
+    "packages/matrix": ("packages/matrix/src/lib.ox",),
+    "examples/typed-matrix": ("examples/typed-matrix/src/main.ox", "examples/typed-matrix/tests/contracts.ox"),
+    "apps/cpu-training": (
+        'apps/cpu-training/checkpoint/src/lib.ox',
+        'apps/cpu-training/checkpoint/src/pipeline.ox',
+        'apps/cpu-training/checkpoint/src/training.ox',
+        'apps/cpu-training/tensor/src/codec.ox',
+        'apps/cpu-training/tensor/src/data.ox',
+        'apps/cpu-training/tensor/src/data/checkpoint.ox',
+        'apps/cpu-training/tensor/src/data/sampler_checkpoint.ox',
+        'apps/cpu-training/tensor/src/data/session.ox',
+        'apps/cpu-training/tensor/src/graph.ox',
+        'apps/cpu-training/tensor/src/lib.ox',
+        'apps/cpu-training/tensor/src/model.ox',
+        'apps/cpu-training/tensor/src/model/checkpoint.ox',
+        'apps/cpu-training/tensor/src/model/session.ox',
+        'apps/cpu-training/tensor/src/optimizer.ox',
+        'apps/cpu-training/tensor/src/optimizer/checkpoint.ox',
+        'apps/cpu-training/trainer/src/main.ox',
+        'apps/cpu-training/trainer/src/options.ox',
+        'apps/cpu-training/trainer/src/report.ox',
+        'apps/cpu-training/trainer/src/training.ox',
+        'apps/cpu-training/trainer/tests/optimizers.ox',
+        'apps/cpu-training/trainer/tests/tensor.ox',
+    ),
+    "apps/minibatch-training": (
+        'apps/minibatch-training/src/main.ox',
+        'apps/minibatch-training/src/options.ox',
+        'apps/minibatch-training/src/report.ox',
+        'apps/minibatch-training/src/training.ox',
+        'apps/minibatch-training/tests/data.ox',
+    ),
+    "apps/streaming-training": (
+        'apps/streaming-training/src/main.ox',
+        'apps/streaming-training/src/options.ox',
+        'apps/streaming-training/src/report.ox',
+        'apps/streaming-training/src/training.ox',
+        'apps/streaming-training/tests/reader.ox',
+        'apps/streaming-training/tests/seek.ox',
+        'apps/streaming-training/reader/src/lib.ox',
+    ),
+    "packages/owned_vec": ("packages/owned_vec/src/lib.ox",),
+    "examples/owned-vector-results": ("examples/owned-vector-results/src/main.ox",),
+    "compiler/native": (
+        "compiler/native/src/main.ox",
+        "compiler/native/src/model.ox",
+        "compiler/native/src/lexer.ox",
+        "compiler/native/src/headers.ox",
+        "compiler/native/src/parser.ox",
+        "compiler/native/src/emit.ox",
+        "compiler/native/src/delivery.ox",
+    ),
 }
 # Library roots have no executable entry point; their dependent applications
 # exercise the public interface and their own manifest check covers unused code.
 TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
+    # Requires a source-path argument; its acceptance driver exercises execution.
+    "compiler/native",
     "examples/projects/owned_enum_payload_acceptance/library",
+    "apps/byte-reverse",
+    "packages/utf8_text",
+    "apps/utf8-normalize",
+    "examples/typed-unicode-range",
+    "packages/float_vector",
+    "packages/matrix",
+    "apps/cpu-training",
+    "apps/minibatch-training",
+    "apps/streaming-training",
+    "packages/owned_vec",
 )
-TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter")
+TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix", "examples/typed-vectors")
+TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records", "examples/copy-record-vectors")
+TYPED_TESTED_MANIFEST_PROJECTS += ("examples/owned-record-vectors",)
+TYPED_TESTED_MANIFEST_PROJECTS += ("examples/typed-owned-text",)
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (
     "fixtures/typed-expression-samples/stdin.ox",
     "fixtures/typed-expression-samples/stack_stdin.ox",
+    # This library export runs through its CPython host, not a standalone main.
+    "apps/python-pricing/src/pricing.ox",
 )
 # Every member is explicitly named. Child files are checked through their root
 # so their crate-relative imports preserve the real project context.
@@ -955,7 +1140,10 @@ def verify_test_fixture_registration(root: Path = ROOT) -> None:
     except (OSError, ValueError) as error:
         raise RuntimeError(f"unreadable test fixture registration: {error}") from error
     configured = manifest.get("test-fixtures", {})
-    expected = {path.relative_to(root).as_posix() for path in fixture_data}
+    # Legacy test discovery only visits tests/ and examples/. DATA elsewhere
+    # remains authenticated by source_plan, without an invalid test exclusion.
+    expected = {path.relative_to(root).as_posix() for path in fixture_data
+                if path.relative_to(root).parts[0] in ("tests", "examples")}
     # Typed projects below the legacy test search roots run only through their
     # explicit typed root. Never exclude neighboring files or whole directories.
     expected.update(member for members in TYPED_PROJECTS.values() for member in members
