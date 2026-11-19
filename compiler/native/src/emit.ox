@@ -42,12 +42,12 @@ pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> 
     let literal_bytes_0 = b"i32";
     let literal_bytes_1 = b"void";
     let literal_bytes_2 = b"i1";
+    let byte_type = b"i8";
 
-    if ty == 1 { append(&mut *c, destination, &literal_bytes_0); }
-    else {
-        if ty == 3 && result { append(&mut *c, destination, &literal_bytes_1); }
-        else { append(&mut *c, destination, &literal_bytes_2); }
-    }
+    if ty == 1 { append(&mut *c, destination, &literal_bytes_0); return; }
+    if ty == 4 { append(&mut *c, destination, &byte_type); return; }
+    if ty == 3 && result { append(&mut *c, destination, &literal_bytes_1); }
+    else { append(&mut *c, destination, &literal_bytes_2); }
     return;
 }
 pub fn operand(c: &mut Compiler, destination: i32, value: Value) -> () {
@@ -150,12 +150,16 @@ pub fn constant(c: &mut Compiler, ty: i32, value: i32) -> Value {
     let literal_bytes_1 = b" = add i32 0, ";
     let literal_bytes_2 = b" = icmp ne i32 0, ";
     let literal_bytes_3 = b"\n";
+    let byte_constant = b" = add i8 0, ";
 
     if ty == 3 { return Value { ty: 3, id: -1 }; }
     let id = fresh(&mut *c);
     append(&mut *c, 2, &literal_bytes_0); number(&mut *c, 2, id);
     if ty == 1 { append(&mut *c, 2, &literal_bytes_1); }
-    else { append(&mut *c, 2, &literal_bytes_2); }
+    else {
+        if ty == 4 { append(&mut *c, 2, &byte_constant); }
+        else { append(&mut *c, 2, &literal_bytes_2); }
+    }
     number(&mut *c, 2, value); append(&mut *c, 2, &literal_bytes_3);
     return Value { ty: ty, id: id };
 }
@@ -216,6 +220,43 @@ pub fn binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
     append(&mut *c, 2, &literal_bytes_19); operand(&mut *c, 2, right); append(&mut *c, 2, &literal_bytes_20);
     return Value { ty: 2, id: id };
 }
+pub fn widen_byte(c: &mut Compiler, value: Value) -> Value {
+    let prefix = b"  %v";
+    let cast = b" = zext i8 ";
+    let end = b" to i32\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix);
+    number(&mut *c, 2, id);
+    append(&mut *c, 2, &cast);
+    operand(&mut *c, 2, value);
+    append(&mut *c, 2, &end);
+    return Value { ty: 1, id: id };
+}
+
+pub fn narrow_byte(c: &mut Compiler, value: Value, arithmetic: bool) -> Value {
+    let prefix = b"  %v";
+    let call_prefix = b" = call i8 @ox_byte(i32 ";
+    let overflow = b", ptr @ov, i64 17)\n";
+    let conversion = b", ptr @byte_conversion, i64 29)\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix);
+    number(&mut *c, 2, id);
+    append(&mut *c, 2, &call_prefix);
+    operand(&mut *c, 2, value);
+    if arithmetic { append(&mut *c, 2, &overflow); }
+    else { append(&mut *c, 2, &conversion); }
+    return Value { ty: 4, id: id };
+}
+
+pub fn byte_binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
+    // Widening preserves unsigned comparisons and fits every byte product in i32.
+    let a = widen_byte(&mut *c, left);
+    let b = widen_byte(&mut *c, right);
+    let value = binary(&mut *c, op, a, b);
+    if op <= 33 { return narrow_byte(&mut *c, value, true); }
+    return value;
+}
+
 pub fn call(c: &mut Compiler, function: i32, args: &[Value], result: i32) -> Value {
     let literal_bytes_0 = b"  ";
     let literal_bytes_1 = b"%v";
@@ -418,12 +459,32 @@ fn preamble_text_15_0(c: &mut Compiler) -> () {
     append(&mut *c, 0, &text);
     return;
 }
+fn byte_conversion_check(c: &mut Compiler) -> () {
+    let message = b"@byte_conversion = private constant [29 x i8] c\"byte conversion out of range\\0A\"\n";
+    let signature = b"define internal i8 @ox_byte(i32 %value, ptr %error, i64 %length) {\nentry:\n";
+    let check = b"  %fits = icmp ule i32 %value, 255\n  br i1 %fits, label %ok, label %bad\n";
+    append(&mut *c, 0, &message);
+    append(&mut *c, 0, &signature);
+    append(&mut *c, 0, &check);
+    return;
+}
+
+fn byte_conversion_paths(c: &mut Compiler) -> () {
+    let bad = b"bad:\n  call void @__oxid_overflow(ptr %error, i64 %length)\n  unreachable\n";
+    let good = b"ok:\n  %byte = trunc i32 %value to i8\n  ret i8 %byte\n}\n";
+    append(&mut *c, 0, &bad);
+    append(&mut *c, 0, &good);
+    return;
+}
+
 pub fn preamble(c: &mut Compiler) -> () {
     let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
     preamble_text_0_0(&mut *c);
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
     append(&mut *c, 0, &depth_error);
+    byte_conversion_check(&mut *c);
+    byte_conversion_paths(&mut *c);
     preamble_text_3_0(&mut *c); preamble_text_3_1(&mut *c);
     let mut op = 29;
     while op <= 31 {
@@ -489,6 +550,11 @@ fn wrapper_text_7_0(c: &mut Compiler) -> () {
     append(&mut *c, 0, &text);
     return;
 }
+fn wrapper_byte_result(c: &mut Compiler) -> () {
+    let text = b"  %wide = zext i8 %value to i32\n  %status = call i32 @__oxid_print_i32(i32 %wide)\n";
+    append(&mut *c, 0, &text);
+    return;
+}
 fn wrapper_text_8_0(c: &mut Compiler) -> () {
     let text = b"  ret i32 %status\n}\n; Oxid scalar compiler end\n";
     append(&mut *c, 0, &text);
@@ -505,6 +571,7 @@ pub fn wrapper(c: &mut Compiler) -> () {
     if f.result == 1 { wrapper_text_5_0(&mut *c); }
     if f.result == 2 { wrapper_text_6_0(&mut *c); }
     if f.result == 3 { wrapper_text_7_0(&mut *c); }
+    if f.result == 4 { wrapper_byte_result(&mut *c); }
     wrapper_text_8_0(&mut *c);
     return;
 }

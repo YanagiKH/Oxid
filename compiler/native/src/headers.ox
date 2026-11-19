@@ -16,6 +16,7 @@ pub fn ty(c: &mut Compiler) -> i32 {
     let k = kind(&*c);
     if k == 14 { c.cursor = c.cursor + 1; return 1; }
     if k == 15 { c.cursor = c.cursor + 1; return 2; }
+    if k == 16 { c.cursor = c.cursor + 1; return 4; }
     if k == 20 { expect(&mut *c, 20); expect(&mut *c, 21); return 3; }
     fail(&mut *c); return 0;
 }

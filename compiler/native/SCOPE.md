@@ -18,13 +18,15 @@ output or any bytes after the module footer. It never strips a printed `0` or
 other lines. LLVM/Clang and the scalar C I/O adapter are explicit dependencies;
 they do not parse or check Oxid source. Existing output paths are refused.
 
-Supported input uses ASCII identifiers/comments, i32/bool/unit, named functions
+Supported input uses ASCII identifiers/comments, i32/u8/bool/unit, named functions
 with typed parameters/results, initialized let bindings, optional type
 annotations, mut/assignment, lexical blocks, calls, if/else, while, break,
 continue, explicit returns and short-circuit boolean operators. Active names
 cannot shadow bindings or functions. Integer arithmetic is checked; division
-and remainder reject zero and MIN/-1 before the LLVM operation. A result-mode
-main has no arguments and prints its i32, bool or unit result, then exits 0.
+and remainder reject zero and signed MIN/-1 before the LLVM operation. Use
+decimal literals such as `255u8` and convert local bindings with
+`.to_u8_checked()` or `.to_i32()`. A result-mode `main` has no arguments and
+prints its i32, u8, bool or unit result, then exits 0.
 
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports

@@ -8,6 +8,7 @@ use crate::model::expect;
 use crate::model::fail;
 use crate::model::local;
 use crate::model::function;
+use crate::model::word;
 use crate::headers::ty as parse_type;
 use alloc::vec::new;
 use alloc::vec::len;
@@ -53,6 +54,25 @@ fn called(c: &mut Compiler, name: i32, depth: i32) -> Value {
     c.call_sites = c.call_sites + 1;
     return crate::emit::call(&mut *c, target, &args, f.result);
 }
+fn convert_binding(c: &mut Compiler, value: Value) -> Value {
+    let narrow = b"to_u8_checked";
+    let widen = b"to_i32";
+    expect(&mut *c, 43);
+    let method = token(&*c, c.cursor);
+    expect(&mut *c, 1);
+    expect(&mut *c, 20);
+    expect(&mut *c, 21);
+    if c.error != 0 { return invalid(); }
+    if value.ty == 4 && word(&*c.source, method.start, method.end, &widen) {
+        return crate::emit::widen_byte(&mut *c, value);
+    }
+    if word(&*c.source, method.start, method.end, &narrow) {
+        if value.ty == 4 { return value; }
+        if value.ty == 1 { return crate::emit::narrow_byte(&mut *c, value, false); }
+    }
+    fail(&mut *c);
+    return invalid();
+}
 fn prefix(c: &mut Compiler, depth: i32) -> Value {
     if c.error != 0 { return invalid(); }
     if depth > 64 { c.error = 68; return invalid(); }
@@ -80,6 +100,10 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
         c.cursor = c.cursor + 1;
         return crate::emit::constant(&mut *c, 1, 0 - t.value);
     }
+    if t.kind == 17 {
+        c.cursor = c.cursor + 1;
+        return crate::emit::constant(&mut *c, 4, t.value);
+    }
     if t.kind == 12 || t.kind == 13 {
         c.cursor = c.cursor + 1;
         let mut boolean_literal = 0;
@@ -103,7 +127,9 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
         let position = local(&*c, name);
         if position < 0 { fail(&mut *c); return invalid(); }
         let binding = c.vars[position];
-        return crate::emit::load(&mut *c, binding.slot, binding.ty);
+        let value = crate::emit::load(&mut *c, binding.slot, binding.ty);
+        if kind(&*c) == 43 { return convert_binding(&mut *c, value); }
+        return value;
     }
     fail(&mut *c); return invalid();
 }
@@ -142,8 +168,9 @@ pub fn expression(c: &mut Compiler, minimum: i32, depth: i32) -> Value {
         } else {
             let right = expression(&mut *c, rank + 1, depth + 1);
             if left.ty != right.ty || left.ty == 3 || left.ty == 0 { fail(&mut *c); return invalid(); }
-            if op != 35 && op != 36 && left.ty != 1 { fail(&mut *c); return invalid(); }
-            left = crate::emit::binary(&mut *c, op, left, right);
+            if op != 35 && op != 36 && left.ty != 1 && left.ty != 4 { fail(&mut *c); return invalid(); }
+            if left.ty == 4 { left = crate::emit::byte_binary(&mut *c, op, left, right); }
+            else { left = crate::emit::binary(&mut *c, op, left, right); }
         }
     }
     return invalid();
