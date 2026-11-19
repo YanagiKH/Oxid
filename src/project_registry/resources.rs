@@ -57,6 +57,8 @@ struct ResolutionRoles {
     session: Session,
     dependency: Dependency,
     selected_source: String,
+    selected_version: Cow<'static, str>,
+    version_return: Result<Cow<'static, str>, String>,
     selected_id: String,
     release_path: PathBuf,
     cache_path: PathBuf,
@@ -77,6 +79,27 @@ struct ResolutionRoles {
     metadata: fs::Metadata,
     sha256: Sha256,
     digest: [u8; 32],
+}
+
+#[repr(C)]
+struct VersionSelectionRoles {
+    requirement: CompatibleVersion,
+    declared_path: String,
+    lock_lookup: Option<&'static Pin>,
+    selected_version: String,
+    package_path: PathBuf,
+    entries: std::iter::Enumerate<fs::ReadDir>,
+    next_entry: Option<(usize, io::Result<fs::DirEntry>)>,
+    entry: fs::DirEntry,
+    name: std::ffi::OsString,
+    candidate: [u32; 3],
+    best: Option<([u32; 3], std::ffi::OsString)>,
+    selected: ([u32; 3], std::ffi::OsString),
+    file_type: io::Result<fs::FileType>,
+    result: Result<String, String>,
+}
+pub(super) fn version_selection_bytes() -> usize {
+    size_of::<VersionSelectionRoles>()
 }
 
 #[repr(C)]
@@ -395,7 +418,13 @@ mod tests {
             raw_return: Result<Vec<u8>, String>, raw: Vec<u8>, expected: Option<&'static package::LibraryMember>,
             traversal_return: Result<(), String>, counts: [usize;4], compare_buffer: [u8;8192], end_byte: [u8;1]);
         layout!(OriginAllocation; strong: std::sync::atomic::AtomicUsize, weak: std::sync::atomic::AtomicUsize, value: Origin);
-        layout!(ResolutionRoles; session: Session, dependency: Dependency, selected_source: String, selected_id: String,
+        layout!(VersionSelectionRoles; requirement: CompatibleVersion, declared_path: String, lock_lookup: Option<&'static Pin>,
+            selected_version: String, package_path: PathBuf, entries: std::iter::Enumerate<fs::ReadDir>,
+            next_entry: Option<(usize, io::Result<fs::DirEntry>)>, entry: fs::DirEntry, name: std::ffi::OsString,
+            candidate: [u32;3], best: Option<([u32;3], std::ffi::OsString)>, selected: ([u32;3], std::ffi::OsString),
+            file_type: io::Result<fs::FileType>, result: Result<String,String>);
+        layout!(ResolutionRoles; session: Session, dependency: Dependency, selected_source: String,
+            selected_version: Cow<'static,str>, version_return: Result<Cow<'static,str>,String>, selected_id: String,
             release_path: PathBuf, cache_path: PathBuf, parent_path: PathBuf, record_path: PathBuf, artifact_path: PathBuf,
             record_bytes: Vec<u8>, record: Record, decoded: Result<(package::LibraryArchive,package::LibraryInfo),String>,
             archive: package::LibraryArchive, info: package::LibraryInfo, staged_info: Result<package::LibraryInfo,String>,
