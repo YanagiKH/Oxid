@@ -27,4 +27,6 @@ Use a single project without package dependencies on a local NTFS drive. The exe
 
 This preview supports bounded result-entry programs using `bool`, `i32`, `()`, functions, conditions, and `while` loops. Declared tests use the same pure scalar scope and require `fn main() -> i32` with no parameters: zero passes and any other value fails. Runtime errors fail the test and retain their source diagnostics.
 
-Other scalar types, records, references, arrays, vectors, files, generics, process entry, process I/O, hosted execution, native debug information, native object caching, multi-package dependencies and workspace projects are unavailable on this native target. Source checking and reference execution retain their existing scope.
+For binary file I/O, use `std::fs::File` with byte arrays or slices and the standard file status enums. Paths use UTF-8, and `seek_absolute` takes a signed 64-bit byte offset. [File operations](../spec/typed-preview.md#native-files)
+
+Other scalar types, records, vectors, generics, process entry, process I/O, hosted execution, native debug information, native object caching, multi-package dependencies and workspace projects are unavailable on this native target. Source checking and reference execution retain their existing scope.

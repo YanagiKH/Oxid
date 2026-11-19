@@ -1210,6 +1210,22 @@ class CiTriggerPolicyTests(unittest.TestCase):
             ENGINE: ENGINE_SHA,
         }''')
 
+    def test_windows_package_replay_runs_the_complete_frozen_suite(self):
+        job = block(self.ci, 'windows-local-package-source-policy-predecessor', 2)
+        self.assertEqual(job.count('actions/checkout@v4'), 2)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', job)
+        self.assertIn('ref: 197ab7cad557038c40b9bac3b3019f9cdffcbab4', job)
+        self.assertIn('fetch-depth: 0', job)
+        self.assertIn('cp scripts/replay_windows_local_package_source_policy.py ', job)
+        self.assertIn('python3 -B "$RUNNER_TEMP/windows-local-package-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/windows-local-package-source-policy-replay"', job)
+        self.assertIn('if-no-files-found: error', job)
+        self.assertNotRegex(job, r'(?m)^    if:|continue-on-error:')
+        controller = ast.parse((REPO / 'scripts/replay_windows_local_package_source_policy.py').read_bytes())
+        self.assertEqual(_literal(controller.body, 'REVISION'), '197ab7cad557038c40b9bac3b3019f9cdffcbab4')
+        self.assertEqual(_literal(controller.body, 'MODULES'), {
+            'test_windows_local_package_compatibility': ('2476f4e1a3aed89fea83114f258771fd6e00c005e2b89799bead2a5fb7c5bafd', 18)})
+
     def test_generic_source_policy_replay_keeps_all_sixteen_frozen_controls_mandatory(self):
         replay = block(self.ci, 'generic-owned-vector-source-policy-predecessor', 2)
         self.assertEqual(replay.count('actions/checkout@v4'), 2)

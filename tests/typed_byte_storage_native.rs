@@ -14,7 +14,7 @@ const WINDOWS_SCALAR_NATIVE: bool = cfg!(all(
     target_arch = "x86_64",
     target_env = "msvc"
 ));
-const WINDOWS_SCOPE: &str = "Windows native builds currently support bounded result-entry bool, i32 and unit scalar functions";
+const WINDOWS_SCOPE: &str = "Windows native builds require bounded bool/i32/unit result entry";
 static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Case(PathBuf);
 impl Case {

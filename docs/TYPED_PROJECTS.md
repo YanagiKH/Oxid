@@ -2,7 +2,7 @@
 
 Use Oxid's typed mode to check code, test local packages and build native
 executables. Native project builds target Linux and macOS on x86_64 and ARM64.
-A bounded scalar preview also targets Windows MSVC x64.
+Windows MSVC x64 supports bounded result programs with binary file I/O.
 Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
 Oxid selects that host's native target automatically.
 
@@ -46,8 +46,9 @@ oxid build --profile release
 
 New Windows projects select result entry. For an existing project, set
 `entry-mode = "result"` under `[build]`. Native programs currently support
-bounded `bool`, `i32` and `()` functions, conditions and `while` loops. Declared
-tests use bounded pure functions and require a no-argument `fn main() -> i32`:
+bounded `bool`, `i32` and `()` functions, conditions and `while` loops. Use
+`std::fs::File` with byte arrays or slices for [binary files](../spec/typed-preview.md#native-files).
+Declared tests use bounded pure functions and require a no-argument `fn main() -> i32`:
 zero passes and any other value fails. Checking and reference execution retain
 their existing language scope.
 
