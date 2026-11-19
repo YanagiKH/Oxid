@@ -252,6 +252,30 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             "a.ox": "pub fn value()->i32{return crate::base()+local();}fn local()->i32{return 1;}",
             "b.ox": "pub fn value()->i32{return crate::b::local();}fn local()->i32{return 1;}",
         }),
+        ("function-imports", 0, True, {
+            "main.ox": "use crate::a::value as answer;mod a;mod b;use crate::b::extra;"
+                       "fn base()->i32{return 41;}fn main()->i32{return answer()+extra();}",
+            "a.ox": "use crate::base as seed;pub fn value()->i32{return seed();}",
+            "b.ox": "pub fn extra()->i32{return 1;}",
+        }),
+        ("private-import", 65, True, {
+            "main.ox": "mod a;use crate::a::hidden;fn main()->i32{return 42;}",
+            "a.ox": "fn hidden()->i32{return 42;}",
+        }),
+        ("duplicate-target-import", 65, True, {
+            "main.ox": "mod a;use crate::a::value as first;use crate::a::value as second;"
+                       "fn main()->i32{return first();}",
+            "a.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("shadowed-import", 65, True, {
+            "main.ox": "mod a;use crate::a::value as amount;"
+                       "fn main()->i32{let amount=42;return amount;}",
+            "a.ox": "pub fn value()->i32{return 42;}",
+        }),
+        ("unknown-import", 65, True, {
+            "main.ox": "mod a;use crate::a::missing;fn main()->i32{return 42;}",
+            "a.ox": "pub fn value()->i32{return 42;}",
+        }),
         ("private-export", 65, True, {
             "main.ox": "mod a;fn main()->i32{return crate::a::hidden();}",
             "a.ox": "fn hidden()->i32{return 42;}",

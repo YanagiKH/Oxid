@@ -14,6 +14,10 @@ pub struct Parameter { pub name: i32, pub ty: i32 }
 #[derive(Copy)]
 pub struct SourceModule { pub name: i32, pub first_token: i32 }
 #[derive(Copy)]
+pub struct Import {
+    pub scope: i32, pub module_name: i32, pub name: i32, pub alias: i32, pub target: i32
+}
+#[derive(Copy)]
 pub struct Function {
     pub name: i32, pub params: i32, pub count: i32, pub result: i32,
     pub begin: i32, pub end: i32, pub source_module: i32, pub public: bool
@@ -24,7 +28,7 @@ pub struct Binding { pub name: i32, pub ty: i32, pub slot: i32, pub writable: bo
 pub struct Value { pub ty: i32, pub id: i32 }
 
 pub struct Compiler {
-    pub source: ByteBuf, pub source_path: ByteBuf, pub sources: Vec<SourceModule>,
+    pub source: ByteBuf, pub source_path: ByteBuf, pub sources: Vec<SourceModule>, pub imports: Vec<Import>,
     pub tokens: Vec<Token>, pub params: Vec<Parameter>, pub functions: Vec<Function>,
     pub vars: Vec<Binding>, pub call_sites: i32,
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
@@ -35,7 +39,7 @@ pub struct Compiler {
 
 pub fn new_compiler(source: ByteBuf, source_path: ByteBuf) -> Compiler {
     return Compiler {
-        source: source, source_path: source_path, sources: new::<SourceModule>(),
+        source: source, source_path: source_path, sources: new::<SourceModule>(), imports: new::<Import>(),
         tokens: new::<Token>(), params: new::<Parameter>(),
         functions: new::<Function>(), vars: new::<Binding>(), call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
@@ -115,6 +119,24 @@ pub fn function(c: &Compiler, source_module: i32, name: i32) -> i32 {
         let f = c.functions[i];
         if f.source_module == source_module && same_name(&*c, f.name, name) { return i; }
         i = i + 1;
+    }
+    return -1;
+}
+
+pub fn function_visible(c: &Compiler, source_module: i32, target: i32) -> bool {
+    if target < 0 { return false; }
+    let selected = c.functions[target];
+    return selected.source_module == 0 || selected.source_module == source_module || selected.public;
+}
+
+pub fn function_binding(c: &Compiler, source_module: i32, name: i32) -> i32 {
+    let declared = function(&*c, source_module, name);
+    if declared >= 0 { return declared; }
+    let mut index = 0;
+    while index < len(&*c.imports) {
+        let imported = c.imports[index];
+        if imported.scope == source_module && same_name(&*c, imported.alias, name) { return imported.target; }
+        index = index + 1;
     }
     return -1;
 }

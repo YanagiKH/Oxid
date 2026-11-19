@@ -1,6 +1,7 @@
 use crate::model::Compiler;
 use crate::model::Parameter;
 use crate::model::Function;
+use crate::model::Import;
 use crate::model::SourceModule;
 use crate::model::grown;
 use crate::model::kind;
@@ -10,6 +11,8 @@ use crate::model::token;
 use crate::model::word;
 use crate::model::same_name;
 use crate::model::function;
+use crate::model::function_binding;
+use crate::model::function_visible;
 use crate::model::module_named;
 use alloc::vec::len;
 use alloc::vec::try_push;
@@ -22,12 +25,71 @@ pub fn ty(c: &mut Compiler) -> i32 {
     if k == 20 { expect(&mut *c, 20); expect(&mut *c, 21); return 3; }
     fail(&mut *c); return 0;
 }
+fn collect_import(c: &mut Compiler, source_module: i32) -> () {
+    if len(&*c.imports) >= 4096 { c.error = 68; return; }
+    expect(&mut *c, 46);
+    expect(&mut *c, 44);
+    expect(&mut *c, 45);
+    let mut name = c.cursor;
+    expect(&mut *c, 1);
+    let mut module_name = -1;
+    if kind(&*c) == 45 {
+        module_name = name;
+        expect(&mut *c, 45);
+        name = c.cursor;
+        expect(&mut *c, 1);
+    }
+    let mut alias = name;
+    if kind(&*c) == 47 {
+        expect(&mut *c, 47);
+        alias = c.cursor;
+        expect(&mut *c, 1);
+    }
+    expect(&mut *c, 25);
+    if c.error != 0 { return; }
+    let row = Import { scope: source_module, module_name: module_name, name: name, alias: alias, target: -1 };
+    if !grown(try_push(&mut *c.imports, row)) { c.error = 68; }
+    return;
+}
+
+fn resolve_imports(c: &mut Compiler) -> () {
+    let mut index = 0;
+    while index < len(&*c.imports) && c.error == 0 {
+        let mut row = c.imports[index];
+        c.cursor = row.alias;
+        let mut target_module = 0;
+        if row.module_name >= 0 {
+            target_module = module_named(&*c, row.module_name);
+            if target_module < 0 { fail(&mut *c); return; }
+        }
+        let target = function(&*c, target_module, row.name);
+        if !function_visible(&*c, row.scope, target) || function(&*c, row.scope, row.alias) >= 0 {
+            fail(&mut *c);
+            return;
+        }
+        let mut previous = 0;
+        while previous < index {
+            let old = c.imports[previous];
+            if old.scope == row.scope && (old.target == target || same_name(&*c, old.alias, row.alias)) {
+                fail(&mut *c);
+                return;
+            }
+            previous = previous + 1;
+        }
+        row.target = target;
+        c.imports[index] = row;
+        index = index + 1;
+    }
+    return;
+}
+
 fn collect_module(c: &mut Compiler, source_module: i32) -> () {
     let literal_bytes_0 = b"main";
     let input = c.sources[source_module];
     c.cursor = input.first_token;
 
     while kind(&*c) != 0 && c.error == 0 {
+        if kind(&*c) == 46 { collect_import(&mut *c, source_module); continue; }
         if kind(&*c) == 18 {
             if source_module != 0 { fail(&mut *c); return; }
             expect(&mut *c, 18);
@@ -107,13 +169,15 @@ pub fn collect(c: &mut Compiler) -> () {
     }
     if c.error != 0 { return; }
     if c.main < 0 { fail(&mut *c); return; }
+    resolve_imports(&mut *c);
+    if c.error != 0 { return; }
     let mut index = 0;
     while index < len(&*c.functions) {
         let f = c.functions[index];
         let mut parameter_index = f.params;
         while parameter_index < f.params + f.count {
             let p = c.params[parameter_index];
-            if function(&*c, f.source_module, p.name) >= 0 { fail(&mut *c); return; }
+            if function_binding(&*c, f.source_module, p.name) >= 0 { fail(&mut *c); return; }
             parameter_index = parameter_index + 1;
         }
         index = index + 1;

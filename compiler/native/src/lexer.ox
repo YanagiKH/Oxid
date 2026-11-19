@@ -29,6 +29,8 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     let module_word = b"mod";
     let public_word = b"pub";
     let crate_word = b"crate";
+    let use_word = b"use";
+    let as_word = b"as";
 
     if word(&*source, start, end, &literal_bytes_0) { return 3; }
     if word(&*source, start, end, &literal_bytes_1) { return 4; }
@@ -47,6 +49,8 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     if word(&*source, start, end, &module_word) { return 18; }
     if word(&*source, start, end, &public_word) { return 19; }
     if word(&*source, start, end, &crate_word) { return 44; }
+    if word(&*source, start, end, &use_word) { return 46; }
+    if word(&*source, start, end, &as_word) { return 47; }
     return 1;
 }
 fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i32) -> () {
