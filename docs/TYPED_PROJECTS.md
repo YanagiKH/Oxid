@@ -264,9 +264,8 @@ source bodies remain editable.
 
 ## Private registry libraries
 
-On Linux, a private file registry can share immutable library versions between
-projects. This is experimental and uses exact versions; version ranges, HTTPS
-registries and publisher authentication are not available yet.
+On Linux, use a private file registry to share versioned libraries between
+projects.
 
 Create a new registry directory:
 
@@ -294,21 +293,21 @@ oxid publish --registry file:///home/me/oxid-registry
 
 Use `--package NAME` to select a workspace library. Publishing checks the full
 author lock and the library's declared tests without running their bodies.
-An existing version cannot be replaced. A published library's dependencies must
-be exact releases in the same registry; path and Git dependencies are refused.
+Use dependencies from the same registry when publishing. The published library
+records the dependency versions from your lockfile.
 
-The consumer chooses a dependency alias, package name and exact version:
+Choose an alias, package name and version for each dependency.
 
 ```toml
 [dependencies]
-math = { registry = "file:///home/me/oxid-registry", package = "math", version = "1.2.0" }
+math = { registry = "file:///home/me/oxid-registry", package = "math", version = "^1.2.0" }
 old_math = { registry = "file:///home/me/oxid-registry", package = "math", version = "1.1.0" }
 ```
 
-Use public items through `crate::math` or `crate::old_math`. Run `oxid lock` to
-cache the releases and record their hashes. Ordinary commands verify an existing
-lock. After selecting a different version, run `oxid lock --update`; it cannot
-accept replacement bytes under an already locked name, version and registry.
+Use public items through `crate::math` or `crate::old_math`. The range `^1.2.0`
+selects the newest available release at or above 1.2.0 and below 2.0.0. The
+range `^0.2.0` stays within 0.2.x. Run `oxid lock` to cache the selected releases
+and fix their versions. Run `oxid lock --update` to select newer releases.
 Restore the previous manifest and lock to roll back to its cached versions.
 
 `--locked`, `--offline` and `--frozen` never fetch a missing release, even from a
