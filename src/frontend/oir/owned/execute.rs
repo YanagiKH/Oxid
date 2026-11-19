@@ -4455,9 +4455,9 @@ fn checked_entry_policy<W: PlanWitness>(
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
     for operation in crate::frontend::builtin_catalog::experimental::Function::ALL {
-        if (operation.is_file() || operation.is_arguments())
+        if ((operation.is_file() && !byte_buffer::file_supported_host())
+            || (operation.is_arguments() && !input::supported_host()))
             && witness.experimental_function(operation).is_some()
-            && !input::supported_host()
         {
             return Err(OwnedRunFailure::BinaryHost(
                 witness.functions()[witness.experimental_function(operation).unwrap().0].span,
@@ -4578,7 +4578,30 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
     // All callers share entry validation. Every sealed Process caller
     // establishes host support and signal policy before reaching this point.
     checked_entry_policy(plan.witness(), Some(entry), policy)?;
-    if plan.has_file_delivery() && !process::setup() {
+    if plan.has_file_delivery()
+        && !{
+            #[cfg(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ))]
+            {
+                true
+            }
+            #[cfg(not(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )))]
+            {
+                process::setup()
+            }
+        }
+    {
         return Err(OwnedRunFailure::BinaryHost(
             plan.witness().functions()[entry.0].span,
         ));

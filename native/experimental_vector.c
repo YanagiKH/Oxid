@@ -20,7 +20,18 @@ _Static_assert(offsetof(oxid_vector_header, prefix) == 0, "vector intrusive pref
 _Static_assert(offsetof(oxid_vector_header, capacity) == 32, "vector metadata offset");
 
 #ifndef OXID_VECTOR_ALIGNED_ALLOC
+#if defined(_WIN32)
+/* Vector source is outside the Windows File subset. The always-included
+ * translation unit cannot call a nonexistent MSVC aligned_alloc or substitute
+ * an allocation whose free/alignment ABI has not been implemented. */
+static void *oxid_windows_vector_allocation_closed(size_t alignment, size_t bytes) {
+    (void)alignment; (void)bytes;
+    return NULL;
+}
+#define OXID_VECTOR_ALIGNED_ALLOC oxid_windows_vector_allocation_closed
+#else
 #define OXID_VECTOR_ALIGNED_ALLOC aligned_alloc
+#endif
 #endif
 
 static size_t vector_scalar_size(uint32_t element) {
