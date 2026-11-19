@@ -8,7 +8,7 @@ use alloc::vec::len;
 use alloc::vec::try_push;
 
 #[derive(Copy)]
-pub struct Token { pub kind: i32, pub start: i32, pub end: i32, pub value: i32 }
+pub struct Token { pub kind: i32, pub start: i32, pub end: i32, pub value: i64 }
 #[derive(Copy)]
 pub struct Parameter { pub name: i32, pub ty: i32 }
 #[derive(Copy)]
@@ -62,7 +62,7 @@ pub fn grown(status: GrowStatus) -> bool {
 pub fn token(c: &Compiler, index: i32) -> Token {
     if index < 0 || index >= len(&*c.tokens) {
         let end = bytes_len(&*c.source);
-        return Token { kind: 0, start: end, end: end, value: 0 };
+        return Token { kind: 0, start: end, end: end, value: 0i64 };
     }
     return c.tokens[index];
 }

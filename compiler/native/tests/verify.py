@@ -56,6 +56,12 @@ RUNTIME_EXPECTATIONS = {
     "byte division by zero": (b"division by zero\n", "E0607", "checked u8 division by zero"),
     "byte conversion": (b"byte conversion out of range\n", "E0610",
                         "checked i32 to u8 conversion out of range"),
+    "i64 overflow": (b"integer overflow\n", "E0604", "checked i64 arithmetic overflow"),
+    "i64 division by zero": (b"division by zero\n", "E0607", "checked i64 division by zero"),
+    "i64 int conversion": (b"i32 conversion out of range\n", "E0610",
+                           "checked i64 to i32 conversion out of range"),
+    "i64 byte conversion": (b"byte conversion out of range\n", "E0610",
+                            "checked i64 to u8 conversion out of range"),
 }
 NATIVE_DEPTH_ERROR = b"call depth limit exceeded\n"
 
@@ -216,28 +222,29 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
 
     # The parameter and 4095 locals fill one function's slot budget. Keep
     # the recursive call non-tail so the unoptimized program retains frames.
-    locals_source = "".join(f"let v{index}=0;" for index in range(4095))
-    descend = ("fn descend(n:i32)->i32{" + locals_source
-               + "if n==0{return v4094;}return 1+descend(n-1);}")
-    for name, entry, expected in (
-        ("full-frames", "descend(126)-84", (0, b"42\n", b"")),
-        ("full-frames-refused", "descend(127)", (1, b"", NATIVE_DEPTH_ERROR)),
-    ):
-        source = evidence / f"{name}.ox"
-        source.write_text(descend + f"fn main()->i32{{return {entry};}}\n", encoding="ascii")
-        receipts = []
-        for profile in ("dev", "release"):
-            binary = evidence / f"{name}-{profile}"
-            receipts.append(driver.build(compiler, source, clang, runtime, binary,
-                                         profile, timeout, evidence / f"{name}-{profile}-build"))
-        source.rename(evidence / f"{name}.retained")
-        for receipt in receipts:
-            command = [receipt["output"]]
-            result = run(command, evidence, timeout)
-            row = record(evidence, f'{name}-{receipt["profile"]}', command, result)
-            rows.append({**row, "build": receipt})
-            require((result.returncode, result.stdout, result.stderr) == expected,
-                    f'{name}: wrong result at {receipt["profile"]}')
+    for ty, suffix, prefix in (("i32", "", "full-frames"), ("i64", "i64", "full-i64-frames")):
+        locals_source = "".join(f"let v{index}=0{suffix};" for index in range(4095))
+        descend = (f"fn descend(n:i32)->{ty}{{" + locals_source
+                   + f"if n==0{{return v4094;}}return 1{suffix}+descend(n-1);}}")
+        for name, entry, expected in (
+            (prefix, f"descend(126)-84{suffix}", (0, b"42\n", b"")),
+            (prefix + "-refused", "descend(127)", (1, b"", NATIVE_DEPTH_ERROR)),
+        ):
+            source = evidence / f"{name}.ox"
+            source.write_text(descend + f"fn main()->{ty}{{return {entry};}}\n", encoding="ascii")
+            receipts = []
+            for profile in ("dev", "release"):
+                binary = evidence / f"{name}-{profile}"
+                receipts.append(driver.build(compiler, source, clang, runtime, binary,
+                                             profile, timeout, evidence / f"{name}-{profile}-build"))
+            source.rename(evidence / f"{name}.retained")
+            for receipt in receipts:
+                command = [receipt["output"]]
+                result = run(command, evidence, timeout)
+                row = record(evidence, f'{name}-{receipt["profile"]}', command, result)
+                rows.append({**row, "build": receipt})
+                require((result.returncode, result.stdout, result.stderr) == expected,
+                        f'{name}: wrong result at {receipt["profile"]}')
     return rows
 
 
