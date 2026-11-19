@@ -4791,6 +4791,10 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
                     owned_vector::control_bytes::<V, W>()
                 } else {
                     0
+                } + if plan.has_local_record_element_loans() {
+                    element_loans::control_bytes::<V, W>()
+                } else {
+                    0
                 } + if plan.has_program_arguments() {
                     plan::add(
                         crate::program_arguments::control_bytes(),
@@ -4802,6 +4806,13 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
             )?,
         )
         .and_then(|bytes| plan::add(bytes, values::control_bytes::<V>()))
+        .and_then(|bytes| plan::add(bytes, element_loans::shared_adapter_control_bytes::<V, W>()))
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                plan::element_loan_accounting::query_control_bytes::<W>(),
+            )
+        })
         .and_then(|bytes| {
             plan::add(
                 bytes,
