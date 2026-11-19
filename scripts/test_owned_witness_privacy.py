@@ -183,6 +183,9 @@ class PrivacyCheckoutTests(unittest.TestCase):
             byte_buffer_runtime_reads = 3  # runtime adapter, implementation and header
             native_file_runtime_reads = 1  # experimental_files.c
             program_argument_runtime_reads = 1  # experimental_arguments.c
+            termination_runtime_reads = 1  # typed_termination.c
+            self.assertEqual((checkout / 'native/typed_termination.c').read_bytes(),
+                             (ROOT / 'native/typed_termination.c').read_bytes())
             integer128_runtime_reads = 1  # typed_integer128.c
             self.assertEqual((checkout / 'native/typed_integer128.c').read_bytes(),
                              (ROOT / 'native/typed_integer128.c').read_bytes())
@@ -208,6 +211,7 @@ class PrivacyCheckoutTests(unittest.TestCase):
             self.assertEqual(count, vector_runtime_inputs + character_runtime_inputs + float_runtime_inputs + predecessor_include_sites + u8_boundary_source_reads
                              + byte_buffer_runtime_reads + native_file_runtime_reads
                              + program_argument_runtime_reads + integer128_runtime_reads
+                             + termination_runtime_reads
                              + owned_record_runtime_inputs + owned_vector_runtime_inputs
                              + owned_vector_fixture_reads + owned_text_fixture_reads
                              + owned_parameter_fixture_reads)

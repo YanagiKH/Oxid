@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_windows_local_package_compatibility.py \
+          python3 -B scripts/verify_process_termination_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -877,6 +877,12 @@ jobs:
         run: cargo test --locked --test native_doctor -- --include-ignored --test-threads=1
       - name: Verify native file lifetime and failure contracts
         run: python3 -B scripts/test_native_files_runtime.py
+      - name: Verify process shutdown and file cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          OXID_TEST_CC="$OXID_LLVM_BIN/clang" python3 -B scripts/test_termination_runtime.py
       - name: Verify Mach-O execution and deployment
         run: |
           python3 -B scripts/verify_macos_native.py target/debug/oxid target/release/oxid \
@@ -1341,6 +1347,12 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
+      - name: Verify process shutdown and file cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          OXID_TEST_CC="$OXID_LLVM_BIN/clang" python3 -B scripts/test_termination_runtime.py
       - name: Verify native CPU training, gradients and checkpoint recovery
         run: |
           python3 -B scripts/verify_cpu_training.py target/debug/oxid target/release/oxid \
@@ -1593,6 +1605,12 @@ jobs:
         run: |
           cargo clippy --locked --all-targets --all-features -- -D warnings
           cargo test --locked --all-targets --all-features
+      - name: Verify process shutdown and file cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          OXID_TEST_CC="$OXID_LLVM_BIN/clang" python3 -B scripts/test_termination_runtime.py
       - name: Verify native ARM64 builds and source-free execution
         env:
           OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/local-reference-bindings
