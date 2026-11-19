@@ -156,7 +156,9 @@ fn local_definition(
         .expressions
         .iter()
         .find_map(|expression| match expression.kind {
-            ast::ExprKind::Name(name) | ast::ExprKind::Borrow { name, .. }
+            ast::ExprKind::Name(name)
+            | ast::ExprKind::Borrow { name, .. }
+            | ast::ExprKind::BorrowElement { name, .. }
                 if contains(name, offset) =>
             {
                 Some(name)

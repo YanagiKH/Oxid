@@ -835,7 +835,8 @@ fn expression_kind(
         | ast::ExprKind::ByteString { .. }
         | ast::ExprKind::IndexRead { .. }
         | ast::ExprKind::ArrayLength { .. }
-        | ast::ExprKind::Borrow { .. } => return Err(Failure::Shape),
+        | ast::ExprKind::Borrow { .. }
+        | ast::ExprKind::BorrowElement { .. } => return Err(Failure::Shape),
     })
 }
 

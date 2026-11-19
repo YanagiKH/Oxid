@@ -9,6 +9,7 @@ import build_typed_parser_observer as parser
 import build_typed_static_observer as static
 import legacy_scalar_observer_local_references as parent
 import legacy_scalar_observer_vectors as adapter
+import legacy_scalar_observer_element_borrows as element_borrows
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,10 +44,12 @@ class VectorScalarAdapterTests(unittest.TestCase):
         self.assertNotIn(b'_ =>', after)
         for kind, builder in [('parser', parser), ('static', static)]:
             self.assertEqual(builder.SOURCE_FILES.count('vector_builtins.rs'), 1)
-            self.assertEqual(builder.SCHEMA, adapter.SCHEMA)
+            self.assertEqual(builder.SCHEMA, element_borrows.SCHEMA)
             for name, _ in builder.WRAPPER_FILES:
                 original = (ROOT / f'tests/fixtures/bounded_typed_{kind}/observer' / name).read_bytes()
-                self.assertEqual(builder.adapt_wrapper(name, original), adapter.adapt_wrapper(kind, name, original))
+                derived = builder.adapt_wrapper(name, original)
+                self.assertEqual(element_borrows.reverse_wrapper(kind, name, derived),
+                                 adapter.adapt_wrapper(kind, name, original))
 
     def test_unknown_input_double_adaptation_and_weakened_refusals_fail(self):
         original = (ROOT / 'tests/fixtures/bounded_typed_parser/observer/frontend_mod.rs').read_bytes()

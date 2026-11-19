@@ -1321,7 +1321,8 @@ fn scalar_only_owned_adapter_bypasses_every_new_cap_and_keeps_raw_256_parameters
                 metadata: (std::mem::size_of::<Vec<RawEnumDecl>>()
                     + std::mem::size_of::<usize>()
                     + std::mem::size_of::<Vec<MatchDecl>>()
-                    + VECTOR_RAW_HEADER_GROWTH)
+                    + VECTOR_RAW_HEADER_GROWTH
+                    + TERMINATION_RAW_SELECTOR_BYTES)
             }
         )
         .is_ok());

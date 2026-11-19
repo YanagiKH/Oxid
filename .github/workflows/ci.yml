@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_windows_local_package_compatibility.py \
+          python3 -B scripts/verify_current_typed_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -641,6 +641,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  windows-local-package-source-policy-predecessor:
+    name: Windows package source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_windows_local_package_source_policy.py "$RUNNER_TEMP/windows-local-package-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 197ab7cad557038c40b9bac3b3019f9cdffcbab4
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/windows-local-package-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/windows-local-package-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-local-package-source-policy-predecessor
+          path: ${{ runner.temp }}/windows-local-package-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   macos-native:
     name: Current macOS native (${{ matrix.os }})
     strategy:
@@ -877,6 +902,12 @@ jobs:
         run: cargo test --locked --test native_doctor -- --include-ignored --test-threads=1
       - name: Verify native file lifetime and failure contracts
         run: python3 -B scripts/test_native_files_runtime.py
+      - name: Verify process shutdown and file cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          OXID_TEST_CC="$OXID_LLVM_BIN/clang" python3 -B scripts/test_termination_runtime.py
       - name: Verify Mach-O execution and deployment
         run: |
           python3 -B scripts/verify_macos_native.py target/debug/oxid target/release/oxid \
@@ -896,6 +927,8 @@ jobs:
             if test "$profile" = release; then set -- "$@" --release; fi
             OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
               --test typed_owned_vector_wrappers -- --ignored --test-threads=1
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
+              --test typed_owned_record_element_loans -- --ignored --test-threads=1
           done
       - name: Retain native programs and raw transcripts
         if: always()
@@ -1099,6 +1132,11 @@ jobs:
           cargo test --locked --bin oxid frontend::native::doctor::windows::tests:: -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --test native_doctor --test typed_windows_native -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows binary file programs
+        run: |
+          $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN
+          cargo test --locked --test windows_file_io -- --include-ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify PE execution, publication and standalone deployment
         run: |
@@ -1323,6 +1361,8 @@ jobs:
             if test "$profile" = release; then set -- "$@" --release; fi
             OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
               --test typed_owned_vector_wrappers -- --ignored --test-threads=1
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
+              --test typed_owned_record_element_loans -- --ignored --test-threads=1
           done
       - name: Verify enum-vector C contracts with real compiler schemas and native CLI cases
         env:
@@ -1341,6 +1381,12 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
+      - name: Verify process shutdown and file cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          OXID_TEST_CC="$OXID_LLVM_BIN/clang" python3 -B scripts/test_termination_runtime.py
       - name: Verify native CPU training, gradients and checkpoint recovery
         run: |
           python3 -B scripts/verify_cpu_training.py target/debug/oxid target/release/oxid \
@@ -1593,6 +1639,12 @@ jobs:
         run: |
           cargo clippy --locked --all-targets --all-features -- -D warnings
           cargo test --locked --all-targets --all-features
+      - name: Verify process shutdown and file cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          OXID_TEST_CC="$OXID_LLVM_BIN/clang" python3 -B scripts/test_termination_runtime.py
       - name: Verify native ARM64 builds and source-free execution
         env:
           OXID_LOCAL_REFERENCES_NATIVE_EVIDENCE: ${{ runner.temp }}/linux-arm64-native/local-reference-bindings
@@ -1633,6 +1685,8 @@ jobs:
             if test "$profile" = release; then set -- "$@" --release; fi
             OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
               --test typed_owned_vector_wrappers -- --ignored --test-threads=1
+            OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test "$@" \
+              --test typed_owned_record_element_loans -- --ignored --test-threads=1
           done
       - name: Verify ARM64 enum-vector C contracts with real compiler schemas and native CLI cases
         env:

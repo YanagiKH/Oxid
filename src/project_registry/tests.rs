@@ -163,12 +163,14 @@ fn registry_publication_lock_envelopes_preserve_local_bytes_and_exact_boundaries
 }
 
 #[test]
-fn exact_registry_descriptors_do_not_reinterpret_quoted_paths() {
+fn registry_descriptors_do_not_reinterpret_quoted_paths() {
     let valid = "{ registry = \"file:///srv/oxid\", package = \"counts\", version = \"1.2.3\" }";
     let dependency = Dependency::parse(valid).unwrap();
     assert_eq!(dependency.encode(), valid);
+    let compatible = valid.replace("1.2.3", "^1.2.3");
+    assert_eq!(Dependency::parse(&compatible).unwrap().encode(), compatible);
     for invalid in [
-        "{ registry = \"file:///srv/oxid\", package = \"counts\", version = \"^1.2.3\" }",
+        "{ registry = \"file:///srv/oxid\", package = \"counts\", version = \"^1.2\" }",
         "{ registry = \"file:///srv/oxid\", package = \"counts\", version = \"1.2.03\" }",
         "{ registry = \"file:///srv/oxid\", package = \"counts\", version = \"1.2.3\", }",
         "{ registry = \"file:///srv/oxid\", package = \"counts\", package = \"1.2.3\" }",
@@ -225,6 +227,22 @@ fn canonical_registry_uri_limit_applies_after_percent_encoding() {
         "file:///a?token=x",
     ] {
         assert!(normalized_uri(source).is_err(), "{source}");
+    }
+}
+
+#[test]
+fn compatible_versions_use_numeric_order_and_the_first_nonzero_component() {
+    for (minimum, candidate, accepted) in [
+        ([1, 2, 3], [1, 10, 1], true),
+        ([1, 2, 3], [1, 2, 2], false),
+        ([1, 2, 3], [2, 0, 0], false),
+        ([0, 2, 3], [0, 2, 9], true),
+        ([0, 2, 3], [0, 3, 0], false),
+        ([0, 0, 3], [0, 0, 3], true),
+        ([0, 0, 3], [0, 0, 4], false),
+        ([u32::MAX, 0, 0], [u32::MAX, 1, 0], true),
+    ] {
+        assert_eq!(CompatibleVersion(minimum).accepts(candidate), accepted);
     }
 }
 
@@ -344,7 +362,7 @@ mod files {
         fn resolve(&self, no_fetch: bool, budget: Allowance) -> Result<(PathBuf, Session), String> {
             let owner = self.root.join("owner");
             let mut session = Session::with_budget(&owner, no_fetch, budget)?;
-            let path = session.resolve(&owner, &self.dependency)?;
+            let path = session.resolve(&owner, "counts", &self.dependency, false)?;
             Ok((path, session))
         }
     }

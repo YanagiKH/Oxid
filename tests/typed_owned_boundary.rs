@@ -115,7 +115,7 @@ fn owned_source_reaches_check_reference_and_native_admission() {
         assert!(json.contains("\"errors\":1,\"output\":null"), "{json}");
         if WINDOWS_SCALAR_NATIVE {
             assert!(
-                json.contains("Windows native builds currently support bounded result-entry bool, i32 and unit scalar functions"),
+                json.contains("Windows native builds require bounded bool/i32/unit result entry"),
                 "{json}"
             );
             assert!(!json.contains("E0701"), "{json}");

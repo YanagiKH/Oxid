@@ -264,7 +264,7 @@ impl DenialContext {
             (OwnedInstruction::ArrayLength { base: actual, .. }, ArrayBase) if base == *actual => {
                 DeniedOperation::ArrayLength
             }
-            (OwnedInstruction::PrepareBorrow { loan, .. } | OwnedInstruction::PrepareBorrowRange { loan, .. } | OwnedInstruction::AcquireLocalBorrow(loan), BorrowAuthority) => {
+            (OwnedInstruction::PrepareBorrow { loan, .. } | OwnedInstruction::PrepareBorrowRange { loan, .. } | OwnedInstruction::AcquireLocalBorrow(loan) | OwnedInstruction::AcquireLocalElementBorrow { loan, .. }, BorrowAuthority) => {
                 let loan = f.loans.get(loan.0)?;
                 if base != loan.authority {
                     return None;
@@ -584,7 +584,7 @@ fn step(
         }
         OwnedInstruction::PrepareBorrow { loan, .. }
         | OwnedInstruction::PrepareBorrowRange { loan, .. }
-        | OwnedInstruction::AcquireLocalBorrow(loan)
+        | OwnedInstruction::AcquireLocalBorrow(loan) | OwnedInstruction::AcquireLocalElementBorrow { loan, .. }
             if f.loans[loan.0].authority == AccessBase::Owner(owner) =>
         {
             event = true;
@@ -1222,6 +1222,7 @@ fn accesses(
             DeniedRole::BorrowAuthority,
         )?,
         OwnedInstruction::AcquireLocalBorrow(loan)
+        | OwnedInstruction::AcquireLocalElementBorrow { loan, .. }
         | OwnedInstruction::PrepareBorrow { loan, .. }
         | OwnedInstruction::PrepareBorrowRange { loan, .. } => {
             let l = &f.loans[loan.0];
@@ -1268,7 +1269,8 @@ fn access_region<'a>(
         (
             OwnedInstruction::PrepareBorrow { loan, .. }
             | OwnedInstruction::PrepareBorrowRange { loan, .. }
-            | OwnedInstruction::AcquireLocalBorrow(loan),
+            | OwnedInstruction::AcquireLocalBorrow(loan)
+            | OwnedInstruction::AcquireLocalElementBorrow { loan, .. },
             DeniedRole::BorrowAuthority,
         ) => &f.loans[loan.0].projection,
         _ => &[],
@@ -1325,7 +1327,8 @@ fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
                 }
                 OwnedInstruction::PrepareBorrow { loan, .. }
                 | OwnedInstruction::PrepareBorrowRange { loan, .. }
-                | OwnedInstruction::AcquireLocalBorrow(loan) => {
+                | OwnedInstruction::AcquireLocalBorrow(loan)
+                | OwnedInstruction::AcquireLocalElementBorrow { loan, .. } => {
                     let l = &f.loans[loan.0];
                     (l.kind == BorrowKind::Exclusive && !shape::base(f, l.authority, i.span)?.1)
                         .then_some((l.authority, DeniedRole::BorrowAuthority, Some(l.span)))
@@ -1415,7 +1418,7 @@ fn loans(
         0,
         meter,
         |mut state, i, meter| {
-            if matches!(i.kind,OwnedInstruction::PrepareBorrow{loan,..} | OwnedInstruction::PrepareBorrowRange{loan,..} | OwnedInstruction::AcquireLocalBorrow(loan) if loan.0==id)
+            if matches!(i.kind,OwnedInstruction::PrepareBorrow{loan,..} | OwnedInstruction::PrepareBorrowRange{loan,..} | OwnedInstruction::AcquireLocalBorrow(loan) | OwnedInstruction::AcquireLocalElementBorrow { loan, .. } if loan.0==id)
             {
                 if state != 0 {
                     return Err(OwnedFailure::violation(

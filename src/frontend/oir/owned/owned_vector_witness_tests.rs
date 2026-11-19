@@ -402,7 +402,20 @@ fn owned_vector_witness_zero_keys_remains_extended_and_true_legacy_keeps_old_pat
     let legacy = verified::verify_owned(raw, &sources).unwrap();
     let legacy_plan = ExecutionPlan::build(&legacy).unwrap();
     assert!(!legacy_plan.uses_owned_vectors());
-    assert_eq!(ExecutionPlan::compiler_work_request(&legacy).unwrap(), 0);
+    // The empty relation still checks each metadata row. This witness pays
+    // its existing verification work and the new plan scan, with no vector
+    // extension charge.
+    let mut expected_work = legacy.usage().work + 32;
+    for function in legacy.functions() {
+        expected_work += 86 + 57 * function.loans.len();
+        for block in &function.blocks {
+            expected_work += 5 + 29 * block.statements.len();
+        }
+    }
+    assert_eq!(
+        ExecutionPlan::compiler_work_request(&legacy).unwrap(),
+        expected_work
+    );
     assert_eq!(size_of::<ExecutionPlan<'_>>(), 40);
     assert_eq!(
         size_of::<ExecutionPlan<'_, VerifiedOwnedVectorProgram>>(),
@@ -494,7 +507,7 @@ fn owned_vector_witness_shared_plan_exact_one_less_preflight_and_every_allocatio
     assert!(ExecutionPlan::build_with_test_budgets(&witness, metadata, work).is_ok());
     for (bytes, visits, name) in [
         (metadata - 1, work, "owned plan bytes"),
-        (metadata, work - 1, "owned vector plan work"),
+        (metadata, work - 1, "owned element loan plan work"),
     ] {
         let failure = plan::fail_allocation_after(0, || {
             ExecutionPlan::build_with_test_budgets(&witness, bytes, visits)

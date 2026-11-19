@@ -11,7 +11,13 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <io.h>
+#define oxid_close_descriptor _close
+#else
 #include <unistd.h>
+#define oxid_close_descriptor close
+#endif
 
 struct oxid_allocation {
     oxid_allocation *next, *previous;
@@ -77,7 +83,7 @@ static void unlink_node(oxid_byte_heap *heap, oxid_allocation *node) {
 #endif
     } else {
         if (capacity == UINT32_MAX) {
-            if (node->initialized != UINT32_MAX) (void)close((int)node->initialized);
+            if (node->initialized != UINT32_MAX) (void)oxid_close_descriptor((int)node->initialized);
             capacity = 0;
         }
         charge = (uint64_t)capacity + OXID_BYTEBUF_HEADER;
@@ -219,18 +225,29 @@ int32_t oxid_bytebuf_truncate(oxid_byte_heap *heap, oxid_bytebuf *value, int32_t
 
 static oxid_binary_result read_once(uint8_t *bytes, int32_t length) {
     if (!length) return (oxid_binary_result){0, 0};
+#if defined(_WIN32)
+    /* Public process I/O remains closed. Never use CRT text-mode stdin. */
+    (void)bytes;
+    return (oxid_binary_result){2, ENOSYS};
+#else
     ssize_t done = read(STDIN_FILENO, bytes, (size_t)length);
     if (done < 0) return (oxid_binary_result){2, errno};
     if (!done) return (oxid_binary_result){1, 0};
     if (done > length) return (oxid_binary_result){2, EIO};
     return (oxid_binary_result){0, (int32_t)done};
+#endif
 }
 static oxid_binary_result write_once(const uint8_t *bytes, int32_t length) {
     if (!length) return (oxid_binary_result){0, 0};
+#if defined(_WIN32)
+    (void)bytes;
+    return (oxid_binary_result){2, ENOSYS};
+#else
     ssize_t done = write(STDOUT_FILENO, bytes, (size_t)length);
     if (done < 0) return (oxid_binary_result){2, errno};
     if (done > length) return (oxid_binary_result){2, EIO};
     return (oxid_binary_result){0, (int32_t)done};
+#endif
 }
 static int32_t admit_attempt(const uint8_t *bytes, int32_t length, uint64_t *fuel,
     oxid_binary_result *result) {

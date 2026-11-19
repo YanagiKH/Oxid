@@ -7,6 +7,7 @@ mod tests;
 use crate::{project_package as package, runtime};
 use sha2::{Digest, Sha256};
 use std::{
+    borrow::Cow,
     cell::RefCell,
     fs,
     io::{self, Read, Write},
@@ -108,23 +109,53 @@ impl Declarations {
     }
 }
 
-pub(crate) fn version(value: &str) -> Result<(), String> {
-    let mut count = 0;
-    for part in value.split('.') {
-        count += 1;
+fn version_parts(value: &str) -> Result<[u32; 3], &'static str> {
+    let mut parts = value.split('.');
+    let mut version = [0; 3];
+    for component in &mut version {
+        let part = parts
+            .next()
+            .ok_or("registry versions require exactly three numeric components")?;
         if part.is_empty()
             || part.len() > 10
             || part.len() > 1 && part.starts_with('0')
             || !part.bytes().all(|byte| byte.is_ascii_digit())
-            || part.parse::<u32>().is_err()
         {
-            return Err("registry versions require an exact canonical MAJOR.MINOR.PATCH (u32 components); ranges, prereleases and build metadata are unsupported".into());
+            return Err(
+                "registry versions require canonical MAJOR.MINOR.PATCH with u32 components",
+            );
+        }
+        *component = part
+            .parse()
+            .map_err(|_| "registry version component exceeds u32")?;
+    }
+    if parts.next().is_some() {
+        return Err("registry versions require exactly three numeric components");
+    }
+    Ok(version)
+}
+
+pub(crate) fn version(value: &str) -> Result<(), String> {
+    version_parts(value).map(|_| ()).map_err(str::to_owned)
+}
+
+#[derive(Clone, Copy)]
+struct CompatibleVersion([u32; 3]);
+
+impl CompatibleVersion {
+    fn accepts(self, candidate: [u32; 3]) -> bool {
+        if candidate < self.0 {
+            return false;
+        }
+        let [major, minor, patch] = self.0;
+        if major != 0 {
+            candidate[0] == major
+        } else if minor != 0 {
+            candidate[..2] == [0, minor]
+        } else {
+            candidate == [0, 0, patch]
         }
     }
-    if count != 3 {
-        return Err("registry versions require exactly three numeric components".into());
-    }
-    Ok(())
 }
 
 fn name(value: &str) -> Result<(), String> {
@@ -187,11 +218,12 @@ impl Dependency {
             uri_path(source)?;
         }
         name(fields[1].ok_or_else(bad)?)?;
-        version(fields[2].ok_or_else(bad)?)?;
+        let requirement = fields[2].ok_or_else(bad)?;
+        version(requirement.strip_prefix('^').unwrap_or(requirement))?;
         Ok(Self {
             source: source.into(),
             name: fields[1].unwrap().into(),
-            version: fields[2].unwrap().into(),
+            version: requirement.into(),
         })
     }
 
@@ -979,11 +1011,63 @@ pub(crate) struct Publication {
     pub archive: package::LibraryArchive,
 }
 
+fn registry_package_path(source: &str, name: &str, budget: &mut Budget) -> Result<PathBuf, String> {
+    let root = budget.uri_path(source)?;
+    ordinary(&root, false)?;
+    let marker = budget.join(&root, "registry.toml")?;
+    if read_regular(&marker, MARKER.len(), budget)? != MARKER {
+        return Err("unsupported private registry marker".into());
+    }
+    let packages = budget.join(&root, "packages")?;
+    budget.join(&packages, name)
+}
+
+fn newest_compatible(
+    package: &Path,
+    requirement: CompatibleVersion,
+    budget: &mut Budget,
+) -> Result<String, String> {
+    ordinary(package, false)?;
+    let entries = fs::read_dir(package)
+        .map_err(|error| format!("cannot inspect registry versions: {error}"))?;
+    let mut best = None;
+    for (index, entry) in entries.enumerate() {
+        if index == 4096 {
+            return Err("registry package exceeds the 4096-entry version search limit".into());
+        }
+        let entry = entry.map_err(|error| format!("cannot inspect registry version: {error}"))?;
+        let name = budget.scoped(255, || Ok(entry.file_name()), |value| Ok(value.capacity()))?;
+        let Some(candidate) = name.to_str().and_then(|value| version_parts(value).ok()) else {
+            continue;
+        };
+        if !requirement.accepts(candidate) {
+            continue;
+        }
+        if !entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_dir()
+        {
+            return Err("compatible registry release must be an ordinary directory".into());
+        }
+        if best
+            .as_ref()
+            .is_none_or(|(previous, _)| candidate > *previous)
+        {
+            best = Some((candidate, name));
+        }
+    }
+    best.ok_or_else(|| "no compatible registry release".to_owned())?
+        .1
+        .into_string()
+        .map_err(|_| "registry version is not UTF-8".into())
+}
+
 pub(crate) struct Session {
     owner: PathBuf,
     no_fetch: bool,
     origins: Vec<Arc<Origin>>,
-    trusted: Vec<Pin>,
+    trusted: Option<crate::project_lock::Snapshot>,
     budget: Allowance,
 }
 impl Session {
@@ -1048,10 +1132,45 @@ impl Session {
             .find(|origin| origin.root == root)
             .cloned()
     }
+    fn selected_version<'a>(
+        &self,
+        declaring: &Path,
+        alias: &str,
+        source: &str,
+        dependency: &'a Dependency,
+        update: bool,
+        budget: &mut Budget,
+    ) -> Result<Cow<'a, str>, String> {
+        let Some(minimum) = dependency.version.strip_prefix('^') else {
+            return Ok(Cow::Borrowed(&dependency.version));
+        };
+        let requirement = CompatibleVersion(version_parts(minimum).map_err(str::to_owned)?);
+        budget.metadata(resources::version_selection_bytes())?;
+        if let Some(locked) = self.trusted.as_ref().filter(|_| self.no_fetch || !update) {
+            let declaring = crate::project_lock::relative_registry(&self.owner, declaring, budget)?;
+            if let Some(pin) = locked.registry_target(&declaring, alias).filter(|pin| {
+                pin.source == source
+                    && pin.name == dependency.name
+                    && version_parts(&pin.version).is_ok_and(|v| requirement.accepts(v))
+            }) {
+                return Ok(Cow::Owned(budget.text(&pin.version)?));
+            }
+        }
+        if self.no_fetch {
+            return Err(format!(
+                "compatible registry dependency `{alias}` requires a matching locked release"
+            ));
+        }
+        let package = registry_package_path(source, &dependency.name, budget)?;
+        newest_compatible(&package, requirement, budget).map(Cow::Owned)
+    }
+
     pub(crate) fn resolve(
         &mut self,
         declaring: &Path,
+        alias: &str,
         dependency: &Dependency,
+        update: bool,
     ) -> Result<PathBuf, String> {
         let mut budget = self.budget.borrow_mut();
         let source = if dependency.source == "self" {
@@ -1067,11 +1186,13 @@ impl Session {
         } else {
             budget.normalized_uri(&dependency.source)?
         };
-        let id = budget.identity(&source, &dependency.name, &dependency.version)?;
+        let version =
+            self.selected_version(declaring, alias, &source, dependency, update, &mut budget)?;
+        let id = budget.identity(&source, &dependency.name, &version)?;
         if let Some(origin) = self.origins.iter().find(|origin| {
             origin.pin.source == source
                 && origin.pin.name == dependency.name
-                && origin.pin.version == dependency.version
+                && origin.pin.version == version
         }) {
             return budget.path(&origin.root);
         }
@@ -1094,30 +1215,21 @@ impl Session {
         let release = if existing {
             budget.path(&cache)?
         } else {
-            let root = budget.uri_path(&source)?;
-            ordinary(&root, false)?;
-            let marker = budget.join(&root, "registry.toml")?;
-            if read_regular(&marker, MARKER.len(), &mut budget)? != MARKER {
-                return Err("unsupported private registry marker".into());
-            }
-            let packages = budget.join(&root, "packages")?;
-            let package = budget.join(&packages, &dependency.name)?;
-            let release = budget.join(&package, &dependency.version)?;
+            let package = registry_package_path(&source, &dependency.name, &mut budget)?;
+            let release = budget.join(&package, &version)?;
             ordinary(&release, false)?;
             release
         };
         let record_path = budget.join(&release, "release.toml")?;
         let raw = read_regular(&record_path, 1024 * 1024, &mut budget)?;
         let record = Record::decode(&raw, &mut budget)?;
-        if record.name != dependency.name || record.version != dependency.version {
+        if record.name != dependency.name || record.version != version {
             return Err("registry release name/version differs from the requested identity".into());
         }
         if self
             .trusted
-            .iter()
-            .find(|pin| {
-                pin.source == source && pin.name == record.name && pin.version == record.version
-            })
+            .as_ref()
+            .and_then(|locked| locked.registry_pin(&source, &record.name, &record.version))
             .is_some_and(|pin| pin.artifact != record.artifact || pin.bytes != record.bytes)
         {
             return Err("immutable registry release differs from the trusted lock; choose a new version instead of updating the same tuple".into());
@@ -1234,16 +1346,40 @@ pub(crate) fn clone_manifest(
         resources::manifest_clone_capacity,
     )
 }
-pub(crate) fn publication_replacements(
+pub(crate) fn publication_replacements<'a>(
     entries: &[(String, Dependency)],
     source: &str,
+    locked: impl Fn(&str) -> Option<&'a Pin>,
     budget: &mut Budget,
 ) -> Result<std::collections::HashMap<String, String>, String> {
-    budget.scoped(resources::replacement_bound(entries)?, || {
+    let mut bound = resources::replacement_bound(entries)?;
+    for (alias, dependency) in entries {
+        if dependency.version.starts_with('^') {
+            let pin =
+                locked(alias).ok_or("publication requires a resolved version for every range")?;
+            bound = bound
+                .checked_add(3 * pin.version.len())
+                .ok_or("registry replacement storage overflow")?;
+        }
+    }
+    budget.scoped(bound, || {
         let mut replacements = std::collections::HashMap::new();
         for (alias, dependency) in entries {
-            if normalized_uri(&dependency.source)? != source { return Err("published libraries currently require every dependency in the same registry".into()); }
-            let mut exported = dependency.clone(); exported.source = "self".into();
+            if normalized_uri(&dependency.source)? != source {
+                return Err("published libraries currently require every dependency in the same registry".into());
+            }
+            let mut exported = dependency.clone();
+            exported.source = "self".into();
+            if let Some(minimum) = dependency.version.strip_prefix('^') {
+                let required = CompatibleVersion(version_parts(minimum).map_err(str::to_owned)?);
+                let pin = locked(alias).ok_or("publication requires a resolved version for every range")?;
+                if pin.source != source || pin.name != dependency.name
+                    || !version_parts(&pin.version).is_ok_and(|version| required.accepts(version))
+                {
+                    return Err("published dependency does not match the locked version requirement".into());
+                }
+                exported.version.clone_from(&pin.version);
+            }
             replacements.insert(alias.clone(), exported.encode());
         }
         Ok(replacements)

@@ -18,7 +18,6 @@ fn main() -> i32 {
             if compiler.error != 0 { return compiler.error; }
             crate::emit::preamble(&mut compiler);
             crate::parser::bodies(&mut compiler);
-            crate::parser::acyclic(&mut compiler);
             if compiler.error != 0 { return compiler.error; }
             crate::emit::wrapper(&mut compiler);
             if compiler.error != 0 { return compiler.error; }

@@ -125,12 +125,14 @@ fn record_vector_resource_checker_is_paid_without_vector_operation_frames_before
     // The unchanged frame plans are inputs to this routing boundary. Only main
     // and one primitive can coexist; the new checker bank is fixed once, not
     // per frame/leaf, and no vector-operation control bank may subsidize it.
-    let exact = 2 * size_of::<Frame>()
+    let exact = element_loan_budget_oracle::SCALAR_VM
+        + 2 * size_of::<Frame>()
         + size_of::<byte_buffer::Heap>()
         + control_bytes()
         + size_of::<Scalar>()
         + main_bytes
-        + push_bytes;
+        + push_bytes
+        + TERMINATION_VM_SELECTOR_BYTES;
     assert_eq!(values::control_bytes::<Scalar>(), 0);
     assert!(exact < plan::MAX_REFERENCE_BYTES);
     assert_eq!(plan::MAX_REFERENCE_BYTES, 16 * 1024 * 1024);

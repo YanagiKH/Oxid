@@ -129,7 +129,9 @@ fn source_payload_exact_count_and_one_under_precede_every_reservation() {
             // Declaration tables have their own budget; control-flow metadata is unchanged.
             assert_eq!(
                 usage.analysis.metadata_bytes,
-                576 + std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH
+                576 + std::mem::size_of::<Vec<MatchDecl>>()
+                    + VECTOR_RAW_HEADER_GROWTH
+                    + TERMINATION_RAW_SELECTOR_BYTES
             );
             let raw = lower::lower_with_limits(
                 typed,
@@ -245,7 +247,9 @@ fn source_scalar_origin_only_output_is_counted_without_ownership_flow() {
             assert_eq!(usage.analysis.work, 4);
             assert_eq!(
                 usage.analysis.metadata_bytes,
-                144 + std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH
+                144 + std::mem::size_of::<Vec<MatchDecl>>()
+                    + VECTOR_RAW_HEADER_GROWTH
+                    + TERMINATION_RAW_SELECTOR_BYTES
             );
             let raw = lower::lower(typed).unwrap();
             assert!(!super::super::budget::active(&raw.functions[0]));
@@ -371,7 +375,11 @@ fn production_token_envelope_lowers_a_large_real_source_graph() {
     assert_eq!(usage.analysis.work, 8 * loops + 4);
     assert_eq!(
         usage.analysis.metadata_bytes,
-        224 * loops + 144 + std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH
+        224 * loops
+            + 144
+            + std::mem::size_of::<Vec<MatchDecl>>()
+            + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES
     );
     let raw = lower::lower(&typed).unwrap();
     assert_eq!(raw.functions[0].blocks.len(), 3 * loops + 1);

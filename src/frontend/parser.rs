@@ -783,6 +783,13 @@ impl Parser<'_> {
                         .all(|(name, span)| self.source.text_at(*span) == name));
             if !experimental
                 && !vector
+                && !(segments.len() == 3
+                    && self.source.text_at(segments[0]) == "std"
+                    && self.source.text_at(segments[1]) == "process"
+                    && super::builtin_catalog::termination::Function::named(
+                        self.source.text_at(segments[2]),
+                    )
+                    .is_some())
                 && (segments.len() != 3
                     || self.source.text_at(segments[0]) != "std"
                     || self.source.text_at(segments[1]) != "io"
@@ -1845,6 +1852,23 @@ impl Parser<'_> {
         let name = self
             .expect(Kind::Ident, "reference requires a binding name")?
             .span;
+        if self.arrays_enabled() && self.array_punctuation("[") {
+            self.bump();
+            let index = self.expression(0, LiteralContext::Allowed)?;
+            let end = self.array_close("element reference requires `]`")?;
+            if self.peek().kind != Kind::Semi {
+                return Err(self.error("element reference must be a complete local initializer"));
+            }
+            return self.push_expr(
+                ExprKind::BorrowElement {
+                    mutable,
+                    name,
+                    forwarded,
+                    index,
+                },
+                self.source.span(start, end),
+            );
+        }
         if self.peek().kind != Kind::Semi {
             return Err(self.error("local reference initializer must borrow a whole binding"));
         }
@@ -2191,7 +2215,9 @@ impl Parser<'_> {
                 .map(|element| self.heights[element.0])
                 .max()
                 .unwrap_or(0),
-            ExprKind::IndexRead { index, .. } => self.heights[index.0],
+            ExprKind::IndexRead { index, .. } | ExprKind::BorrowElement { index, .. } => {
+                self.heights[index.0]
+            }
             ExprKind::Bitwise { left, right, .. }
             | ExprKind::Arithmetic { left, right, .. }
             | ExprKind::Comparison { left, right, .. }
@@ -2860,3 +2886,7 @@ fn bounded_enum_production_parser_policy_layout() {
 
 #[cfg(test)]
 mod copy_record_tests;
+
+#[cfg(test)]
+#[path = "parser/local_record_element_tests.rs"]
+mod local_record_element_tests;

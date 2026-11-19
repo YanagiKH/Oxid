@@ -33,6 +33,9 @@ pub(in crate::frontend) enum Item {
     ArgCount,
     ArgBytes,
     SeekAbsolute,
+    // These identities are never members of the historical ALL inventory.
+    EnableTermination,
+    TerminationRequested,
 }
 impl Item {
     pub const ALL: [Self; 28] = [
@@ -95,6 +98,8 @@ impl Item {
             Self::ArgCount => "arg_count",
             Self::ArgBytes => "arg_bytes",
             Self::SeekAbsolute => "seek_absolute",
+            Self::EnableTermination => "enable_termination_notifications",
+            Self::TerminationRequested => "termination_requested",
         }
     }
     pub fn family(self) -> usize {
@@ -112,6 +117,7 @@ impl Item {
             | Self::Close
             | Self::SeekAbsolute => 3,
             Self::ArgStatus | Self::ArgCount | Self::ArgBytes => 4,
+            Self::EnableTermination | Self::TerminationRequested => 5,
             _ => 0,
         }
     }
@@ -120,6 +126,7 @@ impl Item {
             0 => ["alloc", "bytes", self.name()],
             3 => ["std", "fs", self.name()],
             4 => ["std", "env", self.name()],
+            5 => ["std", "process", self.name()],
             _ => ["std", "io", self.name()],
         }
     }
@@ -145,6 +152,8 @@ impl Item {
             Self::ArgCount => Function::ArgCount,
             Self::ArgBytes => Function::ArgBytes,
             Self::SeekAbsolute => Function::SeekAbsolute,
+            Self::EnableTermination => Function::EnableTermination,
+            Self::TerminationRequested => Function::TerminationRequested,
 
             _ => return None,
         })
@@ -240,8 +249,17 @@ pub(in crate::frontend) enum Function {
     ArgCount,
     ArgBytes,
     SeekAbsolute,
+    EnableTermination,
+    TerminationRequested,
 }
 impl Function {
+    pub fn process(self) -> Option<super::termination::Function> {
+        match self {
+            Self::EnableTermination => Some(super::termination::Function::Enable),
+            Self::TerminationRequested => Some(super::termination::Function::Requested),
+            _ => None,
+        }
+    }
     pub fn is_file(self) -> bool {
         self.item().family() == 3
     }
@@ -292,6 +310,8 @@ impl Function {
             Self::ArgCount => Item::ArgCount,
             Self::ArgBytes => Item::ArgBytes,
             Self::SeekAbsolute => Item::SeekAbsolute,
+            Self::EnableTermination => Item::EnableTermination,
+            Self::TerminationRequested => Item::TerminationRequested,
         }
     }
     pub fn result_enum(self) -> Option<Enumeration> {
@@ -327,7 +347,7 @@ impl Function {
         };
         let scalar = |ty| ParameterTy::Value(ValueTy::Scalar(ty));
         let (parameters, count) = match self {
-            New | ArgCount => ([unit; 3], 0),
+            New | ArgCount | EnableTermination | TerminationRequested => ([unit; 3], 0),
             Take => ([exclusive, unit, unit], 1),
             Len | Capacity => ([shared, unit, unit], 1),
             Reserve | Truncate => ([exclusive, scalar(Ty::I32), unit], 2),
@@ -346,6 +366,7 @@ impl Function {
             New | Take => ValueTy::Owned(AggregateTy::ByteBuf),
             Len | Capacity | ArgCount => ValueTy::Scalar(Ty::I32),
             Truncate => ValueTy::Scalar(Ty::Unit),
+            EnableTermination | TerminationRequested => ValueTy::Scalar(Ty::Bool),
             _ => ValueTy::Owned(AggregateTy::Enum(enumeration(
                 self.result_enum().expect("enum result"),
             ))),
@@ -397,15 +418,26 @@ impl VectorItemCursor {
 const VECTOR_ITEM_START: usize = 27;
 const SEEK_ITEM_BIT: usize = 37;
 const OWNED_VECTOR_ITEM_START: usize = 38;
+const PROCESS_ITEM_START: usize = 40;
 impl Item {
     const fn inventory_bit(self) -> usize {
         match self {
             Self::SeekAbsolute => SEEK_ITEM_BIT,
+            Self::EnableTermination => PROCESS_ITEM_START,
+            Self::TerminationRequested => PROCESS_ITEM_START + 1,
             _ => self as usize,
         }
     }
 }
 impl Inventory {
+    pub(in crate::frontend) fn process(self) -> super::termination::Inventory {
+        super::termination::Inventory::from_two_bits(
+            ((self.bits() >> PROCESS_ITEM_START) & 3) as u8,
+        )
+    }
+    pub(in crate::frontend) fn admit_process(self, item: super::termination::Function) -> Self {
+        Self((self.bits() | (1u64 << (PROCESS_ITEM_START + item as usize))).to_le_bytes())
+    }
     pub(in crate::frontend) fn contains_owned_vector(
         self,
         item: super::owned_vector::Item,
@@ -458,6 +490,11 @@ impl Inventory {
             assert!(Item::ALL.len() + super::vector::Item::ALL.len() <= 60);
             assert!(VECTOR_ITEM_START + super::vector::Item::ALL.len() <= SEEK_ITEM_BIT);
             assert!(OWNED_VECTOR_ITEM_START + super::owned_vector::Item::ALL.len() <= 60);
+            assert!(
+                OWNED_VECTOR_ITEM_START + super::owned_vector::Item::ALL.len()
+                    <= PROCESS_ITEM_START
+            );
+            assert!(PROCESS_ITEM_START + super::termination::Function::ALL.len() <= 60);
         }
         debug_assert!(legacy < 9);
         ((self.bits() << 4) | u64::from(legacy)).to_le_bytes()
@@ -467,6 +504,9 @@ impl Inventory {
         (Self((bits >> 4).to_le_bytes()), (bits & 15) as u8)
     }
     pub fn contains(self, item: Item) -> bool {
+        if matches!(item, Item::EnableTermination | Item::TerminationRequested) {
+            return false;
+        }
         self.bits() & (1u64 << item.inventory_bit()) != 0
     }
     pub fn contains_vector(self, item: super::vector::Item) -> bool {
@@ -543,6 +583,9 @@ impl Inventory {
         super::vector::Item::ALL.get(cursor.offset).copied()
     }
     pub fn admit(self, item: Item) -> Self {
+        if matches!(item, Item::EnableTermination | Item::TerminationRequested) {
+            return self;
+        }
         let mut bits = self.bits() | (1u64 << item.inventory_bit());
         if item.family() == 0 {
             bits |= 1 << Item::ByteBuf as u8;

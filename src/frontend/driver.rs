@@ -568,7 +568,7 @@ impl PreparedPackageProject<'_> {
         settings: &NativeBuildSettings,
         logical_root: &Path,
     ) -> Result<String, Box<Diagnostic>> {
-        super::windows_native::preflight(self.project(), process, Some(settings))?;
+        super::windows_native::preflight_checked(self.project(), checked, process, Some(settings))?;
         if process && (settings.reproducible() || settings.debug_info()) {
             checked.process_preflight()?;
         }
@@ -651,7 +651,7 @@ impl PreparedPackageProject<'_> {
     ) -> i32 {
         let admitted = self.checked().and_then(|checked| {
             if native {
-                super::windows_native::preflight(self.project(), process, None)
+                super::windows_native::preflight_checked(self.project(), &checked, process, None)
                     .map_err(|error| vec![*error])?;
                 if process {
                     checked.native_process_module()
@@ -839,7 +839,7 @@ impl PreparedPackageProject<'_> {
         {
             let result = (|| {
                 let checked = executable?;
-                super::windows_native::preflight(project, process, None)
+                super::windows_native::preflight_checked(project, &checked, process, None)
                     .map_err(|error| vec![*error])?;
                 let module = if process {
                     checked.native_process_module()
@@ -1676,7 +1676,8 @@ pub(crate) fn build_project(path: &str, output: &str, json: bool, process: bool)
     };
     let result = (|| {
         let verified = check_loaded_project(&project)?;
-        super::windows_native::preflight(&project, process, None).map_err(|error| vec![*error])?;
+        super::windows_native::preflight_checked(&project, &verified, process, None)
+            .map_err(|error| vec![*error])?;
         let module = if process {
             verified.native_process_module()
         } else {
@@ -1706,7 +1707,7 @@ fn process_loaded(
         match operation {
             Operation::Check => Ok(Summary::Check(Some(verified.function_count()))),
             Operation::Compile => {
-                super::windows_native::preflight(project, false, None)
+                super::windows_native::preflight_checked(project, &verified, false, None)
                     .map_err(|error| vec![*error])?;
                 let module = verified.native_module().map_err(|e| vec![*e])?;
                 let output = output.expect("compile route validates output");

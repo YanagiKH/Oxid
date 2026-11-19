@@ -98,7 +98,8 @@ pub(super) fn requested<W: PlanWitness>(
             rows = add(rows, block.statements.len())?;
         }
     }
-    let work = add(witness.usage().work, add(mul(rows, 16 * 12)?, 32)?)?;
+    let legacy_plan_work = add(witness.usage().work, add(mul(rows, 16 * 12)?, 32)?)?;
+    let work = legacy_plan_work;
     if work > work_limit.min(budget::Limits::DEFAULT.work) {
         return Err(AdmissionFailure::new("owned vector plan work", None));
     }

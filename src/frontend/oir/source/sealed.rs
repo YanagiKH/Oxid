@@ -674,6 +674,10 @@ impl From<Box<Diagnostic>> for ProcessFailure {
 }
 
 impl CheckedSourceProgram<'_> {
+    /// The Windows File route requires a checked File operation.
+    pub(in crate::frontend) fn windows_file_candidate(&self) -> bool {
+        matches!(&self.body, CheckedBody::Owned(program) if program.has_file_delivery())
+    }
     pub(in crate::frontend) fn debug_records(&self) -> Option<super::super::DebugRecords<'_>> {
         match &self.body {
             CheckedBody::Scalar(_) => None,
