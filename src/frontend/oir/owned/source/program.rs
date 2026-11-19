@@ -31,6 +31,9 @@ mod owned_vector_source_execution_tests;
 #[cfg(test)]
 #[path = "owned_vector_source_facade_tests.rs"]
 mod owned_vector_source_facade_tests;
+#[cfg(test)]
+#[path = "termination_tests.rs"]
+mod termination_tests;
 
 #[derive(Debug)]
 pub(in crate::frontend::oir) struct SourceProgram {
@@ -559,6 +562,19 @@ macro_rules! source_program_methods {
                 &self,
                 sources: &SourceMap,
             ) -> Result<(), Box<Diagnostic>> {
+                if !self.witness.raw_program().builtins.process().is_empty() {
+                    for operation in crate::frontend::builtin_catalog::termination::Function::ALL {
+                        #[cfg(test)]
+                        super::super::termination_queries::source_catalog_row();
+                        if let Some(id) = self.witness.experimental_function(operation.operation())
+                        {
+                            return Err(execute::OwnedRunFailure::TerminationEntry(
+                                self.witness.functions()[id.0].span,
+                            )
+                            .diagnostic(sources));
+                        }
+                    }
+                }
                 for operation in [
                     crate::frontend::builtin_catalog::experimental::Function::ReadSome,
                     crate::frontend::builtin_catalog::experimental::Function::WriteSome,

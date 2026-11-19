@@ -56,6 +56,8 @@ pub(super) enum OwnedRunFailure {
     OutputEntry(Span),
     BinaryEntry(Span),
     BinaryHost(Span),
+    TerminationEntry(Span),
+    TerminationHost(Span),
     ProcessHost,
     ProcessSetup,
     ProcessEntry(Span),
@@ -84,6 +86,18 @@ impl OwnedRunFailure {
     }
     pub fn diagnostic(&self, sources: &SourceMap) -> Box<Diagnostic> {
         match self {
+            Self::TerminationEntry(span) => Diagnostic::new(
+                "E0609",
+                "oir-owned-run",
+                "termination notifications require process entry mode",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
+            Self::TerminationHost(span) => Diagnostic::new(
+                "E0608",
+                "oir-owned-run",
+                "termination notifications require Linux or macOS on x86_64 or ARM64",
+                Some(*span).filter(|span| sources.is_valid_span(*span)),
+            ),
             Self::BinaryEntry(span) => Diagnostic::new(
                 "E0609",
                 "oir-owned-run",
@@ -3888,6 +3902,10 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 } = statement.kind
                 {
                     use crate::frontend::builtin_catalog::experimental::Function;
+                    if operation.process().is_some() {
+                        self.process_delivery(frame, operation, destination, span)?;
+                        continue;
+                    }
                     if operation.is_file() {
                         self.file_delivery(frame, operation, destination, span)?;
                         continue;
@@ -4454,6 +4472,24 @@ fn checked_entry_policy<W: PlanWitness>(
     entry: Option<hir::DefId>,
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
+    if !witness.raw_program().builtins.process().is_empty() {
+        for operation in [
+            crate::frontend::builtin_catalog::experimental::Function::EnableTermination,
+            crate::frontend::builtin_catalog::experimental::Function::TerminationRequested,
+        ] {
+            #[cfg(test)]
+            super::termination_queries::vm_catalog_row();
+            if let Some(function) = witness.experimental_function(operation) {
+                let span = witness.functions()[function.0].span;
+                if policy != EntryPolicy::Process {
+                    return Err(OwnedRunFailure::TerminationEntry(span));
+                }
+                if !process::supported_host() {
+                    return Err(OwnedRunFailure::TerminationHost(span));
+                }
+            }
+        }
+    }
     for operation in crate::frontend::builtin_catalog::experimental::Function::ALL {
         if (operation.is_file() || operation.is_arguments())
             && witness.experimental_function(operation).is_some()
@@ -4566,6 +4602,241 @@ fn execute_plan_inner<W: PlanWitness>(
 
 #[allow(clippy::too_many_arguments)] // Execution policy plus unchanged private observation sinks.
 fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
+    plan: &ExecutionPlan<'_, W>,
+    entry: hir::DefId,
+    limits: Limits,
+    policy: EntryPolicy,
+    execution: ExecutionPolicy,
+    #[cfg(test)] events: Option<&mut Vec<Event<V>>>,
+    #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
+    #[cfg(test)] remaining_fuel: Option<&mut usize>,
+) -> Result<V> {
+    if plan.has_termination() {
+        return execute_plan_policy_with_termination(
+            plan,
+            entry,
+            limits,
+            policy,
+            execution,
+            #[cfg(test)]
+            events,
+            #[cfg(test)]
+            observation,
+            #[cfg(test)]
+            remaining_fuel,
+        );
+    }
+    // All callers share entry validation. Every sealed Process caller
+    // establishes host support and signal policy before reaching this point.
+    checked_entry_policy(plan.witness(), Some(entry), policy)?;
+    if plan.has_file_delivery() && !process::setup() {
+        return Err(OwnedRunFailure::BinaryHost(
+            plan.witness().functions()[entry.0].span,
+        ));
+    }
+    if (plan.uses_wide_scalars() || plan.uses_quad_scalars()) != V::WIDE
+        || plan.uses_quad_scalars() != V::QUAD
+    {
+        return Err(bad(
+            "scalar storage representation",
+            plan.witness().functions()[entry.0].span,
+        ));
+    }
+    let limits = limits.bounded();
+    let f = &plan.witness().functions()[entry.0];
+    let mut machine = ValueMachine::<V, W> {
+        plan,
+        frames: Vec::new(),
+        limits,
+        fuel: execution.initial_fuel(limits.fuel),
+        next_activation: 1,
+        live_slots: 0,
+        live_cells: 0,
+        live_bytes: 0,
+        header_bytes: plan::add(
+            plan::mul(limits.frames, size_of::<ValueFrame<V>>())?,
+            plan::add(
+                if plan.uses_dynamic_resources() {
+                    plan::add(
+                        plan::add(size_of::<byte_buffer::Heap>(), resources::control_bytes())?,
+                        if plan.uses_owned_vectors() {
+                            resources::owned_control_bytes::<W>()
+                        } else {
+                            0
+                        },
+                    )?
+                } else {
+                    0
+                },
+                if plan.has_binary_delivery() {
+                    binary_delivery_control_bytes()
+                } else {
+                    0
+                } + if plan.has_file_delivery() {
+                    experimental::file_delivery_control_bytes()
+                } else {
+                    0
+                } + if plan.has_file_seek() {
+                    experimental::file_seek_control_bytes::<V>()
+                } else {
+                    0
+                } + if plan.uses_vectors() {
+                    vector::control_bytes::<V>()
+                        + if plan.uses_record_vectors() {
+                            vector::record_control_bytes()
+                        } else {
+                            0
+                        }
+                } else if plan.uses_typed_ranges() {
+                    vector::range_control_bytes()
+                } else {
+                    0
+                } + if plan.uses_owned_vectors() {
+                    owned_vector::control_bytes::<V, W>()
+                } else {
+                    0
+                } + if plan.has_program_arguments() {
+                    plan::add(
+                        crate::program_arguments::control_bytes(),
+                        experimental::argument_delivery_control_bytes(f.span),
+                    )?
+                } else {
+                    0
+                },
+            )?,
+        )
+        .and_then(|bytes| plan::add(bytes, values::control_bytes::<V>()))
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_enum_record_nesting() {
+                    composition::control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_characters() {
+                    values::character_control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_floats() {
+                    floats::control_bytes::<V>() + 8192
+                } else {
+                    0
+                },
+            )
+        })
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_bitwise() {
+                    bitwise::control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })
+        .and_then(|bytes| {
+            plan::add(
+                bytes,
+                if plan.uses_integer_extension() || plan.uses_quad_scalars() {
+                    integers::control_bytes::<V>()
+                } else {
+                    0
+                },
+            )
+        })?,
+        heap: byte_buffer::Heap::for_execution(execution.heap_limit()),
+        #[cfg(test)]
+        events: Vec::new(),
+        #[cfg(test)]
+        observer: observation
+            .as_mut()
+            .map(|observer| std::mem::take(*observer))
+            .unwrap_or_default(),
+    };
+    machine.header_bytes = plan::add(
+        machine.header_bytes,
+        plan::add(
+            crate::frontend::builtin_catalog::termination::shared_selector_bytes(),
+            plan::add(
+                super::termination_queries::raw_bytes(),
+                super::termination_queries::plan_bytes::<W>(),
+            )?,
+        )?,
+    )?;
+    #[cfg(test)]
+    if policy == EntryPolicy::Process {
+        // Process effects cannot trigger test-only event Vec allocations after
+        // the first write. The private process seam has no observation sink.
+        machine.observer.silent = true;
+    }
+    let mut result = (|| {
+        machine.activation_preflight(
+            entry,
+            plan::add(1, plan.function(entry).usage().activation_fuel_cells())?,
+            f.span,
+        )?;
+        machine.frames = plan::reserve(limits.frames)
+            .map_err(|error| OwnedRunFailure::from(error).at_runtime(f.span))?;
+        let root = ValueFrame::<V>::allocate(plan, entry, machine.next_activation, None)
+            .map_err(|error| error.at_runtime(f.span))?;
+        machine.install(root);
+        machine.execute()
+    })();
+    if result.is_ok() && machine.heap.ledger().live_allocations != 0 {
+        result = Err(bad("resource obligations at execution end", f.span));
+    }
+    // Terminal reclamation is outside all user fuel/admission paths. It also
+    // runs on ordinary completion, after the zero-obligation check above.
+    #[cfg(test)]
+    let before_cleanup = machine.heap.ledger();
+    machine.heap.cleanup();
+    #[cfg(test)]
+    byte_buffer::testing::record(&machine.heap, before_cleanup);
+    #[cfg(test)]
+    {
+        if result.is_err() && machine.observer.collecting() {
+            for frame in 0..machine.frames.len() {
+                if !machine.observer.collecting() {
+                    break;
+                }
+                let span = machine.function(machine.frames[frame].function).span;
+                machine.observe_frame(frame, StorageObservationKind::Failure, span);
+            }
+        }
+        if let Some(observation) = observation {
+            *observation = machine.observer;
+        }
+        if let Some(fuel) = remaining_fuel {
+            *fuel = machine.fuel;
+        }
+    }
+    #[cfg(test)]
+    if let Some(events) = events {
+        *events = machine.events;
+    }
+    if policy == EntryPolicy::Process {
+        match result?.narrow() {
+            Some(scalar @ Scalar::I32(0..=255)) => Ok(scalar.into()),
+            _ => Err(OwnedRunFailure::ProcessResult(f.span)),
+        }
+    } else {
+        result
+    }
+}
+#[allow(clippy::too_many_arguments)] // Separate prepaid process-family activation.
+fn execute_plan_policy_with_termination<V: StoredValue, W: PlanWitness>(
     plan: &ExecutionPlan<'_, W>,
     entry: hir::DefId,
     limits: Limits,
@@ -4714,12 +4985,30 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
             .map(|observer| std::mem::take(*observer))
             .unwrap_or_default(),
     };
+    machine.header_bytes = plan::add(
+        machine.header_bytes,
+        plan::add(
+            crate::frontend::builtin_catalog::termination::shared_selector_bytes(),
+            plan::add(
+                super::termination_queries::raw_bytes(),
+                super::termination_queries::plan_bytes::<W>(),
+            )?,
+        )?,
+    )?;
     #[cfg(test)]
     if policy == EntryPolicy::Process {
         // Process effects cannot trigger test-only event Vec allocations after
         // the first write. The private process seam has no observation sink.
         machine.observer.silent = true;
     }
+    machine.header_bytes = plan::add(
+        machine.header_bytes,
+        plan::add(
+            crate::program_termination::control_bytes(),
+            experimental::process_delivery_control_bytes(),
+        )?,
+    )?;
+    let mut termination_scope = None;
     let mut result = (|| {
         machine.activation_preflight(
             entry,
@@ -4731,6 +5020,10 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
         let root = ValueFrame::<V>::allocate(plan, entry, machine.next_activation, None)
             .map_err(|error| error.at_runtime(f.span))?;
         machine.install(root);
+        termination_scope = Some(
+            crate::program_termination::Scope::enter()
+                .map_err(|_| OwnedRunFailure::ProcessSetup)?,
+        );
         machine.execute()
     })();
     if result.is_ok() && machine.heap.ledger().live_allocations != 0 {
@@ -4741,6 +5034,7 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
     #[cfg(test)]
     let before_cleanup = machine.heap.ledger();
     machine.heap.cleanup();
+    drop(termination_scope);
     #[cfg(test)]
     byte_buffer::testing::record(&machine.heap, before_cleanup);
     #[cfg(test)]
@@ -4774,6 +5068,7 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
         result
     }
 }
+
 /// Sealed process execution. Only a scalar result or failure escapes;
 /// machine storage and all owners are dropped inside the ordinary executor.
 /// SIGPIPE setup precedes entry diagnostics, planning and the activation guard.

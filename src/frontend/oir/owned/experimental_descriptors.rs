@@ -52,6 +52,23 @@ fn bad() -> OwnedFailure {
     }
 }
 
+pub(super) fn check_process(
+    raw: &RawOwnedProgram,
+    ids: &builtins::BuiltinIds,
+) -> Result<(), OwnedFailure> {
+    for kind in crate::frontend::builtin_catalog::termination::Function::ALL {
+        if let Some(id) = ids.process_function(kind, raw.functions.len()) {
+            function(
+                raw.functions.get(id.0).ok_or_else(bad)?,
+                id,
+                kind.operation(),
+                &kind.signature(),
+            )?;
+        }
+    }
+    Ok(())
+}
+
 fn function(
     f: &RawOwnedFunction,
     id: hir::DefId,

@@ -1222,6 +1222,7 @@ fn enum_raw_empty_match_headers_preserve_old_program_proofs() {
             + size_of::<usize>()
             + size_of::<Vec<MatchDecl>>()
             + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES
     );
     assert_eq!(
         (
@@ -1267,6 +1268,7 @@ fn enum_raw_descriptor_inventory_is_independent_and_precedes_allocation() {
     assert_eq!(usage.expanded_events, 3 + 7 + 1 + 2);
     assert_eq!(usage.work, 4 * 3 + 36 * (1 + 8 + 3 + 7 + 1 + 6 + 1 + 1));
     let metadata = VECTOR_RAW_HEADER_GROWTH
+        + TERMINATION_RAW_SELECTOR_BYTES
         + size_of::<Vec<RawEnumDecl>>()
         + size_of::<usize>()
         + size_of::<RawEnumDecl>()

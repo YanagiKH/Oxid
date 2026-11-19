@@ -11,6 +11,7 @@ mod doctor_cli;
 mod frontend;
 mod lsp_cli;
 mod program_arguments;
+mod program_termination;
 mod project_cli;
 mod project_lock;
 mod project_package;

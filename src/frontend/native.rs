@@ -14,6 +14,7 @@ use std::{
 const LLVM_VERSION: &str = "19.1.7";
 const TARGET: &str = NativeBuildSettings::new(false).target_triple();
 const RUNTIME: &str = include_str!("../../native/typed_preview.c");
+const TERMINATION_RUNTIME: &str = include_str!("../../native/typed_termination.c");
 const CHARACTER_RUNTIME: &str = include_str!("../../native/typed_character.c");
 const FLOAT_RUNTIME: &str = include_str!("../../native/typed_float.c");
 #[cfg(all(
@@ -586,6 +587,15 @@ fn compile_inner(
         runtime.push_str(INTEGER128_RUNTIME);
         fs::write(runtime_path, runtime).map_err(io)?;
     }
+    if termination_runtime_declared(module) {
+        let runtime_path = workspace.0.join("runtime.c");
+        let runtime = fs::read_to_string(&runtime_path).map_err(io)?;
+        fs::write(
+            runtime_path,
+            format!("#define _POSIX_C_SOURCE 200809L\n{runtime}\n{TERMINATION_RUNTIME}"),
+        )
+        .map_err(io)?;
+    }
     if module
         .lines()
         .any(|line| line == "declare i32 @__oxid_print_char(i32)")
@@ -750,6 +760,33 @@ fn compile_inner(
     )
     .map_err(io)?;
     Ok(outcome)
+}
+
+fn termination_runtime_declared(module: &str) -> bool {
+    module
+        .lines()
+        .any(|line| line == "@__oxid_process_termination = constant i1 true")
+}
+
+#[cfg(test)]
+mod termination_runtime_selection_tests {
+    use super::termination_runtime_declared;
+    #[test]
+    fn only_the_exact_generated_marker_selects_the_process_runtime() {
+        assert!(termination_runtime_declared(
+            "@__oxid_process_termination = constant i1 true\n"
+        ));
+        for text in [
+            "; @__oxid_process_termination = constant i1 true",
+            " @__oxid_process_termination = constant i1 true",
+            "@__oxid_process_termination = constant i1 true, align 1",
+            "@__oxid_process_termination = constant i1 false",
+            "!0 = !DIFile(filename: \"@__oxid_process_termination = constant i1 true\", directory: \"\")",
+            "@s = private constant [64 x i8] c\"\\0A@__oxid_process_termination = constant i1 true\\0A\"",
+        ] {
+            assert!(!termination_runtime_declared(text), "{text}");
+        }
+    }
 }
 
 #[cfg(test)]

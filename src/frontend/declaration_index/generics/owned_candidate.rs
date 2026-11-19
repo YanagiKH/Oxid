@@ -909,6 +909,9 @@ impl DeclarationIndex<'_> {
         storage: &mut Storage,
         work: &WorkMeter,
     ) -> Result<(), Box<Diagnostic>> {
+        if !self.builtin_set().process().is_empty() {
+            return self.freeze_owned_calls_with_process(plan, storage, work);
+        }
         let at = self.sources().eof();
         self.enter_owned_frame(storage, at)?;
         let result = (|| {
@@ -988,6 +991,115 @@ impl DeclarationIndex<'_> {
         self.leave_owned_frame(storage, at)?;
         result
     }
+    pub(super) fn freeze_owned_calls_with_process(
+        &self,
+        plan: &mut Plan,
+        storage: &mut Storage,
+        work: &WorkMeter,
+    ) -> Result<(), Box<Diagnostic>> {
+        let origin = self.sources().eof();
+        storage.enter_process(origin)?;
+        let result = (|| {
+            let at = self.sources().eof();
+            self.enter_owned_frame(storage, at)?;
+            let result = (|| {
+                let state = self
+                    .owned_vector_builder()
+                    .ok_or_else(|| bad(at))?
+                    .try_lock()
+                    .map_err(|_| bad(at))?;
+                let users = plan.instances.len();
+                let fixed = self.builtin_set().extra_functions();
+                for (caller, instance) in plan.instances.iter_mut().enumerate() {
+                    for call in &mut instance.calls {
+                        work.debit(1, at, "owned vector call identity freeze")?;
+                        if let Some(item) = self.process_template(call.template) {
+                            if call.vector.is_some() {
+                                return Err(bad(at));
+                            }
+                            call.target = self.frozen_process_id(
+                                item,
+                                users,
+                                plan.vector_functions.len(),
+                                state.keys.len(),
+                                work,
+                                at,
+                            )?;
+                            continue;
+                        }
+                        let mut selected = None;
+                        for row in &state.calls {
+                            work.debit(1, at, "owned vector call source identity")?;
+                            if row.caller == DefId(caller)
+                                && row.expression == call.expression
+                                && selected.replace(row).is_some()
+                            {
+                                return Err(bad(at));
+                            }
+                        }
+                        if let Some(row) = selected {
+                            if row.template != call.template || call.vector.is_some() {
+                                return Err(bad(at));
+                            }
+                            let explicit = self.owned_template(call.template, work, at)?;
+                            if let Some(operation) = explicit {
+                                if operation != row.key.operation() {
+                                    return Err(bad(at));
+                                }
+                            } else {
+                                let shared = row
+                                    .key
+                                    .operation()
+                                    .shared_template()
+                                    .ok_or_else(|| bad(at))?;
+                                if self.vector_template(call.template, work, at)? != Some(shared) {
+                                    return Err(bad(at));
+                                }
+                            }
+                            let mut rank = None;
+                            for (position, key) in state.keys.iter().enumerate() {
+                                work.debit(1, at, "owned vector frozen key rank")?;
+                                if *key == row.key && rank.replace(position).is_some() {
+                                    return Err(bad(at));
+                                }
+                            }
+                            call.target = vector_id(
+                                users,
+                                fixed,
+                                plan.vector_functions
+                                    .len()
+                                    .checked_add(rank.ok_or_else(|| bad(at))?)
+                                    .ok_or_else(|| exhausted(at))?,
+                                at,
+                            )?;
+                        } else if let Some(key) = call.vector {
+                            let rank = vector_rank(&plan.vector_functions, key, work, at)?
+                                .ok_or_else(|| bad(at))?;
+                            if self.vector_template(call.template, work, at)?
+                                != Some(key.operation())
+                            {
+                                return Err(bad(at));
+                            }
+                            call.target = vector_id(users, fixed, rank, at)?;
+                        } else if call.template.0 >= plan.template_count {
+                            let rank = call.template.0 - plan.template_count;
+                            if rank >= fixed {
+                                return Err(bad(at));
+                            }
+                            call.target =
+                                DefId(users.checked_add(rank).ok_or_else(|| exhausted(at))?);
+                        }
+                    }
+                }
+                Ok(())
+            })();
+            self.leave_owned_frame(storage, at)?;
+            result
+        })();
+        storage.leave_process(origin)?;
+        result
+    }
+
     pub(in crate::frontend) fn owned_vector_functions(&self) -> &[owned::Function] {
         self.owned_vector_plan().map_or(&[], OwnedGenericPlan::keys)
     }

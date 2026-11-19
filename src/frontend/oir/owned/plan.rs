@@ -303,6 +303,30 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
             .into_iter()
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }
+    pub(super) fn has_termination(&self) -> bool {
+        !self.witness.raw_program().builtins.process().is_empty()
+    }
+    pub(super) fn process_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
+        if !self.has_termination() {
+            return None;
+        }
+        use crate::frontend::builtin_catalog::experimental::Function;
+        (self
+            .witness
+            .experimental_function(Function::EnableTermination)
+            == Some(function)
+            || self
+                .witness
+                .experimental_function(Function::TerminationRequested)
+                == Some(function))
+        .then(|| {
+            let term = self.witness.functions()[function.0].blocks[0]
+                .terminator
+                .as_ref()
+                .expect("sealed process return");
+            self.terminator_cost(function, &term.kind)
+        })
+    }
     pub(super) fn has_file_delivery(&self) -> bool {
         use crate::frontend::builtin_catalog::experimental::Function;
         Function::ALL
@@ -589,6 +613,10 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
         let mut metadata_bytes = add(
             extension.map_or(0, |request| request.metadata_bytes),
             mul(functions.len(), size_of::<FunctionPlan>())?,
+        )?;
+        metadata_bytes = add(
+            metadata_bytes,
+            super::termination_queries::plan_bytes::<W>(),
         )?;
         let mut largest_frame = 0;
         // Complete ALL metadata-length and activation-cost preflights before any allocation.

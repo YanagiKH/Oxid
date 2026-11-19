@@ -505,7 +505,8 @@ fn unit2b_raw_q_limits_and_payload_are_independent_and_allocation_free() {
     let expected_metadata = (std::mem::size_of::<Vec<RawEnumDecl>>()
         + std::mem::size_of::<usize>()
         + std::mem::size_of::<Vec<MatchDecl>>()
-        + VECTOR_RAW_HEADER_GROWTH)
+        + VECTOR_RAW_HEADER_GROWTH
+        + TERMINATION_RAW_SELECTOR_BYTES)
         + 10 * std::mem::size_of::<Option<DiagnosticOrigins>>()
         + std::mem::size_of::<shape::OwnerSites>()
         + 2 * std::mem::size_of::<Operand>();
@@ -781,7 +782,8 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
         metadata: (std::mem::size_of::<Vec<RawEnumDecl>>()
             + std::mem::size_of::<usize>()
             + std::mem::size_of::<Vec<MatchDecl>>()
-            + VECTOR_RAW_HEADER_GROWTH),
+            + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES),
     };
     assert_eq!(
         verified::probe_array_validation(&raw, &sources, zero).unwrap(),
@@ -789,7 +791,8 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
             metadata_bytes: (std::mem::size_of::<Vec<RawEnumDecl>>()
                 + std::mem::size_of::<usize>()
                 + std::mem::size_of::<Vec<MatchDecl>>()
-                + VECTOR_RAW_HEADER_GROWTH),
+                + VECTOR_RAW_HEADER_GROWTH
+                + TERMINATION_RAW_SELECTOR_BYTES),
             ..OwnershipUsage::default()
         }
     );
@@ -799,7 +802,8 @@ fn unit2b_scalar_bypass_and_inactive_array_shapes_are_distinct() {
             metadata_bytes: (std::mem::size_of::<Vec<RawEnumDecl>>()
                 + std::mem::size_of::<usize>()
                 + std::mem::size_of::<Vec<MatchDecl>>()
-                + VECTOR_RAW_HEADER_GROWTH),
+                + VECTOR_RAW_HEADER_GROWTH
+                + TERMINATION_RAW_SELECTOR_BYTES),
             ..OwnershipUsage::default()
         }
     );
@@ -873,7 +877,8 @@ fn unit2b_actual_raw_q_reaches_expanded_event_ceiling_inclusively() {
         (std::mem::size_of::<Vec<RawEnumDecl>>()
             + std::mem::size_of::<usize>()
             + std::mem::size_of::<Vec<MatchDecl>>()
-            + VECTOR_RAW_HEADER_GROWTH)
+            + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES)
             + 100 * std::mem::size_of::<Option<DiagnosticOrigins>>()
             + 99_901 * std::mem::size_of::<Operand>()
     );

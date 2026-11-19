@@ -3161,6 +3161,24 @@ pub(super) fn lower_with_limits(
             typed.index().sources().eof(),
         )?;
     }
+    if !typed.index().builtin_set().process().is_empty() {
+        for item in crate::frontend::builtin_catalog::termination::Function::ALL {
+            if typed.index().builtin_set().process().contains(item) {
+                let function = super::process_lower::function(typed.index(), item, typed.work())?;
+                require(function.id.0 == functions.len(), function.span)?;
+                bytes = budget::add(
+                    bytes,
+                    budget::function_bytes(super::process_lower::counts())?,
+                )?;
+                budget::append(
+                    &mut functions,
+                    function,
+                    typed.index().function_count(),
+                    typed.index().sources().eof(),
+                )?;
+            }
+        }
+    }
     if bytes != expected.raw_bytes {
         let mut error = OwnedFailure::resource("source count mismatch");
         error.kind = OwnedFailureKind::Malformed(Malformed::CanonicalSite);

@@ -145,11 +145,14 @@ fn array_native_resource_real_rows_and_factory_transient_are_charged() {
         size_of::<Diagnostic>(),
         accounting.metrics
     );
-    assert_eq!(accounting.metrics.plan_bytes, 184);
+    assert_eq!(
+        accounting.metrics.plan_bytes,
+        184 + TERMINATION_PLAN_SELECTOR_BYTES
+    );
     assert_eq!(accounting.metrics.retained_bound_bytes, 48);
     assert_eq!(
         accounting.metrics.metadata_admitted_bytes,
-        184 + 48 + 128 * 6 + size_of::<Diagnostic>() + 64
+        TERMINATION_PLAN_SELECTOR_BYTES + 184 + 48 + 128 * 6 + size_of::<Diagnostic>() + 64
     );
     let transient = [FailureKind::Fuel, FailureKind::Overflow]
         .into_iter()
@@ -159,7 +162,7 @@ fn array_native_resource_real_rows_and_factory_transient_are_charged() {
     assert_eq!(accounting.metrics.diagnostic_transient_peak, transient);
     assert_eq!(
         accounting.metrics.metadata_peak,
-        184 + 48 + 64 * 6 + 64 * 2 + transient
+        TERMINATION_PLAN_SELECTOR_BYTES + 184 + 48 + 64 * 6 + 64 * 2 + transient
     );
     assert_eq!(
         accounting.metrics.message_bytes,
@@ -441,7 +444,8 @@ fn array_native_resource_exact_metadata_and_text_caps_precede_payload_failure() 
         + ordinary(FailureKind::Overflow, s(2), &sources).len();
     // Plan184 + retained Bound48 + K3*(occurrence64+lookup40+header24)
     // + the conservatively admitted simultaneous diagnostic box/message.
-    let metadata = 184 + 48 + 3 * 128 + size_of::<Diagnostic>() + 64;
+    let metadata =
+        TERMINATION_PLAN_SELECTOR_BYTES + 184 + 48 + 3 * 128 + size_of::<Diagnostic>() + 64;
     let mut exact = Accounting::default();
     let diagnostics =
         Diagnostics::new_accounted(&plan, ENTRY, &sources, false, text, metadata, &mut exact)
@@ -564,7 +568,7 @@ fn array_native_resource_old_record_and_scalar_caps_preserve_ordinary_output() {
         assert!(accounting.metrics.metadata_peak <= 26_620_032);
         assert_eq!(
             accounting.metrics.emitter_transient_bound,
-            EMITTER_TRANSIENT_BYTES
+            EMITTER_TRANSIENT_BYTES + TERMINATION_RAW_SELECTOR_BYTES
         );
         assert!(
             accounting.metrics.metadata_peak
@@ -1451,9 +1455,9 @@ fn array_native_resource_partial_allocation_peaks_preserve_every_live_inventory(
     let witness = verified::verify_owned(scalar_raw(&spans), &sources).unwrap();
     let plan = ExecutionPlan::build(&witness).unwrap();
     for (failure, previous_peak, expected) in [
-        (0, 0, 232),
-        (1, 0, 808),
-        (2, 0, 1168),
+        (0, 0, 232 + TERMINATION_PLAN_SELECTOR_BYTES),
+        (1, 0, 808 + TERMINATION_PLAN_SELECTOR_BYTES),
+        (2, 0, 1168 + TERMINATION_PLAN_SELECTOR_BYTES),
         (1, 4096, 4096),
         (2, 4096, 4096),
     ] {

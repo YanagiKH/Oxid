@@ -29,6 +29,7 @@ pub(in crate::frontend) mod process;
 mod resource_gate_tests;
 mod shape;
 pub(super) mod source;
+mod termination_queries;
 mod vector_descriptors;
 mod vector_type;
 pub(super) use source::SourceProgram;
@@ -36,6 +37,20 @@ mod storage;
 mod verified;
 #[cfg(test)]
 use verified::{verify_owned, verify_with_limits};
+
+// The ordinary verifier, planner and interpreter all carry the shared
+// process selectors. The test oracles add those measured roles to the
+// existing independently counted per-program and per-activation rows.
+#[cfg(test)]
+const TERMINATION_RAW_SELECTOR_BYTES: usize =
+    crate::frontend::builtin_catalog::termination::shared_selector_bytes()
+        + termination_queries::raw_bytes();
+#[cfg(test)]
+const TERMINATION_PLAN_SELECTOR_BYTES: usize =
+    termination_queries::plan_bytes::<verified::VerifiedOwnedProgram>();
+#[cfg(test)]
+const TERMINATION_VM_SELECTOR_BYTES: usize =
+    TERMINATION_RAW_SELECTOR_BYTES + TERMINATION_PLAN_SELECTOR_BYTES;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ReferenceParamId(usize);
@@ -82,6 +97,7 @@ impl RawOwnedProgram {
     fn fixed_builtin_base(&self) -> Option<usize> {
         self.functions
             .len()
+            .checked_sub(self.builtins.process().count())?
             .checked_sub(self.vector_functions.len())?
             .checked_sub(self.builtins.extra_functions())
     }
@@ -100,6 +116,7 @@ impl RawOwnedProgram {
         let base = self
             .functions
             .len()
+            .checked_sub(self.builtins.process().count())?
             .checked_sub(self.vector_functions.len())?;
         self.vector_functions.get(id.0.checked_sub(base)?).copied()
     }

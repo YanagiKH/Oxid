@@ -254,6 +254,32 @@ pub(super) fn operation<W: PlanWitness>(
     out: &mut Emission,
 ) {
     let f = &storage.execution().witness().functions()[storage.id().0];
+    if let Some(process) = operation.process() {
+        let CallResult::Scalar(local) = destination else {
+            unreachable!("sealed process scalar result");
+        };
+        let cost = storage
+            .execution()
+            .process_delivery_cost(f.id)
+            .expect("sealed process return");
+        emit_guard(
+            out,
+            diagnostics,
+            &format!("{name}_process_return"),
+            cost,
+            span,
+        );
+        let helper = match process {
+            crate::frontend::builtin_catalog::termination::Function::Enable => {
+                "__oxid_enable_termination_notifications"
+            }
+            crate::frontend::builtin_catalog::termination::Function::Requested => {
+                "__oxid_termination_requested"
+            }
+        };
+        writeln!(out, "  %{name}_process_status = call i32 @{helper}()\n  %{name}_process_value = icmp ne i32 %{name}_process_status, 0\n  store i1 %{name}_process_value, ptr %s{}, align 1", local.0).unwrap();
+        return;
+    }
     if operation.is_file() {
         file_operation(storage, name, operation, diagnostics, span, out);
         return;
