@@ -195,6 +195,10 @@ class PrivacyCheckoutTests(unittest.TestCase):
                                  (ROOT / "native" / name).read_bytes())
             owned_record_runtime_inputs = 2
             owned_vector_runtime_inputs = 2
+            element_borrow_test = Path("native/owned_record_element_borrow_test.c")
+            self.assertEqual((checkout / element_borrow_test).read_bytes(),
+                             (ROOT / element_borrow_test).read_bytes())
+            element_borrow_test_reads = 1
             for name in ("experimental_owned_record.c", "experimental_owned_record.h",
                          "experimental_owned_vector.c", "experimental_owned_vector.h"):
                 self.assertEqual((checkout / "native" / name).read_bytes(),
@@ -210,7 +214,7 @@ class PrivacyCheckoutTests(unittest.TestCase):
                              + program_argument_runtime_reads + integer128_runtime_reads
                              + owned_record_runtime_inputs + owned_vector_runtime_inputs
                              + owned_vector_fixture_reads + owned_text_fixture_reads
-                             + owned_parameter_fixture_reads)
+                             + owned_parameter_fixture_reads + element_borrow_test_reads)
 
     def test_missing_required_fixture_fails_materialization(self):
         with tempfile.TemporaryDirectory() as directory:
