@@ -189,6 +189,9 @@ fills a mutable byte slice or reports how many bytes it read before EOF.
 `write_all` continues until the slice is written or a write makes no progress.
 Both functions report the number of bytes transferred and the system error code
 if an I/O error occurs.
+`copy` uses a nonempty buffer you provide, reads until EOF and returns the
+number of bytes written. It leaves both files open and reports read or write
+failures with the byte count so far.
 
 ## Build profiles
 

@@ -54,3 +54,50 @@ pub fn write_all(file: &mut File, bytes: &[u8]) -> WriteAll {
     }
     return WriteAll::Complete;
 }
+
+pub struct CopyError {
+    pub written: i64,
+    pub code: i32,
+}
+
+pub enum CopyResult {
+    Complete(i64),
+    EmptyBuffer,
+    TooLarge(i64),
+    ReadError(CopyError),
+    WriteError(CopyError),
+    NoProgress(i64),
+}
+
+pub fn copy(input: &mut File, output: &mut File, buffer: &mut [u8]) -> CopyResult {
+    if buffer.len() == 0 { return CopyResult::EmptyBuffer; }
+    let mut total = 0i64;
+    while true {
+        let read = read_some(&mut *input, &mut *buffer);
+        match read {
+            ReadSomeStatus::Eof => { return CopyResult::Complete(total); },
+            ReadSomeStatus::Error(code) => {
+                return CopyResult::ReadError(CopyError { written: total, code: code });
+            },
+            ReadSomeStatus::Data(count) => {
+                let received = count.to_i64();
+                if total > 9223372036854775807i64 - received {
+                    return CopyResult::TooLarge(total);
+                }
+                let write = write_all(&mut *output, &*buffer[0..count]);
+                match write {
+                    WriteAll::Complete => { total = total + received; },
+                    WriteAll::NoProgress(partial) => {
+                        return CopyResult::NoProgress(total + partial.to_i64());
+                    },
+                    WriteAll::Error(error) => {
+                        let partial = error.transferred;
+                        let written = total + partial.to_i64();
+                        return CopyResult::WriteError(CopyError { written: written, code: error.code });
+                    },
+                }
+            },
+        }
+    }
+    return CopyResult::NoProgress(total);
+}
