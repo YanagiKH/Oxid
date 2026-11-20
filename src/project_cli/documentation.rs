@@ -42,6 +42,7 @@ pub(super) fn command(
         options.requires_lock(),
         options.offline || options.frozen,
         true,
+        false,
     )?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;

@@ -694,8 +694,8 @@ struct RegistryLockRoles {
     snapshot_return: Result<Snapshot, String>,
     existing: Existing,
     existing_return: Result<Option<Existing>, String>,
-    pins: Vec<crate::project_registry::Pin>,
-    pins_return: Result<Vec<crate::project_registry::Pin>, String>,
+    trusted: Option<Snapshot>,
+    trust_return: Result<Option<Snapshot>, String>,
     mapping: Vec<(String, String)>,
     origins: Vec<(String, &'static crate::project_registry::Pin)>,
     path: std::path::PathBuf,
@@ -1498,32 +1498,52 @@ pub(crate) fn read_workspace(root: &Path, required: bool) -> Result<Option<Exist
 pub(crate) fn registry_trust(
     root: &Path,
     budget: &mut crate::project_registry::Budget,
-) -> Result<Vec<crate::project_registry::Pin>, String> {
+) -> Result<Option<Snapshot>, String> {
     let path = budget.join(root, "oxid.lock")?;
     match fs::symlink_metadata(&path) {
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(format!("cannot inspect typed lock: {error}")),
         Ok(_) => {}
     }
     let bytes = budget.typed_file(&path, MAX_LOCK_BYTES, "typed lock")?;
-    let snapshot = budget.scoped(
-        registry_decode_bound(&bytes)?,
-        || Snapshot::decode(&bytes),
-        registry_snapshot_capacity,
-    )?;
-    let count = snapshot
-        .packages
-        .iter()
-        .filter(|package| package.registry.is_some())
-        .count();
-    let mut pins = Vec::new();
-    budget.reserve(&mut pins, count)?;
-    for package in snapshot.packages {
-        if let Some(pin) = package.registry {
-            pins.push(*pin);
-        }
+    budget
+        .scoped(
+            registry_decode_bound(&bytes)?,
+            || Snapshot::decode(&bytes),
+            registry_snapshot_capacity,
+        )
+        .map(Some)
+}
+
+impl Snapshot {
+    pub(crate) fn registry_pin(
+        &self,
+        source: &str,
+        name: &str,
+        version: &str,
+    ) -> Option<&crate::project_registry::Pin> {
+        self.packages
+            .iter()
+            .filter_map(|package| package.registry.as_deref())
+            .find(|pin| pin.source == source && pin.name == name && pin.version == version)
     }
-    Ok(pins)
+
+    pub(crate) fn registry_target(
+        &self,
+        path: &str,
+        alias: &str,
+    ) -> Option<&crate::project_registry::Pin> {
+        let package = self.packages.iter().find(|package| package.path == path)?;
+        let edge = self
+            .dependencies
+            .iter()
+            .find(|edge| edge.owner == package.id && edge.alias == alias)?;
+        self.packages
+            .iter()
+            .find(|package| package.id == edge.package)?
+            .registry
+            .as_deref()
+    }
 }
 
 /// Discovery only: a generated shared lock still owns the directory when its
@@ -1699,8 +1719,8 @@ mod registry_carrier_tests {
             }};
         }
         layout!(snapshot: Snapshot, snapshot_return: Result<Snapshot,String>, existing: Existing,
-            existing_return: Result<Option<Existing>,String>, pins: Vec<crate::project_registry::Pin>,
-            pins_return: Result<Vec<crate::project_registry::Pin>,String>, mapping: Vec<(String,String)>,
+            existing_return: Result<Option<Existing>,String>, trusted: Option<Snapshot>,
+            trust_return: Result<Option<Snapshot>,String>, mapping: Vec<(String,String)>,
             origins: Vec<(String,&'static crate::project_registry::Pin)>, path: std::path::PathBuf,
             raw: Vec<u8>, raw_return: Result<Vec<u8>,String>, bound_return: Result<usize,String>,
             checked_bound: Option<usize>, allowance: &'static crate::project_registry::Allowance,
