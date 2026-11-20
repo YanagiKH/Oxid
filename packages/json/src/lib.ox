@@ -5,6 +5,11 @@ use alloc::vec::try_push;
 use alloc::vec::truncate;
 use crate::text::Validation as Utf8Validation;
 use crate::text::validate as validate_utf8;
+use crate::text::Text;
+use crate::text::AppendStatus;
+use crate::text::new_text;
+use crate::text::append_utf8;
+use crate::text::append_char;
 
 pub enum Validation {
     Valid,
@@ -14,6 +19,10 @@ pub enum Validation {
     AllocationFailed,
     MemoryLimit,
 }
+
+pub enum StringResult { Value(Text), Error(Validation) }
+
+enum WriteOutcome { Written, Failed(Validation) }
 
 struct Cursor { offset: i32 }
 
@@ -60,34 +69,39 @@ fn hex_quad(input: &[u8], cursor: &mut Cursor) -> i32 {
     return value;
 }
 
-fn unicode_escape(input: &[u8], cursor: &mut Cursor) -> bool {
+fn unicode_escape(input: &[u8], cursor: &mut Cursor) -> i32 {
     let start = cursor.offset;
     let first = hex_quad(&*input, &mut *cursor);
-    if first < 0 { return false; }
-    if first < 55296 || first > 57343 { return true; }
-    if first >= 56320 { cursor.offset = start; return false; }
+    if first < 55296 || first > 57343 { return first; }
+    if first >= 56320 { cursor.offset = start; return -1; }
     if !take(&*input, &mut *cursor, '\\') || !take(&*input, &mut *cursor, 'u') {
-        return false;
+        return -1;
     }
     let low_start = cursor.offset;
     let second = hex_quad(&*input, &mut *cursor);
-    if second < 0 { return false; }
-    if second < 56320 || second > 57343 { cursor.offset = low_start; return false; }
-    return true;
+    if second < 0 { return -1; }
+    if second < 56320 || second > 57343 { cursor.offset = low_start; return -1; }
+    return 65536 + (first - 55296) * 1024 + (second - 56320);
 }
 
-fn escape(input: &[u8], cursor: &mut Cursor) -> bool {
+fn escape(input: &[u8], cursor: &mut Cursor) -> i32 {
     let byte = peek(&*input, cursor.offset);
     if byte == 'u' {
         cursor.offset = cursor.offset + 1;
         return unicode_escape(&*input, &mut *cursor);
     }
-    if byte == '"' || byte == '\\' || byte == '/' || byte == 'b' || byte == 'f'
-        || byte == 'n' || byte == 'r' || byte == 't' {
-        cursor.offset = cursor.offset + 1;
-        return true;
+    let mut decoded = -1;
+    if byte == '"' || byte == '\\' || byte == '/' {
+        let ordinal = byte.to_u32();
+        decoded = ordinal.to_i32_checked();
     }
-    return false;
+    if byte == 'b' { decoded = 8; }
+    if byte == 'f' { decoded = 12; }
+    if byte == 'n' { decoded = 10; }
+    if byte == 'r' { decoded = 13; }
+    if byte == 't' { decoded = 9; }
+    if decoded >= 0 { cursor.offset = cursor.offset + 1; }
+    return decoded;
 }
 
 fn string(input: &[u8], cursor: &mut Cursor) -> bool {
@@ -97,7 +111,7 @@ fn string(input: &[u8], cursor: &mut Cursor) -> bool {
         if byte < ' ' { return false; }
         cursor.offset = cursor.offset + 1;
         if byte == '"' { return true; }
-        if byte == '\\' && !escape(&*input, &mut *cursor) { return false; }
+        if byte == '\\' && escape(&*input, &mut *cursor) < 0 { return false; }
     }
     return false;
 }
@@ -198,4 +212,117 @@ pub fn validate(input: &[u8]) -> Validation {
         needs_value = true;
     }
     return Validation::Syntax(cursor.offset);
+}
+
+fn write_outcome(status: AppendStatus, start: i32) -> WriteOutcome {
+    match status {
+        AppendStatus::Ok => { return WriteOutcome::Written; },
+        AppendStatus::InvalidInput(offset) => {
+            return WriteOutcome::Failed(Validation::InvalidUtf8(start + offset));
+        },
+        AppendStatus::CapacityOverflow => { return WriteOutcome::Failed(Validation::CapacityOverflow); },
+        AppendStatus::AllocationFailed => { return WriteOutcome::Failed(Validation::AllocationFailed); },
+        AppendStatus::MemoryLimit => { return WriteOutcome::Failed(Validation::MemoryLimit); },
+    }
+}
+
+fn write_run(output: &mut Text, input: &[u8], start: i32, end: i32) -> WriteOutcome {
+    if start == end { return WriteOutcome::Written; }
+    return write_outcome(append_utf8(&mut *output, &*input[start..end]), start);
+}
+
+pub fn decode_string(input: &[u8]) -> StringResult {
+    let encoding = validate_utf8(&*input);
+    match encoding {
+        Utf8Validation::Valid => {},
+        Utf8Validation::Invalid(offset) => { return StringResult::Error(Validation::InvalidUtf8(offset)); },
+    }
+    let mut cursor = Cursor { offset: 0 };
+    skip_space(&*input, &mut cursor);
+    let opening = cursor.offset;
+    if !string(&*input, &mut cursor) { return StringResult::Error(Validation::Syntax(cursor.offset)); }
+    let closing = cursor.offset - 1;
+    skip_space(&*input, &mut cursor);
+    if cursor.offset != input.len() { return StringResult::Error(Validation::Syntax(cursor.offset)); }
+
+    let mut output = new_text();
+    let mut start = opening + 1;
+    cursor.offset = start;
+    while cursor.offset < closing {
+        let index = cursor.offset;
+        cursor.offset = cursor.offset + 1;
+        if peek(&*input, index) != '\\' { continue; }
+        let wrote_run = write_run(&mut output, &*input, start, index);
+        match wrote_run {
+            WriteOutcome::Written => {},
+            WriteOutcome::Failed(error) => { return StringResult::Error(error); },
+        }
+        let decoded = escape(&*input, &mut cursor);
+        if decoded < 0 { return StringResult::Error(Validation::Syntax(cursor.offset)); }
+        let wrote_escape = write_outcome(append_char(&mut output, decoded.to_char_checked()), index);
+        match wrote_escape {
+            WriteOutcome::Written => {},
+            WriteOutcome::Failed(error) => { return StringResult::Error(error); },
+        }
+        start = cursor.offset;
+    }
+    let wrote_tail = write_run(&mut output, &*input, start, closing);
+    match wrote_tail {
+        WriteOutcome::Written => { return StringResult::Value(output); },
+        WriteOutcome::Failed(error) => { return StringResult::Error(error); },
+    }
+}
+
+fn write_quoted_escape(output: &mut Text, byte: u8, position: i32) -> WriteOutcome {
+    let ordinal = byte.to_i32();
+    if ordinal >= 32 {
+        let mut pair = b"\\.";
+        pair[1] = byte;
+        return write_outcome(append_utf8(&mut *output, &pair), position);
+    }
+    let hex = b"0123456789abcdef";
+    let mut escaped = b"\\u0000";
+    escaped[4] = hex[ordinal / 16];
+    escaped[5] = hex[ordinal % 16];
+    return write_outcome(append_utf8(&mut *output, &escaped), position);
+}
+
+pub fn quote(input: &[u8]) -> StringResult {
+    let encoding = validate_utf8(&*input);
+    match encoding {
+        Utf8Validation::Valid => {},
+        Utf8Validation::Invalid(offset) => { return StringResult::Error(Validation::InvalidUtf8(offset)); },
+    }
+    let mut output = new_text();
+    let started = write_outcome(append_char(&mut output, '"'), 0);
+    match started {
+        WriteOutcome::Written => {},
+        WriteOutcome::Failed(error) => { return StringResult::Error(error); },
+    }
+    let mut start = 0;
+    for index in 0..input.len() {
+        let byte = peek(&*input, index);
+        if byte >= ' ' && byte != '"' && byte != '\\' { continue; }
+        let wrote_run = write_run(&mut output, &*input, start, index);
+        match wrote_run {
+            WriteOutcome::Written => {},
+            WriteOutcome::Failed(error) => { return StringResult::Error(error); },
+        }
+        let wrote_escape = write_quoted_escape(&mut output, input[index], index);
+        match wrote_escape {
+            WriteOutcome::Written => {},
+            WriteOutcome::Failed(error) => { return StringResult::Error(error); },
+        }
+        start = index + 1;
+    }
+    let wrote_tail = write_run(&mut output, &*input, start, input.len());
+    match wrote_tail {
+        WriteOutcome::Written => {},
+        WriteOutcome::Failed(error) => { return StringResult::Error(error); },
+    }
+    let finished = write_outcome(append_char(&mut output, '"'), input.len());
+    match finished {
+        WriteOutcome::Written => { return StringResult::Value(output); },
+        WriteOutcome::Failed(error) => { return StringResult::Error(error); },
+    }
 }

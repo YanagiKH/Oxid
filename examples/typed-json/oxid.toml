@@ -6,6 +6,7 @@ entry = "src/main.ox"
 
 [dependencies]
 json = "../../packages/json"
+text = "../../packages/utf8_text"
 
 [build]
 entry-mode = "result"
