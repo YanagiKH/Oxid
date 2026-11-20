@@ -1769,7 +1769,8 @@ impl<'i, 's> QuerySession<'i, 's> {
         let Some(handle) = self.select(requester, path, true)? else {
             return Ok(None);
         };
-        let DeclarationProjection::SourceOriginal(original) = self.tables.project_handle(handle)? else {
+        let DeclarationProjection::SourceOriginal(original) = self.tables.project_handle(handle)?
+        else {
             return Ok(None);
         };
         let original = self.tables.original(original)?;

@@ -797,7 +797,8 @@ fn type_definitions_follow_aliases_qualified_names_and_unsaved_declarations() {
     let p = Project::new();
     let main = "mod shapes;use crate::shapes::Point as Dot;\nfn inspect(p:&Dot)->crate::shapes::Choice{let local:Dot=crate::shapes::Point{x:42};return crate::shapes::Choice::One(local.x); }\nfn main()->i32{return 42;}";
     p.package("", "app", "", main);
-    let declared = "pub struct Point{pub x:i32}\npub enum Choice{One(i32),None}\nstruct Hidden{n:i32}\n";
+    let declared =
+        "pub struct Point{pub x:i32}\npub enum Choice{One(i32),None}\nstruct Hidden{n:i32}\n";
     p.write("src/shapes.ox", declared);
     let path = p.uri("src/main.ox");
     let library = p.uri("src/shapes.ox");
@@ -826,7 +827,8 @@ fn type_definitions_follow_aliases_qualified_names_and_unsaved_declarations() {
             "{needle}: {result}"
         );
     }
-    let invalid = "mod shapes;fn inspect(p:&crate::shapes::Hidden)->(){return;}fn main()->i32{return 42;}";
+    let invalid =
+        "mod shapes;fn inspect(p:&crate::shapes::Hidden)->(){return;}fn main()->i32{return 42;}";
     c.change(&path, 2, json!([{"text":invalid}]));
     let result = c.request(
         "textDocument/definition",
