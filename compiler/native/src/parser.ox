@@ -15,7 +15,7 @@ use crate::model::path_module;
 use crate::model::is_array;
 use crate::model::array_count;
 use crate::model::array_element;
-use crate::model::array_element_type;
+use crate::model::is_value_scalar;
 use crate::model::array_type;
 use crate::model::record;
 use crate::model::record_type;
@@ -213,10 +213,19 @@ fn field_value(c: &mut Compiler, binding: Binding) -> Value {
     expect(&mut *c, 1);
     if field < 0 { fail(&mut *c); return invalid(); }
     let descriptor = c.fields[row.first_field + field];
+    if is_array(descriptor.ty) { fail(&mut *c); return invalid(); }
     let aggregate = crate::emit::load(&mut *c, binding.slot, binding.ty);
     return crate::emit::extract_field(&mut *c, aggregate, field, descriptor.ty);
 }
 
+fn moves_on_read(c: &Compiler, ty: i32) -> bool {
+    if is_array(ty) { return true; }
+    if is_record(ty) {
+        let row = c.records[record_index(ty)];
+        return !row.copy;
+    }
+    return false;
+}
 fn named_value(c: &mut Compiler, depth: i32) -> Value {
     let name = c.cursor;
     c.cursor = c.cursor + 1;
@@ -247,7 +256,7 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
     }
     if is_array(binding.ty) && kind(&*c) == 43 { return array_length(&mut *c, binding.ty); }
     if is_record(binding.ty) && kind(&*c) == 43 { return field_value(&mut *c, binding); }
-    if is_array(binding.ty) {
+    if moves_on_read(&*c, binding.ty) {
         // An outer binding must remain available for the next loop iteration.
         if position < c.loop_move_floor { fail(&mut *c); return invalid(); }
         set_available(&mut *c, position, false);
@@ -264,7 +273,7 @@ fn array_literal(c: &mut Compiler, depth: i32) -> Value {
         if len(&values) >= 1024 { c.error = 68; return invalid(); }
         let value = expression(&mut *c, 1, depth + 1);
         if element == 0 { element = value.ty; }
-        if !array_element_type(element) || value.ty != element { fail(&mut *c); return invalid(); }
+        if !is_value_scalar(element) || value.ty != element { fail(&mut *c); return invalid(); }
         if !grown(try_push(&mut values, value)) { c.error = 68; return invalid(); }
         if kind(&*c) != 52 { expect(&mut *c, 26); }
     }
@@ -395,8 +404,49 @@ pub fn expression(c: &mut Compiler, minimum: i32, depth: i32) -> Value {
     }
     return invalid();
 }
+fn destructure(c: &mut Compiler) -> () {
+    let owner = c.functions[c.current];
+    let index = record(&*c, owner.source_module, c.cursor);
+    if index < 0 { fail(&mut *c); return; }
+    let row = c.records[index];
+    expect(&mut *c, 1);
+    expect(&mut *c, 22);
+    let mut destinations = new::<i32>();
+    while len(&destinations) < row.field_count {
+        if !grown(try_push(&mut destinations, -1)) { c.error = 68; return; }
+    }
+    let mut count = 0;
+    while kind(&*c) != 23 && c.error == 0 {
+        let field_name = c.cursor;
+        let field = record_field(&*c, row, field_name);
+        expect(&mut *c, 1);
+        if field < 0 || destinations[field] >= 0 { fail(&mut *c); return; }
+        expect(&mut *c, 24);
+        let name = c.cursor;
+        expect(&mut *c, 1);
+        destinations[field] = name;
+        count = count + 1;
+        if kind(&*c) != 23 { expect(&mut *c, 26); }
+    }
+    expect(&mut *c, 23);
+    expect(&mut *c, 28);
+    if count != row.field_count { fail(&mut *c); return; }
+    let aggregate = expression(&mut *c, 1, 0);
+    expect(&mut *c, 25);
+    if c.error != 0 || aggregate.ty != record_type(index) { fail(&mut *c); return; }
+    for field in 0..row.field_count {
+        let descriptor = c.fields[row.first_field + field];
+        let value = crate::emit::extract_field(&mut *c, aggregate, field, descriptor.ty);
+        let slot = crate::emit::slot(&mut *c, value.ty);
+        bind(&mut *c, destinations[field], value.ty, false, slot);
+        crate::emit::store(&mut *c, slot, value);
+    }
+    return;
+}
 fn declared(c: &mut Compiler) -> () {
     expect(&mut *c, 4);
+    let next = token(&*c, c.cursor + 1);
+    if kind(&*c) == 1 && next.kind == 22 { destructure(&mut *c); return; }
     let mut writable = false;
     if kind(&*c) == 5 { writable = true; c.cursor = c.cursor + 1; }
     let name = c.cursor;
@@ -441,9 +491,12 @@ fn assign_field(c: &mut Compiler) -> () {
     expect(&mut *c, 1); expect(&mut *c, 28);
     if field < 0 { fail(&mut *c); return; }
     let descriptor = c.fields[row.first_field + field];
+    if is_array(descriptor.ty) { fail(&mut *c); return; }
     let value = expression(&mut *c, 1, 0);
     if value.ty != descriptor.ty { fail(&mut *c); return; }
     expect(&mut *c, 25);
+    let target = c.vars[position];
+    if !target.available { fail(&mut *c); return; }
     let aggregate = crate::emit::load(&mut *c, binding.slot, binding.ty);
     let updated = crate::emit::insert_field(&mut *c, aggregate, value, field);
     crate::emit::store(&mut *c, binding.slot, updated);

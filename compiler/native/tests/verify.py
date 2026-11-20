@@ -314,6 +314,9 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     for name, code in (
         ("wide-array-frame-limit", wide_frame + "let extra=third;return 0i64;}"
          + "fn main()->i32{return 42;}"),
+        ("record-array-storage-limit",
+         "struct Wide{a:[i64;1024],b:[i64;1024],c:[i64;1024],d:[i64;1024],extra:bool}"
+         "fn unsupported(a:Wide)->i32{return 0;}fn main()->i32{return 42;}"),
         ("wide-array-length-limit", "fn unsupported(a:[i64;1025])->i32{return 0;}"
          "fn main()->i32{return 42;}"),
         ("byte-array-frame-limit", byte_frames.replace("if n==0", "let extra=0;if n==0")

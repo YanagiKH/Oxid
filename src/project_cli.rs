@@ -7,6 +7,7 @@ mod documentation;
 mod editor;
 mod package;
 mod registry;
+mod test_runner;
 mod workspace;
 
 pub(crate) use package::package_source_plan;
@@ -16,8 +17,8 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     io::{self, Write},
+    num::NonZeroUsize,
     path::{Component, Path, PathBuf},
-    process::{Command, Stdio},
 };
 
 pub(crate) use editor::project_graphs as editor_project_graphs;
@@ -39,6 +40,8 @@ struct Options {
     workspace_option_error: Option<String>,
     lock_option_error: Option<String>,
     profile_value_missing: bool,
+    test_jobs: Option<NonZeroUsize>,
+    invalid_test_jobs: bool,
     words: Vec<String>,
     invalid: bool,
 }
@@ -116,6 +119,23 @@ impl Options {
                     .is_none_or(|value| value.is_empty() || value.starts_with('-'))
             {
                 result.profile_value_missing = true;
+            }
+            if name == "--jobs" && result.words.first().is_some_and(|word| word == "test") {
+                let jobs = if let Some((_, value)) = args[index].split_once('=') {
+                    Some(value)
+                } else if let Some(value) =
+                    args.get(index + 1).filter(|value| !value.starts_with('-'))
+                {
+                    index += 1;
+                    Some(value.as_str())
+                } else {
+                    None
+                };
+                let jobs = jobs.and_then(|value| value.parse::<NonZeroUsize>().ok());
+                result.invalid_test_jobs |= result.test_jobs.is_some() || jobs.is_none();
+                result.test_jobs = jobs;
+                index += 1;
+                continue;
             }
             if matches!(name, "--package" | "-p") {
                 let value = if let Some((_, value)) = args[index].split_once('=') {
@@ -196,6 +216,13 @@ impl Options {
             .as_deref()
             .is_some_and(|v| !matches!(v, "text" | "json"));
         result
+    }
+
+    fn test_parallelism(&self) -> Result<NonZeroUsize, String> {
+        if self.invalid_test_jobs {
+            return Err("--jobs requires a positive integer and may only be specified once".into());
+        }
+        Ok(self.test_jobs.unwrap_or(NonZeroUsize::MIN))
     }
 
     fn json(&self) -> bool {
@@ -1543,12 +1570,13 @@ fn test(
     snapshot: &runtime::ManifestSnapshot,
     options: &Options,
 ) -> Result<i32, String> {
+    options.test_parallelism()?;
     let manifest = &snapshot.manifest;
     if options.words.len() != 1 || options.entry_mode.is_some() {
         return Err(if frontend::NativeBuildSettings::windows_msvc_host() {
-            "typed-preview test accepts edition, message-format and locking options; declared tests require fn main() -> i32 with no parameters"
+            "typed-preview test accepts --jobs, edition, message-format and locking options; declared tests require fn main() -> i32 with no parameters"
         } else {
-            "typed-preview test accepts edition, message-format and locking options; test entries always use process mode"
+            "typed-preview test accepts --jobs, edition, message-format and locking options; test entries always use process mode"
         }.into());
     }
     if manifest.tests.is_empty() {
@@ -1556,15 +1584,20 @@ fn test(
             "no typed test entries declared; add name = \"tests/name.ox\" under [tests]".into(),
         );
     }
-    let executable =
-        std::env::current_exe().map_err(|e| format!("cannot locate test runner: {e}"))?;
     let mut entries: Vec<_> = manifest.tests.iter().collect();
     entries.sort_by_key(|(name, _)| *name);
     // Validate every configured path before running the first user test.
     let entries = entries
         .into_iter()
-        .map(|(name, path)| local_source(root, path).map(|path| (name, path)))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|(name, path)| {
+            local_source(root, path)?;
+            Ok(test_runner::TestRun {
+                root,
+                member: None,
+                name,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     // Admit every package manifest before starting any declared user test.
     // Each child repeats admission and compiles its own entry in one session.
     let (existing, graph) = project_operation_graph(
@@ -1577,34 +1610,14 @@ fn test(
         false,
     )?;
     if existing.is_some() {
-        let test_entry = local_source(&graph.specs[0].root, &manifest.tests[entries[0].0])?;
+        let test_entry = local_source(&graph.specs[0].root, &manifest.tests[entries[0].name])?;
         let prepared = frontend::prepare_package_project(&graph.specs, Some(&test_entry))
             .map_err(|error| error.message())?;
         project_lock::verify(&lock_snapshot(&graph, &prepared)?, existing.as_ref())?;
     }
-    let mut passed = 0;
-    for (name, _) in &entries {
-        let mut child = Command::new(&executable);
-        child
-            .current_dir(root)
-            .args(["run", "--edition=typed-preview", "--entry-mode=process"])
-            .arg(format!("--project-test={name}"))
-            .stdin(Stdio::null());
-        if options.frozen {
-            child.arg("--frozen");
-        } else {
-            if options.locked || existing.is_some() {
-                child.arg("--locked");
-            }
-            if options.offline {
-                child.arg("--offline");
-            }
-        }
-        let output = child
-            .output()
-            .map_err(|e| format!("cannot run test {name:?}: {e}"))?;
+    let passed = test_runner::run(&entries, options, existing.is_some(), |test, output| {
+        let name = test.name;
         let success = output.status.success();
-        passed += usize::from(success);
         if options.json() {
             println!(
                 "{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"test-result\",\"name\":{},\"success\":{},\"exit_status\":{},\"stdout\":{},\"stderr\":{}}}",
@@ -1627,7 +1640,8 @@ fn test(
                 .write_all(&output.stderr)
                 .map_err(|e| format!("cannot report test diagnostics: {e}"))?;
         }
-    }
+        Ok(())
+    })?;
     let failed = entries.len() - passed;
     if options.json() {
         println!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"test-summary\",\"success\":{},\"passed\":{passed},\"failed\":{failed}}}", failed == 0);
@@ -1746,6 +1760,31 @@ mod profile_tests {
 
     fn options(args: &[&str]) -> Options {
         Options::scan(&args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn test_job_counts_keep_values_adjacent_and_reject_duplicates() {
+        for args in [
+            &["test", "--jobs", "2", "--locked"][..],
+            &["test", "--jobs=2", "--message-format=json"],
+            &["test", "--workspace", "--jobs", "2"],
+        ] {
+            let selected = options(args);
+            assert_eq!(selected.words, ["test"]);
+            assert_eq!(selected.test_parallelism().unwrap().get(), 2);
+        }
+        let default = options(&["test"]);
+        assert_eq!(default.test_parallelism().unwrap().get(), 1);
+        for args in [
+            &["test", "--jobs"][..],
+            &["test", "--jobs=0"],
+            &["test", "--jobs", "-1"],
+            &["test", "--jobs", "--locked", "2"],
+            &["test", "--jobs=2", "--jobs=3"],
+        ] {
+            assert!(options(args).test_parallelism().is_err(), "{args:?}");
+        }
+        assert_eq!(options(&["build", "--jobs=2"]).words, ["build", "--jobs=2"]);
     }
 
     #[test]
