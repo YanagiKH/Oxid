@@ -1,6 +1,14 @@
 use crate::model::Compiler;
 use crate::model::Value;
 use crate::model::grown;
+use crate::model::Binding;
+use crate::model::Token;
+use crate::model::byte_array;
+use crate::model::is_byte_array;
+use crate::model::byte_count;
+use crate::model::code;
+use alloc::vec::len as vector_len;
+use alloc::vec::Vec;
 use alloc::bytes::len;
 use alloc::bytes::try_extend;
 use alloc::bytes::take;
@@ -50,6 +58,14 @@ pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> 
     if ty == 1 { append(&mut *c, destination, &literal_bytes_0); return; }
     if ty == 4 { append(&mut *c, destination, &byte_type); return; }
     if ty == 5 { append(&mut *c, destination, &long_type); return; }
+    if is_byte_array(ty) {
+        let open = b"[";
+        let end = b" x i8]";
+        append(&mut *c, destination, &open);
+        number(&mut *c, destination, byte_count(ty));
+        append(&mut *c, destination, &end);
+        return;
+    }
     if ty == 3 && result { append(&mut *c, destination, &literal_bytes_1); }
     else { append(&mut *c, destination, &literal_bytes_2); }
     return;
@@ -117,8 +133,13 @@ pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
 
     if ty == 3 { return -1; }
     let id = c.next_slot;
-    if id >= 4096 { c.error = 68; return 0; }
-    c.next_slot = id + 1;
+    let mut cells = 1;
+    if is_byte_array(ty) {
+        cells = (byte_count(ty) + 7) / 8;
+        if cells == 0 { cells = 1; }
+    }
+    if cells > 4096 - id { c.error = 68; return 0; }
+    c.next_slot = id + cells;
     append(&mut *c, 1, &literal_bytes_0); number(&mut *c, 1, id);
     append(&mut *c, 1, &literal_bytes_1); write_type(&mut *c, 1, ty, false);
     append(&mut *c, 1, &literal_bytes_2);
@@ -167,6 +188,132 @@ pub fn constant(c: &mut Compiler, ty: i32, value: i64) -> Value {
     }
     decimal(&mut *c, 2, value); append(&mut *c, 2, &line);
     return Value { ty: ty, id: id };
+}
+fn literal_name(c: &mut Compiler, destination: i32, index: i32) -> () {
+    let prefix = b"@data_";
+    append(&mut *c, destination, &prefix);
+    number(&mut *c, destination, index);
+    return;
+}
+fn hex_byte(value: i32) -> u8 {
+    let mut ascii = value + 48;
+    if value > 9 { ascii = value + 55; }
+    return ascii.to_u8_checked();
+}
+fn literal_constant(c: &mut Compiler, index: i32, row: Token) -> () {
+    let prefix = b" = private constant ";
+    let data = b" c\"";
+    let end = b"\"\n";
+    literal_name(&mut *c, 0, index);
+    append(&mut *c, 0, &prefix);
+    write_type(&mut *c, 0, byte_array(row.decoded_length), false);
+    append(&mut *c, 0, &data);
+    let mut at = row.decoded_start;
+    while at < row.decoded_start + row.decoded_length && c.error == 0 {
+        let value = code(&*c.literals, at);
+        let escaped = [92u8, hex_byte(value / 16), hex_byte(value % 16)];
+        append(&mut *c, 0, &escaped);
+        at = at + 1;
+    }
+    append(&mut *c, 0, &end);
+    return;
+}
+fn byte_literals(c: &mut Compiler) -> () {
+    let mut index = 0;
+    while index < vector_len(&*c.tokens) && c.error == 0 {
+        let row = c.tokens[index];
+        if row.kind == 50 { literal_constant(&mut *c, index, row); }
+        index = index + 1;
+    }
+    return;
+}
+pub fn byte_literal(c: &mut Compiler, index: i32, length: i32) -> Value {
+    let name = b"  %v";
+    let load_instruction = b" = load ";
+    let pointer = b", ptr ";
+    let end = b", align 1\n";
+    let ty = byte_array(length);
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &load_instruction);
+    write_type(&mut *c, 2, ty, false); append(&mut *c, 2, &pointer);
+    literal_name(&mut *c, 2, index); append(&mut *c, 2, &end);
+    return Value { ty: ty, id: id };
+}
+pub fn byte_array_values(c: &mut Compiler, values: &Vec<Value>) -> Value {
+    let name = b"  %v";
+    let insert = b" = insertvalue ";
+    let first = b" undef";
+    let space = b" ";
+    let byte = b", i8 ";
+    let comma = b", ";
+    let line = b"\n";
+    let count = vector_len(&*values);
+    let ty = byte_array(count);
+    let mut array = Value { ty: ty, id: -1 };
+    let mut index = 0;
+    while index < count && c.error == 0 {
+        let id = fresh(&mut *c);
+        append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &insert);
+        write_type(&mut *c, 2, ty, false);
+        if index == 0 { append(&mut *c, 2, &first); }
+        else { append(&mut *c, 2, &space); operand(&mut *c, 2, array); }
+        append(&mut *c, 2, &byte); operand(&mut *c, 2, values[index]);
+        append(&mut *c, 2, &comma); number(&mut *c, 2, index); append(&mut *c, 2, &line);
+        array = Value { ty: ty, id: id };
+        index = index + 1;
+    }
+    return array;
+}
+fn check_byte_index(c: &mut Compiler, index: Value, length: i32) -> () {
+    let name = b"  %v";
+    let compare = b" = icmp ult i32 ";
+    let comma = b", ";
+    let line = b"\n";
+    let failure = b"  call void @__oxid_overflow(ptr @index_error, i64 26)\n  unreachable\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &compare);
+    operand(&mut *c, 2, index); append(&mut *c, 2, &comma);
+    number(&mut *c, 2, length); append(&mut *c, 2, &line);
+    let valid = new_label(&mut *c);
+    let invalid = new_label(&mut *c);
+    conditional(&mut *c, Value { ty: 2, id: id }, valid, invalid);
+    label(&mut *c, invalid);
+    append(&mut *c, 2, &failure);
+    label(&mut *c, valid);
+    return;
+}
+fn byte_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
+    let name = b"  %v";
+    let element = b" = getelementptr inbounds ";
+    let slot_prefix = b", ptr %s";
+    let ordinal = b", i32 0, i32 ";
+    let line = b"\n";
+    check_byte_index(&mut *c, index, byte_count(binding.ty));
+    let pointer = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &element);
+    write_type(&mut *c, 2, binding.ty, false); append(&mut *c, 2, &slot_prefix);
+    number(&mut *c, 2, binding.slot); append(&mut *c, 2, &ordinal);
+    operand(&mut *c, 2, index); append(&mut *c, 2, &line);
+    return pointer;
+}
+pub fn byte_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+    let name = b"  %v";
+    let load_instruction = b" = load i8, ptr %v";
+    let alignment = b", align 1\n";
+    let pointer = byte_address(&mut *c, binding, index);
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &load_instruction);
+    number(&mut *c, 2, pointer); append(&mut *c, 2, &alignment);
+    return Value { ty: 4, id: id };
+}
+pub fn byte_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
+    let store_instruction = b"  store i8 ";
+    let address = b", ptr %v";
+    let alignment = b", align 1\n";
+    let pointer = byte_address(&mut *c, binding, index);
+    append(&mut *c, 2, &store_instruction); operand(&mut *c, 2, value);
+    append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &alignment);
+    return;
 }
 pub fn negate_bool(c: &mut Compiler, value: Value) -> Value {
     let literal_bytes_0 = b"  %v";
@@ -528,6 +675,12 @@ fn byte_conversion_paths(c: &mut Compiler) -> () {
     return;
 }
 
+fn array_preamble(c: &mut Compiler) -> () {
+    let bound = b"@index_error = private constant [26 x i8] c\"array index out of bounds\\0A\"\n";
+    append(&mut *c, 0, &bound);
+    byte_literals(&mut *c);
+    return;
+}
 pub fn preamble(c: &mut Compiler) -> () {
     let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
     let int_error = b"@int_conversion = private constant [28 x i8] c\"i32 conversion out of range\\0A\"\n";
@@ -536,6 +689,7 @@ pub fn preamble(c: &mut Compiler) -> () {
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
     append(&mut *c, 0, &depth_error); append(&mut *c, 0, &int_error); append(&mut *c, 0, &print_long);
+    array_preamble(&mut *c);
     byte_conversion_check(&mut *c);
     byte_conversion_paths(&mut *c);
     long_conversion(&mut *c, 1); long_conversion(&mut *c, 4);

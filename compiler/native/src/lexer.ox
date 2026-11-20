@@ -4,6 +4,7 @@ use crate::model::grown;
 use crate::model::word;
 use crate::model::code;
 use alloc::bytes::len as bytes_len;
+use alloc::bytes::try_push as push_byte;
 use alloc::vec::len;
 use alloc::vec::try_push;
 
@@ -57,7 +58,8 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
 }
 fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i64) -> () {
     if len(&*c.tokens) >= 32768 { c.error = 68; return; }
-    if !grown(try_push(&mut *c.tokens, Token { kind: kind, start: start, end: end, value: value })) {
+    let token = Token { kind: kind, start: start, end: end, value: value, decoded_start: 0, decoded_length: 0 };
+    if !grown(try_push(&mut *c.tokens, token)) {
         c.error = 68;
     }
     return;
@@ -125,6 +127,96 @@ fn integer(c: &mut Compiler, start: i32, size: i32) -> i32 {
     push(&mut *c, 2, start, i, value);
     return i;
 }
+fn hex(value: i32) -> i32 {
+    if value >= 48 && value <= 57 { return value - 48; }
+    if value >= 65 && value <= 70 { return value - 65 + 10; }
+    if value >= 97 && value <= 102 { return value - 97 + 10; }
+    return -1;
+}
+
+fn decoded(c: &mut Compiler, value: i32) -> bool {
+    if !grown(push_byte(&mut *c.literals, value.to_u8_checked())) { c.error = 68; return false; }
+    return true;
+}
+
+fn utf8(c: &mut Compiler, scalar: i32) -> bool {
+    if scalar > 1114111 || (scalar >= 55296 && scalar <= 57343) { return false; }
+    if scalar <= 127 { return decoded(&mut *c, scalar); }
+    if scalar <= 2047 {
+        return decoded(&mut *c, 192 + scalar / 64) && decoded(&mut *c, 128 + scalar % 64);
+    }
+    if scalar <= 65535 {
+        return decoded(&mut *c, 224 + scalar / 4096) && decoded(&mut *c, 128 + scalar / 64 % 64)
+            && decoded(&mut *c, 128 + scalar % 64);
+    }
+    return decoded(&mut *c, 240 + scalar / 262144) && decoded(&mut *c, 128 + scalar / 4096 % 64)
+        && decoded(&mut *c, 128 + scalar / 64 % 64) && decoded(&mut *c, 128 + scalar % 64);
+}
+
+fn unicode_escape(c: &mut Compiler, start: i32, size: i32) -> i32 {
+    if start >= size || code(&*c.source, start) != 123 { return -1; }
+    let mut i = start + 1;
+    let mut scalar = 0;
+    while i < size && code(&*c.source, i) != 125 {
+        if i - start > 6 { return -1; }
+        let digit_value = hex(code(&*c.source, i));
+        if digit_value < 0 { return -1; }
+        scalar = scalar * 16 + digit_value;
+        i = i + 1;
+    }
+    if i == start + 1 || i >= size || !utf8(&mut *c, scalar) { return -1; }
+    return i + 1;
+}
+
+fn escape(c: &mut Compiler, start: i32, size: i32) -> i32 {
+    if start >= size { return -1; }
+    let escaped = code(&*c.source, start);
+    if escaped == 117 { return unicode_escape(&mut *c, start + 1, size); }
+    if escaped == 120 {
+        if start + 2 >= size { return -1; }
+        let high = hex(code(&*c.source, start + 1));
+        let low = hex(code(&*c.source, start + 2));
+        if high < 0 || low < 0 || !decoded(&mut *c, high * 16 + low) { return -1; }
+        return start + 3;
+    }
+    let mut value = escaped;
+    if escaped == 110 { value = 10; }
+    if escaped == 114 { value = 13; }
+    if escaped == 116 { value = 9; }
+    if escaped == 48 { value = 0; }
+    if value == escaped && escaped != 34 && escaped != 92 { return -1; }
+    if !decoded(&mut *c, value) { return -1; }
+    return start + 1;
+}
+
+fn byte_string(c: &mut Compiler, start: i32, size: i32) -> i32 {
+    let mut i = start + 2;
+    let first = bytes_len(&*c.literals);
+    while i < size {
+        let value = code(&*c.source, i);
+        if value == 34 {
+            let length = bytes_len(&*c.literals) - first;
+            if len(&*c.tokens) >= 32768 { c.error = 68; return i; }
+            let row = Token { kind: 50, start: start, end: i + 1, value: 0i64,
+                decoded_start: first, decoded_length: length };
+            if !grown(try_push(&mut *c.tokens, row)) { c.error = 68; }
+            return i + 1;
+        }
+        if value == 10 || value == 13 { break; }
+        if value == 92 {
+            let end = escape(&mut *c, i + 1, size);
+            if end < 0 { break; }
+            i = end;
+        } else {
+            if !decoded(&mut *c, value) { return i; }
+            i = i + 1;
+        }
+        if bytes_len(&*c.literals) - first > 1024 { c.error = 68; return i; }
+    }
+    if c.error == 0 { c.error = 65; c.error_start = start; }
+    return i;
+}
+
 fn single_kind(b: i32) -> i32 {
     if b == 40 { return 20; }
     if b == 41 { return 21; }
@@ -143,6 +235,8 @@ fn single_kind(b: i32) -> i32 {
     if b == 60 { return 37; }
     if b == 62 { return 39; }
     if b == 46 { return 43; }
+    if b == 91 { return 51; }
+    if b == 93 { return 52; }
     return 0;
 }
 fn paired_kind(b: i32, next: i32) -> i32 {
@@ -180,6 +274,9 @@ fn scan_one(c: &mut Compiler, start: i32, size: i32) -> i32 {
             return i;
         }
         if next == 42 { return block_comment(&mut *c, start, size); }
+    }
+    if b == 98 && start + 1 < size && code(&*c.source, start + 1) == 34 {
+        return byte_string(&mut *c, start, size);
     }
     if letter(b) { return identifier(&mut *c, start, size); }
     if digit(b) { return integer(&mut *c, start, size); }

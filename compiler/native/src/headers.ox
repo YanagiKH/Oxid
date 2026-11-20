@@ -15,6 +15,8 @@ use crate::model::function_binding;
 use crate::model::function_visible;
 use crate::model::child_module;
 use crate::model::path_module;
+use crate::model::byte_array;
+use crate::model::is_byte_array;
 use alloc::vec::len;
 use alloc::vec::try_push;
 
@@ -25,6 +27,15 @@ pub fn ty(c: &mut Compiler) -> i32 {
     if k == 16 { c.cursor = c.cursor + 1; return 4; }
     if k == 48 { c.cursor = c.cursor + 1; return 5; }
     if k == 20 { expect(&mut *c, 20); expect(&mut *c, 21); return 3; }
+    if k == 51 {
+        expect(&mut *c, 51); expect(&mut *c, 16); expect(&mut *c, 25);
+        let length = token(&*c, c.cursor);
+        expect(&mut *c, 2); expect(&mut *c, 52);
+        if c.error != 0 { return 0; }
+        if length.value < -1024i64 { c.error = 68; return 0; }
+        let count = 0i64 - length.value;
+        return byte_array(count.to_i32_checked());
+    }
     fail(&mut *c); return 0;
 }
 pub fn path_name(c: &mut Compiler) -> i32 {
@@ -153,7 +164,7 @@ fn collect_module(c: &mut Compiler, source_module: i32) -> () {
         let name_token = token(&*c, name);
         if source_module == 0 && word(&*c.source, name_token.start, name_token.end, &literal_bytes_0) {
             c.main = len(&*c.functions) - 1;
-            if count != 0 { fail(&mut *c); return; }
+            if count != 0 || is_byte_array(result) { fail(&mut *c); return; }
         }
     }
     return;
