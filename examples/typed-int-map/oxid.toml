@@ -1,0 +1,19 @@
+[project]
+name = "typed-int-map"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+maps = "../../packages/int_map"
+types = "../../packages/core_types"
+
+[build]
+entry-mode = "result"
+
+[execution]
+policy = "hosted"
+heap-limit = 4096
+
+[tests]
+map = "tests/map.ox"

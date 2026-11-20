@@ -1,0 +1,9 @@
+[project]
+name = "int-map"
+version = "0.1.0"
+kind = "lib"
+edition = "typed-preview"
+entry = "src/lib.ox"
+
+[dependencies]
+types = "../core_types"

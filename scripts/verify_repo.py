@@ -247,6 +247,11 @@ TYPED_MANIFEST_PROJECTS = {
         "examples/typed-option-result/src/main.ox",
         "examples/typed-option-result/tests/outcomes.ox",
     ),
+    "packages/int_map": ("packages/int_map/src/lib.ox",),
+    "examples/typed-int-map": (
+        "examples/typed-int-map/src/main.ox",
+        "examples/typed-int-map/tests/map.ox",
+    ),
 }
 # Library roots have no executable entry point; their dependent applications
 # exercise the public interface and their own manifest check covers unused code.
@@ -266,11 +271,13 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "packages/owned_vec",
     "packages/file_io",
     "packages/core_types",
+    "packages/int_map",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix", "examples/typed-vectors")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records", "examples/copy-record-vectors")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/owned-record-vectors",)
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/typed-owned-text", "examples/typed-option-result")
+TYPED_TESTED_MANIFEST_PROJECTS += ("examples/typed-int-map",)
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (
