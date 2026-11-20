@@ -2,6 +2,7 @@ use crate::model::Compiler;
 use crate::model::Value;
 use crate::model::Token;
 use crate::model::Binding;
+use crate::model::Loan;
 use crate::model::Record;
 use crate::model::grown;
 use crate::model::token;
@@ -19,7 +20,9 @@ use crate::model::array_element;
 use crate::model::is_value_scalar;
 use crate::model::array_type;
 use crate::model::is_slice;
+use crate::model::is_mutable_slice;
 use crate::model::slice_type;
+use crate::model::slice_element;
 use crate::model::record;
 use crate::model::record_type;
 use crate::model::record_index;
@@ -85,43 +88,68 @@ fn intersect_availability(c: &mut Compiler, previous: &Vec<bool>) -> () {
     }
     return;
 }
-fn slice_argument(c: &mut Compiler, expected: i32, borrowed: &mut Vec<i32>, depth: i32) -> Value {
+fn access_allowed(c: &Compiler, position: i32, exclusive: bool) -> bool {
+    for index in 0..len(&*c.loans) {
+        let loan = c.loans[index];
+        if loan.binding == position && (exclusive || loan.exclusive) { return false; }
+    }
+    return true;
+}
+fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
     expect(&mut *c, 65);
+    let exclusive = kind(&*c) == 5;
+    if exclusive { expect(&mut *c, 5); }
+    if exclusive != is_mutable_slice(expected) { fail(&mut *c); return invalid(); }
     let reborrow = kind(&*c) == 31;
     if reborrow { expect(&mut *c, 31); }
     let position = local(&*c, c.cursor);
     expect(&mut *c, 1);
     if position < 0 || c.error != 0 { fail(&mut *c); return invalid(); }
     let binding = c.vars[position];
-    if !binding.available { fail(&mut *c); return invalid(); }
-
-    let mut view = invalid();
-    if reborrow && binding.ty == expected {
-        view = crate::emit::load(&mut *c, binding.slot, binding.ty);
+    if reborrow {
+        if !is_slice(binding.ty) || slice_element(binding.ty) != slice_element(expected)
+            || (exclusive && !is_mutable_slice(binding.ty)) {
+            fail(&mut *c); return invalid();
+        }
     } else {
-        if !reborrow && is_array(binding.ty) && slice_type(array_element(binding.ty)) == expected {
-            view = crate::emit::borrow_array(&mut *c, binding);
-        } else { fail(&mut *c); return invalid(); }
+        if !is_array(binding.ty) || slice_type(array_element(binding.ty), exclusive) != expected
+            || (exclusive && !binding.writable) {
+            fail(&mut *c); return invalid();
+        }
     }
-
-    if kind(&*c) == 51 {
+    let projected = kind(&*c) == 51;
+    let mut start = invalid();
+    let mut end = invalid();
+    if projected {
         expect(&mut *c, 51);
-        let start = expression(&mut *c, 1, depth + 1);
+        start = expression(&mut *c, 1, depth + 1);
         expect(&mut *c, 57);
-        let end = expression(&mut *c, 1, depth + 1);
+        end = expression(&mut *c, 1, depth + 1);
         expect(&mut *c, 52);
-        let target = c.vars[position];
-        if start.ty != 1 || end.ty != 1 || !target.available { fail(&mut *c); return invalid(); }
-        view = crate::emit::project_slice(&mut *c, view, start, end);
+        if start.ty != 1 || end.ty != 1 { fail(&mut *c); return invalid(); }
     }
-    if !grown(try_push(&mut *borrowed, position)) { c.error = 68; return invalid(); }
+    let target = c.vars[position];
+    if c.error != 0 || !target.available || !access_allowed(&*c, position, exclusive) {
+        fail(&mut *c); return invalid();
+    }
+    if !grown(try_push(&mut *c.loans, Loan { binding: position, exclusive: exclusive })) {
+        c.error = 68; return invalid();
+    }
+    let mut view = invalid();
+    if reborrow {
+        let loaded = crate::emit::load(&mut *c, binding.slot, binding.ty);
+        view = Value { ty: expected, id: loaded.id };
+    } else {
+        view = crate::emit::borrow_array(&mut *c, binding, expected);
+    }
+    if projected { return crate::emit::project_slice(&mut *c, view, start, end); }
     return view;
 }
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     if target < 0 { fail(&mut *c); return invalid(); }
     let f = c.functions[target];
     let mut args = new::<Value>();
-    let mut borrowed = new::<i32>();
+    let outer_loans = len(&*c.loans);
     expect(&mut *c, 20);
     let mut count = 0;
     while kind(&*c) != 21 && c.error == 0 {
@@ -129,7 +157,7 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
         let expected = c.params[f.params + count];
         let mut value = invalid();
         if is_slice(expected.ty) {
-            value = slice_argument(&mut *c, expected.ty, &mut borrowed, depth);
+            value = slice_argument(&mut *c, expected.ty, depth);
         } else {
             value = expression(&mut *c, 1, depth + 1);
         }
@@ -140,12 +168,8 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     }
     expect(&mut *c, 21);
     if count != f.count { fail(&mut *c); return invalid(); }
-    // A shared loan spans the remaining arguments and the callee, even if a
-    // later argument transfers the array through a nested call.
-    for index in 0..len(&borrowed) {
-        let binding = c.vars[borrowed[index]];
-        if !binding.available { fail(&mut *c); return invalid(); }
-    }
+    // Nested calls keep the loans of their enclosing argument list.
+    truncate(&mut *c.loans, outer_loans);
     if c.call_sites >= 4096 { c.error = 68; return invalid(); }
     c.call_sites = c.call_sites + 1;
     return crate::emit::call(&mut *c, target, &args, f.result);
@@ -329,7 +353,7 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
     }
     if position < 0 { fail(&mut *c); return invalid(); }
     let binding = c.vars[position];
-    if !binding.available { fail(&mut *c); return invalid(); }
+    if !binding.available || !access_allowed(&*c, position, false) { fail(&mut *c); return invalid(); }
     if kind(&*c) == 51 {
         if !is_array(binding.ty) && !is_slice(binding.ty) { fail(&mut *c); return invalid(); }
         expect(&mut *c, 51);
@@ -347,7 +371,9 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
     if is_record(binding.ty) && kind(&*c) == 43 { return field_value(&mut *c, binding); }
     if moves_on_read(&*c, binding.ty) {
         // An outer binding must remain available for the next loop iteration.
-        if position < c.loop_move_floor { fail(&mut *c); return invalid(); }
+        if position < c.loop_move_floor || !access_allowed(&*c, position, true) {
+            fail(&mut *c); return invalid();
+        }
         set_available(&mut *c, position, false);
     }
     let value = crate::emit::load(&mut *c, binding.slot, binding.ty);
@@ -611,12 +637,18 @@ fn index_assignment(c: &mut Compiler, end: i32) -> () {
     let position = local(&*c, c.cursor);
     if position < 0 { fail(&mut *c); return; }
     let binding = c.vars[position];
-    if !binding.writable || !is_array(binding.ty) { fail(&mut *c); return; }
+    let view = is_mutable_slice(binding.ty);
+    let mut element = 0;
+    if view { element = slice_element(binding.ty); }
+    else {
+        if !binding.writable || !is_array(binding.ty) { fail(&mut *c); return; }
+        element = array_element(binding.ty);
+    }
     let begin = c.cursor + 2;
     // Like other Oxid array assignments, evaluate the right side before the index.
     c.cursor = end + 2;
     let value = expression(&mut *c, 1, 0);
-    if value.ty != array_element(binding.ty) { fail(&mut *c); return; }
+    if value.ty != element { fail(&mut *c); return; }
     expect(&mut *c, 25);
     if c.error != 0 { return; }
     let continuation = c.cursor;
@@ -625,8 +657,9 @@ fn index_assignment(c: &mut Compiler, end: i32) -> () {
     if index.ty != 1 || c.cursor != end { fail(&mut *c); return; }
     c.cursor = continuation;
     let target = c.vars[position];
-    if !target.available { fail(&mut *c); return; }
-    crate::emit::array_store(&mut *c, binding, index, value);
+    if !target.available || !access_allowed(&*c, position, true) { fail(&mut *c); return; }
+    if view { crate::emit::slice_store(&mut *c, binding, index, value); }
+    else { crate::emit::array_store(&mut *c, binding, index, value); }
     return;
 }
 fn if_statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> () {

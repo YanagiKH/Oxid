@@ -46,12 +46,14 @@ pub fn ty(c: &mut Compiler, source_module: i32) -> i32 {
     if k == 20 { expect(&mut *c, 20); expect(&mut *c, 21); return 3; }
     if k == 65 {
         expect(&mut *c, 65);
+        let exclusive = kind(&*c) == 5;
+        if exclusive { expect(&mut *c, 5); }
         expect(&mut *c, 51);
         let element = scalar_type(kind(&*c));
         if element == 0 { fail(&mut *c); return 0; }
         c.cursor = c.cursor + 1;
         expect(&mut *c, 52);
-        return slice_type(element);
+        return slice_type(element, exclusive);
     }
     if k == 51 {
         expect(&mut *c, 51);

@@ -65,6 +65,12 @@ Pass `&numbers[start..end]` to borrow a range. The start is included and the
 end is excluded. Pass `&*values` or `&*values[start..end]` to share a slice with
 another function.
 
+Use `&mut [i32]` for a parameter that can replace elements. Pass a mutable
+array with `&mut numbers` or pass a range with `&mut numbers[start..end]`.
+Inside the function, assign through the slice with `values[index] = value`.
+Pass `&mut *values` to let another function write to it. During a mutable
+borrow, the owning binding is reserved until the call returns.
+
 Declare `#[derive(Copy)] struct Point { x: i32, y: i32 }` to group scalar
 fields. Construct it with `Point { y: 2, x: 40 }` and read a field with
 `point.x`. Use a `mut` binding to replace a field. Copies and function

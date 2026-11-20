@@ -10,7 +10,6 @@ use crate::model::array_count;
 use crate::model::array_element;
 use crate::model::array_bytes;
 use crate::model::is_slice;
-use crate::model::slice_type;
 use crate::model::slice_element;
 use crate::model::code;
 use crate::model::is_record;
@@ -394,12 +393,15 @@ fn slice_address(c: &mut Compiler, view: Value, index: Value) -> i32 {
     append(&mut *c, 2, &line);
     return pointer;
 }
-pub fn slice_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+fn checked_slice_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
     let view = load(&mut *c, binding.slot, binding.ty);
     let length = extract_field(&mut *c, view, 1, 1);
     check_index(&mut *c, index, length);
-    let pointer = slice_address(&mut *c, view, index);
-    return load_element(&mut *c, pointer, slice_element(view.ty));
+    return slice_address(&mut *c, view, index);
+}
+pub fn slice_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+    let pointer = checked_slice_address(&mut *c, binding, index);
+    return load_element(&mut *c, pointer, slice_element(binding.ty));
 }
 fn slice_value(c: &mut Compiler, ty: i32, length: Value, pointer: i32, stack_slot: bool) -> Value {
     let name = b"  %v";
@@ -414,10 +416,9 @@ fn slice_value(c: &mut Compiler, ty: i32, length: Value, pointer: i32, stack_slo
     number(&mut *c, 2, pointer); append(&mut *c, 2, &end);
     return insert_field(&mut *c, Value { ty: ty, id: id }, length, 1);
 }
-pub fn borrow_array(c: &mut Compiler, binding: Binding) -> Value {
+pub fn borrow_array(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
     let count = array_count(binding.ty);
     let length = constant(&mut *c, 1, count.to_i64());
-    let ty = slice_type(array_element(binding.ty));
     return slice_value(&mut *c, ty, length, binding.slot, true);
 }
 pub fn project_slice(c: &mut Compiler, view: Value, start: Value, end: Value) -> Value {
@@ -435,16 +436,25 @@ pub fn project_slice(c: &mut Compiler, view: Value, start: Value, end: Value) ->
     let length = binary(&mut *c, 30, end, start);
     return slice_value(&mut *c, view.ty, length, pointer, false);
 }
-pub fn array_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
+fn store_element(c: &mut Compiler, pointer: i32, value: Value) -> () {
     let store_instruction = b"  store ";
     let space = b" ";
     let address = b", ptr %v";
     let line = b"\n";
-    let pointer = array_address(&mut *c, binding, index);
     append(&mut *c, 2, &store_instruction);
     write_scalar_type(&mut *c, 2, value.ty, false);
     append(&mut *c, 2, &space); operand(&mut *c, 2, value);
     append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &line);
+    return;
+}
+pub fn array_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
+    let pointer = array_address(&mut *c, binding, index);
+    store_element(&mut *c, pointer, value);
+    return;
+}
+pub fn slice_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
+    let pointer = checked_slice_address(&mut *c, binding, index);
+    store_element(&mut *c, pointer, value);
     return;
 }
 pub fn enum_switch(c: &mut Compiler, tag: Value, labels: &Vec<i32>, invalid: i32) -> () {
