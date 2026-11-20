@@ -3,8 +3,7 @@ use super::*;
 use crate::frontend::{
     ast,
     declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
-    hir::DefId,
-    project::{ItemPathRef, ModuleId},
+    project::{ItemPathRef, ModuleId, QualifiedPathRef},
 };
 
 fn contains(span: Span, offset: usize) -> bool {
@@ -13,6 +12,160 @@ fn contains(span: Span, offset: usize) -> bool {
 fn same_path(source: &str, path: &Path) -> bool {
     let source = Path::new(source);
     source == path || source.canonicalize().is_ok_and(|source| source == path)
+}
+
+fn path_name(syntax: &ast::Program, path: ast::ItemPath) -> Option<Span> {
+    match path {
+        ast::ItemPath::Unqualified(span) => Some(span),
+        ast::ItemPath::Absolute(id) => {
+            let path = syntax.paths.get(id.0)?;
+            let end = path
+                .segment_start
+                .checked_add(usize::from(path.segment_len))?;
+            syntax
+                .path_segments
+                .get(path.segment_start..end)?
+                .last()
+                .copied()
+        }
+    }
+}
+
+fn type_path(
+    syntax: &ast::Program,
+    mut ty: ast::TypeSyntax,
+    offset: usize,
+) -> Option<ast::ItemPath> {
+    while contains(ty.span, offset) {
+        let path = match ty.kind {
+            ast::TypeSyntaxKind::Name(path)
+            | ast::TypeSyntaxKind::Reference { referent: path, .. } => path,
+            ast::TypeSyntaxKind::Applied(id)
+            | ast::TypeSyntaxKind::AppliedReference {
+                application: id, ..
+            } => {
+                let application = syntax.generic_application(id)?;
+                if path_name(syntax, application.path).is_some_and(|name| contains(name, offset)) {
+                    return Some(application.path);
+                }
+                ty = application
+                    .arguments
+                    .iter()
+                    .copied()
+                    .find(|arg| contains(arg.span, offset))?;
+                continue;
+            }
+            _ => return None,
+        };
+        return path_name(syntax, path)
+            .filter(|span| contains(*span, offset))
+            .map(|_| path);
+    }
+    None
+}
+
+fn type_use(syntax: &ast::Program, offset: usize) -> Option<(ast::ItemPath, Span)> {
+    for function in &syntax.functions {
+        if offset < function.name.start || offset >= function.end.end {
+            continue;
+        }
+        let types = function
+            .params
+            .iter()
+            .map(|parameter| parameter.ty)
+            .chain(std::iter::once(function.result))
+            .chain(
+                function
+                    .blocks
+                    .iter()
+                    .flat_map(|block| &block.body)
+                    .filter_map(|statement| match statement.kind {
+                        ast::StmtKind::Let { annotation, .. } => annotation,
+                        _ => None,
+                    }),
+            );
+        for ty in types {
+            if let Some(path) = type_path(syntax, ty, offset) {
+                return Some((path, function.name));
+            }
+        }
+        for expression in &syntax.expressions {
+            if contains(expression.span, offset) {
+                if let ast::ExprKind::StructLiteral { record, .. } = expression.kind {
+                    if path_name(syntax, record).is_some_and(|name| contains(name, offset)) {
+                        return Some((record, function.name));
+                    }
+                }
+            }
+        }
+    }
+    for record in &syntax.records {
+        for field in &record.fields {
+            if let Some(path) = type_path(syntax, field.ty, offset) {
+                return Some((path, record.name));
+            }
+        }
+    }
+    for enumeration in &syntax.enums {
+        for variant in &enumeration.variants {
+            if let Some(path) = variant
+                .payload
+                .and_then(|payload| type_path(syntax, payload.value_type(), offset))
+            {
+                return Some((path, enumeration.name));
+            }
+        }
+    }
+    None
+}
+
+enum ValueUse {
+    Call(ast::ItemPath),
+    Qualified(ast::PathId),
+    VariantPattern(ast::PathId),
+    GenericVariant(ast::ItemPath, Span),
+}
+
+fn value_use(syntax: &ast::Program, offset: usize) -> Option<ValueUse> {
+    syntax
+        .expressions
+        .iter()
+        .find_map(|expression| match expression.kind {
+            ast::ExprKind::Call { callee, .. } => {
+                contains(path_name(syntax, callee)?, offset).then_some(ValueUse::Call(callee))
+            }
+            ast::ExprKind::QualifiedValue { path, .. } => {
+                contains(path_name(syntax, ast::ItemPath::Absolute(path))?, offset)
+                    .then_some(ValueUse::Qualified(path))
+            }
+            ast::ExprKind::GenericVariant {
+                application,
+                variant,
+                ..
+            } if contains(variant, offset) => Some(ValueUse::GenericVariant(
+                syntax.generic_application(application)?.path,
+                variant,
+            )),
+            _ => None,
+        })
+        .or_else(|| {
+            syntax
+                .functions
+                .iter()
+                .flat_map(|function| &function.blocks)
+                .flat_map(|block| &block.body)
+                .filter_map(|statement| match &statement.kind {
+                    ast::StmtKind::Match { arms, .. } if contains(statement.span, offset) => {
+                        Some(arms)
+                    }
+                    _ => None,
+                })
+                .flatten()
+                .find_map(|arm| {
+                    let name = path_name(syntax, ast::ItemPath::Absolute(arm.variant))?;
+                    contains(name, offset).then_some(ValueUse::VariantPattern(arm.variant))
+                })
+        })
 }
 
 pub(in crate::frontend) fn definition(
@@ -41,105 +194,52 @@ pub(in crate::frontend) fn definition(
             return Ok(location(sources, span));
         }
     }
-    let Some((callee, qualified)) = syntax.expressions.iter().find_map(|expression| {
-        let (callee, qualified) = match expression.kind {
-            ast::ExprKind::Call { callee, .. } => (callee, false),
-            ast::ExprKind::QualifiedValue { path, .. } => (ast::ItemPath::Absolute(path), true),
-            _ => return None,
-        };
-        let selected = match callee {
-            ast::ItemPath::Unqualified(span) => span,
-            ast::ItemPath::Absolute(id) => {
-                let path = syntax.paths.get(id.0)?;
-                *syntax
-                    .path_segments
-                    .get(path.segment_start..path.segment_start + usize::from(path.segment_len))?
-                    .last()?
-            }
-        };
-        contains(selected, offset).then_some((callee, qualified))
-    }) else {
+    let selected_type = type_use(syntax, offset);
+    if let Some((ast::ItemPath::Unqualified(name), declaration)) = selected_type {
+        if let Some(parameter) = syntax
+            .generic_parameters(declaration)
+            .iter()
+            .find(|parameter| source.text_at(parameter.name) == source.text_at(name))
+        {
+            return Ok(location(sources, parameter.name));
+        }
+    }
+    let selected_value = value_use(syntax, offset);
+    if selected_type.is_none() && selected_value.is_none() {
         return Ok(None);
-    };
+    }
     let limits = IndexLimits::default();
     let work = WorkMeter::new(limits.work);
     let mut allocator = Allocator::default();
     let facts = index::collect_originals(owner, limits, &work, &mut allocator)
         .map_err(|error| vec![*error])?;
-    let mut names = Vec::new();
-    allocator
-        .vector(
-            &mut names,
-            facts.source_function_count(),
-            "editor function declarations",
-        )
-        .map_err(|_| {
-            vec![*Diagnostic::new(
-                "E0400",
-                "editor",
-                "cannot reserve function navigation",
-                None,
-            )]
-        })?;
-    for ordinal in 0..facts.source_function_count() {
-        let (key, decl_module) = facts
-            .function(DefId(ordinal))
-            .map_err(|error| vec![*error])?;
-        let name = owner
-            .ast(decl_module)
-            .map_err(|error| vec![*error])?
-            .functions
-            .get(key.index)
-            .ok_or_else(|| {
-                vec![*Diagnostic::new(
-                    "E0500",
-                    "editor",
-                    "invalid function declaration",
-                    None,
-                )]
-            })?
-            .name;
-        names.push(name);
-    }
     let index = facts.finish(&work, &mut allocator)?;
     let mut query = index.query(&work);
-    let selected = if qualified {
-        let ast::ItemPath::Absolute(path) = callee else {
-            return Ok(None);
-        };
-        query
-            .qualified_value_endpoint(
-                module,
-                crate::frontend::project::QualifiedPathRef {
-                    file: source.span(0, 0).file,
-                    path,
-                },
-            )
-            .map(|target| match target {
-                index::QualifiedValueEndpoint::Function(target) => Some(target),
-                index::QualifiedValueEndpoint::Variant(_) => None,
-            })
-    } else {
-        query
-            .callee(
-                module,
-                ItemPathRef {
-                    file: source.span(0, 0).file,
-                    path: callee,
-                },
-                false,
-            )
-            .map(Some)
+    let file = source.span(0, 0).file;
+    let target = match (selected_type, selected_value) {
+        (Some((path, _)), _) => query.type_declaration_name(module, ItemPathRef { file, path }),
+        (_, Some(ValueUse::Call(path))) => query
+            .callee(module, ItemPathRef { file, path }, false)
+            .and_then(|target| query.function_declaration_name(target)),
+        (_, Some(ValueUse::Qualified(path))) => query
+            .qualified_value_endpoint(module, QualifiedPathRef { file, path })
+            .and_then(|target| match target {
+                index::QualifiedValueEndpoint::Function(id) => query.function_declaration_name(id),
+                index::QualifiedValueEndpoint::Variant(id) => query.variant_declaration_name(id),
+            }),
+        (_, Some(ValueUse::VariantPattern(path))) => query
+            .variant(module, QualifiedPathRef { file, path })
+            .and_then(|target| query.variant_declaration_name(target)),
+        (_, Some(ValueUse::GenericVariant(path, name))) => index
+            .generic_variant_template(module, path, name, &work)
+            .and_then(|target| query.variant_declaration_name(target)),
+        (None, None) => return Ok(None),
     };
-    let target = match selected {
-        Ok(Some(target)) => target,
-        Ok(None) => return Ok(None),
-        Err(error) if matches!(error.code, "E0400" | "E0500") => return Err(vec![*error]),
-        Err(_) => return Ok(None),
-    };
-    Ok(names
-        .get(target.0)
-        .and_then(|span| location(sources, *span)))
+    match target {
+        Ok(target) => Ok(target.and_then(|span| location(sources, span))),
+        Err(error) if matches!(error.code, "E0400" | "E0500") => Err(vec![*error]),
+        Err(_) => Ok(None),
+    }
 }
 
 fn local_definition(
