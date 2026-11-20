@@ -52,7 +52,8 @@ class ManifestApplications(unittest.TestCase):
                     "examples/projects/owned_enum_payload_acceptance/library", "examples/typed-unicode-range",
                     "packages/float_vector", "examples/typed-float-vector", "examples/typed-vectors", "packages/matrix", "examples/typed-matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training",
                     "packages/owned_vec", "packages/file_io", "examples/owned-vector-results", "compiler/native",
-                    "packages/core_types", "examples/typed-option-result", "packages/int_map", "examples/typed-int-map")
+                    "packages/core_types", "examples/typed-option-result", "packages/int_map", "examples/typed-int-map",
+                    "packages/json", "examples/typed-json")
         selected = set(self.members)
         entries = [self.root / self.application]
         for project in projects:
@@ -183,7 +184,7 @@ class GenericOwnedVectorApplications(unittest.TestCase):
         self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
                           if name in self.PROJECTS}, self.PROJECTS)
         added_projects = {"compiler/native", "packages/file_io", "packages/core_types", "examples/typed-option-result",
-                          "packages/int_map", "examples/typed-int-map"}
+                          "packages/int_map", "examples/typed-int-map", "packages/json", "examples/typed-json"}
         self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - added_projects), 24)
         self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS), 24 + len(added_projects))
         for project, members in self.PROJECTS.items():
@@ -201,7 +202,7 @@ class GenericOwnedVectorApplications(unittest.TestCase):
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/owned_vec"), 1)
         self.assertNotIn("examples/owned-vector-results", verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
         self.assertFalse(self.PROJECTS.keys() & set(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS))
-        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 11)
+        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 12)
         selected, roots = verify_repo.manifest_project_members(self.sources(), self.root)
         self.assertEqual(selected, set(self.sources()))
         self.assertEqual(roots, [self.root / project for project in self.PROJECTS])

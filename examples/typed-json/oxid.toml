@@ -1,0 +1,18 @@
+[project]
+name = "typed-json"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+json = "../../packages/json"
+
+[build]
+entry-mode = "result"
+
+[execution]
+policy = "hosted"
+heap-limit = 4096
+
+[tests]
+validation = "tests/validation.ox"
