@@ -51,7 +51,8 @@ class ManifestApplications(unittest.TestCase):
                     "examples/projects/owned_enum_payload_acceptance/values",
                     "examples/projects/owned_enum_payload_acceptance/library", "examples/typed-unicode-range",
                     "packages/float_vector", "examples/typed-float-vector", "examples/typed-vectors", "packages/matrix", "examples/typed-matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training",
-                    "packages/owned_vec", "packages/file_io", "examples/owned-vector-results", "compiler/native")
+                    "packages/owned_vec", "packages/file_io", "examples/owned-vector-results", "compiler/native",
+                    "packages/core_types", "examples/typed-option-result")
         selected = set(self.members)
         entries = [self.root / self.application]
         for project in projects:
@@ -181,8 +182,9 @@ class GenericOwnedVectorApplications(unittest.TestCase):
     def test_both_exact_projects_keep_their_own_members_and_real_dependency(self):
         self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
                           if name in self.PROJECTS}, self.PROJECTS)
-        self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - {"compiler/native", "packages/file_io"}), 24)
-        self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS), 26)
+        added_projects = {"compiler/native", "packages/file_io", "packages/core_types", "examples/typed-option-result"}
+        self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - added_projects), 24)
+        self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS), 28)
         for project, members in self.PROJECTS.items():
             self.assertTrue(all((self.root / name).is_relative_to(self.root / project) for name in members))
         library = tomllib.loads((self.root / "packages/owned_vec/oxid.toml").read_text())
@@ -198,7 +200,7 @@ class GenericOwnedVectorApplications(unittest.TestCase):
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/owned_vec"), 1)
         self.assertNotIn("examples/owned-vector-results", verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
         self.assertFalse(self.PROJECTS.keys() & set(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS))
-        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 9)
+        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 10)
         selected, roots = verify_repo.manifest_project_members(self.sources(), self.root)
         self.assertEqual(selected, set(self.sources()))
         self.assertEqual(roots, [self.root / project for project in self.PROJECTS])

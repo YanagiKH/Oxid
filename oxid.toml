@@ -48,6 +48,8 @@ discord = true
 # Other .ox files under tests/ and examples/ remain runnable language tests.
 [test-fixtures]
 "examples/owned-vector-results/src/main.ox" = true
+"examples/typed-option-result/src/main.ox" = true
+"examples/typed-option-result/tests/outcomes.ox" = true
 "examples/typed-owned-text/src/main.ox" = true
 "examples/typed-owned-text/tests/text.ox" = true
 "examples/typed-owned-text/tests/reject/moved-text.ox" = true
