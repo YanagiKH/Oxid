@@ -61,8 +61,8 @@ FIXTURE_INPUTS = (('compiler/native/tests/fixtures/comments.ox',
   51,
   '1ec8b81b351357a5b5597aad6cfa9fd31e56d949d97bb3bf7d3548313107af11'))
 CASES_JSON = ('compiler/native/tests/cases.json',
- 37323,
- '5b044ae46413d138602d216e0d53da99e6b8ef4f17c0a8320693f263154c03ed')
+ 40977,
+ '23a09571e76f719732a60612033235db548d74375cdf696f504f19e1562eaaef')
 CASE_NAMES = ('forward',
  'control',
  'scopes',
@@ -94,7 +94,7 @@ CASE_NAMES = ('forward',
  'mutual-recursion',
  'last-live-frame',
  'call-frame-limit',
- 'unsupported-array',
+ 'i32-array-inferred',
  'unsupported-import',
  'unterminated-comment',
  'overflow-add',
@@ -269,7 +269,29 @@ CASE_NAMES = ('forward',
  'character-conversion-surrogate',
  'character-conversion-high-surrogate',
  'character-conversion-upper-bound',
- 'character-conversion-before-narrowing')
+ 'character-conversion-before-narrowing',
+ 'i32-array-reinitialize-after-move',
+ 'i64-array-parameter-and-result',
+ 'bool-array-write',
+ 'char-array-value',
+ 'u32-array-unsigned-value',
+ 'array-negative-index',
+ 'array-end-index',
+ 'array-rhs-before-index',
+ 'array-initialization-order',
+ 'array-wrong-length',
+ 'array-assignment-wrong-element',
+ 'array-signature-different-elements',
+ 'array-nested',
+ 'array-move-returning-branch',
+ 'array-move-in-both-branches',
+ 'array-move-local-to-loop',
+ 'array-move-branch-join',
+ 'array-move-before-length',
+ 'byte-array-move-before-access',
+ 'array-move-during-index-read',
+ 'array-move-during-index-write',
+ 'array-move-in-loop')
 
 
 def require(condition, message):
@@ -346,11 +368,11 @@ def parse_cases(inputs):
         cases = json.loads(inputs[CASES_JSON[0]].decode("utf-8"), object_pairs_hook=unique_object)
     except (ValueError, UnicodeError) as error:
         raise RuntimeError("invalid scalar compiler case manifest: " + str(error)) from error
-    require(isinstance(cases, list) and len(cases) == 207
+    require(isinstance(cases, list) and len(cases) == 229
             and all(isinstance(case, dict) for case in cases),
-            "scalar compiler acceptance requires all 207 cases")
+            "scalar compiler acceptance requires all 229 cases")
     require(tuple(case.get("name") for case in cases) == CASE_NAMES
-            and len(set(CASE_NAMES)) == 207,
+            and len(set(CASE_NAMES)) == 229,
             "scalar compiler acceptance case names or order changed")
     sources, referenced = {}, []
     for case in cases:
@@ -380,7 +402,7 @@ def parse_cases(inputs):
     require(len(referenced) == 11 and set(referenced) == set(FIXTURE_FILES),
             "scalar compiler file fixtures must each be exercised once")
     require({kind: sum(case["kind"] == kind for case in cases) for kind in ("value", "reject", "runtime")}
-            == {"value": 78, "reject": 77, "runtime": 52},
+            == {"value": 87, "reject": 86, "runtime": 56},
             "scalar compiler positive, negative or runtime case census changed")
     return cases, sources
 

@@ -38,11 +38,14 @@ Use `number.to_char_checked()` to reject invalid Unicode scalar values and
 unsigned integers such as `4294967295u32`, and `.to_u32_checked()` or
 `.to_i64_checked()` for checked conversions between integer types.
 
-Use `b"..."` for fixed byte arrays such as `let data: [u8; 3] = b"abc";`.
-Literals support byte and Unicode escapes. Use `[1u8, 2u8]` to build an array
-from values and `b""` for an empty array. Call `data.len()` for the length
-and read a byte with `data[index]`. For a `mut` binding, use
-`data[index] = value` to replace a byte. Reads and writes check the index.
+Use `[i32; 3]` for a fixed array type and `[10, 20, 30]` for a value.
+An array can hold up to 1024 values of one type: `i32`, `i64`, `u8`, `u32`,
+`bool` or `char`. Passing or assigning a whole array moves it. Use a new value to reinitialize
+a mutable binding after a move. A loop can move arrays declared inside its body.
+Use `data.len()` for the length and `data[index]` to read an element. For a
+`mut` binding, use `data[index] = value` to replace an element. Reads and
+writes check the index. Use `b"abc"` for the byte array `[97u8, 98u8, 99u8]`
+and `b""` for an empty byte array. Byte strings support byte and Unicode escapes.
 
 Declare `#[derive(Copy)] struct Point { x: i32, y: i32 }` to group scalar
 fields. Construct it with `Point { y: 2, x: 40 }` and read a field with
@@ -54,7 +57,7 @@ Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-owned structs, enums, references, generics, text strings, non-byte arrays,
+owned structs, enums, references, generics, text strings, nested arrays,
 I/O in compiled input and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 
@@ -67,7 +70,7 @@ Source files share the input and function limits. The compiler accepts up to
 128 source files including the entry file and up to 32 levels of modules.
 
 Input is limited to 65536 bytes, 32768 tokens, 128 functions, 16 parameters/function,
-128 structs, 4096 call sites and 4096 stack slots/function. Expression/block/comment nesting
+128 structs, 4096 call sites and a 32 KiB budget for local storage per function. Expression/block/comment nesting
 is limited to 64 and LLVM output to 8 MiB. Each function also has checked budgets
 of 4096 active bindings, 131072 temporary values and 65536 labels.
 Compiler status 64 means usage, 65 rejected

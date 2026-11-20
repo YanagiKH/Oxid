@@ -27,7 +27,7 @@ REJECT_NAMES = {
     "late-type", "late-syntax", "unreachable-error", "immutable", "active-shadow", "escaped-scope",
     "function-shadow", "call-type", "call-arity", "condition-type", "break-outside", "missing-return",
     "positive-minimum-magnitude", "missing-main", "main-argument",
-    "unsupported-array", "unsupported-import", "unterminated-comment",
+    "unsupported-import", "unterminated-comment",
     "byte-literal-too-large",
     "byte-mixed-arithmetic",
     "byte-negation",
@@ -87,6 +87,16 @@ REJECT_NAMES = {
     "u32-negative-literal",
     "u32-mixed-operands",
     "character-cast-from-bool",
+    "array-wrong-length",
+    "array-assignment-wrong-element",
+    "array-signature-different-elements",
+    "array-nested",
+    "array-move-branch-join",
+    "array-move-before-length",
+    "byte-array-move-before-access",
+    "array-move-during-index-read",
+    "array-move-during-index-write",
+    "array-move-in-loop",
 }
 
 
@@ -149,14 +159,14 @@ class NativeCompilerRegistration(unittest.TestCase):
         self.assertEqual(manifest["build"]["entry-mode"], "process")
         self.assertEqual(manifest["execution"]["policy"], "hosted")
 
-    def test_all_207_subject_cases_and_all_77_rejections_remain_active_data(self):
+    def test_all_subject_cases_and_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 207)
+        self.assertEqual(len(cases), 229)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 78, "reject": 77, "runtime": 52})
+                         {"value": 87, "reject": 86, "runtime": 56})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})
