@@ -9,6 +9,9 @@ use crate::model::is_array;
 use crate::model::array_count;
 use crate::model::array_element;
 use crate::model::array_bytes;
+use crate::model::is_slice;
+use crate::model::slice_type;
+use crate::model::slice_element;
 use crate::model::code;
 use crate::model::is_record;
 use crate::model::record_index;
@@ -67,6 +70,11 @@ fn write_scalar_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) 
     return;
 }
 pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> () {
+    if is_slice(ty) {
+        let view = b"{ ptr, i32 }";
+        append(&mut *c, destination, &view);
+        return;
+    }
     if is_record(ty) {
         let record = b"%r";
         append(&mut *c, destination, &record);
@@ -144,6 +152,7 @@ pub fn conditional(c: &mut Compiler, value: Value, yes: i32, no: i32) -> () {
     return;
 }
 fn field_cells(ty: i32) -> i32 {
+    if is_slice(ty) { return 2; }
     if is_array(ty) {
         let cells = (array_bytes(ty) + 7) / 8;
         if cells > 0 { return cells; }
@@ -316,7 +325,7 @@ pub fn extract_field(c: &mut Compiler, aggregate: Value, field: i32, ty: i32) ->
     append(&mut *c, 2, &comma); number(&mut *c, 2, field); append(&mut *c, 2, &line);
     return Value { ty: ty, id: id };
 }
-fn check_array_index(c: &mut Compiler, index: Value, length: i32) -> () {
+fn check_index(c: &mut Compiler, index: Value, length: Value) -> () {
     let name = b"  %v";
     let compare = b" = icmp ult i32 ";
     let comma = b", ";
@@ -325,7 +334,7 @@ fn check_array_index(c: &mut Compiler, index: Value, length: i32) -> () {
     let id = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &compare);
     operand(&mut *c, 2, index); append(&mut *c, 2, &comma);
-    number(&mut *c, 2, length); append(&mut *c, 2, &line);
+    operand(&mut *c, 2, length); append(&mut *c, 2, &line);
     let valid = new_label(&mut *c);
     let invalid = new_label(&mut *c);
     conditional(&mut *c, Value { ty: 2, id: id }, valid, invalid);
@@ -340,7 +349,9 @@ fn array_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
     let slot_prefix = b", ptr %s";
     let ordinal = b", i32 0, i32 ";
     let line = b"\n";
-    check_array_index(&mut *c, index, array_count(binding.ty));
+    let count = array_count(binding.ty);
+    let length = constant(&mut *c, 1, count.to_i64());
+    check_index(&mut *c, index, length);
     let pointer = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &element);
     write_type(&mut *c, 2, binding.ty, false); append(&mut *c, 2, &slot_prefix);
@@ -348,18 +359,51 @@ fn array_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
     operand(&mut *c, 2, index); append(&mut *c, 2, &line);
     return pointer;
 }
-pub fn array_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+fn load_element(c: &mut Compiler, pointer: i32, element: i32) -> Value {
     let name = b"  %v";
     let load_instruction = b" = load ";
     let address = b", ptr %v";
     let line = b"\n";
-    let element = array_element(binding.ty);
-    let pointer = array_address(&mut *c, binding, index);
     let id = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &load_instruction);
     write_scalar_type(&mut *c, 2, element, false);
     append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &line);
     return Value { ty: element, id: id };
+}
+pub fn array_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+    let pointer = array_address(&mut *c, binding, index);
+    return load_element(&mut *c, pointer, array_element(binding.ty));
+}
+pub fn slice_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+    let name = b"  %v";
+    let element = b" = getelementptr inbounds ";
+    let pointer_operand = b", ptr ";
+    let index_operand = b", i32 ";
+    let line = b"\n";
+    let view = load(&mut *c, binding.slot, binding.ty);
+    let length = extract_field(&mut *c, view, 1, 1);
+    check_index(&mut *c, index, length);
+    let base = extract_field(&mut *c, view, 0, 0);
+    let pointer = fresh(&mut *c);
+    let element_type = slice_element(binding.ty);
+    append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &element);
+    write_scalar_type(&mut *c, 2, element_type, false);
+    append(&mut *c, 2, &pointer_operand); operand(&mut *c, 2, base);
+    append(&mut *c, 2, &index_operand); operand(&mut *c, 2, index);
+    append(&mut *c, 2, &line);
+    return load_element(&mut *c, pointer, element_type);
+}
+pub fn borrow_array(c: &mut Compiler, binding: Binding) -> Value {
+    let name = b"  %v";
+    let start = b" = insertvalue { ptr, i32 } zeroinitializer, ptr %s";
+    let end = b", 0\n";
+    let count = array_count(binding.ty);
+    let length = constant(&mut *c, 1, count.to_i64());
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &start);
+    number(&mut *c, 2, binding.slot); append(&mut *c, 2, &end);
+    let view = Value { ty: slice_type(array_element(binding.ty)), id: id };
+    return insert_field(&mut *c, view, length, 1);
 }
 pub fn array_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
     let store_instruction = b"  store ";

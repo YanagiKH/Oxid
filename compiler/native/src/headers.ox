@@ -19,6 +19,8 @@ use crate::model::child_module;
 use crate::model::path_module;
 use crate::model::array_type;
 use crate::model::is_array;
+use crate::model::is_slice;
+use crate::model::slice_type;
 use crate::model::is_value_scalar;
 use crate::model::record;
 use crate::model::record_type;
@@ -42,6 +44,15 @@ pub fn ty(c: &mut Compiler, source_module: i32) -> i32 {
     let scalar = scalar_type(k);
     if scalar != 0 { c.cursor = c.cursor + 1; return scalar; }
     if k == 20 { expect(&mut *c, 20); expect(&mut *c, 21); return 3; }
+    if k == 65 {
+        expect(&mut *c, 65);
+        expect(&mut *c, 51);
+        let element = scalar_type(kind(&*c));
+        if element == 0 { fail(&mut *c); return 0; }
+        c.cursor = c.cursor + 1;
+        expect(&mut *c, 52);
+        return slice_type(element);
+    }
     if k == 51 {
         expect(&mut *c, 51);
         let element = scalar_type(kind(&*c));
@@ -130,7 +141,7 @@ fn collect_enum(c: &mut Compiler, source_module: i32) -> () {
             expect(&mut *c, 20);
             payload = ty(&mut *c, source_module);
             expect(&mut *c, 21);
-            if payload == 3 { fail(&mut *c); return; }
+            if payload == 3 || is_slice(payload) { fail(&mut *c); return; }
             if is_record(payload) {
                 let nested = c.records[crate::model::record_index(payload)];
                 if nested.tagged { fail(&mut *c); return; }
@@ -251,7 +262,7 @@ fn collect_function(c: &mut Compiler, source_module: i32, public: bool) -> () {
     expect(&mut *c, 21);
     expect(&mut *c, 27);
     let result = ty(&mut *c, source_module);
-    if public && is_record(result) { fail(&mut *c); return; }
+    if is_slice(result) || (public && is_record(result)) { fail(&mut *c); return; }
     let begin = c.cursor;
     expect(&mut *c, 22);
     let mut depth = 1;
