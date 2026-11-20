@@ -31,6 +31,7 @@ fn scalar_type(k: i32) -> i32 {
     if k == 15 { return 2; }
     if k == 16 { return 4; }
     if k == 48 { return 5; }
+    if k == 58 { return 6; }
     return 0;
 }
 

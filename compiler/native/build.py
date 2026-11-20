@@ -20,6 +20,7 @@ import tempfile
 PREFIX = b'; Oxid scalar compiler 1\ntarget triple = "x86_64-unknown-linux-gnu"\n'
 SUFFIX = b'; Oxid scalar compiler end\n'
 MAX_MODULE_BYTES = 8 * 1024 * 1024
+DEFAULT_RUNTIME = Path(__file__).resolve().with_name("runtime.c")
 
 
 class BuildError(RuntimeError):
@@ -129,7 +130,7 @@ def main() -> int:
     parser.add_argument("--compiler", type=Path, required=True,
                         help="native oxid-scalar-compiler built in process entry mode")
     parser.add_argument("--clang", type=Path, required=True)
-    parser.add_argument("--runtime", type=Path, default=Path(__file__).resolve().parents[2] / "native/typed_preview.c")
+    parser.add_argument("--runtime", type=Path, default=DEFAULT_RUNTIME)
     parser.add_argument("--profile", choices=("dev", "release"), default="dev")
     parser.add_argument("--evidence", type=Path)
     args = parser.parse_args()

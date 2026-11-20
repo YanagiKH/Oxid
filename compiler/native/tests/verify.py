@@ -292,6 +292,17 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
         require((outcome.returncode, outcome.stdout, outcome.stderr) == (68, b"", b""),
                 name + ": oversized input did not fail before emitting LLVM")
         rows.append(record(evidence, name, command, outcome))
+    for name, malformed in (
+            ("utf8-overlong", b"\xc0\xaf"),
+            ("utf8-surrogate", b"\xed\xa0\x80"),
+            ("utf8-truncated", b"\xf0\x9f\xa6")):
+        source = evidence / (name + ".ox")
+        source.write_bytes(b"fn main()->i32{return 42;}\n// " + malformed)
+        command = [str(compiler), str(source)]
+        outcome = run(command, evidence, timeout)
+        require((outcome.returncode, outcome.stdout, outcome.stderr) == (65, b"", b""),
+                name + ": malformed UTF-8 was admitted")
+        rows.append(record(evidence, name, command, outcome))
     return rows
 
 
@@ -406,6 +417,10 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             "main.ox": "mod data;fn main()->i32{let value=Row{value:42};return value.value;}",
             "data.ox": "#[derive(Copy)]struct Row{value:i32}",
         }),
+        ("utf8-module-source", 0, True, {
+            "main.ox": "mod data;fn main()->i32{return crate::data::value();}",
+            "data.ox": "// 雪\npub fn value()->i32{if '雪'<'🦀'{return 42;}return 0;}",
+        }),
     )
     rows = []
     for name, expected, compare, files in cases:
@@ -414,7 +429,7 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
         for relative, code in files.items():
             source_file = project / relative
             source_file.parent.mkdir(parents=True, exist_ok=True)
-            source_file.write_text(code, encoding="ascii")
+            source_file.write_text(code, encoding="utf-8")
         source = project / "main.ox"
         command = [str(compiler), str(source)]
         compiled = run(command, evidence, timeout)
@@ -469,6 +484,12 @@ def verify(args) -> dict:
               "runtime_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
               "driver_sha256": hashlib.sha256((ROOT / "build.py").read_bytes()).hexdigest(),
               "cases_sha256": hashlib.sha256((ROOT / "tests/cases.json").read_bytes()).hexdigest()}
+    if runtime == driver.DEFAULT_RUNTIME:
+        runtime_sources = ("native/typed_preview.c", "native/typed_character.c")
+        report["runtime_sources_sha256"] = {
+            name: hashlib.sha256((ROOT.parents[1] / name).read_bytes()).hexdigest()
+            for name in runtime_sources
+        }
     (output / "retained-inputs").mkdir()
     try:
         require(report["cases_sha256"] == fixture_data.CASES_JSON[2],
@@ -554,7 +575,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", type=Path, required=True)
     parser.add_argument("--clang", type=Path, required=True)
-    parser.add_argument("--runtime", type=Path, default=Path(__file__).resolve().parents[3] / "native/typed_preview.c")
+    parser.add_argument("--runtime", type=Path, default=driver.DEFAULT_RUNTIME)
     parser.add_argument("--reference", type=Path, required=True,
                         help="offline differential oracle; never invoked by the compiler or build driver")
     parser.add_argument("--output", type=Path, required=True)

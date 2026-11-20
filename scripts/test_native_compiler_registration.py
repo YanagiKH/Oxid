@@ -71,6 +71,18 @@ REJECT_NAMES = {
     "range-noninteger-bounds",
     "range-inclusive-is-unsupported",
     "range-index-cannot-shadow-binding",
+    "character-empty",
+    "character-multiple-scalars",
+    "character-raw-control",
+    "character-bad-hex",
+    "character-surrogate",
+    "character-too-large",
+    "character-no-scalar-digits",
+    "character-bad-escape",
+    "character-arithmetic",
+    "character-no-implicit-cast",
+    "character-no-numeric-range",
+    "utf8-non-ascii-identifier",
 }
 
 
@@ -133,14 +145,14 @@ class NativeCompilerRegistration(unittest.TestCase):
         self.assertEqual(manifest["build"]["entry-mode"], "process")
         self.assertEqual(manifest["execution"]["policy"], "hosted")
 
-    def test_all_154_subject_cases_and_all_61_rejections_remain_active_data(self):
+    def test_all_176_subject_cases_and_all_73_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 154)
+        self.assertEqual(len(cases), 176)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 55, "reject": 61, "runtime": 38})
+                         {"value": 65, "reject": 73, "runtime": 38})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})

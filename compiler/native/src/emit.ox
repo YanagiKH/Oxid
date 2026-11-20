@@ -57,7 +57,7 @@ pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> 
     let byte_type = b"i8";
     let long_type = b"i64";
 
-    if ty == 1 { append(&mut *c, destination, &literal_bytes_0); return; }
+    if ty == 1 || ty == 6 { append(&mut *c, destination, &literal_bytes_0); return; }
     if ty == 4 { append(&mut *c, destination, &byte_type); return; }
     if ty == 5 { append(&mut *c, destination, &long_type); return; }
     if is_record(ty) {
@@ -731,15 +731,21 @@ fn record_preamble(c: &mut Compiler) -> () {
     }
     return;
 }
-pub fn preamble(c: &mut Compiler) -> () {
+fn preamble_resources(c: &mut Compiler) -> () {
     let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
     let int_error = b"@int_conversion = private constant [28 x i8] c\"i32 conversion out of range\\0A\"\n";
     let print_long = b"declare i32 @__oxid_print_i64(i64)\n";
+    let print_character = b"declare i32 @__oxid_print_char(i32)\n";
     preamble_text_0_0(&mut *c);
     record_preamble(&mut *c);
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
     append(&mut *c, 0, &depth_error); append(&mut *c, 0, &int_error); append(&mut *c, 0, &print_long);
+    append(&mut *c, 0, &print_character);
+    return;
+}
+pub fn preamble(c: &mut Compiler) -> () {
+    preamble_resources(&mut *c);
     array_preamble(&mut *c);
     byte_conversion_check(&mut *c);
     byte_conversion_paths(&mut *c);
@@ -807,6 +813,7 @@ fn wrapper_text_8_0(c: &mut Compiler) -> () {
 }
 pub fn wrapper(c: &mut Compiler) -> () {
     let print_long = b"  %status = call i32 @__oxid_print_i64(i64 %value)\n";
+    let print_character = b"  %status = call i32 @__oxid_print_char(i32 %value)\n";
 
     let entry = c.main;
     let f = c.functions[entry];
@@ -819,6 +826,7 @@ pub fn wrapper(c: &mut Compiler) -> () {
     if f.result == 3 { wrapper_text_7_0(&mut *c); }
     if f.result == 4 { wrapper_byte_result(&mut *c); }
     if f.result == 5 { append(&mut *c, 0, &print_long); }
+    if f.result == 6 { append(&mut *c, 0, &print_character); }
     wrapper_text_8_0(&mut *c);
     return;
 }

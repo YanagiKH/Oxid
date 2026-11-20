@@ -8,6 +8,9 @@ use alloc::bytes::try_push as push_byte;
 use alloc::vec::len;
 use alloc::vec::try_push;
 
+#[derive(Copy)]
+struct Scalar { value: i32, end: i32 }
+
 fn letter(b: i32) -> bool {
     return b == 95 || (b >= 65 && b <= 90) || (b >= 97 && b <= 122);
 }
@@ -36,6 +39,7 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     let struct_word = b"struct";
     let for_word = b"for";
     let in_word = b"in";
+    let char_word = b"char";
 
     if word(&*source, start, end, &literal_bytes_0) { return 3; }
     if word(&*source, start, end, &literal_bytes_1) { return 4; }
@@ -60,6 +64,7 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     if word(&*source, start, end, &struct_word) { return 54; }
     if word(&*source, start, end, &for_word) { return 55; }
     if word(&*source, start, end, &in_word) { return 56; }
+    if word(&*source, start, end, &char_word) { return 58; }
     return 1;
 }
 fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i64) -> () {
@@ -159,40 +164,117 @@ fn utf8(c: &mut Compiler, scalar: i32) -> bool {
         && decoded(&mut *c, 128 + scalar / 64 % 64) && decoded(&mut *c, 128 + scalar % 64);
 }
 
-fn unicode_escape(c: &mut Compiler, start: i32, size: i32) -> i32 {
-    if start >= size || code(&*c.source, start) != 123 { return -1; }
+fn invalid_scalar() -> Scalar { return Scalar { value: -1, end: -1 }; }
+
+fn valid_scalar(value: i32) -> bool {
+    return value >= 0 && value <= 1114111 && (value < 55296 || value > 57343);
+}
+
+fn unicode_escape(c: &Compiler, start: i32, size: i32) -> Scalar {
+    if start >= size || code(&*c.source, start) != 123 { return invalid_scalar(); }
     let mut i = start + 1;
     let mut scalar = 0;
     while i < size && code(&*c.source, i) != 125 {
-        if i - start > 6 { return -1; }
+        if i - start > 6 { return invalid_scalar(); }
         let digit_value = hex(code(&*c.source, i));
-        if digit_value < 0 { return -1; }
+        if digit_value < 0 { return invalid_scalar(); }
         scalar = scalar * 16 + digit_value;
         i = i + 1;
     }
-    if i == start + 1 || i >= size || !utf8(&mut *c, scalar) { return -1; }
-    return i + 1;
+    if i == start + 1 || i >= size || !valid_scalar(scalar) { return invalid_scalar(); }
+    return Scalar { value: scalar, end: i + 1 };
+}
+
+fn hex_escape(c: &Compiler, start: i32, size: i32) -> i32 {
+    if start + 1 >= size { return -1; }
+    let high = hex(code(&*c.source, start));
+    let low = hex(code(&*c.source, start + 1));
+    if high < 0 || low < 0 { return -1; }
+    return high * 16 + low;
+}
+
+fn basic_escape(escaped: i32) -> i32 {
+    if escaped == 110 { return 10; }
+    if escaped == 114 { return 13; }
+    if escaped == 116 { return 9; }
+    if escaped == 48 { return 0; }
+    if escaped == 34 || escaped == 92 { return escaped; }
+    return -1;
 }
 
 fn escape(c: &mut Compiler, start: i32, size: i32) -> i32 {
     if start >= size { return -1; }
     let escaped = code(&*c.source, start);
-    if escaped == 117 { return unicode_escape(&mut *c, start + 1, size); }
+    if escaped == 117 {
+        let scalar = unicode_escape(&*c, start + 1, size);
+        if scalar.end < 0 || !utf8(&mut *c, scalar.value) { return -1; }
+        return scalar.end;
+    }
     if escaped == 120 {
-        if start + 2 >= size { return -1; }
-        let high = hex(code(&*c.source, start + 1));
-        let low = hex(code(&*c.source, start + 2));
-        if high < 0 || low < 0 || !decoded(&mut *c, high * 16 + low) { return -1; }
+        let value = hex_escape(&*c, start + 1, size);
+        if value < 0 || !decoded(&mut *c, value) { return -1; }
         return start + 3;
     }
-    let mut value = escaped;
-    if escaped == 110 { value = 10; }
-    if escaped == 114 { value = 13; }
-    if escaped == 116 { value = 9; }
-    if escaped == 48 { value = 0; }
-    if value == escaped && escaped != 34 && escaped != 92 { return -1; }
-    if !decoded(&mut *c, value) { return -1; }
+    let value = basic_escape(escaped);
+    if value < 0 || !decoded(&mut *c, value) { return -1; }
     return start + 1;
+}
+
+fn raw_scalar(c: &Compiler, start: i32, size: i32) -> Scalar {
+    let first = code(&*c.source, start);
+    if first < 128 { return Scalar { value: first, end: start + 1 }; }
+    if first < 194 || first > 244 { return invalid_scalar(); }
+    let mut width = 2;
+    let mut value = first - 192;
+    let mut minimum = 128;
+    if first >= 224 { width = 3; value = first - 224; minimum = 2048; }
+    if first >= 240 { width = 4; value = first - 240; minimum = 65536; }
+    let end = start + width;
+    if end > size { return invalid_scalar(); }
+    for i in start + 1..end {
+        let next = code(&*c.source, i);
+        if next < 128 || next > 191 { return invalid_scalar(); }
+        value = value * 64 + next - 128;
+    }
+    if value < minimum || !valid_scalar(value) { return invalid_scalar(); }
+    return Scalar { value: value, end: end };
+}
+
+fn character_scalar(c: &Compiler, start: i32, size: i32) -> Scalar {
+    if start >= size { return invalid_scalar(); }
+    let first = code(&*c.source, start);
+    if first != 92 {
+        let scalar = raw_scalar(&*c, start, size);
+        if scalar.value < 32 || (scalar.value >= 127 && scalar.value <= 159)
+            || scalar.value == 39 { return invalid_scalar(); }
+        return scalar;
+    }
+    let escape_start = start + 1;
+    if escape_start >= size { return invalid_scalar(); }
+    let escaped = code(&*c.source, escape_start);
+    if escaped == 117 { return unicode_escape(&*c, escape_start + 1, size); }
+    if escaped == 120 {
+        let value = hex_escape(&*c, escape_start + 1, size);
+        if value < 0 || value > 127 { return invalid_scalar(); }
+        return Scalar { value: value, end: escape_start + 3 };
+    }
+    let mut value = basic_escape(escaped);
+    if escaped == 39 { value = 39; }
+    if value < 0 { return invalid_scalar(); }
+    return Scalar { value: value, end: escape_start + 1 };
+}
+
+fn character(c: &mut Compiler, start: i32, size: i32) -> i32 {
+    let scalar = character_scalar(&*c, start + 1, size);
+    if scalar.end < 0 || scalar.end >= size || code(&*c.source, scalar.end) != 39 {
+        c.error = 65;
+        c.error_start = start;
+        return start;
+    }
+    let end = scalar.end + 1;
+    let value = scalar.value;
+    push(&mut *c, 59, start, end, value.to_i64());
+    return end;
 }
 
 fn byte_string(c: &mut Compiler, start: i32, size: i32) -> i32 {
@@ -286,6 +368,7 @@ fn scan_one(c: &mut Compiler, start: i32, size: i32) -> i32 {
     if b == 98 && start + 1 < size && code(&*c.source, start + 1) == 34 {
         return byte_string(&mut *c, start, size);
     }
+    if b == 39 { return character(&mut *c, start, size); }
     if letter(b) { return identifier(&mut *c, start, size); }
     if digit(b) { return integer(&mut *c, start, size); }
     return punctuation(&mut *c, start, size);
@@ -294,8 +377,9 @@ pub fn scan_range(c: &mut Compiler, start: i32, size: i32) -> () {
     if size > 65536 { c.error = 68; return; }
     let mut i = start;
     while i < size {
-        if code(&*c.source, i) > 127 { c.error = 65; c.error_start = i; return; }
-        i = i + 1;
+        let scalar = raw_scalar(&*c, i, size);
+        if scalar.end < 0 { c.error = 65; c.error_start = i; return; }
+        i = scalar.end;
     }
     i = start;
     while i < size && c.error == 0 { i = scan_one(&mut *c, i, size); }

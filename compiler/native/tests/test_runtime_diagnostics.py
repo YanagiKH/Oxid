@@ -218,7 +218,7 @@ class RuntimeDiagnostics(unittest.TestCase):
         verifier.check_reference_behavior(case("overflow"), result(stdout=framed(valid_unicode)))
 
     def test_original_value_and_reject_reference_contracts_are_preserved(self):
-        self.assertEqual(len(self.cases), 154)
+        self.assertEqual(len(self.cases), 176)
         for selected in self.cases:
             if selected["kind"] == "value":
                 value = result(stdout=selected["stdout"].encode(), status=0)
