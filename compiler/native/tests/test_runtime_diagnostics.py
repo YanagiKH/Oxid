@@ -93,7 +93,7 @@ class RuntimeDiagnostics(unittest.TestCase):
 
     def test_byte_faults_preserve_type_specific_diagnostics(self):
         runtime = [selected for selected in self.cases if selected.get("error") in BYTE_FAMILIES]
-        self.assertEqual(len(runtime), 8)
+        self.assertEqual(len(runtime), 9)
         for selected in runtime:
             with self.subTest(case=selected["name"]):
                 native, code, message = BYTE_FAMILIES[selected["error"]]
@@ -218,7 +218,7 @@ class RuntimeDiagnostics(unittest.TestCase):
         verifier.check_reference_behavior(case("overflow"), result(stdout=framed(valid_unicode)))
 
     def test_original_value_and_reject_reference_contracts_are_preserved(self):
-        self.assertEqual(len(self.cases), 112)
+        self.assertEqual(len(self.cases), 118)
         for selected in self.cases:
             if selected["kind"] == "value":
                 value = result(stdout=selected["stdout"].encode(), status=0)

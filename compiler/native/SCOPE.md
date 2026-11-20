@@ -29,7 +29,8 @@ bindings with `.to_i64()`, `.to_i32_checked()` or `.to_u8_checked()`.
 A result-mode `main` has no arguments and prints its scalar result, then exits 0.
 
 Use `b"..."` for fixed byte arrays such as `let data: [u8; 3] = b"abc";`.
-Literals support byte and Unicode escapes. Call `data.len()` for the length
+Literals support byte and Unicode escapes. Use `[1u8, 2u8]` to build an array
+from values and `b""` for an empty array. Call `data.len()` for the length
 and read a byte with `data[index]`. For a `mut` binding, use
 `data[index] = value` to replace a byte. Reads and writes check the index.
 

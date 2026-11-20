@@ -7,7 +7,8 @@ use crate::model::byte_array;
 use crate::model::is_byte_array;
 use crate::model::byte_count;
 use crate::model::code;
-use alloc::vec::len as token_count;
+use alloc::vec::len as vector_len;
+use alloc::vec::Vec;
 use alloc::bytes::len;
 use alloc::bytes::try_extend;
 use alloc::bytes::take;
@@ -219,7 +220,7 @@ fn literal_constant(c: &mut Compiler, index: i32, row: Token) -> () {
 }
 fn byte_literals(c: &mut Compiler) -> () {
     let mut index = 0;
-    while index < token_count(&*c.tokens) && c.error == 0 {
+    while index < vector_len(&*c.tokens) && c.error == 0 {
         let row = c.tokens[index];
         if row.kind == 50 { literal_constant(&mut *c, index, row); }
         index = index + 1;
@@ -237,6 +238,31 @@ pub fn byte_literal(c: &mut Compiler, index: i32, length: i32) -> Value {
     write_type(&mut *c, 2, ty, false); append(&mut *c, 2, &pointer);
     literal_name(&mut *c, 2, index); append(&mut *c, 2, &end);
     return Value { ty: ty, id: id };
+}
+pub fn byte_array_values(c: &mut Compiler, values: &Vec<Value>) -> Value {
+    let name = b"  %v";
+    let insert = b" = insertvalue ";
+    let first = b" undef";
+    let space = b" ";
+    let byte = b", i8 ";
+    let comma = b", ";
+    let line = b"\n";
+    let count = vector_len(&*values);
+    let ty = byte_array(count);
+    let mut array = Value { ty: ty, id: -1 };
+    let mut index = 0;
+    while index < count && c.error == 0 {
+        let id = fresh(&mut *c);
+        append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &insert);
+        write_type(&mut *c, 2, ty, false);
+        if index == 0 { append(&mut *c, 2, &first); }
+        else { append(&mut *c, 2, &space); operand(&mut *c, 2, array); }
+        append(&mut *c, 2, &byte); operand(&mut *c, 2, values[index]);
+        append(&mut *c, 2, &comma); number(&mut *c, 2, index); append(&mut *c, 2, &line);
+        array = Value { ty: ty, id: id };
+        index = index + 1;
+    }
+    return array;
 }
 fn check_byte_index(c: &mut Compiler, index: Value, length: i32) -> () {
     let name = b"  %v";

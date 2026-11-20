@@ -134,6 +134,20 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
     if kind(&*c) == 43 { return convert_binding(&mut *c, value); }
     return value;
 }
+fn byte_array_values(c: &mut Compiler, depth: i32) -> Value {
+    expect(&mut *c, 51);
+    let mut values = new::<Value>();
+    while kind(&*c) != 52 && c.error == 0 {
+        if len(&values) >= 1024 { c.error = 68; return invalid(); }
+        let value = expression(&mut *c, 1, depth + 1);
+        if value.ty != 4 { fail(&mut *c); return invalid(); }
+        if !grown(try_push(&mut values, value)) { c.error = 68; return invalid(); }
+        if kind(&*c) != 52 { expect(&mut *c, 26); }
+    }
+    expect(&mut *c, 52);
+    if len(&values) == 0 { fail(&mut *c); return invalid(); }
+    return crate::emit::byte_array_values(&mut *c, &values);
+}
 fn prefix(c: &mut Compiler, depth: i32) -> Value {
     if c.error != 0 { return invalid(); }
     if depth > 64 { c.error = 68; return invalid(); }
@@ -192,6 +206,7 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
         expect(&mut *c, 21);
         return parenthesized;
     }
+    if t.kind == 51 { return byte_array_values(&mut *c, depth); }
     if t.kind == 44 { return qualified_call(&mut *c, depth); }
     if t.kind == 1 { return named_value(&mut *c, depth); }
     fail(&mut *c); return invalid();

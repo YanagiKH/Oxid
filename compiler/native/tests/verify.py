@@ -260,6 +260,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
         ("byte-array-frame-limit", byte_frames.replace("if n==0", "let extra=0;if n==0")
          + "fn main()->u8{return descend(0);}"),
         ("byte-literal-limit", 'fn main()->i32{let bytes=b"' + 'A' * 1025 + '";return 0;}'),
+        ("byte-list-limit", 'fn main()->i32{let bytes=[' + '0u8,' * 1025 + '];return 0;}'),
     ):
         source = evidence / (name + ".ox")
         source.write_text(code, encoding="ascii")
