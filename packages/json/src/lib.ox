@@ -1,8 +1,12 @@
 use alloc::vec::GrowStatus;
+use alloc::vec::Vec;
 use alloc::vec::new;
 use alloc::vec::len;
 use alloc::vec::try_push;
 use alloc::vec::truncate;
+use alloc::bytes::ByteBuf;
+use alloc::bytes::try_extend;
+use crate::types::option::Option;
 use crate::text::Validation as Utf8Validation;
 use crate::text::validate as validate_utf8;
 use crate::text::Text;
@@ -22,9 +26,34 @@ pub enum Validation {
 
 pub enum StringResult { Value(Text), Error(Validation) }
 
+pub enum Kind { Object, Array, String, Number, True, False, Null }
+
+#[derive(Copy)]
+pub struct Node {
+    pub start: i32,
+    pub end: i32,
+    pub key_start: i32,
+    pub key_end: i32,
+    marker: char,
+    parent: i32,
+    after: i32,
+}
+
+pub struct Document { input: ByteBuf, nodes: Vec<Node> }
+
+pub struct ParseFailure { pub input: ByteBuf, pub reason: Validation }
+
+pub enum ParseResult { Parsed(Document), Error(ParseFailure) }
+
+pub enum CopyResult { Copied, Missing, Error(GrowStatus) }
+
 enum WriteOutcome { Written, Failed(Validation) }
+enum ScanOutcome { Complete, Failed(Validation) }
 
 struct Cursor { offset: i32 }
+
+struct Member { start: i32, end: i32 }
+struct ValueStart { marker: char, terminator: char, valid: bool }
 
 fn peek(input: &[u8], offset: i32) -> char {
     // This sentinel is outside the range of any input byte.
@@ -153,65 +182,221 @@ fn scalar(input: &[u8], cursor: &mut Cursor) -> bool {
     return false;
 }
 
-fn member_name(input: &[u8], cursor: &mut Cursor) -> bool {
+fn member_name(input: &[u8], cursor: &mut Cursor, key: &mut Member) -> bool {
     skip_space(&*input, &mut *cursor);
+    key.start = cursor.offset;
     if !string(&*input, &mut *cursor) { return false; }
+    key.end = cursor.offset;
     skip_space(&*input, &mut *cursor);
     return take(&*input, &mut *cursor, ':');
 }
 
-pub fn validate(input: &[u8]) -> Validation {
+fn begin_value(input: &[u8], cursor: &mut Cursor, key: &mut Member) -> ValueStart {
+    let marker = peek(&*input, cursor.offset);
+    if marker != '[' && marker != '{' {
+        let accepted = scalar(&*input, &mut *cursor);
+        return ValueStart { marker: marker, terminator: '\u{0}', valid: accepted };
+    }
+    cursor.offset = cursor.offset + 1;
+    skip_space(&*input, &mut *cursor);
+    let mut closing = ']';
+    if marker == '{' { closing = '}'; }
+    if take(&*input, &mut *cursor, closing) {
+        return ValueStart { marker: marker, terminator: '\u{0}', valid: true };
+    }
+    let valid_member = closing == ']' || member_name(&*input, &mut *cursor, &mut *key);
+    return ValueStart { marker: marker, terminator: closing, valid: valid_member };
+}
+
+fn stack_index(tag: i32) -> i32 {
+    if tag < 0 { return 0 - tag - 1; }
+    return tag - 1;
+}
+
+fn enclosing_node(closings: &Vec<i32>) -> i32 {
+    let depth = len(&*closings);
+    if depth == 0 { return -1; }
+    return stack_index(closings[depth - 1]);
+}
+
+fn grow_outcome(status: GrowStatus) -> WriteOutcome {
+    match status {
+        GrowStatus::Ok => { return WriteOutcome::Written; },
+        GrowStatus::CapacityOverflow => { return WriteOutcome::Failed(Validation::CapacityOverflow); },
+        GrowStatus::AllocationFailed => { return WriteOutcome::Failed(Validation::AllocationFailed); },
+        GrowStatus::MemoryLimit => { return WriteOutcome::Failed(Validation::MemoryLimit); },
+    }
+}
+
+fn finish_node(nodes: &mut Vec<Node>, index: i32, end: i32) -> () {
+    let mut completed = nodes[index];
+    completed.end = end;
+    completed.after = len(&*nodes);
+    nodes[index] = completed;
+    return;
+}
+
+fn walk(input: &[u8], nodes: &mut Vec<Node>, collect: bool) -> ScanOutcome {
     let encoding = validate_utf8(&*input);
     match encoding {
         Utf8Validation::Valid => {},
-        Utf8Validation::Invalid(offset) => { return Validation::InvalidUtf8(offset); },
+        Utf8Validation::Invalid(offset) => { return ScanOutcome::Failed(Validation::InvalidUtf8(offset)); },
     }
     let mut cursor = Cursor { offset: 0 };
-    let mut closings = new::<char>();
+    let mut key = Member { start: -1, end: -1 };
+    // The sign distinguishes object and array frames. Indexed walks also
+    // store the container's node index plus one in the frame's magnitude.
+    let mut closings = new::<i32>();
     let mut needs_value = true;
     while true {
         skip_space(&*input, &mut cursor);
         if needs_value {
-            let marker = peek(&*input, cursor.offset);
-            if marker == '[' || marker == '{' {
-                cursor.offset = cursor.offset + 1;
-                skip_space(&*input, &mut cursor);
-                let mut closing = ']';
-                if marker == '{' { closing = '}'; }
-                if take(&*input, &mut cursor, closing) { needs_value = false; continue; }
-                if closing == '}' && !member_name(&*input, &mut cursor) {
-                    return Validation::Syntax(cursor.offset);
-                }
-                let added = try_push(&mut closings, closing);
+            let begin = cursor.offset;
+            let key_start = key.start;
+            let key_end = key.end;
+            key = Member { start: -1, end: -1 };
+            let head = begin_value(&*input, &mut cursor, &mut key);
+            if !head.valid { return ScanOutcome::Failed(Validation::Syntax(cursor.offset)); }
+            let mut count = 1;
+            if collect {
+                let index = len(&*nodes);
+                if index == 2147483647 { return ScanOutcome::Failed(Validation::CapacityOverflow); }
+                count = index + 1;
+                let enclosing = enclosing_node(&closings);
+                let value = Node { start: begin, end: cursor.offset, key_start: key_start,
+                    key_end: key_end, marker: head.marker, parent: enclosing, after: count };
+                let added = grow_outcome(try_push(&mut *nodes, value));
                 match added {
-                    GrowStatus::Ok => {},
-                    GrowStatus::CapacityOverflow => { return Validation::CapacityOverflow; },
-                    GrowStatus::AllocationFailed => { return Validation::AllocationFailed; },
-                    GrowStatus::MemoryLimit => { return Validation::MemoryLimit; },
+                    WriteOutcome::Written => {},
+                    WriteOutcome::Failed(error) => { return ScanOutcome::Failed(error); },
                 }
-                continue;
             }
-            if !scalar(&*input, &mut cursor) { return Validation::Syntax(cursor.offset); }
-            needs_value = false;
+            needs_value = head.terminator != '\u{0}';
+            if needs_value {
+                if head.terminator == '}' { count = 0 - count; }
+                let stacked = grow_outcome(try_push(&mut closings, count));
+                match stacked {
+                    WriteOutcome::Written => {},
+                    WriteOutcome::Failed(error) => { return ScanOutcome::Failed(error); },
+                }
+            }
             continue;
         }
         let depth = len(&closings);
         if depth == 0 {
-            if cursor.offset == input.len() { return Validation::Valid; }
-            return Validation::Syntax(cursor.offset);
+            if cursor.offset == input.len() { return ScanOutcome::Complete; }
+            return ScanOutcome::Failed(Validation::Syntax(cursor.offset));
         }
-        let closing = closings[depth - 1];
+        let frame = closings[depth - 1];
+        let mut closing = ']';
+        if frame < 0 { closing = '}'; }
         if take(&*input, &mut cursor, closing) {
+            if collect { finish_node(&mut *nodes, stack_index(frame), cursor.offset); }
             truncate(&mut closings, depth - 1);
             continue;
         }
-        if !take(&*input, &mut cursor, ',') { return Validation::Syntax(cursor.offset); }
-        if closing == '}' && !member_name(&*input, &mut cursor) {
-            return Validation::Syntax(cursor.offset);
+        if !take(&*input, &mut cursor, ',') { return ScanOutcome::Failed(Validation::Syntax(cursor.offset)); }
+        if closing == '}' && !member_name(&*input, &mut cursor, &mut key) {
+            return ScanOutcome::Failed(Validation::Syntax(cursor.offset));
         }
         needs_value = true;
     }
-    return Validation::Syntax(cursor.offset);
+    return ScanOutcome::Failed(Validation::Syntax(cursor.offset));
+}
+
+pub fn validate(input: &[u8]) -> Validation {
+    let mut unused = new::<Node>();
+    let result = walk(&*input, &mut unused, false);
+    match result {
+        ScanOutcome::Complete => { return Validation::Valid; },
+        ScanOutcome::Failed(error) => { return error; },
+    }
+}
+
+pub fn parse(input: ByteBuf) -> ParseResult {
+    let mut nodes = new::<Node>();
+    let result = walk(&input, &mut nodes, true);
+    match result {
+        ScanOutcome::Complete => { return ParseResult::Parsed(Document { input: input, nodes: nodes }); },
+        ScanOutcome::Failed(error) => { return ParseResult::Error(ParseFailure { input: input, reason: error }); },
+    }
+}
+
+pub fn node_count(document: &Document) -> i32 {
+    return len(&*document.nodes);
+}
+
+fn lookup(nodes: &Vec<Node>, index: i32) -> Option<Node> {
+    if index < 0 || index >= len(&*nodes) { return Option::<Node>::None; }
+    return Option::<Node>::Some(nodes[index]);
+}
+
+pub fn node(document: &Document, index: i32) -> Option<Node> {
+    return lookup(&*document.nodes, index);
+}
+
+pub fn kind(value: &Node) -> Kind {
+    let marker = value.marker;
+    if marker == '{' { return Kind::Object; }
+    if marker == '[' { return Kind::Array; }
+    if marker == '"' { return Kind::String; }
+    if marker == 't' { return Kind::True; }
+    if marker == 'f' { return Kind::False; }
+    if marker == 'n' { return Kind::Null; }
+    return Kind::Number;
+}
+
+pub fn first_child(document: &Document, index: i32) -> Option<i32> {
+    let selected = node(&*document, index);
+    match selected {
+        Option::Some(parent) => {
+            if index + 1 < parent.after { return Option::<i32>::Some(index + 1); }
+            return Option::<i32>::None;
+        },
+        Option::None => { return Option::<i32>::None; },
+    }
+}
+
+fn sibling(nodes: &Vec<Node>, index: i32) -> Option<i32> {
+    if index < 0 || index >= len(&*nodes) { return Option::<i32>::None; }
+    let current = nodes[index];
+    if current.parent < 0 { return Option::<i32>::None; }
+    let parent = nodes[current.parent];
+    if current.after >= parent.after { return Option::<i32>::None; }
+    return Option::<i32>::Some(current.after);
+}
+
+pub fn next_sibling(document: &Document, index: i32) -> Option<i32> {
+    return sibling(&*document.nodes, index);
+}
+
+fn append_span(input: &[u8], start: i32, end: i32, output: &mut ByteBuf) -> CopyResult {
+    let result = try_extend(&mut *output, &*input[start..end]);
+    match result {
+        GrowStatus::Ok => { return CopyResult::Copied; },
+        GrowStatus::CapacityOverflow => { return CopyResult::Error(GrowStatus::CapacityOverflow); },
+        GrowStatus::AllocationFailed => { return CopyResult::Error(GrowStatus::AllocationFailed); },
+        GrowStatus::MemoryLimit => { return CopyResult::Error(GrowStatus::MemoryLimit); },
+    }
+}
+
+pub fn append_value(document: &Document, index: i32, output: &mut ByteBuf) -> CopyResult {
+    let selected = node(&*document, index);
+    match selected {
+        Option::Some(item) => { return append_span(&*document.input, item.start, item.end, &mut *output); },
+        Option::None => { return CopyResult::Missing; },
+    }
+}
+
+pub fn append_key(document: &Document, index: i32, output: &mut ByteBuf) -> CopyResult {
+    let selected = node(&*document, index);
+    match selected {
+        Option::Some(item) => {
+            if item.key_start < 0 { return CopyResult::Missing; }
+            return append_span(&*document.input, item.key_start, item.key_end, &mut *output);
+        },
+        Option::None => { return CopyResult::Missing; },
+    }
 }
 
 fn write_outcome(status: AppendStatus, start: i32) -> WriteOutcome {
