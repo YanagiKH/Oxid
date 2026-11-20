@@ -2,12 +2,29 @@ use alloc::bytes::GrowStatus;
 use alloc::bytes::new;
 use alloc::bytes::len;
 use alloc::bytes::try_resize;
+use alloc::bytes::try_extend;
+use alloc::bytes::truncate;
 use crate::json::Validation;
 use crate::json::validate;
 use crate::json::StringResult;
 use crate::json::quote;
 use crate::json::decode_string;
 use crate::text::equals_utf8;
+use crate::json::Document;
+use crate::json::Kind;
+use crate::json::kind;
+use crate::json::ParseResult;
+use crate::json::ParseFailure;
+use crate::json::CopyResult;
+use crate::json::parse;
+use crate::json::node;
+use crate::json::node_count;
+use crate::json::first_child;
+use crate::json::next_sibling;
+use crate::json::append_key;
+use crate::json::append_value;
+use crate::types::option::Option;
+use crate::types::option::unwrap_or;
 
 fn valid(input: &[u8]) -> bool {
     let result = validate(&*input);
@@ -189,6 +206,138 @@ fn string_limit() -> i32 {
     }
 }
 
+fn same(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() { return false; }
+    for index in 0..left.len() {
+        if left[index] != right[index] { return false; }
+    }
+    return true;
+}
+
+fn copied(result: CopyResult) -> bool {
+    match result {
+        CopyResult::Copied => { return true; },
+        CopyResult::Missing => { return false; },
+        CopyResult::Error(error) => { return false; },
+    }
+}
+
+fn check_values(document: &Document) -> i32 {
+    let mut output = new();
+    if !copied(append_key(&*document, 1, &mut output)) { return 60; }
+    if !copied(append_value(&*document, 4, &mut output)) { return 61; }
+    let expected = b"\"list\"\"雪\"";
+    if !same(&output, &expected) { return 62; }
+    truncate(&mut output, 0);
+    if !copied(append_value(&*document, 1, &mut output)) { return 63; }
+    let array = b"[1, {\"x\":\"雪\"}, []]";
+    if !same(&output, &array) { return 64; }
+    let result = append_key(&*document, 2, &mut output);
+    match result {
+        CopyResult::Missing => { if same(&output, &array) { return 0; } return 65; },
+        CopyResult::Copied => { return 66; },
+        CopyResult::Error(error) => { return 67; },
+    }
+}
+
+fn check_tree(document: &Document) -> i32 {
+    if node_count(&*document) != 7 { return 70; }
+    if unwrap_or(first_child(&*document, 0), -1) != 1 { return 71; }
+    if unwrap_or(first_child(&*document, 1), -1) != 2 { return 72; }
+    if unwrap_or(next_sibling(&*document, 2), -1) != 3 { return 73; }
+    if unwrap_or(first_child(&*document, 3), -1) != 4 { return 74; }
+    if unwrap_or(next_sibling(&*document, 3), -1) != 5 { return 75; }
+    if unwrap_or(next_sibling(&*document, 1), -1) != 6 { return 76; }
+    if unwrap_or(next_sibling(&*document, 4), -1) != -1 { return 77; }
+    if unwrap_or(first_child(&*document, 5), -1) != -1 { return 78; }
+    if unwrap_or(next_sibling(&*document, 7), -1) != -1 { return 79; }
+    return 0;
+}
+
+fn parsed_values() -> i32 {
+    let input = b" \n{\"list\": [1, {\"x\":\"雪\"}, []], \"other\":true} ";
+    let mut owned = new();
+    if !resize_ok(try_extend(&mut owned, &input)) { return 80; }
+    let result = parse(owned);
+    match result {
+        ParseResult::Error(failure) => { return 81; },
+        ParseResult::Parsed(document) => {
+            let tree = check_tree(&document);
+            if tree != 0 { return tree; }
+            let head = node(&document, 0);
+            match head {
+                Option::Some(root) => {
+                    let class = kind(&root);
+                    match class {
+                        Kind::Object => {
+                            if root.start != 2 || root.end != input.len() - 1 || root.key_start != -1 { return 82; }
+                            return check_values(&document);
+                        },
+                        Kind::Array => { return 83; },
+                        Kind::String => { return 83; },
+                        Kind::Number => { return 83; },
+                        Kind::True => { return 83; },
+                        Kind::False => { return 83; },
+                        Kind::Null => { return 83; },
+                    }
+                },
+                Option::None => { return 84; },
+            }
+        },
+    }
+}
+
+fn parse_syntax_failure() -> i32 {
+    let broken = b"[1,]";
+    let mut input = new();
+    if !resize_ok(try_extend(&mut input, &broken)) { return 85; }
+    let result = parse(input);
+    match result {
+        ParseResult::Parsed(document) => { return 86; },
+        ParseResult::Error(failure) => {
+            let ParseFailure { input: returned, reason: why } = failure;
+            if !same(&returned, &broken) { return 87; }
+            match why {
+                Validation::Syntax(offset) => { if offset == 3 { return 0; } return 88; },
+                Validation::Valid => { return 89; },
+                Validation::InvalidUtf8(offset) => { return 89; },
+                Validation::CapacityOverflow => { return 89; },
+                Validation::AllocationFailed => { return 89; },
+                Validation::MemoryLimit => { return 89; },
+            }
+        },
+    }
+}
+
+fn delimit_numbers(bytes: &mut [u8]) -> () {
+    bytes[0] = 91u8;
+    bytes[512] = 93u8;
+    for slot in 1..256 { bytes[slot * 2] = 44u8; }
+    return;
+}
+
+fn parse_memory_failure() -> i32 {
+    let mut input = new();
+    if !resize_ok(try_resize(&mut input, 513, 48u8)) { return 90; }
+    delimit_numbers(&mut input);
+    let result = parse(input);
+    match result {
+        ParseResult::Parsed(document) => { return 91; },
+        ParseResult::Error(failure) => {
+            let ParseFailure { input: returned, reason: why } = failure;
+            if len(&returned) != 513 || !valid(&returned) { return 92; }
+            match why {
+                Validation::MemoryLimit => { return 0; },
+                Validation::Syntax(offset) => { return 93; },
+                Validation::Valid => { return 93; },
+                Validation::InvalidUtf8(offset) => { return 93; },
+                Validation::CapacityOverflow => { return 93; },
+                Validation::AllocationFailed => { return 93; },
+            }
+        },
+    }
+}
+
 fn main() -> i32 {
     let passed = accepted();
     if passed != 0 { return passed; }
@@ -198,5 +347,11 @@ fn main() -> i32 {
     if deep != 0 { return deep; }
     let codec = string_codec();
     if codec != 0 { return codec; }
-    return string_limit();
+    let limited = string_limit();
+    if limited != 0 { return limited; }
+    let decoded = parsed_values();
+    if decoded != 0 { return decoded; }
+    let bad_json = parse_syntax_failure();
+    if bad_json != 0 { return bad_json; }
+    return parse_memory_failure();
 }
