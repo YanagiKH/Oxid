@@ -33,6 +33,7 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     let crate_word = b"crate";
     let use_word = b"use";
     let as_word = b"as";
+    let struct_word = b"struct";
 
     if word(&*source, start, end, &literal_bytes_0) { return 3; }
     if word(&*source, start, end, &literal_bytes_1) { return 4; }
@@ -54,6 +55,7 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     if word(&*source, start, end, &use_word) { return 46; }
     if word(&*source, start, end, &as_word) { return 47; }
     if word(&*source, start, end, &long_type) { return 48; }
+    if word(&*source, start, end, &struct_word) { return 54; }
     return 1;
 }
 fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i64) -> () {
@@ -237,6 +239,7 @@ fn single_kind(b: i32) -> i32 {
     if b == 46 { return 43; }
     if b == 91 { return 51; }
     if b == 93 { return 52; }
+    if b == 35 { return 53; }
     return 0;
 }
 fn paired_kind(b: i32, next: i32) -> i32 {

@@ -34,11 +34,17 @@ from values and `b""` for an empty array. Call `data.len()` for the length
 and read a byte with `data[index]`. For a `mut` binding, use
 `data[index] = value` to replace a byte. Reads and writes check the index.
 
+Declare `#[derive(Copy)] struct Point { x: i32, y: i32 }` to group scalar
+fields. Construct it with `Point { y: 2, x: 40 }` and read a field with
+`point.x`. Use a `mut` binding to replace a field. Copies and function
+arguments hold independent values. These structs are private to their
+module and have 1–64 fields of type `i32`, `i64`, `u8` or `bool`.
+
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-user records and enums, references, generics, text strings, non-byte arrays,
+owned structs, enums, references, generics, text strings, non-byte arrays,
 I/O in compiled input and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 
@@ -51,7 +57,7 @@ Source files share the input and function limits. The compiler accepts up to
 128 source files including the entry file and up to 32 levels of modules.
 
 Input is limited to 65536 bytes, 32768 tokens, 128 functions, 16 parameters/function,
-4096 call sites and 4096 stack slots/function. Expression/block/comment nesting
+128 structs, 4096 call sites and 4096 stack slots/function. Expression/block/comment nesting
 is limited to 64 and LLVM output to 8 MiB. Each function also has checked budgets
 of 4096 active bindings, 131072 temporary values and 65536 labels.
 Compiler status 64 means usage, 65 rejected

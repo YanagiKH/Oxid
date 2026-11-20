@@ -31,10 +31,18 @@ pub struct Function {
 pub struct Binding { pub name: i32, pub ty: i32, pub slot: i32, pub writable: bool }
 #[derive(Copy)]
 pub struct Value { pub ty: i32, pub id: i32 }
+#[derive(Copy)]
+pub struct Record {
+    pub name: i32, pub source_module: i32, pub first_field: i32, pub field_count: i32,
+    pub start: i32, pub end: i32
+}
+#[derive(Copy)]
+pub struct Field { pub name: i32, pub ty: i32 }
 
 pub struct Compiler {
     pub source: ByteBuf, pub source_path: ByteBuf, pub literals: ByteBuf, pub sources: Vec<SourceModule>, pub imports: Vec<Import>,
     pub tokens: Vec<Token>, pub params: Vec<Parameter>, pub functions: Vec<Function>,
+    pub records: Vec<Record>, pub fields: Vec<Field>,
     pub vars: Vec<Binding>, pub call_sites: i32,
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
     pub cursor: i32, pub current: i32, pub main: i32,
@@ -46,6 +54,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf) -> Compiler {
     return Compiler {
         source: source, source_path: source_path, literals: bytes_new(), sources: new::<SourceModule>(), imports: new::<Import>(),
         tokens: new::<Token>(), params: new::<Parameter>(),
+        records: new::<Record>(), fields: new::<Field>(),
         functions: new::<Function>(), vars: new::<Binding>(), call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
@@ -134,8 +143,31 @@ pub fn code(bytes: &[u8], index: i32) -> i32 {
 }
 
 pub fn byte_array(length: i32) -> i32 { return 1024 + length; }
-pub fn is_byte_array(ty: i32) -> bool { return ty >= 1024; }
+pub fn is_byte_array(ty: i32) -> bool { return ty >= 1024 && ty <= 2048; }
 pub fn byte_count(ty: i32) -> i32 { return ty - 1024; }
+pub fn record_type(index: i32) -> i32 { return 2049 + index; }
+pub fn is_record(ty: i32) -> bool { return ty >= 2049; }
+pub fn record_index(ty: i32) -> i32 { return ty - 2049; }
+
+pub fn record(c: &Compiler, source_module: i32, name: i32) -> i32 {
+    let mut index = 0;
+    while index < len(&*c.records) {
+        let row = c.records[index];
+        if row.source_module == source_module && same_name(&*c, row.name, name) { return index; }
+        index = index + 1;
+    }
+    return -1;
+}
+
+pub fn record_field(c: &Compiler, row: Record, name: i32) -> i32 {
+    let mut index = 0;
+    while index < row.field_count {
+        let field = c.fields[row.first_field + index];
+        if same_name(&*c, field.name, name) { return index; }
+        index = index + 1;
+    }
+    return -1;
+}
 
 pub fn function(c: &Compiler, source_module: i32, name: i32) -> i32 {
     let mut i = 0;
