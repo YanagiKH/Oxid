@@ -21,7 +21,6 @@ struct TerminationWaitFrame {
 }
 pub(super) const TERMINATION_WAIT_BYTES: usize = size_of::<TerminationWaitFrame>();
 
-
 // Conservative named C call roles for the one active synchronous file attempt.
 // The caller's result and resource payload storage are already paid separately.
 #[allow(dead_code)]
@@ -326,8 +325,16 @@ pub(super) fn operation<W: PlanWitness>(
         );
         use crate::frontend::builtin_catalog::termination::Function as Process;
         match process {
-            Process::Enable => writeln!(out, "  %{name}_process_status = call i32 @__oxid_enable_termination_notifications()").unwrap(),
-            Process::Requested => writeln!(out, "  %{name}_process_status = call i32 @__oxid_termination_requested()").unwrap(),
+            Process::Enable => writeln!(
+                out,
+                "  %{name}_process_status = call i32 @__oxid_enable_termination_notifications()"
+            )
+            .unwrap(),
+            Process::Requested => writeln!(
+                out,
+                "  %{name}_process_status = call i32 @__oxid_termination_requested()"
+            )
+            .unwrap(),
             Process::Wait => {
                 writeln!(out, "  %{name}_timeout = load i32, ptr %s0, align 4").unwrap();
                 writeln!(out, "  %{name}_process_status = call i32 @__oxid_wait_for_termination(i32 %{name}_timeout)").unwrap();

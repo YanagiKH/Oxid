@@ -373,7 +373,9 @@ impl Function {
             New | Take => ValueTy::Owned(AggregateTy::ByteBuf),
             Len | Capacity | ArgCount => ValueTy::Scalar(Ty::I32),
             Truncate => ValueTy::Scalar(Ty::Unit),
-            EnableTermination | TerminationRequested | WaitForTermination => ValueTy::Scalar(Ty::Bool),
+            EnableTermination | TerminationRequested | WaitForTermination => {
+                ValueTy::Scalar(Ty::Bool)
+            }
             _ => ValueTy::Owned(AggregateTy::Enum(enumeration(
                 self.result_enum().expect("enum result"),
             ))),
@@ -511,7 +513,10 @@ impl Inventory {
         (Self((bits >> 4).to_le_bytes()), (bits & 15) as u8)
     }
     pub fn contains(self, item: Item) -> bool {
-        if matches!(item, Item::EnableTermination | Item::TerminationRequested | Item::WaitForTermination) {
+        if matches!(
+            item,
+            Item::EnableTermination | Item::TerminationRequested | Item::WaitForTermination
+        ) {
             return false;
         }
         self.bits() & (1u64 << item.inventory_bit()) != 0
@@ -590,7 +595,10 @@ impl Inventory {
         super::vector::Item::ALL.get(cursor.offset).copied()
     }
     pub fn admit(self, item: Item) -> Self {
-        if matches!(item, Item::EnableTermination | Item::TerminationRequested | Item::WaitForTermination) {
+        if matches!(
+            item,
+            Item::EnableTermination | Item::TerminationRequested | Item::WaitForTermination
+        ) {
             return self;
         }
         let mut bits = self.bits() | (1u64 << item.inventory_bit());

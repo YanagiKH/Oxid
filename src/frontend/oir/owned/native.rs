@@ -3927,7 +3927,8 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
         out.write_str("@__oxid_process_termination = constant i1 true\ndeclare i32 @__oxid_termination_scope_start()\ndeclare void @__oxid_termination_scope_end()\ndeclare i32 @__oxid_enable_termination_notifications()\ndeclare i32 @__oxid_termination_requested()\n").unwrap();
     }
     if plan.has_termination_wait() {
-        out.write_str("declare i32 @__oxid_wait_for_termination(i32)\n").unwrap();
+        out.write_str("declare i32 @__oxid_wait_for_termination(i32)\n")
+            .unwrap();
     }
     if plan.uses_owned_vectors() {
         let elements = plan

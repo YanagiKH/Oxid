@@ -86,7 +86,10 @@ impl Fixture {
                 "use std::process::termination_requested;",
                 "use std::process::wait_for_termination;",
             )
-            .replace("while !termination_requested(){}", "if !wait_for_termination(20000){return 85;}");
+            .replace(
+                "while !termination_requested(){}",
+                "if !wait_for_termination(20000){return 85;}",
+            );
         fs::write(fixture.0.join("src/main.ox"), source).unwrap();
         fixture
     }

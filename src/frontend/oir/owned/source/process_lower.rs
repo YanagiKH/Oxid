@@ -38,10 +38,19 @@ pub(super) fn function(
     let mut parameters = exact(counts.parameters)?;
     let mut locals = exact(counts.locals)?;
     if operation == termination::Function::Wait {
-        budget::append(&mut parameters, ParameterBinding::Scalar(LocalId(0)), counts.parameters, span)?;
+        budget::append(
+            &mut parameters,
+            ParameterBinding::Scalar(LocalId(0)),
+            counts.parameters,
+            span,
+        )?;
         budget::append(
             &mut locals,
-            LocalDecl { ty: hir::Ty::I32, kind: LocalKind::Parameter, span },
+            LocalDecl {
+                ty: hir::Ty::I32,
+                kind: LocalKind::Parameter,
+                span,
+            },
             counts.locals,
             span,
         )?;

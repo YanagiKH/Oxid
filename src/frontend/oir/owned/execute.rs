@@ -5128,8 +5128,10 @@ fn execute_plan_policy_with_termination<V: StoredValue, W: PlanWitness>(
         )?,
     )?;
     if plan.has_termination_wait() {
-        machine.header_bytes =
-            plan::add(machine.header_bytes, crate::program_termination::wait_bytes())?;
+        machine.header_bytes = plan::add(
+            machine.header_bytes,
+            crate::program_termination::wait_bytes(),
+        )?;
     }
     let mut termination_scope = None;
     let mut result = (|| {

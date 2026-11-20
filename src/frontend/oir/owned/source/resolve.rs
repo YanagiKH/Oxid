@@ -399,7 +399,11 @@ impl<'src> ResolvedOwnedProgram<'src> {
                         .get(id.0)
                         .ok_or_else(|| invalid_signature_identity(anchor))?;
                     let signature = item.signature();
-                    self.work().debit((4 + signature.parameters().len()) as u64, anchor, "process signature identity")?;
+                    self.work().debit(
+                        (4 + signature.parameters().len()) as u64,
+                        anchor,
+                        "process signature identity",
+                    )?;
                     if actual.params != signature.parameters()
                         || actual.result != signature.result
                         || actual.span != anchor
@@ -1859,14 +1863,24 @@ fn resolve_index_impl(
                     return Err(vec![*invalid_signature_identity(anchor)]);
                 }
                 let signature = item.signature();
-                work.debit((1 + signature.parameters().len()) as u64, anchor, "process signature construction")
-                    .map_err(|error| vec![*error])?;
+                work.debit(
+                    (1 + signature.parameters().len()) as u64,
+                    anchor,
+                    "process signature construction",
+                )
+                .map_err(|error| vec![*error])?;
                 let mut params = Vec::new();
                 if !signature.parameters().is_empty() {
-                    let storage = paid.as_deref_mut()
+                    let storage = paid
+                        .as_deref_mut()
                         .ok_or_else(|| vec![*invalid_signature_identity(anchor)])?;
                     params = storage
-                        .reserve(allocator, Kind::Parameters, signature.parameters().len(), anchor)
+                        .reserve(
+                            allocator,
+                            Kind::Parameters,
+                            signature.parameters().len(),
+                            anchor,
+                        )
                         .map_err(|error| vec![*error])?;
                     for parameter in signature.parameters() {
                         storage::room(&params, params.capacity(), true, anchor)
