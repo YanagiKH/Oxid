@@ -61,7 +61,7 @@ with open("training.oxds", "wb") as output:
 .oxid/bin/streaming-training training.oxds 30 4
 ```
 
-Each epoch reads selected rows in file order. To shuffle them for training, pass a seed:
+Each epoch reads selected rows in file order. Pass a seed to shuffle them for training.
 
 ```sh
 .oxid/bin/streaming-training training.oxds 30 4 --shuffle 42

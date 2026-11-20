@@ -52,7 +52,7 @@ For releases with `.sigstore.json` bundles, install a recent GitHub CLI and requ
 OXID_VERSION="$tag" OXID_VERIFY_SIGNATURE=1 sh install-oxid.sh
 ```
 
-On Windows, set `$tag` to the release tag and run:
+On Windows, set `$tag` to the release tag and run the installer.
 
 ```powershell
 $env:OXID_VERIFY_SIGNATURE = "1"
@@ -61,7 +61,7 @@ $env:OXID_VERIFY_SIGNATURE = "1"
 
 The installers verify the archive against the signature from Oxid's release workflow and the selected tag. To verify an offline archive, keep its `.sigstore.json` beside it and set `OXID_TRUSTED_ROOT` to a trusted root file obtained separately.
 
-To verify an archive manually, download the signature bundle and run the following with the selected release tag:
+To verify an archive manually, download the signature bundle and pass the selected release tag.
 
 ```sh
 gh attestation verify oxid-linux-aarch64.tar.gz \
