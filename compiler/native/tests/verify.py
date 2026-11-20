@@ -62,6 +62,7 @@ RUNTIME_EXPECTATIONS = {
                            "checked i64 to i32 conversion out of range"),
     "i64 byte conversion": (b"byte conversion out of range\n", "E0610",
                             "checked i64 to u8 conversion out of range"),
+    "byte index": (b"array index out of bounds\n", "E0606", "array index out of bounds"),
 }
 NATIVE_DEPTH_ERROR = b"call depth limit exceeded\n"
 
@@ -129,6 +130,7 @@ def check_reference_behavior(case: dict, result) -> None:
         check_native_behavior(case, result)
     elif case["kind"] == "runtime":
         _, code, message = runtime_expectation(case)
+        stage = "oir-owned-run" if case["error"] == "byte index" else "oir-run"
         diagnostic, summary = reference_runtime_records(result)
         require(type(diagnostic) is dict and set(diagnostic) == {
             "schema_version", "edition", "kind", "severity", "code", "stage", "message",
@@ -136,7 +138,7 @@ def check_reference_behavior(case: dict, result) -> None:
         } and type(diagnostic["schema_version"]) is int and diagnostic["schema_version"] == 1
                 and diagnostic["edition"] == "typed-preview" and diagnostic["kind"] == "diagnostic"
                 and diagnostic["severity"] == "error" and diagnostic["code"] == code
-                and diagnostic["stage"] == "oir-run" and diagnostic["message"] == message
+                and diagnostic["stage"] == stage and diagnostic["message"] == message
                 and reference_primary(diagnostic["primary"])
                 and diagnostic["secondary"] == [] and diagnostic["notes"] == [],
                 case["name"] + ": wrong reference runtime diagnostic code, stage or family")
@@ -220,14 +222,23 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     require(large_result.returncode == 68 and large_result.stdout == b"", "input byte limit was not enforced")
     rows.append(record(evidence, "input-limit", large_command, large_result))
 
-    # The parameter and 4095 locals fill one function's slot budget. Keep
-    # the recursive call non-tail so the unoptimized program retains frames.
+    # Keep each recursive call non-tail so -O0 retains all admitted frames.
+    # One i32 parameter plus 4095 scalar locals fills the scalar slot budget.
+    frame_cases = []
     for ty, suffix, prefix in (("i32", "", "full-frames"), ("i64", "i64", "full-i64-frames")):
         locals_source = "".join(f"let v{index}=0{suffix};" for index in range(4095))
         descend = (f"fn descend(n:i32)->{ty}{{" + locals_source
                    + f"if n==0{{return v4094;}}return 1{suffix}+descend(n-1);}}")
+        frame_cases.append((ty, prefix, descend, f"descend(126)-84{suffix}"))
+    # One parameter, 31 1024-byte arrays and one 1016-byte array use 4096 cells.
+    arrays = "".join(f'let v{index}=b"' + "*" + "A" * (length - 1) + '";'
+                     for index, length in enumerate([1024] * 31 + [1016]))
+    byte_frames = ("fn descend(n:i32)->u8{" + arrays
+                   + "if n==0{return v31[0];}return 1u8+descend(n-1);}")
+    frame_cases.append(("u8", "full-byte-array-frames", byte_frames, "descend(126)-126u8"))
+    for ty, prefix, descend, admitted in frame_cases:
         for name, entry, expected in (
-            (prefix, f"descend(126)-84{suffix}", (0, b"42\n", b"")),
+            (prefix, admitted, (0, b"42\n", b"")),
             (prefix + "-refused", "descend(127)", (1, b"", NATIVE_DEPTH_ERROR)),
         ):
             source = evidence / f"{name}.ox"
@@ -245,6 +256,18 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
                 rows.append({**row, "build": receipt})
                 require((result.returncode, result.stdout, result.stderr) == expected,
                         f'{name}: wrong result at {receipt["profile"]}')
+    for name, code in (
+        ("byte-array-frame-limit", byte_frames.replace("if n==0", "let extra=0;if n==0")
+         + "fn main()->u8{return descend(0);}"),
+        ("byte-literal-limit", 'fn main()->i32{let bytes=b"' + 'A' * 1025 + '";return 0;}'),
+    ):
+        source = evidence / (name + ".ox")
+        source.write_text(code, encoding="ascii")
+        command = [str(compiler), str(source)]
+        outcome = run(command, evidence, timeout)
+        require((outcome.returncode, outcome.stdout, outcome.stderr) == (68, b"", b""),
+                name + ": oversized input did not fail before emitting LLVM")
+        rows.append(record(evidence, name, command, outcome))
     return rows
 
 

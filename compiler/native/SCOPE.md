@@ -26,13 +26,17 @@ cannot shadow bindings or functions. Integer arithmetic is checked; division
 and remainder reject zero and signed MIN/-1 before the LLVM operation. Use
 decimal literals such as `255u8` and `9007199254740993i64`. Convert local
 bindings with `.to_i64()`, `.to_i32_checked()` or `.to_u8_checked()`.
-A result-mode `main` has no arguments and prints its result, then exits 0.
+A result-mode `main` has no arguments and prints its scalar result, then exits 0.
+
+Use `b"..."` for fixed byte arrays such as `let data: [u8; 3] = b"abc";`.
+Literals support byte and Unicode escapes. Call `data.len()` for the length
+and read a byte with `data[index]`. Indices are checked before reading.
 
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-user records and enums, references, generics, strings, arrays,
+user records and enums, references, generics, text strings, non-byte arrays,
 I/O in compiled input and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 

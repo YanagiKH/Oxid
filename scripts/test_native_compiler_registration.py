@@ -41,6 +41,13 @@ REJECT_NAMES = {
     "i64-mixed-comparison",
     "i64-invalid-suffix",
     "i64-widen-wrong-type",
+    "bytes-invalid-escape",
+    "bytes-invalid-hex",
+    "bytes-invalid-unicode-surrogate",
+    "bytes-invalid-unicode-scalar",
+    "bytes-invalid-literal-break",
+    "bytes-wrong-length",
+    "bytes-wrong-index-type",
 }
 
 
@@ -103,14 +110,14 @@ class NativeCompilerRegistration(unittest.TestCase):
         self.assertEqual(manifest["build"]["entry-mode"], "process")
         self.assertEqual(manifest["execution"]["policy"], "hosted")
 
-    def test_all_89_subject_cases_and_all_31_rejections_remain_active_data(self):
+    def test_all_105_subject_cases_and_all_38_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 89)
+        self.assertEqual(len(cases), 105)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 29, "reject": 31, "runtime": 29})
+                         {"value": 35, "reject": 38, "runtime": 32})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})

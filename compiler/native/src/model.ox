@@ -8,7 +8,10 @@ use alloc::vec::len;
 use alloc::vec::try_push;
 
 #[derive(Copy)]
-pub struct Token { pub kind: i32, pub start: i32, pub end: i32, pub value: i64 }
+pub struct Token {
+    pub kind: i32, pub start: i32, pub end: i32, pub value: i64,
+    pub decoded_start: i32, pub decoded_length: i32
+}
 #[derive(Copy)]
 pub struct Parameter { pub name: i32, pub ty: i32 }
 #[derive(Copy)]
@@ -30,7 +33,7 @@ pub struct Binding { pub name: i32, pub ty: i32, pub slot: i32, pub writable: bo
 pub struct Value { pub ty: i32, pub id: i32 }
 
 pub struct Compiler {
-    pub source: ByteBuf, pub source_path: ByteBuf, pub sources: Vec<SourceModule>, pub imports: Vec<Import>,
+    pub source: ByteBuf, pub source_path: ByteBuf, pub literals: ByteBuf, pub sources: Vec<SourceModule>, pub imports: Vec<Import>,
     pub tokens: Vec<Token>, pub params: Vec<Parameter>, pub functions: Vec<Function>,
     pub vars: Vec<Binding>, pub call_sites: i32,
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
@@ -41,7 +44,7 @@ pub struct Compiler {
 
 pub fn new_compiler(source: ByteBuf, source_path: ByteBuf) -> Compiler {
     return Compiler {
-        source: source, source_path: source_path, sources: new::<SourceModule>(), imports: new::<Import>(),
+        source: source, source_path: source_path, literals: bytes_new(), sources: new::<SourceModule>(), imports: new::<Import>(),
         tokens: new::<Token>(), params: new::<Parameter>(),
         functions: new::<Function>(), vars: new::<Binding>(), call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
@@ -62,7 +65,7 @@ pub fn grown(status: GrowStatus) -> bool {
 pub fn token(c: &Compiler, index: i32) -> Token {
     if index < 0 || index >= len(&*c.tokens) {
         let end = bytes_len(&*c.source);
-        return Token { kind: 0, start: end, end: end, value: 0i64 };
+        return Token { kind: 0, start: end, end: end, value: 0i64, decoded_start: 0, decoded_length: 0 };
     }
     return c.tokens[index];
 }
@@ -129,6 +132,10 @@ pub fn code(bytes: &[u8], index: i32) -> i32 {
     let selected = bytes[index];
     return selected.to_i32();
 }
+
+pub fn byte_array(length: i32) -> i32 { return 1024 + length; }
+pub fn is_byte_array(ty: i32) -> bool { return ty >= 1024; }
+pub fn byte_count(ty: i32) -> i32 { return ty - 1024; }
 
 pub fn function(c: &Compiler, source_module: i32, name: i32) -> i32 {
     let mut i = 0;

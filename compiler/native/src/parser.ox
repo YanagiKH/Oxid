@@ -11,6 +11,8 @@ use crate::model::function;
 use crate::model::function_binding;
 use crate::model::function_visible;
 use crate::model::path_module;
+use crate::model::is_byte_array;
+use crate::model::byte_count;
 use crate::model::word;
 use crate::headers::ty as parse_type;
 use crate::headers::path_name;
@@ -99,6 +101,39 @@ fn convert_binding(c: &mut Compiler, value: Value) -> Value {
     fail(&mut *c);
     return invalid();
 }
+fn array_length(c: &mut Compiler, ty: i32) -> Value {
+    let len_name = b"len";
+    expect(&mut *c, 43);
+    let method = token(&*c, c.cursor);
+    expect(&mut *c, 1); expect(&mut *c, 20); expect(&mut *c, 21);
+    if !word(&*c.source, method.start, method.end, &len_name) { fail(&mut *c); return invalid(); }
+    let length = byte_count(ty);
+    return crate::emit::constant(&mut *c, 1, length.to_i64());
+}
+fn named_value(c: &mut Compiler, depth: i32) -> Value {
+    let name = c.cursor;
+    c.cursor = c.cursor + 1;
+    if kind(&*c) == 20 {
+        let owner = c.functions[c.current];
+        let target = function_binding(&*c, owner.source_module, name);
+        return called(&mut *c, target, depth);
+    }
+    let position = local(&*c, name);
+    if position < 0 { fail(&mut *c); return invalid(); }
+    let binding = c.vars[position];
+    if kind(&*c) == 51 {
+        if !is_byte_array(binding.ty) { fail(&mut *c); return invalid(); }
+        expect(&mut *c, 51);
+        let index = expression(&mut *c, 1, depth + 1);
+        expect(&mut *c, 52);
+        if index.ty != 1 { fail(&mut *c); return invalid(); }
+        return crate::emit::byte_index(&mut *c, binding, index);
+    }
+    if is_byte_array(binding.ty) && kind(&*c) == 43 { return array_length(&mut *c, binding.ty); }
+    let value = crate::emit::load(&mut *c, binding.slot, binding.ty);
+    if kind(&*c) == 43 { return convert_binding(&mut *c, value); }
+    return value;
+}
 fn prefix(c: &mut Compiler, depth: i32) -> Value {
     if c.error != 0 { return invalid(); }
     if depth > 64 { c.error = 68; return invalid(); }
@@ -136,6 +171,11 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
         c.cursor = c.cursor + 1;
         return crate::emit::constant(&mut *c, 4, t.value);
     }
+    if t.kind == 50 {
+        let index = c.cursor;
+        c.cursor = c.cursor + 1;
+        return crate::emit::byte_literal(&mut *c, index, t.decoded_length);
+    }
     if t.kind == 12 || t.kind == 13 {
         c.cursor = c.cursor + 1;
         let mut boolean_literal = 0i64;
@@ -153,21 +193,7 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
         return parenthesized;
     }
     if t.kind == 44 { return qualified_call(&mut *c, depth); }
-    if t.kind == 1 {
-        let name = c.cursor;
-        c.cursor = c.cursor + 1;
-        if kind(&*c) == 20 {
-            let owner = c.functions[c.current];
-            let target = function_binding(&*c, owner.source_module, name);
-            return called(&mut *c, target, depth);
-        }
-        let position = local(&*c, name);
-        if position < 0 { fail(&mut *c); return invalid(); }
-        let binding = c.vars[position];
-        let value = crate::emit::load(&mut *c, binding.slot, binding.ty);
-        if kind(&*c) == 43 { return convert_binding(&mut *c, value); }
-        return value;
-    }
+    if t.kind == 1 { return named_value(&mut *c, depth); }
     fail(&mut *c); return invalid();
 }
 fn short_circuit(c: &mut Compiler, op: i32, left: Value, rank: i32, depth: i32) -> Value {
@@ -204,7 +230,7 @@ pub fn expression(c: &mut Compiler, minimum: i32, depth: i32) -> Value {
             left = short_circuit(&mut *c, op, left, rank, depth);
         } else {
             let right = expression(&mut *c, rank + 1, depth + 1);
-            if left.ty != right.ty || left.ty == 3 || left.ty == 0 { fail(&mut *c); return invalid(); }
+            if left.ty != right.ty || left.ty == 3 || left.ty == 0 || is_byte_array(left.ty) { fail(&mut *c); return invalid(); }
             if op != 35 && op != 36 && left.ty != 1 && left.ty != 4 && left.ty != 5 { fail(&mut *c); return invalid(); }
             if left.ty == 4 { left = crate::emit::byte_binary(&mut *c, op, left, right); }
             else { left = crate::emit::binary(&mut *c, op, left, right); }
