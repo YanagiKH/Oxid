@@ -6,19 +6,22 @@ use super::{experimental, Ty};
 pub(in crate::frontend) enum Function {
     Enable,
     Requested,
+    Wait,
 }
 impl Function {
-    pub const ALL: [Self; 2] = [Self::Enable, Self::Requested];
+    pub const ALL: [Self; 3] = [Self::Enable, Self::Requested, Self::Wait];
     pub fn name(self) -> &'static str {
         match self {
             Self::Enable => "enable_termination_notifications",
             Self::Requested => "termination_requested",
+            Self::Wait => "wait_for_termination",
         }
     }
     pub fn named(name: &str) -> Option<Self> {
         match name {
             "enable_termination_notifications" => Some(Self::Enable),
             "termination_requested" => Some(Self::Requested),
+            "wait_for_termination" => Some(Self::Wait),
             _ => None,
         }
     }
@@ -29,6 +32,7 @@ impl Function {
         match self {
             Self::Enable => experimental::Function::EnableTermination,
             Self::Requested => experimental::Function::TerminationRequested,
+            Self::Wait => experimental::Function::WaitForTermination,
         }
     }
     pub fn signature(self) -> experimental::Signature {
@@ -40,10 +44,11 @@ impl Function {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::frontend) struct Inventory(u8);
 impl Inventory {
-    // Only the enclosing sealed packed inventory can construct these two bits.
-    pub(super) fn from_two_bits(bits: u8) -> Self {
-        debug_assert!(bits & !3 == 0);
-        Self(bits & 3)
+    pub(super) const MASK: u8 = (1 << Function::ALL.len()) - 1;
+    // Only the enclosing sealed packed inventory can construct these bits.
+    pub(super) fn from_bits(bits: u8) -> Self {
+        debug_assert!(bits & !Self::MASK == 0);
+        Self(bits & Self::MASK)
     }
     pub fn contains(self, item: Function) -> bool {
         self.0 & (1 << item as u8) != 0
@@ -55,21 +60,16 @@ impl Inventory {
         self.0 == 0
     }
     pub fn rank(self, item: Function) -> Option<usize> {
-        self.contains(item).then_some(match item {
-            Function::Enable => 0,
-            Function::Requested => usize::from(self.contains(Function::Enable)),
+        self.contains(item).then(|| {
+            let lower = (1u8 << item as u8) - 1;
+            (self.0 & lower).count_ones() as usize
         })
     }
     pub fn at(self, rank: usize) -> Option<Function> {
-        match (
-            self.contains(Function::Enable),
-            self.contains(Function::Requested),
-            rank,
-        ) {
-            (true, _, 0) => Some(Function::Enable),
-            (false, true, 0) | (true, true, 1) => Some(Function::Requested),
-            _ => None,
-        }
+        Function::ALL
+            .into_iter()
+            .filter(|item| self.contains(*item))
+            .nth(rank)
     }
 }
 
@@ -115,17 +115,17 @@ struct CompilerCarriers {
     catalog_inventory: [super::BuiltinSet; 4],
     inventory: [Inventory; 6],
     selected: [Option<Function>; 8],
-    endpoint_catalog: std::array::IntoIter<Function, 2>,
-    hir_catalog: std::array::IntoIter<Function, 2>,
-    resolver_catalog: std::array::IntoIter<Function, 2>,
-    signature_check_catalog: std::array::IntoIter<Function, 2>,
-    raw_budget_catalog: std::array::IntoIter<Function, 2>,
-    raw_lower_catalog: std::array::IntoIter<Function, 2>,
-    association_catalog: std::array::IntoIter<Function, 2>,
-    descriptor_check_catalog: std::array::IntoIter<Function, 2>,
-    source_entry_catalog: std::array::IntoIter<Function, 2>,
-    native_entry_catalog: std::array::IntoIter<Function, 2>,
-    vm_entry_catalog: std::array::IntoIter<experimental::Function, 2>,
+    endpoint_catalog: std::array::IntoIter<Function, 3>,
+    hir_catalog: std::array::IntoIter<Function, 3>,
+    resolver_catalog: std::array::IntoIter<Function, 3>,
+    signature_check_catalog: std::array::IntoIter<Function, 3>,
+    raw_budget_catalog: std::array::IntoIter<Function, 3>,
+    raw_lower_catalog: std::array::IntoIter<Function, 3>,
+    association_catalog: std::array::IntoIter<Function, 3>,
+    descriptor_check_catalog: std::array::IntoIter<Function, 3>,
+    source_entry_catalog: std::array::IntoIter<Function, 3>,
+    native_entry_catalog: std::array::IntoIter<Function, 3>,
+    vm_entry_catalog: std::array::IntoIter<experimental::Function, 3>,
     path_iterator: std::array::IntoIter<&'static str, 3>,
     path_zip: std::iter::Zip<
         std::array::IntoIter<&'static str, 3>,
@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<Inventory>(), 1);
     }
     #[test]
-    fn process_items_are_a_separate_two_entry_authority() {
+    fn process_items_are_a_separate_authority() {
         assert_eq!(experimental::Item::ALL.len(), 28);
         assert_eq!(experimental::Function::ALL.len(), 20);
         let empty = BuiltinSet::None;

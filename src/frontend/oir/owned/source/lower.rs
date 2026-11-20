@@ -3228,7 +3228,7 @@ pub(super) fn lower_with_limits(
                 require(function.id.0 == functions.len(), function.span)?;
                 bytes = budget::add(
                     bytes,
-                    budget::function_bytes(super::process_lower::counts())?,
+                    budget::function_bytes(super::process_lower::counts(item))?,
                 )?;
                 budget::append(
                     &mut functions,

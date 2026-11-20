@@ -28,6 +28,65 @@ REJECT_NAMES = {
     "function-shadow", "call-type", "call-arity", "condition-type", "break-outside", "missing-return",
     "positive-minimum-magnitude", "missing-main", "main-argument",
     "unsupported-array", "unsupported-import", "unterminated-comment",
+    "byte-literal-too-large",
+    "byte-mixed-arithmetic",
+    "byte-negation",
+    "byte-widen-wrong-type",
+    "byte-narrow-bool",
+    "byte-invalid-suffix",
+    "byte-conversion-argument",
+    "i64-missing-suffix",
+    "i64-literal-too-high",
+    "i64-literal-too-low",
+    "i64-mixed-comparison",
+    "i64-invalid-suffix",
+    "i64-widen-wrong-type",
+    "bytes-invalid-escape",
+    "bytes-invalid-hex",
+    "bytes-invalid-unicode-surrogate",
+    "bytes-invalid-unicode-scalar",
+    "bytes-invalid-literal-break",
+    "bytes-wrong-length",
+    "bytes-wrong-index-type",
+    "bytes-immutable-write",
+    "bytes-wrong-write-value",
+    "bytes-wrong-write-index",
+    "bytes-list-wrong-type",
+    "bytes-untyped-empty-list",
+    "record-duplicate-name",
+    "record-duplicate-field",
+    "record-duplicate-initializer",
+    "record-missing-initializer",
+    "record-unknown-field",
+    "record-wrong-field-type",
+    "record-immutable-field-write",
+    "record-wrong-field-write-type",
+    "record-distinct-nominal-types",
+    "record-move-only-not-copied",
+    "record-public-signature-with-private-type",
+    "record-aggregate-entry-result",
+    "range-index-is-immutable",
+    "range-index-not-visible-after-loop",
+    "range-mismatched-bounds",
+    "range-noninteger-bounds",
+    "range-inclusive-is-unsupported",
+    "range-index-cannot-shadow-binding",
+    "character-empty",
+    "character-multiple-scalars",
+    "character-raw-control",
+    "character-bad-hex",
+    "character-surrogate",
+    "character-too-large",
+    "character-no-scalar-digits",
+    "character-bad-escape",
+    "character-arithmetic",
+    "character-no-implicit-cast",
+    "character-no-numeric-range",
+    "utf8-non-ascii-identifier",
+    "u32-literal-range",
+    "u32-negative-literal",
+    "u32-mixed-operands",
+    "character-cast-from-bool",
 }
 
 
@@ -90,14 +149,14 @@ class NativeCompilerRegistration(unittest.TestCase):
         self.assertEqual(manifest["build"]["entry-mode"], "process")
         self.assertEqual(manifest["execution"]["policy"], "hosted")
 
-    def test_all_46_subject_cases_and_all_18_rejections_remain_active_data(self):
+    def test_all_207_subject_cases_and_all_77_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 46)
+        self.assertEqual(len(cases), 207)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 18, "reject": 18, "runtime": 10})
+                         {"value": 78, "reject": 77, "runtime": 52})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})

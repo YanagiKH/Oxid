@@ -132,3 +132,81 @@ fn compatible_registry_version_updates_explicitly_and_runs_offline() {
     );
     assert_eq!(fs::read_to_string(&lock).unwrap(), updated);
 }
+
+#[test]
+fn yanked_versions_leave_existing_locks_and_artifacts_intact() {
+    let project = Fixture::new();
+    let root = &project.0;
+    let registry = root.join("registry");
+    success(root, &["registry", "init", registry.to_str().unwrap()]);
+    let uri = format!("file://{}", registry.display());
+    publish(root, &uri, "1.2.0", 42);
+    publish(root, &uri, "1.3.0", 99);
+    let release = registry.join("packages/numbers/1.3.0");
+    let record = fs::read(release.join("release.toml")).unwrap();
+    let artifact = fs::read(release.join("artifact.tar")).unwrap();
+    let manifest = format!("[project]\nname=\"app\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n[build]\nentry-mode=\"result\"\n[dependencies]\nnumbers={{registry=\"{uri}\",package=\"numbers\",version=\"^1.2.0\"}}\n");
+    for name in ["locked", "new", "exact"] {
+        let app = root.join(name);
+        fs::create_dir_all(app.join("src")).unwrap();
+        let selected = if name == "exact" {
+            manifest.replace("^1.2.0", "1.3.0")
+        } else {
+            manifest.clone()
+        };
+        fs::write(app.join("oxid.toml"), selected).unwrap();
+        fs::write(
+            app.join("src/main.ox"),
+            "fn main()->i32 { return crate::numbers::value(); }\n",
+        )
+        .unwrap();
+    }
+    let locked = root.join("locked");
+    success(&locked, &["lock"]);
+    let lock = locked.join("oxid.lock");
+    let initial = fs::read(&lock).unwrap();
+    assert_eq!(success(&locked, &["run", "--frozen"]).stdout, b"99\n");
+
+    for _ in 0..2 {
+        success(root, &["registry", "yank", &uri, "numbers", "1.3.0"]);
+    }
+    assert_eq!(success(&locked, &["run", "--frozen"]).stdout, b"99\n");
+    assert_eq!(fs::read(&lock).unwrap(), initial);
+    let fresh = root.join("new");
+    success(&fresh, &["lock"]);
+    assert_eq!(success(&fresh, &["run", "--frozen"]).stdout, b"42\n");
+    let exact = root.join("exact");
+    success(&exact, &["lock"]);
+    assert_eq!(success(&exact, &["run", "--frozen"]).stdout, b"99\n");
+    success(&locked, &["lock", "--update"]);
+    assert_eq!(success(&locked, &["run", "--frozen"]).stdout, b"42\n");
+    let updated = fs::read(&lock).unwrap();
+    assert_ne!(updated, initial);
+
+    success(root, &["registry", "yank", &uri, "numbers", "1.2.0"]);
+    let failed = oxid(&locked, &["lock", "--update"]);
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("no compatible registry release"));
+    assert_eq!(fs::read(&lock).unwrap(), updated);
+
+    let marker = registry.join("yanked/numbers/1.3.0");
+    fs::write(&marker, b"invalid").unwrap();
+    for args in [
+        vec!["lock", "--update"],
+        vec!["registry", "unyank", &uri, "numbers", "1.3.0"],
+    ] {
+        let failed = oxid(&locked, &args);
+        assert!(!failed.status.success());
+        assert!(String::from_utf8_lossy(&failed.stderr).contains("marker must be empty"));
+    }
+    assert_eq!(fs::read(&marker).unwrap(), b"invalid");
+    assert_eq!(fs::read(&lock).unwrap(), updated);
+    fs::write(&marker, b"").unwrap();
+    for _ in 0..2 {
+        success(root, &["registry", "unyank", &uri, "numbers", "1.3.0"]);
+    }
+    success(&locked, &["lock", "--update"]);
+    assert_eq!(success(&locked, &["run", "--frozen"]).stdout, b"99\n");
+    assert_eq!(fs::read(release.join("release.toml")).unwrap(), record);
+    assert_eq!(fs::read(release.join("artifact.tar")).unwrap(), artifact);
+}

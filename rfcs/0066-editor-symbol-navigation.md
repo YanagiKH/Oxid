@@ -17,11 +17,11 @@ source declaration, unresolved names and private functions outside the caller's
 scope have no result. Namespace or resource failures remain request errors.
 
 Parameter, ordinary `let` and range-index uses navigate within their source
-function and lexical block. A local is available after its initializer; a range
-index is available only inside its loop body. Comments and unrelated functions
-cannot supply a name match. Definition requests currently cover functions and
-these local bindings. Type names, fields, enum variants, destructuring bindings
-and general reference-place navigation are outside this increment.
+function and lexical block. A local is available after its initializer. A range
+index is available inside its loop body. Type names in annotations, type
+parameters, and record names in constructors link to their declarations.
+Enum variant names in constructors and `match` arms link to the variant inside
+its declaring enum. Navigation also works with visible imports.
 
 Definitions use UTF-16 ranges from the current buffers. Invalid positions and
 unsynchronized documents fail the request. A request retains one source session

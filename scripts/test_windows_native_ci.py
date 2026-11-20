@@ -449,10 +449,11 @@ class WindowsNativeCiTests(unittest.TestCase):
         ])
 
     def test_verifier_requires_both_compilers_toolchain_and_evidence_directory(self):
+        both = 'target/debug/oxid.exe target/release/oxid.exe'
         self.reject_mutations([
-            ('missing-debug-compiler', 'target/debug/oxid.exe ', ''),
-            ('missing-release-compiler', 'target/release/oxid.exe ', ''),
-            ('repeated-debug-compiler', 'target/release/oxid.exe', 'target/debug/oxid.exe'),
+            ('missing-debug-compiler', both, 'target/release/oxid.exe'),
+            ('missing-release-compiler', both, 'target/debug/oxid.exe'),
+            ('repeated-debug-compiler', both, 'target/debug/oxid.exe target/debug/oxid.exe'),
             ('wrong-verifier', 'scripts/verify_windows_native.py', 'scripts/verify_repo.py'),
             ('comment-verifier', 'python -B scripts/verify_windows_native.py', '# python -B scripts/verify_windows_native.py'),
             ('wrong-toolchain-argument', '--llvm-bin "$env:OXID_LLVM_BIN"', '--llvm-bin "missing-tools"'),

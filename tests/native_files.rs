@@ -334,10 +334,94 @@ fn main()->i32 {
     }
 }
 "#;
-const TRANSFERRED_BYTES: [u8; 6] = [0, 42, 13, 10, 26, 255];
+const FILE_COPY: &str = r#"
+use crate::file_io::copy;
+use crate::file_io::CopyResult;
+use std::fs::File;
+use std::fs::create;
+use std::fs::open_read;
+use std::fs::OpenResult;
 
-fn file_transfer_project() -> Project {
-    let project = Project::new(FILE_TRANSFER);
+fn matches(result:CopyResult,kind:i32,written:i64)->bool {
+    match result {
+        CopyResult::Complete(count)=>{return kind==0&&written==count;},
+        CopyResult::EmptyBuffer=>{return kind==1;},
+        CopyResult::ReadError(error)=>{return kind==2&&written==error.written&&error.code>0;},
+        CopyResult::WriteError(error)=>{return kind==3&&written==error.written&&error.code>0;},
+        CopyResult::TooLarge(count)=>{return false;},
+        CopyResult::NoProgress(count)=>{return false;},
+    }
+}
+
+fn verify(input:&mut File,output:&mut File)->i32 {
+    let mut buffer=[99u8,99u8,99u8];
+    let empty=copy(&mut *input,&mut *output,&mut buffer[0..0]);
+    if !matches(empty,1,0i64){return 1;}
+    let wrong_direction=copy(&mut *output,&mut *input,&mut buffer);
+    if !matches(wrong_direction,2,0i64){return 2;}
+    let copied=copy(&mut *input,&mut *output,&mut buffer);
+    if !matches(copied,0,7i64){return 3;}
+    let eof=copy(&mut *input,&mut *output,&mut buffer);
+    if !matches(eof,0,0i64){return 4;}
+    return 42;
+}
+
+fn write_error(input_path:&[u8])->i32 {
+    let selected=open_read(&*input_path);
+    match selected {
+        OpenResult::Opened(value)=>{
+            let mut input=value;
+            let reopened=open_read(&*input_path);
+            match reopened {
+                OpenResult::Opened(fresh)=>{
+                    let mut readonly=fresh;
+                    let mut buffer=[0u8,0u8,0u8];
+                    let rejected=copy(&mut input,&mut readonly,&mut buffer);
+                    if matches(rejected,3,0i64){return 42;}
+                    return 5;
+                },
+                OpenResult::Error(code)=>{return 6;},
+                OpenResult::MemoryLimit=>{return 7;},
+                OpenResult::AllocationFailed=>{return 8;},
+            }
+        },
+        OpenResult::Error(code)=>{return 9;},
+        OpenResult::MemoryLimit=>{return 10;},
+        OpenResult::AllocationFailed=>{return 11;},
+    }
+}
+
+fn main()->i32 {
+    let input_path=b"input.dat";
+    let output_path=b"copy.dat";
+    let selected=open_read(&input_path);
+    match selected {
+        OpenResult::Opened(value)=>{
+            let mut input=value;
+            let opened=create(&output_path);
+            match opened {
+                OpenResult::Opened(destination)=>{
+                    let mut output=destination;
+                    let copied=verify(&mut input,&mut output);
+                    if copied!=42{return copied;}
+                    return write_error(&input_path);
+                },
+                OpenResult::Error(code)=>{return 12;},
+                OpenResult::MemoryLimit=>{return 13;},
+                OpenResult::AllocationFailed=>{return 14;},
+            }
+        },
+        OpenResult::Error(code)=>{return 15;},
+        OpenResult::MemoryLimit=>{return 16;},
+        OpenResult::AllocationFailed=>{return 17;},
+    }
+}
+"#;
+const TRANSFERRED_BYTES: [u8; 6] = [0, 42, 13, 10, 26, 255];
+const COPY_BYTES: [u8; 7] = [255, 0, 42, 13, 10, 26, 200];
+
+fn file_io_project(source: &str) -> Project {
+    let project = Project::new(source);
     let library = project.0.join("file_io");
     fs::create_dir_all(library.join("src")).unwrap();
     fs::write(
@@ -359,7 +443,7 @@ fn file_transfer_project() -> Project {
 
 #[test]
 fn file_transfer_library_preserves_the_prefix_and_reports_partial_eof() {
-    let project = file_transfer_project();
+    let project = file_io_project(FILE_TRANSFER);
     success(project.command(&["run"]), b"42\n");
     assert_eq!(
         fs::read(project.0.join("payload.dat")).unwrap(),
@@ -368,34 +452,47 @@ fn file_transfer_library_preserves_the_prefix_and_reports_partial_eof() {
 }
 
 #[test]
+fn file_copy_library_distinguishes_empty_buffers_eof_and_read_write_errors() {
+    let project = file_io_project(FILE_COPY);
+    fs::write(project.0.join("input.dat"), COPY_BYTES).unwrap();
+    success(project.command(&["run"]), b"42\n");
+    for file in ["input.dat", "copy.dat"] {
+        assert_eq!(fs::read(project.0.join(file)).unwrap(), COPY_BYTES);
+    }
+}
+
+#[test]
 #[ignore = "requires Linux x86_64 or ARM64 LLVM 19.1.7 in OXID_LLVM_BIN"]
 fn file_transfer_library_deploys_without_package_sources() {
-    let project = file_transfer_project();
-    for profile in ["dev", "release"] {
-        let built = project.command(&["build", "--profile", profile]);
-        assert!(built.status.success(), "{built:?}");
-        let deployment = project.0.join(profile);
-        fs::create_dir(&deployment).unwrap();
-        fs::copy(project.0.join(".oxid/bin/files"), deployment.join("files")).unwrap();
-    }
-    for directory in ["src", "file_io", ".oxid"] {
-        fs::remove_dir_all(project.0.join(directory)).unwrap();
-    }
-    fs::remove_file(project.0.join("oxid.toml")).unwrap();
-    for profile in ["dev", "release"] {
-        let deployment = project.0.join(profile);
-        success(
-            Command::new(deployment.join("files"))
-                .current_dir(&deployment)
-                .env_clear()
-                .output()
-                .unwrap(),
-            b"42\n",
-        );
-        assert_eq!(
-            fs::read(deployment.join("payload.dat")).unwrap(),
-            TRANSFERRED_BYTES
-        );
+    for (source, output, expected) in [
+        (FILE_TRANSFER, "payload.dat", TRANSFERRED_BYTES.as_slice()),
+        (FILE_COPY, "copy.dat", COPY_BYTES.as_slice()),
+    ] {
+        let project = file_io_project(source);
+        for profile in ["dev", "release"] {
+            let built = project.command(&["build", "--profile", profile]);
+            assert!(built.status.success(), "{built:?}");
+            let deployment = project.0.join(profile);
+            fs::create_dir(&deployment).unwrap();
+            fs::copy(project.0.join(".oxid/bin/files"), deployment.join("files")).unwrap();
+            fs::write(deployment.join("input.dat"), COPY_BYTES).unwrap();
+        }
+        for directory in ["src", "file_io", ".oxid"] {
+            fs::remove_dir_all(project.0.join(directory)).unwrap();
+        }
+        fs::remove_file(project.0.join("oxid.toml")).unwrap();
+        for profile in ["dev", "release"] {
+            let deployment = project.0.join(profile);
+            success(
+                Command::new(deployment.join("files"))
+                    .current_dir(&deployment)
+                    .env_clear()
+                    .output()
+                    .unwrap(),
+                b"42\n",
+            );
+            assert_eq!(fs::read(deployment.join(output)).unwrap(), expected);
+        }
     }
 }
 

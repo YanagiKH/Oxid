@@ -196,6 +196,13 @@ def verify(args):
                     directory = case_directory(check, label+'-'+name, payload)
                     reader_case(check, label+'-'+name, [binary], directory, expected, rows, size, True)
                 if limit == 16384:
+                    seek_label = label + '-seek-open-reader'
+                    directory = case_directory(check, seek_label, oracle.grid(5))
+                    observed = check.command(seek_label, [binary], directory, native=True)
+                    require(observed.stdout == b'', seek_label + ': unexpected reader output')
+                    check.report['cases'].append({'name': seek_label, 'native': True, 'rows': 5,
+                                                  'data_sha256': sha(directory / DATA)})
+                    check.save()
                     directory = case_directory(check, label+'-read-error', None)
                     (directory/DATA).mkdir()
                     reader_case(check, label+'-read-error', [binary], directory, 1021, 0, 2, True)

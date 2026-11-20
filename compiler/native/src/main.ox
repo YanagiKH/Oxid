@@ -10,8 +10,8 @@ fn main() -> i32 {
     let input = crate::delivery::load();
     match input {
         Input::Failed(status) => { return status; },
-        Input::Loaded(source) => {
-            let mut compiler = crate::model::new_compiler(source);
+        Input::Loaded(loaded) => {
+            let mut compiler = loaded;
             crate::lexer::scan(&mut compiler);
             if compiler.error != 0 { return compiler.error; }
             crate::headers::collect(&mut compiler);

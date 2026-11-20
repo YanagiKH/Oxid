@@ -132,10 +132,11 @@ Workspace checks include every member and declared test entry. Dependencies are
 resolved offline; prepare Git dependencies with ordinary project commands first.
 Manifests and lockfiles are read from disk. Diagnostics reflect editor source
 buffers and do not replace `oxid check --frozen` for saved-input verification.
-Cross-file loading follows the ordinary project's host and path rules. Method
-completion, rename and navigation to types or members are not yet provided. See the
-[language server contract](../rfcs/0065-typed-language-server.md) and
-[navigation scope](../rfcs/0066-editor-symbol-navigation.md).
+Use Go to Definition on a named type in an annotation, a record name in a
+constructor, or a variant name in a constructor or `match` arm. Type arguments
+and type parameters also link to their definitions. Navigation follows visible
+imports and reads unsaved source. See the [language server contract](../rfcs/0065-typed-language-server.md)
+and [navigation scope](../rfcs/0066-editor-symbol-navigation.md).
 
 ## Generate API documentation
 
@@ -180,6 +181,10 @@ On Linux and macOS, import `enable_termination_notifications` and
 from `main` to receive SIGINT and SIGTERM. If it returns true, poll
 `termination_requested()` between work items and return from `main` to close
 files and release other owned values.
+Import `wait_for_termination` from `std::process` to wait when there is no work
+ready. Pass a timeout in milliseconds. It returns true after a notification and
+false when the wait expires. A zero timeout polls immediately. Negative timeouts
+and calls before enabling notifications return false immediately.
 
 ## Reading and writing file buffers
 
@@ -189,6 +194,9 @@ fills a mutable byte slice or reports how many bytes it read before EOF.
 `write_all` continues until the slice is written or a write makes no progress.
 Both functions report the number of bytes transferred and the system error code
 if an I/O error occurs.
+`copy` uses a nonempty buffer you provide, reads until EOF and returns the
+number of bytes written. It leaves both files open and reports read or write
+failures with the byte count so far.
 
 ## Build profiles
 
@@ -325,6 +333,17 @@ selects the newest available release at or above 1.2.0 and below 2.0.0. The
 range `^0.2.0` stays within 0.2.x. Run `oxid lock` to cache the selected releases
 and fix their versions. Run `oxid lock --update` to select newer releases.
 Restore the previous manifest and lock to roll back to its cached versions.
+
+Registry maintainers can remove a release from future range selections and
+restore it later.
+
+```sh
+oxid registry yank file:///home/me/oxid-registry math 1.2.0
+oxid registry unyank file:///home/me/oxid-registry math 1.2.0
+```
+
+Existing locks and explicit exact-version dependencies can still use the
+release. Its source archive stays available for existing builds and rollbacks.
 
 `--locked`, `--offline` and `--frozen` never fetch a missing release, even from a
 local registry. Plain `doc`, `doctor` and editor requests also use cached releases

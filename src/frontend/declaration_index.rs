@@ -1761,6 +1761,53 @@ impl<'i, 's> QuerySession<'i, 's> {
             },
         })
     }
+    pub(in crate::frontend) fn type_declaration_name(
+        &mut self,
+        requester: ModuleId,
+        path: ItemPathRef,
+    ) -> Result<Option<Span>, Box<Diagnostic>> {
+        let Some(handle) = self.select(requester, path, true)? else {
+            return Ok(None);
+        };
+        let DeclarationProjection::SourceOriginal(original) = self.tables.project_handle(handle)?
+        else {
+            return Ok(None);
+        };
+        let original = self.tables.original(original)?;
+        Ok(matches!(original.flags & KIND_MASK, RECORD | ENUM).then_some(original.name.span()))
+    }
+
+    pub(in crate::frontend) fn function_declaration_name(
+        &self,
+        function: DefId,
+    ) -> Result<Option<Span>, Box<Diagnostic>> {
+        self.tables
+            .functions
+            .get(function.0)
+            .map(|row| {
+                self.tables
+                    .original(row.original)
+                    .map(|row| row.name.span())
+            })
+            .transpose()
+    }
+
+    pub(in crate::frontend) fn variant_declaration_name(
+        &self,
+        variant: VariantId,
+    ) -> Result<Option<Span>, Box<Diagnostic>> {
+        let Some(row) = self.tables.enums.get(variant.enumeration.0) else {
+            return Ok(None);
+        };
+        let at = self.tables.sources.eof();
+        let index = (row.variant_start as usize)
+            .checked_add(variant.index)
+            .filter(|_| variant.index < row.variant_len as usize)
+            .ok_or_else(|| bad(at))?;
+        let declaration = self.tables.variants.get(index).ok_or_else(|| bad(at))?;
+        Ok(Some(declaration.name.span()))
+    }
+
     pub fn record_type(
         &mut self,
         requester: ModuleId,
