@@ -62,7 +62,7 @@ class RuntimeDiagnostics(unittest.TestCase):
             verifier.check_reference_behavior(selected, value)
 
     def test_all_nine_original_runtime_cases_use_their_own_native_and_reference_family(self):
-        runtime = [selected for selected in self.cases if selected["kind"] == "runtime"]
+        runtime = [selected for selected in self.cases if selected["kind"] == "runtime" and selected["reference"]]
         self.assertEqual(len(runtime), 9)
         for selected in runtime:
             for family, native, code, message in FAMILIES:
@@ -75,6 +75,15 @@ class RuntimeDiagnostics(unittest.TestCase):
                     else:
                         self.reject_native(selected, native_result)
                         self.reject_reference(selected, reference_result)
+
+    def test_call_depth_limit_uses_only_the_native_error_channel(self):
+        selected = next(case for case in self.cases if case["name"] == "call-frame-limit")
+        self.assertIs(selected["reference"], False)
+        output = b"call depth limit exceeded\n"
+        verifier.check_native_behavior(selected, result(stderr=output))
+        self.reject_native(selected, result(stderr=output, status=0))
+        self.reject_native(selected, result(stdout=output))
+        self.reject_native(selected, result(stderr=b"integer overflow\n"))
 
     def test_native_errors_require_exact_fixed_bytes_and_empty_stdout(self):
         for family, native, _, _ in FAMILIES:
@@ -174,7 +183,7 @@ class RuntimeDiagnostics(unittest.TestCase):
         verifier.check_reference_behavior(case("overflow"), result(stdout=framed(valid_unicode)))
 
     def test_original_value_and_reject_reference_contracts_are_preserved(self):
-        self.assertEqual(len(self.cases), 42)
+        self.assertEqual(len(self.cases), 46)
         for selected in self.cases:
             if selected["kind"] == "value":
                 value = result(stdout=selected["stdout"].encode(), status=0)

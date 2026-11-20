@@ -19,14 +19,12 @@ pub struct Function {
 #[derive(Copy)]
 pub struct Binding { pub name: i32, pub ty: i32, pub slot: i32, pub writable: bool }
 #[derive(Copy)]
-pub struct Edge { pub caller: i32, pub callee: i32 }
-#[derive(Copy)]
 pub struct Value { pub ty: i32, pub id: i32 }
 
 pub struct Compiler {
     pub source: ByteBuf,
     pub tokens: Vec<Token>, pub params: Vec<Parameter>, pub functions: Vec<Function>,
-    pub vars: Vec<Binding>, pub edges: Vec<Edge>,
+    pub vars: Vec<Binding>, pub call_sites: i32,
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
     pub cursor: i32, pub current: i32, pub main: i32,
     pub next_value: i32, pub next_label: i32, pub next_slot: i32,
@@ -36,7 +34,7 @@ pub struct Compiler {
 pub fn new_compiler(source: ByteBuf) -> Compiler {
     return Compiler {
         source: source, tokens: new::<Token>(), params: new::<Parameter>(),
-        functions: new::<Function>(), vars: new::<Binding>(), edges: new::<Edge>(),
+        functions: new::<Function>(), vars: new::<Binding>(), call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
         next_slot: 0, live: true, terminated: false, error: 0, error_start: 0
@@ -108,11 +106,6 @@ pub fn code(bytes: &[u8], index: i32) -> i32 {
     return selected.to_i32();
 }
 
-pub fn set_byte(bytes: &mut [u8], index: i32, value: i32) -> () {
-    bytes[index] = value.to_u8_checked();
-    return;
-}
-
 pub fn function(c: &Compiler, name: i32) -> i32 {
     let mut i = 0;
     while i < len(&*c.functions) {
@@ -131,11 +124,4 @@ pub fn local(c: &Compiler, name: i32) -> i32 {
         if same_name(&*c, v.name, name) { return i; }
     }
     return -1;
-}
-
-pub fn edge(c: &mut Compiler, callee: i32) -> () {
-    if len(&*c.edges) >= 4096 { c.error = 68; return; }
-    let row = Edge { caller: c.current, callee: callee };
-    if !grown(try_push(&mut *c.edges, row)) { c.error = 68; }
-    return;
 }

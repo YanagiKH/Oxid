@@ -53,6 +53,7 @@ RUNTIME_EXPECTATIONS = {
     "overflow": (b"integer overflow\n", "E0604", "checked i32 arithmetic overflow"),
     "division by zero": (b"division by zero\n", "E0607", "checked i32 division by zero"),
 }
+NATIVE_DEPTH_ERROR = b"call depth limit exceeded\n"
 
 
 def runtime_expectation(case: dict):
@@ -67,7 +68,10 @@ def check_native_behavior(case: dict, result) -> None:
         require(result.returncode == 0 and result.stderr == b""
                 and result.stdout == case["stdout"].encode(), case["name"] + ": wrong value")
     elif case["kind"] == "runtime":
-        expected, _, _ = runtime_expectation(case)
+        if case.get("error") == "call depth limit":
+            expected = NATIVE_DEPTH_ERROR
+        else:
+            expected, _, _ = runtime_expectation(case)
         require(result.returncode == 1 and result.stdout == b""
                 and result.stderr == expected,
                 case["name"] + ": wrong checked runtime failure")
@@ -205,6 +209,31 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     large_result = run(large_command, evidence, timeout)
     require(large_result.returncode == 68 and large_result.stdout == b"", "input byte limit was not enforced")
     rows.append(record(evidence, "input-limit", large_command, large_result))
+
+    # The parameter and 4095 locals fill one function's slot budget. Keep
+    # the recursive call non-tail so the unoptimized program retains frames.
+    locals_source = "".join(f"let v{index}=0;" for index in range(4095))
+    descend = ("fn descend(n:i32)->i32{" + locals_source
+               + "if n==0{return v4094;}return 1+descend(n-1);}")
+    for name, entry, expected in (
+        ("full-frames", "descend(126)-84", (0, b"42\n", b"")),
+        ("full-frames-refused", "descend(127)", (1, b"", NATIVE_DEPTH_ERROR)),
+    ):
+        source = evidence / f"{name}.ox"
+        source.write_text(descend + f"fn main()->i32{{return {entry};}}\n", encoding="ascii")
+        receipts = []
+        for profile in ("dev", "release"):
+            binary = evidence / f"{name}-{profile}"
+            receipts.append(driver.build(compiler, source, clang, runtime, binary,
+                                         profile, timeout, evidence / f"{name}-{profile}-build"))
+        source.rename(evidence / f"{name}.retained")
+        for receipt in receipts:
+            command = [receipt["output"]]
+            result = run(command, evidence, timeout)
+            row = record(evidence, f'{name}-{receipt["profile"]}', command, result)
+            rows.append({**row, "build": receipt})
+            require((result.returncode, result.stdout, result.stderr) == expected,
+                    f'{name}: wrong result at {receipt["profile"]}')
     return rows
 
 
