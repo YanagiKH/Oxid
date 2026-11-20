@@ -8,6 +8,10 @@ The validator checks escaped Unicode pairs and leaves numbers in their
 original format. Nested containers use a growable stack. If the configured
 heap limit is reached, validation returns `MemoryLimit`.
 
+Use `quote(&bytes)` to turn UTF-8 text into a JSON string and
+`decode_string(&bytes)` to read one JSON string. Both return owned `Text` on
+success. `quote` escapes quotes, backslashes and control characters.
+
 Try the [example](../../examples/typed-json) from the repository root.
 
 ```sh
