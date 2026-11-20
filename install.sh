@@ -4,6 +4,22 @@ set -eu
 REPOSITORY="YanagiKH/Oxid"
 INSTALL_DIR="${OXID_INSTALL_DIR:-${HOME}/.local/bin}"
 VERSION="${OXID_VERSION:-latest}"
+VERIFY_SIGNATURE="${OXID_VERIFY_SIGNATURE:-0}"
+
+case "$VERIFY_SIGNATURE" in
+  0) ;;
+  1)
+    case "$VERSION" in
+      *[!0-9A-Za-z.+-]*) echo "Signature verification requires a specific release tag in OXID_VERSION." >&2; exit 1 ;;
+    esac
+    if ! printf '%s\n' "$VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
+      echo "Signature verification requires a specific release tag in OXID_VERSION." >&2
+      exit 1
+    fi
+    command -v gh >/dev/null 2>&1 || { echo "Install a recent GitHub CLI to verify the signature." >&2; exit 1; }
+    ;;
+  *) echo "OXID_VERIFY_SIGNATURE must be 0 or 1." >&2; exit 1 ;;
+esac
 
 case "$(uname -s)" in
   Linux) PLATFORM="linux" ;;
@@ -59,6 +75,27 @@ else
   exit 1
 fi
 [ "$EXPECTED" = "$ACTUAL" ] || { echo "Checksum verification failed." >&2; exit 1; }
+
+if [ "$VERIFY_SIGNATURE" = 1 ]; then
+  BUNDLE="${TEMP_DIR}/${ASSET}.sigstore.json"
+  if [ -n "${OXID_ARCHIVE:-}" ]; then
+    cp "${LOCAL_ARCHIVE}.sigstore.json" "$BUNDLE"
+  else
+    curl --fail --location --silent --show-error "${BASE_URL}/${ASSET}.sigstore.json" --output "$BUNDLE"
+  fi
+  SUBJECT_CHECK="any(.[] | .verificationResult.statement.subject[]?; .name == \"${ASSET}\" and .digest.sha256 == \"${ACTUAL}\")"
+  set -- gh attestation verify "${TEMP_DIR}/${ASSET}" --hostname github.com --repo "$REPOSITORY" \
+    --signer-workflow "${REPOSITORY}/.github/workflows/release.yml" --source-ref "refs/tags/${VERSION}" \
+    --cert-oidc-issuer https://token.actions.githubusercontent.com --predicate-type https://slsa.dev/provenance/v1 \
+    --deny-self-hosted-runners --bundle "$BUNDLE" --format json --jq "$SUBJECT_CHECK"
+  if [ -n "${OXID_TRUSTED_ROOT:-}" ]; then
+    set -- "$@" --custom-trusted-root "$OXID_TRUSTED_ROOT"
+  fi
+  if ! MATCHED="$("$@")" || [ "$MATCHED" != true ]; then
+    echo "Signature verification failed." >&2
+    exit 1
+  fi
+fi
 
 tar -xzf "${TEMP_DIR}/${ASSET}" -C "$TEMP_DIR" oxid
 if [ ! -f "${TEMP_DIR}/oxid" ] || [ -L "${TEMP_DIR}/oxid" ]; then
