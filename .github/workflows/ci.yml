@@ -898,6 +898,8 @@ jobs:
         run: |
           cargo build --locked
           cargo build --release --locked
+      - name: Install and run a release archive on this host
+        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid
       - name: Verify native diagnosis on the actual host
         run: cargo test --locked --test native_doctor -- --include-ignored --test-threads=1
       - name: Verify native file lifetime and failure contracts
@@ -1126,6 +1128,10 @@ jobs:
           cargo build --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install and run a release archive on this host
+        run: |
+          python -B scripts/verify_release_install.py --binary target/release/oxid.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Windows diagnosis, capture limits and source admission
         run: |
@@ -1436,6 +1442,8 @@ jobs:
           mkdir -p "$TMPDIR"
           cargo test --locked --test native_library actual_same_library -- --ignored --nocapture
           cargo test --release --locked --test native_library actual_same_library -- --ignored --nocapture
+      - name: Install and run a release archive on this host
+        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid
       - name: Verify source-free file copies larger than the process memory limit
         run: |
           python3 -B scripts/verify_native_files.py target/debug/oxid target/release/oxid \
@@ -1667,6 +1675,8 @@ jobs:
             --oxid-debug target/debug/oxid --oxid-release target/release/oxid \
             --output "$RUNNER_TEMP/linux-arm64-native/owned-text" \
             --llvm-bin "$OXID_LLVM_BIN" --native
+      - name: Install and run a release archive on this host
+        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid
       - name: Verify offline ARM64 exports rebuild and deploy with both compiler profiles
         shell: bash
         run: |
