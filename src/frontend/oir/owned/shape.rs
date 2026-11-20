@@ -661,9 +661,18 @@ pub(super) fn check_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
                     operation,
                     destination,
                 } => {
-                    let expected = d.fixed_builtin_base(raw).and_then(|base| {
-                        base.checked_add(raw.builtins.experimental_function_rank(*operation)?)
-                    });
+                    let expected = if let Some(process) = operation.process() {
+                        raw.functions
+                            .len()
+                            .checked_sub(raw.builtins.process().count())
+                            .and_then(|base| {
+                                base.checked_add(raw.builtins.process().rank(process)?)
+                            })
+                    } else {
+                        d.fixed_builtin_base(raw).and_then(|base| {
+                            base.checked_add(raw.builtins.experimental_function_rank(*operation)?)
+                        })
+                    };
                     if expected != Some(f.id.0) {
                         return Err(bad(Malformed::CanonicalSite, s));
                     }

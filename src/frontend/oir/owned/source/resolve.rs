@@ -389,6 +389,25 @@ impl<'src> ResolvedOwnedProgram<'src> {
                 return Err(invalid_signature_identity(selected.anchor));
             }
         }
+        if !index.builtin_set().process().is_empty() {
+            for item in crate::frontend::builtin_catalog::termination::Function::ALL {
+                if index.builtin_set().process().contains(item) {
+                    let id = index.process_function_id(item)?;
+                    let anchor = index.process_anchor(item, self.work())?;
+                    let actual = self
+                        .signatures
+                        .get(id.0)
+                        .ok_or_else(|| invalid_signature_identity(anchor))?;
+                    self.work().debit(4, anchor, "process signature identity")?;
+                    if !actual.params.is_empty()
+                        || actual.result != ValueTy::Scalar(Ty::Bool)
+                        || actual.span != anchor
+                    {
+                        return Err(invalid_signature_identity(anchor));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -1825,6 +1844,30 @@ fn resolve_index_impl(
             Ok(())
         };
         append().map_err(|error| vec![*error])?;
+    }
+    if !index.builtin_set().process().is_empty() {
+        for item in crate::frontend::builtin_catalog::termination::Function::ALL {
+            if index.builtin_set().process().contains(item) {
+                let anchor = index
+                    .process_anchor(item, work)
+                    .map_err(|error| vec![*error])?;
+                let id = index
+                    .process_function_id(item)
+                    .map_err(|error| vec![*error])?;
+                if id.0 != signatures.len() {
+                    return Err(vec![*invalid_signature_identity(anchor)]);
+                }
+                work.debit(1, anchor, "process signature construction")
+                    .map_err(|error| vec![*error])?;
+                storage::room(&signatures, signatures.capacity(), true, anchor)
+                    .map_err(|error| vec![*error])?;
+                signatures.push(Signature {
+                    params: Vec::new(),
+                    result: ValueTy::Scalar(Ty::Bool),
+                    span: anchor,
+                });
+            }
+        }
     }
     if super::record_enum_layouts::needed(&records) {
         super::record_enum_layouts::inventory(index, &records, work, &mut Allocator::default())

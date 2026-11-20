@@ -351,7 +351,9 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
             1,
             1,
             262,
-            320 + 2 * std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH,
+            320 + 2 * std::mem::size_of::<Vec<MatchDecl>>()
+                + VECTOR_RAW_HEADER_GROWTH
+                + TERMINATION_RAW_SELECTOR_BYTES,
             33
         )
     );
@@ -376,7 +378,8 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
         metadata: 296
             + std::mem::size_of::<Vec<RawEnumDecl>>()
             + 2 * std::mem::size_of::<Vec<MatchDecl>>()
-            + VECTOR_RAW_HEADER_GROWTH,
+            + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES,
         scratch: 33,
     };
     assert!(verify_with_limits(clone_raw(&p), &sm, exact).is_ok());
@@ -392,7 +395,8 @@ fn heldout_independent_meter_totals_and_inclusive_program_caps() {
                 metadata: 295
                     + std::mem::size_of::<Vec<RawEnumDecl>>()
                     + 2 * std::mem::size_of::<Vec<MatchDecl>>()
-                    + VECTOR_RAW_HEADER_GROWTH,
+                    + VECTOR_RAW_HEADER_GROWTH
+                    + TERMINATION_RAW_SELECTOR_BYTES,
                 ..exact
             },
             "ownership metadata",

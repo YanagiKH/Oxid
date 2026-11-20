@@ -109,6 +109,8 @@ OWNED_ENUM_VECTOR_OBSERVER = ('scripts/owned_enum_vector_compatibility_observer.
 GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility.py'
 GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
 WINDOWS_LOCAL_PACKAGE_REPLAY = 'scripts/verify_windows_local_package_compatibility.py'
+TERMINATION_POLICY = ('scripts/verify_process_termination_compatibility.py',
+    (11172, '0cc8fdd3424ac6cc8c7ac13509efed53fe375c5edb9aec7eecfa79a0ffc4dec1'))
 WINDOWS_LOCAL_PACKAGE_PARENT = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = '4ec7cbdee35774e6112421736c7c921f398e5d3b'
 GENERIC_OWNED_VECTOR_POLICY = (GENERIC_OWNED_VECTOR_REPLAY,
@@ -126,6 +128,7 @@ REPLAY_ROUTES = {
     (OWNED_ENUM_VECTOR_REPLAY,): ('owned-enum-vector', OFFLINE_VENDOR_POLICY),
     (GENERIC_OWNED_VECTOR_REPLAY,): ('generic-owned-vector', OWNED_ENUM_VECTOR_POLICY),
     (WINDOWS_LOCAL_PACKAGE_REPLAY,): ('windows-local-package', GENERIC_OWNED_VECTOR_POLICY),
+    (TERMINATION_POLICY[0],): ('process-termination', TERMINATION_POLICY),
 }
 
 
@@ -701,6 +704,9 @@ def require_retained_replay_binding(route, read=None):
     if (len(raw), hashlib.sha256(raw).hexdigest()) != pin:
         raise AssertionError('immutable retained policy changed: ' + policy)
     if kind == 'direct':
+        return
+    if kind == 'process-termination':
+        require_retained_replay_binding((WINDOWS_LOCAL_PACKAGE_REPLAY,), read)
         return
     tree = ast.parse(read(route[0]))
     if kind == 'msvc':
@@ -1650,31 +1656,31 @@ class RetainedReplayRouteTests(unittest.TestCase):
 
     def test_text_route_still_binds_the_pinned_owned_vector_wrapper_and_exact_source_membership(self):
         route = (OWNED_TEXT_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 10)
+        self.assertEqual(len(REPLAY_ROUTES), 11)
         self.assertEqual(REPLAY_ROUTES[route], ('owned-text', OWNED_VECTOR_POLICY))
         require_retained_replay_binding(route)
 
     def test_vendor_route_still_binds_the_pinned_text_wrapper_and_exact_source_membership(self):
         route = (OFFLINE_VENDOR_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 10)
+        self.assertEqual(len(REPLAY_ROUTES), 11)
         self.assertEqual(REPLAY_ROUTES[route], ('offline-vendor', OWNED_TEXT_POLICY))
         require_retained_replay_binding(route)
 
     def test_live_enum_route_binds_the_public_vendor_policy_and_full_source_and_observer_pipeline(self):
         route = (OWNED_ENUM_VECTOR_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 10)
+        self.assertEqual(len(REPLAY_ROUTES), 11)
         self.assertEqual(REPLAY_ROUTES[route], ('owned-enum-vector', OFFLINE_VENDOR_POLICY))
         require_retained_replay_binding(route)
 
     def test_generic_route_keeps_the_complete_enum_controller_and_original_observer(self):
         route = (GENERIC_OWNED_VECTOR_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 10)
+        self.assertEqual(len(REPLAY_ROUTES), 11)
         self.assertEqual(REPLAY_ROUTES[route], ('generic-owned-vector', OWNED_ENUM_VECTOR_POLICY))
         require_retained_replay_binding(route)
 
-    def test_live_windows_route_keeps_the_complete_generic_and_original_observer_pipeline(self):
-        self.assertEqual(self.route, (WINDOWS_LOCAL_PACKAGE_REPLAY,))
-        self.assertEqual(REPLAY_ROUTES[self.route], ('windows-local-package', GENERIC_OWNED_VECTOR_POLICY))
+    def test_live_termination_route_keeps_the_complete_windows_and_observer_pipeline(self):
+        self.assertEqual(self.route, (TERMINATION_POLICY[0],))
+        self.assertEqual(REPLAY_ROUTES[self.route], ('process-termination', TERMINATION_POLICY))
         require_retained_replay_binding(self.route)
 
     def test_windows_source_roster_loader_observer_pipeline_and_refusals_cannot_drift(self):
@@ -1923,8 +1929,8 @@ class RetainedReplayRouteTests(unittest.TestCase):
 
     def test_wrapper_parent_runner_scope_and_failure_refusal_cannot_drift(self):
         kind, _ = REPLAY_ROUTES[self.route]
-        if kind == 'direct':
-            # Direct routes already bind the complete immutable original runner.
+        if kind in {'direct', 'process-termination'}:
+            # These routes already bind the entire runner.
             require_retained_replay_binding(self.route)
             return
         wrapper = self.route[0]

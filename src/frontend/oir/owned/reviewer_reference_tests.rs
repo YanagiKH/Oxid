@@ -678,7 +678,8 @@ fn reviewer_activation_resource_order_and_requested_bytes_boundaries() {
     let exact = 2 * size_of::<Frame>()
         + size_of::<Scalar>()
         + (5 * size_of::<Option<Scalar>>() + 312)
-        + (3 * size_of::<Option<Scalar>>() + 160);
+        + (3 * size_of::<Option<Scalar>>() + 160)
+        + TERMINATION_VM_SELECTOR_BYTES;
     for (slots, cells, bytes, expected) in [
         (5, 68, exact, "slots"),
         (6, 67, exact, "cells"),
@@ -949,7 +950,8 @@ fn reviewer_loop_reuses_slots_with_fresh_generations_loans_activations() {
         let bytes = 2 * size_of::<Frame>()
             + size_of::<Scalar>()
             + (13 * size_of::<Option<Scalar>>() + 4 + 32 + 112 + 16)
-            + (size_of::<Option<Scalar>>() + 80);
+            + (size_of::<Option<Scalar>>() + 80)
+            + TERMINATION_VM_SELECTOR_BYTES;
         assert_eq!(p.function(hir::DefId(0)).usage().expanded_cells, 34);
         assert_eq!(
             run_observed(

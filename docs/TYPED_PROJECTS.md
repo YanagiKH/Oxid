@@ -174,6 +174,12 @@ smoke = "tests/smoke.ox"
 A process entry is `fn main() -> i32`; return zero for success.
 `reproducible = true` uses project-relative paths in native error messages.
 
+On Linux and macOS, import `enable_termination_notifications` and
+`termination_requested` from `std::process`. Call `enable_termination_notifications()`
+from `main` to receive SIGINT and SIGTERM. If it returns true, poll
+`termination_requested()` between work items and return from `main` to close
+files and release other owned values.
+
 ## Build profiles
 
 ```sh

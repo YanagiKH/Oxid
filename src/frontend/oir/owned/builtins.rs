@@ -71,7 +71,7 @@ pub(super) fn descriptor_visits(origin: BuiltinOrigins) -> usize {
                     };
             }
         }
-        visits
+        visits + 6 * origin.process().count()
     }
 }
 
@@ -83,6 +83,16 @@ pub(super) struct BuiltinIds {
     vector_count: usize,
 }
 impl BuiltinIds {
+    pub(super) fn process_function(
+        &self,
+        item: crate::frontend::builtin_catalog::termination::Function,
+        total_functions: usize,
+    ) -> Option<hir::DefId> {
+        total_functions
+            .checked_sub(self.inventory.process().count())?
+            .checked_add(self.inventory.process().rank(item)?)
+            .map(hir::DefId)
+    }
     pub(super) fn vector_function_at(&self, rank: usize) -> Option<hir::DefId> {
         if rank >= self.vector_count {
             return None;
@@ -176,6 +186,9 @@ macro_rules! candidate_body {
             }
         }
         super::experimental_descriptors::check($raw, &ids)?;
+        if !$raw.builtins.process().is_empty() {
+            super::experimental_descriptors::check_process($raw, &ids)?;
+        }
         super::vector_descriptors::check($raw, &ids)?;
         Ok(ids)
     }};

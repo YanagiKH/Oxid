@@ -130,7 +130,8 @@ fn record_vector_resource_checker_is_paid_without_vector_operation_frames_before
         + control_bytes()
         + size_of::<Scalar>()
         + main_bytes
-        + push_bytes;
+        + push_bytes
+        + TERMINATION_VM_SELECTOR_BYTES;
     assert_eq!(values::control_bytes::<Scalar>(), 0);
     assert!(exact < plan::MAX_REFERENCE_BYTES);
     assert_eq!(plan::MAX_REFERENCE_BYTES, 16 * 1024 * 1024);

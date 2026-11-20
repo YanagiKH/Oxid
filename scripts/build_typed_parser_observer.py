@@ -35,6 +35,7 @@ SOURCE_FILES = (
     "owned_vector_builtins.rs", "oir/owned_types/owned_vector.rs",
     "declaration_index/generics/owned_candidate.rs",
     "declaration_index/generics/owned_builtin_enum_keys.rs",
+    "termination_builtins.rs",
 )
 WRAPPER_FILES = (
     ("main.rs", "main.rs"),

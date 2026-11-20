@@ -23,8 +23,8 @@ mod tests;
 use super::{
     ast,
     builtin_catalog::{
-        experimental, owned_vector, vector, BuiltinEnum, BuiltinFunction, BuiltinItem, BuiltinSet,
-        DeclarationOrigin,
+        experimental, owned_vector, termination, vector, BuiltinEnum, BuiltinFunction, BuiltinItem,
+        BuiltinSet, DeclarationOrigin,
     },
     diagnostic::Diagnostic,
     hir::{DefId, Ty},
@@ -125,6 +125,7 @@ impl WorkMeter {
 }
 
 pub(super) use sealed::collect_owned_vector_candidate;
+pub(in crate::frontend) use sealed::process_lookup_carrier_bytes;
 #[cfg(test)]
 pub(super) use sealed::{
     collect_builtin_candidate, collect_closed, collect_enum_candidate, collect_output_candidate,
@@ -665,6 +666,20 @@ impl<'s> Tables<'s> {
                     }
             }
             BuiltinItem::Experimental(item) => self.experimental_rank(item)?,
+            BuiltinItem::Process(item) => {
+                let set = self.builtins.set();
+                set.extra_enums()
+                    + set.extra_functions()
+                    + usize::from(set.experimental().contains(experimental::Item::ByteBuf))
+                    + usize::from(set.experimental().contains(experimental::Item::File))
+                    + set.vector_templates()
+                    + set.experimental().owned_vector_templates()
+                    + usize::from(set.contains_vector(vector::Item::Vec))
+                    + set
+                        .process()
+                        .rank(item)
+                        .ok_or_else(|| bad(self.sources.eof()))?
+            }
             BuiltinItem::Vector(item) if self.builtins.set().contains_vector(item) => {
                 let set = self.builtins.set();
                 set.extra_enums()
@@ -743,6 +758,18 @@ impl<'s> Tables<'s> {
             + set.extra_functions()
             + usize::from(set.experimental().contains(experimental::Item::ByteBuf))
             + usize::from(set.experimental().contains(experimental::Item::File));
+        if !set.process().is_empty() {
+            let process_base = vector_base
+                + set.vector_templates()
+                + set.experimental().owned_vector_templates()
+                + usize::from(set.contains_vector(vector::Item::Vec));
+            if let Some(item) = (handle.0 as usize)
+                .checked_sub(process_base)
+                .and_then(|rank| set.process().at(rank))
+            {
+                return Ok(DeclarationProjection::Builtin(BuiltinItem::Process(item)));
+            }
+        }
         if let Some(rank) = (handle.0 as usize).checked_sub(vector_base) {
             let item = set
                 .experimental()
@@ -823,6 +850,19 @@ impl<'s> Tables<'s> {
                 .function()
                 .and_then(|item| self.builtins.set().experimental_function_rank(item))
                 .map(|rank| DefId(self.functions.len() + rank))
+                .ok_or_else(|| bad(self.sources.eof())),
+            DeclarationProjection::Builtin(BuiltinItem::Process(item)) => self
+                .builtins
+                .set()
+                .process()
+                .rank(item)
+                .map(|rank| {
+                    DefId(
+                        self.functions.len()
+                            + self.builtins.set().extra_template_functions()
+                            + rank,
+                    )
+                })
                 .ok_or_else(|| bad(self.sources.eof())),
             DeclarationProjection::Builtin(BuiltinItem::Vector(item))
                 if item.owned_item().is_some() =>
@@ -1769,6 +1809,7 @@ impl<'i, 's> QuerySession<'i, 's> {
                     filter == NominalTypeFilter::Values
                 }
                 DeclarationProjection::Builtin(BuiltinItem::Function(_)) => false,
+                DeclarationProjection::Builtin(BuiltinItem::Process(_)) => false,
                 DeclarationProjection::Builtin(BuiltinItem::Vector(item)) => {
                     item == vector::Item::Vec
                         && matches!(

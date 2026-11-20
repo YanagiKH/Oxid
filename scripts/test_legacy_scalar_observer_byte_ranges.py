@@ -16,7 +16,7 @@ import legacy_scalar_observer_vectors as vector_adapter
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
-ADDED_SOURCES = ("experimental_builtins.rs", "vector_builtins.rs", "oir/owned_types/resources.rs", "byte_strings.rs", "parser/characters.rs", "declaration_index/generics/nominal.rs", "project/editor_sources.rs", "parser/editor_query.rs", "declaration_index/editor_completion.rs", "project/module_syntax.rs", "owned_vector_builtins.rs", "oir/owned_types/owned_vector.rs", "declaration_index/generics/owned_candidate.rs", "declaration_index/generics/owned_builtin_enum_keys.rs")
+ADDED_SOURCES = ("experimental_builtins.rs", "vector_builtins.rs", "oir/owned_types/resources.rs", "byte_strings.rs", "parser/characters.rs", "declaration_index/generics/nominal.rs", "project/editor_sources.rs", "parser/editor_query.rs", "declaration_index/editor_completion.rs", "project/module_syntax.rs", "owned_vector_builtins.rs", "oir/owned_types/owned_vector.rs", "declaration_index/generics/owned_candidate.rs", "declaration_index/generics/owned_builtin_enum_keys.rs", "termination_builtins.rs")
 MODES = (("parser", ()), ("static", ()), ("static", ("--resolve-only",)))
 
 # Raw stdout hashes from separately built, unchanged parent158 observers
@@ -187,6 +187,17 @@ class ByteRangeObserverTests(unittest.TestCase):
                     start = source.index(annotation)
                     self.assertEqual(value["span"], {"file_id": 0, "start": start,
                                                      "end": start + len(annotation)})
+                    self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
+
+    def test_process_notifications_remain_outside_every_retained_scalar_projection(self):
+        for name in ("enable_termination_notifications", "termination_requested"):
+            statement = "use std::process::" + name + ";"
+            source = statement + "fn f()->i32{return 7;}"
+            for kind, args in MODES:
+                with self.subTest(name=name, kind=kind, args=args):
+                    value = json.loads(self.observe(kind, source, args))
+                    self.assertEqual((value["status"], value["family"]), ("outside_subset", "import"))
+                    self.assertEqual(value["span"], {"file_id": 0, "start": 0, "end": len(statement)})
                     self.assertFalse({"ast", "typed_hir", "resolved_hir"} & value.keys())
 
     def test_new_modules_are_exact_copies_and_wrapper_pins_are_unchanged(self):

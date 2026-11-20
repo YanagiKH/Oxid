@@ -696,7 +696,7 @@ fn independent_unit2c_exact_resources_and_allocation_topology() {
                 frames: 2,
                 slots: 5,
                 cells: 66 + 7 * w,
-                bytes: 1032 + b + a,
+                bytes: 1032 + b + a + TERMINATION_VM_SELECTOR_BYTES,
                 ..Limits::default()
             };
             for defect in 0..5 {

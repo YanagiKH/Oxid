@@ -8,10 +8,13 @@ use std::ops::Range;
 mod delivery;
 #[path = "execute_file_delivery.rs"]
 mod file_delivery;
+#[path = "execute_process_delivery.rs"]
+mod process_delivery;
 pub(super) use delivery::argument_control_bytes as argument_delivery_control_bytes;
 pub(super) use delivery::control_bytes as binary_delivery_control_bytes;
 pub(super) use file_delivery::control_bytes as file_delivery_control_bytes;
 pub(super) use file_delivery::seek_control_bytes as file_seek_control_bytes;
+pub(super) use process_delivery::control_bytes as process_delivery_control_bytes;
 
 pub(super) enum ByteRegion {
     Activation {
@@ -376,6 +379,9 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         }
         let result = self.prepare_experimental_result(frame, destination, span)?;
         let value = match operation {
+            Function::EnableTermination | Function::TerminationRequested => {
+                return Err(bad("process operation requires prepared delivery", span));
+            }
             Function::New => OperationValue::EmptyBuffer,
             Function::ArgCount => {
                 OperationValue::Scalar(Scalar::I32(crate::program_arguments::count()))

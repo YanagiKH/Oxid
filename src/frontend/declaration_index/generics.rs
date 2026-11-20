@@ -68,6 +68,27 @@ struct Storage {
     constructor_scratch: usize,
 }
 impl Storage {
+    fn enter_process(&mut self, at: Span) -> Result<(), Box<Diagnostic>> {
+        let bytes = termination::compiler_carrier_bytes();
+        if self
+            .live_after(bytes)
+            .is_none_or(|total| total > MAX_STORAGE)
+        {
+            return Err(exhausted(at));
+        }
+        self.constructor_scratch = self
+            .constructor_scratch
+            .checked_add(bytes)
+            .ok_or_else(|| exhausted(at))?;
+        Ok(())
+    }
+    fn leave_process(&mut self, at: Span) -> Result<(), Box<Diagnostic>> {
+        self.constructor_scratch = self
+            .constructor_scratch
+            .checked_sub(termination::compiler_carrier_bytes())
+            .ok_or_else(|| bad(at))?;
+        Ok(())
+    }
     fn live_after(&self, additional: usize) -> Option<usize> {
         self.bytes
             .checked_add(self.constructor_scratch)?
@@ -531,7 +552,9 @@ impl Plan {
     ) -> Result<Self, Box<Diagnostic>> {
         authenticate_syntax(index, work, allocator)?;
         let mut storage = Storage {
-            bytes: size_of::<Plan>(),
+            bytes: size_of::<Plan>()
+                .checked_add(termination::shared_selector_bytes())
+                .ok_or_else(|| exhausted(index.sources().eof()))?,
             ..Default::default()
         };
         index.activate_owned_storage(&mut storage, work)?;
@@ -790,6 +813,9 @@ impl Plan {
         storage: &mut Storage,
         work: &WorkMeter,
     ) -> Result<(), Box<Diagnostic>> {
+        if !index.builtin_set().process().is_empty() {
+            return self.freeze_calls_with_process(index, storage, work);
+        }
         if index.owned_vector_builder().is_some() {
             return index.freeze_owned_calls(self, storage, work);
         }
@@ -844,6 +870,96 @@ impl Plan {
         storage.leave_vector(at)?;
         result
     }
+    fn freeze_calls_with_process(
+        &mut self,
+        index: &DeclarationIndex<'_>,
+        storage: &mut Storage,
+        work: &WorkMeter,
+    ) -> Result<(), Box<Diagnostic>> {
+        let origin = index.sources().eof();
+        storage.enter_process(origin)?;
+        let result = (|| {
+            if index.owned_vector_builder().is_some() {
+                return index.freeze_owned_calls(self, storage, work);
+            }
+            let at = index.sources().eof();
+            // The existing fixed-builtin rewrite does not reserve vector controls
+            // or spend vector freeze work when no concrete vector key exists.
+            if self.vector_functions.is_empty() {
+                let count = self.instances.len();
+                for instance in &mut self.instances {
+                    for call in &mut instance.calls {
+                        if let Some(item) = index.process_template(call.template) {
+                            if call.vector.is_some() {
+                                return Err(bad(at));
+                            }
+                            call.target = index.frozen_process_id(item, count, 0, 0, work, at)?;
+                            continue;
+                        }
+                        if call.vector.is_some() {
+                            return Err(bad(at));
+                        }
+                        if call.template.0 >= self.template_count {
+                            call.target = DefId(count + call.template.0 - self.template_count);
+                        }
+                    }
+                }
+                return Ok(());
+            }
+            storage.enter_vector(at)?;
+            let result = (|| {
+                let users = self.instances.len();
+                let fixed = index.builtin_set().extra_functions();
+                let functions = &self.vector_functions;
+                for instance in &mut self.instances {
+                    for call in &mut instance.calls {
+                        work.debit(1, at, "vector call identity freeze")?;
+                        if let Some(item) = index.process_template(call.template) {
+                            if call.vector.is_some() {
+                                return Err(bad(at));
+                            }
+                            call.target = index.frozen_process_id(
+                                item,
+                                users,
+                                functions.len(),
+                                0,
+                                work,
+                                at,
+                            )?;
+                            continue;
+                        }
+                        if let Some(key) = call.vector {
+                            if index.vector_template(call.template, work, at)?
+                                != Some(key.operation())
+                            {
+                                return Err(bad(at));
+                            }
+                            let rank =
+                                vector_rank(functions, key, work, at)?.ok_or_else(|| bad(at))?;
+                            call.target = vector_id(users, fixed, rank, at)?;
+                        } else if call.template.0 >= self.template_count {
+                            let rank = call.template.0 - self.template_count;
+                            if rank >= fixed
+                                || index.vector_template(call.template, work, at)?.is_some()
+                            {
+                                return Err(bad(at));
+                            }
+                            call.target = users
+                                .checked_add(rank)
+                                .map(DefId)
+                                .ok_or_else(|| exhausted(at))?;
+                        }
+                    }
+                }
+                Ok(())
+            })();
+            storage.leave_vector(at)?;
+            result
+        })();
+        storage.leave_process(origin)?;
+        result
+    }
+
     // Keep the caller's shared storage budget, failure seam and work meter explicit.
     #[allow(clippy::too_many_arguments)]
     fn instantiate(
@@ -3622,6 +3738,15 @@ impl<'a, 's> Walker<'a, 's> {
         definition: DefId,
         at: Span,
     ) -> Result<(Vec<ParameterTy>, ValueTy), Box<Diagnostic>> {
+        if !self.index.builtin_set().process().is_empty() {
+            if let Some(item) = self.index.process_template(definition) {
+                self.work.debit(1, at, "process generic signature")?;
+                if !self.index.builtin_set().process().contains(item) {
+                    return Err(bad(at));
+                }
+                return Ok((Vec::new(), ValueTy::Scalar(Ty::Bool)));
+            }
+        }
         let rank = definition
             .0
             .checked_sub(self.index.template_function_count())

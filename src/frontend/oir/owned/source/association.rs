@@ -132,6 +132,7 @@ struct OwnedVectorAssociationCarriers {
     selected_return: Result<super::owned_vector_source::SelectedSignature, Box<Diagnostic>>,
     raw_function: Option<&'static RawOwnedFunction>,
     sums: [Option<usize>; 4],
+    owned_function_range: std::ops::Range<usize>,
     checked_sums: [Result<usize, OwnedFailure>; 2],
     scopes: [usize; 4],
     predicates: [bool; 6],
@@ -709,18 +710,25 @@ fn check_impl<const OWNED_VECTOR: bool>(
     {
         return Err(bad());
     }
+    let owned_functions = if OWNED_VECTOR {
+        let end = raw
+            .functions
+            .len()
+            .checked_sub(raw.builtins.process().count())
+            .ok_or_else(bad)?;
+        let start = end
+            .checked_sub(index.owned_vector_functions().len())
+            .ok_or_else(bad)?;
+        start..end
+    } else {
+        0..0
+    };
     let first_function = if allow_builtins {
         if raw.builtins != index.builtin_set() {
             return Err(bad());
         }
         let ids = if OWNED_VECTOR {
-            builtins::check_candidate_prefix(
-                raw,
-                raw.functions
-                    .len()
-                    .checked_sub(index.owned_vector_functions().len())
-                    .ok_or_else(bad)?,
-            )
+            builtins::check_candidate_prefix(raw, owned_functions.start)
         } else {
             builtins::check(raw)
         }
@@ -773,6 +781,21 @@ fn check_impl<const OWNED_VECTOR: bool>(
                         != index.experimental_anchor(kind.item()).map_err(|_| bad())?
                 {
                     return Err(bad());
+                }
+            }
+        }
+        if !raw.builtins.process().is_empty() {
+            let typed = typed.ok_or_else(bad)?;
+            for kind in crate::frontend::builtin_catalog::termination::Function::ALL {
+                if let Some(id) = ids.process_function(kind, raw.functions.len()) {
+                    if id != index.process_function_id(kind).map_err(|_| bad())?
+                        || raw.functions.get(id.0).ok_or_else(bad)?.span
+                            != index
+                                .process_anchor(kind, typed.work())
+                                .map_err(|_| bad())?
+                    {
+                        return Err(bad());
+                    }
                 }
             }
         }
@@ -977,13 +1000,7 @@ fn check_impl<const OWNED_VECTOR: bool>(
                 } else {
                     None
                 },
-                if OWNED_VECTOR
-                    && ordinal
-                        >= index
-                            .function_count()
-                            .checked_sub(index.owned_vector_functions().len())
-                            .ok_or_else(bad)?
-                {
+                if owned_functions.contains(&ordinal) {
                     FunctionSource::OwnedVectorSynthetic
                 } else {
                     FunctionSource::Synthetic

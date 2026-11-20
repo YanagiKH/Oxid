@@ -217,6 +217,7 @@ fn bounded_enum_raw_inventory_charges_rows_members_and_empty_header() {
         empty.metadata_bytes,
         (size_of::<Vec<RawEnumDecl>>() + size_of::<usize>() + size_of::<Vec<MatchDecl>>())
             + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES
     );
     p.enums.push(enumeration(span));
     let usage = budget::fail_allocation_after(0, || budget::preflight(&p, budget::Limits::DEFAULT))
@@ -225,6 +226,7 @@ fn bounded_enum_raw_inventory_charges_rows_members_and_empty_header() {
         usage.metadata_bytes,
         (size_of::<Vec<RawEnumDecl>>() + size_of::<usize>() + size_of::<Vec<MatchDecl>>())
             + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES
             + size_of::<RawEnumDecl>()
             + size_of::<RawVariantDecl>()
     );
@@ -252,6 +254,7 @@ fn bounded_enum_raw_inventory_charges_rows_members_and_empty_header() {
                 + size_of::<usize>()
                 + size_of::<Vec<MatchDecl>>())
                 + VECTOR_RAW_HEADER_GROWTH
+                + TERMINATION_RAW_SELECTOR_BYTES
                 - 1,
             ..budget::Limits::DEFAULT
         }
