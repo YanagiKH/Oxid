@@ -996,7 +996,7 @@ fn byte_text_oracles() -> [ByteTextOracle; 2] {
             locals: &[hir::Ty::U8,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32],
             roster: &[Live(0),Empty(0),Live(1),Move(1,0),End(0),Integer(1,0),Read(2,1),Copy(0,2,hir::Ty::U8),Copy(3,0,hir::Ty::U8),Widen(4,3),End(1)],
             length: 0, text_bytes: 3279, diagnostic_bytes: 83,
-            metadata_bytes: 33080, native_bytes: 44,
+            metadata_bytes: 34648, native_bytes: 44,
             ordinary_visits: 39, cost: 34,
         },
         ByteTextOracle {
@@ -1006,7 +1006,7 @@ fn byte_text_oracles() -> [ByteTextOracle; 2] {
             locals: &[hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32],
             roster: &[Integer(3,128),Copy(0,3,hir::Ty::I32),Copy(4,0,hir::Ty::I32),Narrow(5,4),Copy(1,5,hir::Ty::U8),Copy(6,1,hir::Ty::U8),Live(0),Construct(0,6),Live(1),Move(1,0),End(0),Integer(7,0),Read(8,7),Copy(2,8,hir::Ty::U8),Copy(9,2,hir::Ty::U8),Widen(10,9),End(1)],
             length: 1, text_bytes: 5982, diagnostic_bytes: 176,
-            metadata_bytes: 33144, native_bytes: 92,
+            metadata_bytes: 34712, native_bytes: 92,
             ordinary_visits: 64, cost: 46,
         },
     ];
@@ -1132,8 +1132,8 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
         assert_byte_text_roster(&case, &oracle);
         let scalar = oracle.locals.len();
         let unique = oracle.diagnostics.len();
-        let plan_bytes = size_of::<plan::FunctionPlan>() + 2 * size_of::<usize>();
-        assert_eq!(plan_bytes, 200);
+        let plan_bytes = element_loan_budget_oracle::PLAN_BUILDER + 208 + 2 * size_of::<usize>();
+        assert_eq!(plan_bytes, 1544);
         assert_eq!(oracle.text.len(), oracle.text_bytes);
         assert_eq!(
             oracle.diagnostics.iter().map(|s| s.len()).sum::<usize>(),
@@ -1145,6 +1145,7 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
                 + size_of::<Bound>()
                 + unique * (size_of::<DiagnosticLookup>() + size_of::<String>())
                 + EMITTER_TRANSIENT_BYTES
+                + element_loan_budget_oracle::NATIVE_QUERY
         );
         let exact = Limits {
             function_slots: scalar + 2,

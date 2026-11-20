@@ -354,6 +354,7 @@ impl<'s> SourceOwner<'s> {
                 work.preflight(expression.span)?;
                 match &expression.kind {
                     ast::ExprKind::Borrow { .. }
+                    | ast::ExprKind::BorrowElement { .. }
                     | ast::ExprKind::StructLiteral { .. }
                     | ast::ExprKind::FieldRead { .. }
                     | ast::ExprKind::ArrayLiteral { .. }

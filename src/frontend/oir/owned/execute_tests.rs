@@ -561,7 +561,8 @@ fn preparation_snapshots_are_stored_independently_of_test_owned_scalar_cells() {
 fn exact_activation_caps_and_failure_precedence_charge_before_allocation() {
     let (sources, raw, schedule) = super::super::consumer_pilot::batch();
     let p = verified::verify_owned(raw, &sources).unwrap();
-    let bytes = 3 * size_of::<Frame>() + 1248 + size_of::<Scalar>();
+    let bytes =
+        element_loan_budget_oracle::SCALAR_VM + 3 * size_of::<Frame>() + 1248 + size_of::<Scalar>();
     let limits = Limits {
         fuel: 1086,
         frames: 3,

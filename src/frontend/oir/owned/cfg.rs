@@ -158,6 +158,7 @@ impl CfgView for RawOwnedFunction {
                 }
             }
             OwnedInstruction::ReadIndex { index, .. }
+            | OwnedInstruction::AcquireLocalElementBorrow { index, .. }
             | OwnedInstruction::CopyIndexInitialize { index, .. }
             | OwnedInstruction::CopyIndexWrite { index, .. } => visit(ScalarUse::Operand(*index))?,
             OwnedInstruction::WriteIndex { index, value, .. } => {

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import build_typed_parser_observer as parser
 import build_typed_static_observer as static
+import legacy_scalar_observer_element_borrows as element_borrows
 import legacy_scalar_observer_vectors as successor
 import legacy_scalar_observer_nominals as adapter
 
@@ -60,10 +61,10 @@ class NominalObserverAdapterTests(unittest.TestCase):
             self.assertEqual(builder.SOURCE_FILES.count(name), 1)
             import legacy_scalar_observer_local_references as current
             self.assertEqual(successor.PARENT_SCHEMA, current.SCHEMA)
-            self.assertEqual(builder.SCHEMA, successor.SCHEMA)
+            self.assertEqual(builder.SCHEMA, element_borrows.SCHEMA)
             for filename, _ in builder.WRAPPER_FILES:
                 original = self.original(kind, filename)
-                result = builder.adapt_wrapper(filename, original)
+                result = element_borrows.reverse_wrapper(kind, filename, builder.adapt_wrapper(filename, original))
                 self.assertEqual(result, successor.adapt_wrapper(kind, filename, original))
                 result = successor.reverse_wrapper(kind, filename, result)
                 if filename == "frontend_mod.rs":

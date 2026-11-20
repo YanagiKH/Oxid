@@ -13,6 +13,7 @@ import build_typed_parser_observer as parser
 import build_typed_static_observer as static
 import legacy_scalar_observer_local_references as adapter
 import legacy_scalar_observer_vectors as vector_adapter
+import legacy_scalar_observer_element_borrows as element_borrows
 import verify_bounded_typed_parser as gate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -195,7 +196,7 @@ class ByteRangeObserverTests(unittest.TestCase):
             manifest = json.loads((binary.parent / "source-manifest.json").read_text())
             gate.observer_identity(binary, builder, kind)
             self.assertEqual(manifest["source_patches"], [])
-            self.assertEqual(manifest["wrapper_adaptation"], vector_adapter.SCHEMA)
+            self.assertEqual(manifest["wrapper_adaptation"], element_borrows.SCHEMA)
             self.assertEqual(vector_adapter.PARENT_SCHEMA, adapter.SCHEMA)
             for name in ADDED_SOURCES:
                 self.assertEqual(builder.SOURCE_FILES.count(name), 1)
@@ -208,11 +209,14 @@ class ByteRangeObserverTests(unittest.TestCase):
             for row, (name, _) in zip(manifest["wrappers"], builder.WRAPPER_FILES):
                 self.assertEqual(row["original_sha256"], adapter.PINS[kind + "/" + name])
                 derived = (binary.parent / row["copied_path"]).read_bytes()
-                predecessor = vector_adapter.reverse_wrapper(kind, name, derived)
+                vector_wrapper = element_borrows.reverse_wrapper(kind, name, derived)
+                self.assertEqual(hashlib.sha256(vector_wrapper).hexdigest(),
+                                 vector_adapter.DERIVED_PINS[kind + "/" + name])
+                predecessor = vector_adapter.reverse_wrapper(kind, name, vector_wrapper)
                 original = (ROOT / row["original_path"]).read_bytes()
                 self.assertEqual(predecessor, adapter.adapt_wrapper(kind, name, original))
                 self.assertEqual(hashlib.sha256(predecessor).hexdigest(), adapter.DERIVED_PINS[kind + "/" + name])
-                self.assertEqual(row["sha256"], vector_adapter.DERIVED_PINS[kind + "/" + name])
+                self.assertEqual(row["sha256"], element_borrows.DERIVED_PINS[kind + "/" + name])
 
     def test_missing_each_new_module_fails_real_rustc(self):
         for kind, builder in (("parser", parser), ("static", static)):

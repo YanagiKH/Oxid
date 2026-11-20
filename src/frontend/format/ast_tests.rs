@@ -346,6 +346,18 @@ impl<'a> Fingerprint<'a> {
         let Expr { kind, span } = &program.expressions[id.0];
         self.span(*span);
         match kind {
+            ExprKind::BorrowElement {
+                mutable,
+                name,
+                forwarded,
+                index,
+            } => {
+                self.tag("local-element-reference");
+                self.flag(*mutable);
+                self.spelling(*name);
+                self.flag(*forwarded);
+                self.expression(*index);
+            }
             ExprKind::Borrow {
                 mutable,
                 name,

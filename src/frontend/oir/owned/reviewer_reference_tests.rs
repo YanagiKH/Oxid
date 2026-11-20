@@ -675,7 +675,7 @@ fn reviewer_activation_resource_order_and_requested_bytes_boundaries() {
         p.function(hir::DefId(1)).usage().reference_bytes,
         3 * size_of::<Option<Scalar>>() + 160
     );
-    let exact = 2 * size_of::<Frame>()
+    let exact = element_loan_budget_oracle::SCALAR_VM + 2 * size_of::<Frame>()
         + size_of::<Scalar>()
         + (5 * size_of::<Option<Scalar>>() + 312)
         + (3 * size_of::<Option<Scalar>>() + 160);
@@ -946,7 +946,7 @@ fn reviewer_loop_reuses_slots_with_fresh_generations_loans_activations() {
         let p = ExecutionPlan::build(&w).unwrap();
         let mut events = vec![];
         // Root X=34 (S12,A1,P1,O4,L14,C2), child X11. Only two frames and 13 old scalar slots ever coexist.
-        let bytes = 2 * size_of::<Frame>()
+        let bytes = element_loan_budget_oracle::SCALAR_VM + 2 * size_of::<Frame>()
             + size_of::<Scalar>()
             + (13 * size_of::<Option<Scalar>>() + 4 + 32 + 112 + 16)
             + (size_of::<Option<Scalar>>() + 80);

@@ -64,6 +64,14 @@ class LiveObserverTests(unittest.TestCase):
                 self.assertEqual((value['status'], value['family']), ('outside_subset', 'conversion'))
                 self.assertFalse({'ast', 'typed_hir', 'resolved_hir'} & value.keys())
 
+    def test_element_borrows_are_outside_both_scalar_domains(self):
+        for source in ('fn f(a:i32)->i32{let x=&a[0];return 42;}',
+                       'fn f(a:i32)->i32{let x=&mut a[0];return 42;}'):
+            for kind, args in [('parser', ()), ('static', ()), ('static', ('--resolve-only',))]:
+                value = self.observe(kind, source, *args)
+                self.assertEqual((value['status'], value['family']), ('outside_subset', 'local_reference'))
+                self.assertFalse({'ast', 'typed_hir', 'resolved_hir'} & value.keys())
+
     def test_static_u8_type_positions_are_outside_legacy_schema(self):
         for source in ('fn f(x:u8)->(){return;}', 'fn f()->u8{return 0;}',
                        'fn f()->(){let x:u8=0;return;}',

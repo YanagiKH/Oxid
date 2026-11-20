@@ -55,6 +55,13 @@ impl<'s> AssociatedOwnedVector<'s> {
     }
 }
 
+#[cfg(test)]
+pub(in crate::frontend::oir::owned) fn associate_element_fixture<'s>(
+    typed: &'s super::typeck::TypedOwnedProgram<'_>,
+) -> Result<AssociatedOwnedVector<'s>, Box<Diagnostic>> {
+    lower_and_associate_owned_vector(typed)
+}
+
 pub(super) fn lower_and_associate_owned_vector<'s>(
     typed: &'s super::typeck::TypedOwnedProgram<'_>,
 ) -> Result<AssociatedOwnedVector<'s>, Box<Diagnostic>> {
@@ -440,6 +447,15 @@ fn function(
                     visitor.span(value.span)?;
                 }
                 OwnedInstruction::ProjectionLength { .. } => (),
+                OwnedInstruction::AcquireLocalElementBorrow { index, .. } => {
+                    if matches!(
+                        source,
+                        FunctionSource::Synthetic | FunctionSource::OwnedVectorSynthetic
+                    ) {
+                        return Err(bad());
+                    }
+                    visitor.span(index.span)?;
+                }
                 OwnedInstruction::AcquireLocalBorrow(_)
                 | OwnedInstruction::ReleaseLocalBorrow(_) => {
                     if matches!(
@@ -1211,8 +1227,11 @@ fn check_impl<const OWNED_VECTOR: bool>(
         let mut local_declarations = 0usize;
         for statement in original.blocks.iter().flat_map(|block| &block.body) {
             if let crate::frontend::ast::StmtKind::Let { init, .. } = statement.kind {
-                if let crate::frontend::ast::ExprKind::Borrow { .. } = ast.expressions[init.0].kind
-                {
+                if matches!(
+                    ast.expressions[init.0].kind,
+                    crate::frontend::ast::ExprKind::Borrow { .. }
+                        | crate::frontend::ast::ExprKind::BorrowElement { .. }
+                ) {
                     local_declarations = local_declarations.checked_add(1).ok_or_else(bad)?;
                     let typed = typed.ok_or_else(bad)?;
                     let view = typed.functions().nth(ordinal).ok_or_else(bad)?;
@@ -1254,7 +1273,22 @@ fn check_impl<const OWNED_VECTOR: bool>(
                             .iter()
                             .flat_map(|block| &block.body)
                             .find_map(|row| {
-                                if let super::hir::StmtKind::BorrowLet {
+                                if let super::hir::StmtKind::BorrowElementLet {
+                                    binding,
+                                    kind,
+                                    place,
+                                    index,
+                                    borrow_span: origin,
+                                    ..
+                                } = row.kind
+                                {
+                                    (origin == borrow_span).then_some((
+                                        binding,
+                                        kind,
+                                        place,
+                                        Some(index),
+                                    ))
+                                } else if let super::hir::StmtKind::BorrowLet {
                                     binding,
                                     kind,
                                     place,
@@ -1262,13 +1296,13 @@ fn check_impl<const OWNED_VECTOR: bool>(
                                     ..
                                 } = row.kind
                                 {
-                                    (origin == borrow_span).then_some((binding, kind, place))
+                                    (origin == borrow_span).then_some((binding, kind, place, None))
                                 } else {
                                     None
                                 }
                             })
                             .ok_or_else(bad)?;
-                        let (binding, kind, place) = source_binding;
+                        let (binding, kind, place, element_index) = source_binding;
                         if view.binding_ty(binding)
                             != (ParameterTy::Reference {
                                 referent: loan.referent(),
@@ -1278,6 +1312,62 @@ fn check_impl<const OWNED_VECTOR: bool>(
                             || !loan.projection.is_empty()
                         {
                             return Err(bad());
+                        }
+                        match (element_index, &ast.expressions[init.0].kind) {
+                            (Some(index), crate::frontend::ast::ExprKind::BorrowElement { .. }) => {
+                                if super::super::shape::local_record_element(
+                                    declaration,
+                                    LoanId(loan_id),
+                                )
+                                .is_none()
+                                {
+                                    return Err(bad());
+                                }
+                                let expected = view.hir().expressions[index.0].span;
+                                let visits = declaration
+                                    .blocks
+                                    .iter()
+                                    .try_fold(0usize, |sum, block| {
+                                        sum.checked_add(block.statements.len())
+                                            .and_then(|sum| sum.checked_add(1))
+                                    })
+                                    .ok_or_else(bad)?;
+                                // Both complete source-site scans are paid before either lookup.
+                                let visits = visits.checked_mul(2).ok_or_else(bad)?;
+                                typed.work().debit(
+                                    u64::try_from(visits).map_err(|_| bad())?,
+                                    borrow_span,
+                                    "local element acquisition correspondence",
+                                )?;
+                                let actual = super::super::shape::local_record_element_index(
+                                    declaration,
+                                    LoanId(loan_id),
+                                )
+                                .ok_or_else(bad)?;
+                                let local =
+                                    declaration.locals.get(actual.local.0).ok_or_else(bad)?;
+                                if actual.span != expected
+                                    || local.span != expected
+                                    || local.ty != hir::Ty::I32
+                                {
+                                    return Err(bad());
+                                }
+                                let sites = declaration.blocks.iter().flat_map(|block| &block.statements).filter(|site| matches!(site.kind, OwnedInstruction::AcquireLocalElementBorrow { loan: actual, .. } if actual.0 == loan_id) && site.span == borrow_span).count();
+                                if sites != 1 {
+                                    return Err(bad());
+                                }
+                            }
+                            (None, crate::frontend::ast::ExprKind::Borrow { .. }) => {
+                                if super::super::shape::local_record_element(
+                                    declaration,
+                                    LoanId(loan_id),
+                                )
+                                .is_some()
+                                {
+                                    return Err(bad());
+                                }
+                            }
+                            _ => return Err(bad()),
                         }
                         let root = match place {
                             super::hir::BorrowPlace::Owner(id)
@@ -1306,7 +1396,14 @@ fn check_impl<const OWNED_VECTOR: bool>(
                                     .iter()
                                     .flat_map(|block| &block.body)
                                     .find_map(|row| {
-                                        if let super::hir::StmtKind::BorrowLet {
+                                        if let super::hir::StmtKind::BorrowElementLet {
+                                            binding,
+                                            borrow_span,
+                                            ..
+                                        } = row.kind
+                                        {
+                                            (binding == root).then_some(borrow_span)
+                                        } else if let super::hir::StmtKind::BorrowLet {
                                             binding,
                                             borrow_span,
                                             ..

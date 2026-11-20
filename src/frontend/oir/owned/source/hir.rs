@@ -216,6 +216,14 @@ pub(super) enum StmtKind {
         borrow_span: Span,
         annotation: Option<ParameterTy>,
     },
+    BorrowElementLet {
+        binding: BindingId,
+        kind: BorrowKind,
+        place: BorrowPlace,
+        index: ExprId,
+        borrow_span: Span,
+        annotation: Option<ParameterTy>,
+    },
     Assign {
         binding: BindingId,
         target_span: Span,

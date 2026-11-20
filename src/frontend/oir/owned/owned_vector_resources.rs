@@ -114,9 +114,41 @@ struct ControlCarriers<'a> {
     returned_encoding: [u8; 16],
     counters: [usize; 12],
 }
+#[allow(dead_code)]
+struct BorrowCarriers<'a> {
+    heap: &'a mut Heap,
+    descriptor: &'a OwnedVectorDescriptor,
+    element: Element<'a>,
+    ordinal: i32,
+    controls: [(usize, usize); 3],
+    node: Option<NonNull<Header>>,
+    node_return: Result<Option<NonNull<Header>>>,
+    selected_node: NonNull<Header>,
+    selected_offset: usize,
+    output_offset: &'a mut usize,
+    fuel: &'a mut usize,
+    remaining: [usize; 2],
+    registry_return: Result<usize>,
+    work_return: Result<usize>,
+    preflight_return: Result<()>,
+    borrow_return: Result<()>,
+    caller_borrow_return: Result<()>,
+    byte_range: &'a [u8],
+    address: NonNull<u8>,
+    address_return: Result<NonNull<u8>>,
+    caller_address_return: Result<NonNull<u8>>,
+    byte_range_return: Result<&'a [u8]>,
+    caller_byte_range_return: Result<&'a [u8]>,
+    arithmetic: [Option<usize>; 3],
+    selected_sizes: [usize; 4],
+}
 pub(in crate::frontend::oir::owned) const fn control_bytes() -> usize {
     std::mem::size_of::<ControlCarriers<'_>>() + owned_record_codec::control_bytes()
 }
+pub(in crate::frontend::oir::owned) const fn borrow_control_bytes() -> usize {
+    std::mem::size_of::<BorrowCarriers<'_>>()
+}
+
 impl AllocationLayout {
     fn size(&self) -> usize {
         self.allocation.size()
@@ -237,6 +269,85 @@ impl Heap {
         let value = OwnedVectorDescriptor::decode(bytes)?;
         self.locate_owned_vector(&value, element)?;
         Ok(value)
+    }
+
+    /// Admit a lexical view without moving a cell or allocating loan storage.
+    /// The sealed caller separately retains the root loan and nominal record.
+    pub(in crate::frontend::oir::owned) fn owned_vector_borrow_record(
+        &mut self,
+        value: &OwnedVectorDescriptor,
+        element: Element<'_>,
+        ordinal: i32,
+        fuel: &mut usize,
+        offset: &mut usize,
+    ) -> Result<()> {
+        if !matches!(
+            element.root(),
+            crate::frontend::oir::owned_types::OwnedVectorRoot::Record(_)
+        ) {
+            return Err(Failure::Descriptor);
+        }
+        let remaining = self.owned_vector_admit_controls(
+            &[
+                (value as *const _ as usize, std::mem::size_of_val(value)),
+                (fuel as *const _ as usize, std::mem::size_of_val(fuel)),
+                (offset as *const _ as usize, std::mem::size_of_val(offset)),
+            ],
+            *fuel,
+        )?;
+        let node = self.locate_owned_vector(value, element)?;
+        if ordinal < 0 || ordinal >= value.length {
+            return Err(Failure::Bounds);
+        }
+        let selected = (ordinal as usize)
+            .checked_mul(element.size())
+            .ok_or(Failure::Bounds)?;
+        let remaining = remaining
+            .checked_sub(self.owned_vector_work(element, value.length as usize, 0)?)
+            .ok_or(Failure::Fuel)?;
+        self.preflight_owned_vector(node, value.length, element, None)?;
+        *fuel = remaining;
+        *offset = selected;
+        Ok(())
+    }
+
+    /// Private raw address resolution. This grants no language read/write
+    /// authority. In particular, mutable VM access must retain the original
+    /// allocation provenance, rather than cast a shared &[u8] into &mut [u8].
+    pub(in crate::frontend::oir::owned) fn owned_vector_cell_address(
+        &self,
+        value: &OwnedVectorDescriptor,
+        element: Element<'_>,
+        offset: usize,
+        bytes: usize,
+    ) -> Result<NonNull<u8>> {
+        let node = self
+            .locate_owned_vector(value, element)?
+            .ok_or(Failure::Bounds)?;
+        let initialized = (value.length as usize)
+            .checked_mul(element.size())
+            .ok_or(Failure::Bounds)?;
+        offset
+            .checked_add(bytes)
+            .filter(|end| *end <= initialized)
+            .ok_or(Failure::Bounds)?;
+        // SAFETY: locate authenticated the allocation/header/capacity, and the
+        // complete initialized prefix bounds this offset (including empty views).
+        NonNull::new(unsafe { data(node).add(offset) }).ok_or(Failure::Descriptor)
+    }
+
+    /// Shared inspection with an ordinary Heap lifetime. This never constructs
+    /// writable addresses or language borrowing authority.
+    pub(in crate::frontend::oir::owned) fn owned_vector_cell_bytes(
+        &self,
+        value: &OwnedVectorDescriptor,
+        element: Element<'_>,
+        offset: usize,
+        bytes: usize,
+    ) -> Result<&[u8]> {
+        let address = self.owned_vector_cell_address(value, element, offset, bytes)?;
+        // SAFETY: the checked prefix and shared Heap borrow bound these bytes.
+        Ok(unsafe { slice::from_raw_parts(address.as_ptr(), bytes) })
     }
 
     /// One paid registry validation for ordinary transfers of this resource.

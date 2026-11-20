@@ -97,7 +97,7 @@ pub(in crate::frontend::oir::owned) fn frame_bytes(
     declarations: &Declarations,
     f: &RawOwnedFunction,
 ) -> Result<usize, AdmissionFailure> {
-    frame_bytes_in_domain(declarations, f, None)
+    frame_bytes_in_domain(declarations, f, None, false)
 }
 
 pub(in crate::frontend::oir::owned) fn frame_bytes_with_witness<W: PlanWitness>(
@@ -118,6 +118,7 @@ pub(in crate::frontend::oir::owned) fn frame_bytes_with_witness<W: PlanWitness>(
         witness.declarations(),
         f,
         witness.owned_vector_operation(f.id),
+        witness.uses_owned_vectors(),
     )
 }
 
@@ -125,9 +126,19 @@ fn frame_bytes_in_domain(
     declarations: &Declarations,
     f: &RawOwnedFunction,
     owned_operation: Option<crate::frontend::builtin_catalog::owned_vector::Function>,
+    element_loans: bool,
 ) -> Result<usize, AdmissionFailure> {
     for block in &f.blocks {
         for statement in &block.statements {
+            if let OwnedInstruction::AcquireLocalElementBorrow { loan, .. } = statement.kind {
+                if !element_loans || shape::local_record_element(f, loan).is_none() {
+                    return Err(AdmissionFailure::new(
+                        "local element scratch requires a checked owning plan",
+                        Some(statement.span),
+                    ));
+                }
+                return Ok(INDEX_BYTES);
+            }
             if matches!(
                 statement.kind,
                 OwnedInstruction::CopyIndexInitialize { .. }

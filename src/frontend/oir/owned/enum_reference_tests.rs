@@ -606,7 +606,8 @@ fn enum_reference_exact_plan_and_live_frame_limits() {
     let (raw, schedule) = e::relay_case(2, hir::Ty::I32, s(0));
     let witness = verify_owned(raw, &sources).unwrap();
     let execution = plan::ExecutionPlan::build(&witness).unwrap();
-    let metadata = 2 * size_of::<plan::FunctionPlan>()
+    let metadata = element_loan_budget_oracle::PLAN_BUILDER
+        + 2 * size_of::<plan::FunctionPlan>()
         + 7 * size_of::<usize>()
         + size_of::<plan::CallPlan>()
         + size_of::<OwnerPlaceId>();
@@ -625,7 +626,7 @@ fn enum_reference_exact_plan_and_live_frame_limits() {
         frames: 2,
         slots: 5,
         cells: 50,
-        bytes: 896,
+        bytes: element_loan_budget_oracle::SCALAR_VM + 896,
     };
     assert_eq!(
         execute::run_limits(&witness, Some(schedule.entry), limits),
@@ -655,7 +656,7 @@ fn enum_reference_exact_plan_and_live_frame_limits() {
         ),
         (
             Limits {
-                bytes: 895,
+                bytes: element_loan_budget_oracle::SCALAR_VM + 895,
                 ..limits
             },
             OwnedRunFailure::Resource(plan::AdmissionFailure::new(

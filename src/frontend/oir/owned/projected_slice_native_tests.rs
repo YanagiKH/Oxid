@@ -288,7 +288,7 @@ fn native_projected_slices_depth_sixty_four_has_bounded_walks() {
     assert_eq!(observation.metrics.render_borrow_projection_visits, 128);
     assert_eq!(
         observation.metrics.emitter_transient_bound,
-        EMITTER_TRANSIENT_BYTES
+        EMITTER_TRANSIENT_BYTES + element_loan_budget_oracle::NATIVE_QUERY
     );
     assert_eq!(observation.metrics.count_bytes, module.len());
     assert_eq!(observation.metrics.render_bytes, module.len());

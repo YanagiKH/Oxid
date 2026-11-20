@@ -787,9 +787,17 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         )?,
     )?;
     let inherited_emitter_transient = add(
-        inherited_emitter_transient,
+        add(
+            inherited_emitter_transient,
+            plan::element_loan_accounting::query_control_bytes::<W>(),
+        )?,
         if plan.uses_owned_vectors() {
             owned_vector::control_bytes()
+                + if plan.has_local_record_element_loans() {
+                    owned_vector::element_borrow_emitter_bytes()
+                } else {
+                    0
+                }
         } else {
             0
         },
@@ -1224,6 +1232,11 @@ fn runtime_storage_bytes<W: PlanWitness>(
         runtime_bytes,
         if plan.uses_owned_vectors() {
             owned_vector::RUNTIME_BYTES
+                + if plan.has_local_record_element_loans() {
+                    owned_vector::ELEMENT_BORROW_RUNTIME_BYTES
+                } else {
+                    0
+                }
         } else {
             0
         },
@@ -1793,7 +1806,9 @@ fn diagnostic_occurrences<W: PlanWitness>(
                         value: Rvalue::CheckedI64ToU8 { name_span, .. },
                         ..
                     })) => visit(FailureKind::I64ToU8Range, *name_span)?,
-                    OwnedInstruction::Vector { .. } | OwnedInstruction::OwnedVector { .. } => {
+                    OwnedInstruction::Vector { .. }
+                    | OwnedInstruction::OwnedVector { .. }
+                    | OwnedInstruction::AcquireLocalElementBorrow { .. } => {
                         // The helper emits a fuel refusal label in hosted mode
                         // too; its fresh budget does not remove that IR block.
                         if !guarded {
@@ -3820,6 +3835,9 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
             return;
         }
         owned_vector::declarations(out);
+        if plan.has_local_record_element_loans() {
+            owned_vector::element_borrow_declaration(out);
+        }
     }
     if out.policy.recursive() {
         hosted_frames::globals(out);
@@ -4077,6 +4095,7 @@ fn continuation<W: PlanWitness>(
         }
     }
     match instruction {
+        OwnedInstruction::AcquireLocalElementBorrow { .. } => Continuation::Bounds,
         OwnedInstruction::PrepareBorrow { loan, .. }
         | OwnedInstruction::AcquireLocalBorrow(loan)
             if vector::borrow_splits(plan, f, *loan) =>
@@ -5609,6 +5628,21 @@ fn emit_statement<W: PlanWitness>(
             plan::instruction_span(statement),
             out,
         ),
+        OwnedInstruction::AcquireLocalElementBorrow { loan, index } => {
+            if plan.function(f.id).element_index(*loan) != Some(*index) {
+                out.exceeded = true;
+                return;
+            }
+            owned_vector::borrow_record(
+                storage,
+                name,
+                *loan,
+                *index,
+                diagnostics,
+                plan::instruction_span(statement),
+                out,
+            );
+        }
         OwnedInstruction::PrepareBorrow { loan, .. }
         | OwnedInstruction::AcquireLocalBorrow(loan) => {
             if experimental::resource_borrow(plan, f, *loan) {

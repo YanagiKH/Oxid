@@ -2375,6 +2375,7 @@ impl<'a, 'b> Walk<'a, 'b> {
             let root = match statement.kind {
                 source::StmtKind::DestructureRecord { init, .. }
                 | source::StmtKind::Let { init, .. }
+                | source::StmtKind::BorrowElementLet { index: init, .. }
                 | source::StmtKind::Assign { value: init, .. }
                 | source::StmtKind::FieldAssign { value: init, .. }
                 | source::StmtKind::Expr(init) => Some(init),
@@ -2478,6 +2479,65 @@ impl<'a, 'b> Walk<'a, 'b> {
                         s,
                     )?;
                     self.end_value(source, s, f.expressions[init.0].span, s)?;
+                }
+                source::StmtKind::BorrowElementLet {
+                    binding,
+                    kind,
+                    place,
+                    index,
+                    borrow_span,
+                    ..
+                } => {
+                    let root = match place {
+                        source::BorrowPlace::Owner(id) | source::BorrowPlace::Forwarded(id) => id,
+                    };
+                    let authority = self.base(root, borrow_span)?;
+                    let ParameterTy::Reference {
+                        referent: BorrowedTy::Exact(AggregateTy::Record(record)),
+                        kind: granted,
+                    } = self.view.binding_ty(binding)
+                    else {
+                        return Err(invariant(s));
+                    };
+                    require(kind == granted, s)?;
+                    let ordinal = self.operand(index)?;
+                    let loan = LoanId(self.counts.loans);
+                    self.counts.loans = budget::add(self.counts.loans, 1)?;
+                    self.counts.local_loan_depth_bound = self
+                        .counts
+                        .local_loan_depth_bound
+                        .saturating_add(1)
+                        .min(MAX_LOCAL_REFERENCE_DEPTH as u8);
+                    self.counts.ownership_active = true;
+                    if let Some(out) = &mut self.output {
+                        budget::append(
+                            &mut out.raw.loans,
+                            LoanDecl {
+                                region: LoanRegion::Local,
+                                authority,
+                                projection: Vec::new(),
+                                kind,
+                                referent: BorrowedSlot::check(BorrowedTy::Exact(
+                                    AggregateTy::Record(record),
+                                ))?,
+                                span: borrow_span,
+                            },
+                            out.expected.loans,
+                            borrow_span,
+                        )?;
+                        require(out.bindings[binding.0].is_none(), s)?;
+                        out.bindings[binding.0] = Some(BindingLocation::LocalReference(loan));
+                    }
+                    self.statement(
+                        OwnedInstruction::AcquireLocalElementBorrow {
+                            loan,
+                            index: ordinal,
+                        },
+                        borrow_span,
+                        borrow_span,
+                        borrow_span,
+                    )?;
+                    self.register_slot(LexicalSlot(budget::add(budget::mul(loan.0, 2)?, 1)?), s)?;
                 }
                 source::StmtKind::BorrowLet {
                     binding,

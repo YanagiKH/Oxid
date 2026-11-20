@@ -37,6 +37,15 @@ mod verified;
 #[cfg(test)]
 use verified::{verify_owned, verify_with_limits};
 
+#[cfg(test)]
+mod element_loan_budget_oracle {
+    // Measured on both the normal compiler and its cfg(test) build.
+    // The literal allowances preserve independent exact/one-less limits.
+    pub(super) const PLAN_BUILDER: usize = 1320;
+    pub(super) const NATIVE_QUERY: usize = 224;
+    pub(super) const SCALAR_VM: usize = 11008 + NATIVE_QUERY;
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ReferenceParamId(usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -410,6 +419,11 @@ enum OwnedInstruction {
         loan: LoanId,
     },
     AcquireLocalBorrow(LoanId),
+    /// Captures one initialized non-Copy record cell without moving its owner.
+    AcquireLocalElementBorrow {
+        loan: LoanId,
+        index: Operand,
+    },
     ReleaseLocalBorrow(LoanId),
     /// Checked finite record copy. Source stays live; validate all leaves
     /// before writing any initialized destination leaf. Padding is never read.

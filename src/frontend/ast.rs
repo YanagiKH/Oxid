@@ -206,6 +206,13 @@ pub enum ExprKind {
         name: Span,
         forwarded: bool,
     },
+    /// A lexical borrow of one initialized owned-record vector element.
+    BorrowElement {
+        mutable: bool,
+        name: Span,
+        forwarded: bool,
+        index: ExprId,
+    },
     BitNot {
         operand: ExprId,
         operator_span: Span,
@@ -1705,6 +1712,22 @@ impl Program {
                         && name.start >= expression.span.start
                         && name.end <= expression.span.end
                 }
+                ExprKind::BorrowElement {
+                    name,
+                    index: ordinal,
+                    ..
+                } => {
+                    valid(*name)
+                        && earlier(*ordinal)
+                        && name.file == expression.span.file
+                        && name.start >= expression.span.start
+                        && name.end <= expression.span.end
+                        && self.expressions.get(ordinal.0).is_some_and(|index| {
+                            index.span.file == expression.span.file
+                                && name.end < index.span.start
+                                && index.span.end < expression.span.end
+                        })
+                }
                 // Structural ID/span admission shares the established unary
                 // traversal. The source-association witness independently checks
                 // the named receiver, operation and exact authenticated origins.
@@ -1968,7 +1991,7 @@ impl Program {
                     })
             })
             || self.expressions.iter().any(|e| match &e.kind {
-                ExprKind::Borrow { .. } => true,
+                ExprKind::Borrow { .. } | ExprKind::BorrowElement { .. } => true,
                 ExprKind::StructLiteral { .. }
                 | ExprKind::GenericVariant { .. }
                 | ExprKind::FieldRead { .. }

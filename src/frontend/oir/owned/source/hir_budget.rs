@@ -1103,7 +1103,10 @@ fn count_statement(
     match &statement.kind {
         ast::StmtKind::Let { init, .. } => {
             increment(&mut c.bindings, 1, at)?;
-            if matches!(ast.expressions[init.0].kind, ast::ExprKind::Borrow { .. }) {
+            if let ast::ExprKind::BorrowElement { index, .. } = ast.expressions[init.0].kind {
+                visit(work, 1, at)?;
+                count_expression(ast, index, at, work, c)?;
+            } else if matches!(ast.expressions[init.0].kind, ast::ExprKind::Borrow { .. }) {
                 visit(work, 1, at)?;
             } else {
                 count_expression(ast, *init, at, work, c)?;
@@ -1219,7 +1222,10 @@ fn count_expression(
                 | ast::ExprKind::BitNot { operand: inner, .. }
                 | ast::ExprKind::Negate { operand: inner, .. }
                 | ast::ExprKind::Not { operand: inner, .. }
-                | ast::ExprKind::IndexRead { index: inner, .. } => (next == 0).then_some(*inner),
+                | ast::ExprKind::IndexRead { index: inner, .. }
+                | ast::ExprKind::BorrowElement { index: inner, .. } => {
+                    (next == 0).then_some(*inner)
+                }
                 ast::ExprKind::Bitwise { left, right, .. }
                 | ast::ExprKind::Arithmetic { left, right, .. }
                 | ast::ExprKind::Comparison { left, right, .. }

@@ -15,10 +15,14 @@ fn reviewer_source_resource_reserved_headers_charge_capacity_not_peak() {
     // C2 => D320; relay O2 P2 B8 => D72; read S1 R1 => D88. The read
     // path peaks at408 dynamic bytes and2 frames; reserve3 headers anyway.
     // This expectation does not inspect a plan.
-    let exact = 3 * size_of::<Frame>() + size_of::<Scalar>() + 320 + 88;
+    let exact = element_loan_budget_oracle::SCALAR_VM
+        + 3 * size_of::<Frame>()
+        + size_of::<Scalar>()
+        + 320
+        + 88;
     assert_eq!(size_of::<Frame>(), 272);
     assert_eq!(size_of::<Scalar>(), 8);
-    assert_eq!(exact, 1232);
+    assert_eq!(exact, 12_464);
     assert_eq!(
         run_limits(
             &witness,
