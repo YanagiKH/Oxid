@@ -3104,7 +3104,7 @@ fn help() {
     println!("  oxid new <name>                   Create a script project");
     println!("  oxid run <file.ox|file.oxb>        Run a script or package");
     println!("  oxid check <file.ox>              Check script syntax");
-    println!("  oxid test                        Run project tests");
+    println!("  oxid test [--jobs N]             Run project tests");
     println!("  oxid build                       Package the project for Oxid");
     println!("  oxid fmt [path]                  Format script files in place");
     println!("  oxid repl                        Open the interactive interpreter");
