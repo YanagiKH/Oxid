@@ -427,16 +427,20 @@ CORE_TYPE_PROJECTS = {
         "examples/typed-option-result/tests/outcomes.ox",
     ),
 }
-INT_MAP_PROJECTS = {
+LIBRARY_PROJECTS = {
     "packages/int_map": ("packages/int_map/src/lib.ox",),
     "examples/typed-int-map": (
         "examples/typed-int-map/src/main.ox", "examples/typed-int-map/tests/map.ox",
     ),
+    "packages/json": ("packages/json/src/lib.ox",),
+    "examples/typed-json": (
+        "examples/typed-json/src/main.ox", "examples/typed-json/tests/validation.ox",
+    ),
 }
 
 
-def compiler_file_and_map_predecessor_report(text):
-    """Project the checked compiler, file I/O and integer map additions."""
+def compiler_and_library_predecessor_report(text):
+    """Project the verified compiler and library example additions."""
     data = list(re.finditer(r"^fixture-data validation passed: (?P<data>\d+) source-only files", text, re.M))
     report = list(re.finditer(
         r"^repository verification passed: (?P<language>\d+) language sources, "
@@ -450,8 +454,8 @@ def compiler_file_and_map_predecessor_report(text):
     if len(data) != 1 or len(report) != 1:
         raise AssertionError("expected one complete repository summary and DATA summary")
     changes = ((data[0], {"data": 11}),
-               (report[0], {"language": 11, "checks": 4, "members": 11, "projects": 4,
-                            "runs": 1, "entries": 1, "project_runs": 1, "project_tests": 1}))
+               (report[0], {"language": 14, "checks": 6, "members": 14, "projects": 6,
+                            "runs": 2, "entries": 2, "project_runs": 2, "project_tests": 2}))
     edits = []
     for match, deltas in changes:
         for name, delta in deltas.items():
@@ -522,24 +526,24 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual([path for path in typed_entries if path in core_roots], [core_example])
         self.assertFalse(any(path in core_members for path, _ in checks))
         self.assertFalse(core_members & verify_repo.fixture_data_sources(root))
-        map_roots = {root / name for name in INT_MAP_PROJECTS}
-        map_members = {root / name for members in INT_MAP_PROJECTS.values() for name in members}
-        map_example = root / "examples/typed-int-map"
-        self.assertEqual({name: verify_repo.TYPED_MANIFEST_PROJECTS[name] for name in INT_MAP_PROJECTS},
-                         INT_MAP_PROJECTS)
-        self.assertTrue(map_members <= set(sources))
-        self.assertEqual([row for row in checks if row[0] in map_roots],
-                         [(path, True) for path in sorted(map_roots)])
-        self.assertEqual([path for path in typed_entries if path in map_roots], [map_example])
-        self.assertFalse(any(path in map_members for path, _ in checks))
-        self.assertFalse(map_members & verify_repo.fixture_data_sources(root))
+        library_roots = {root / name for name in LIBRARY_PROJECTS}
+        library_members = {root / name for members in LIBRARY_PROJECTS.values() for name in members}
+        library_examples = [root / "examples/typed-int-map", root / "examples/typed-json"]
+        self.assertEqual({name: verify_repo.TYPED_MANIFEST_PROJECTS[name] for name in LIBRARY_PROJECTS},
+                         LIBRARY_PROJECTS)
+        self.assertTrue(library_members <= set(sources))
+        self.assertEqual([row for row in checks if row[0] in library_roots],
+                         [(path, True) for path in sorted(library_roots)])
+        self.assertEqual([path for path in typed_entries if path in library_roots], library_examples)
+        self.assertFalse(any(path in library_members for path, _ in checks))
+        self.assertFalse(library_members & verify_repo.fixture_data_sources(root))
         # Retain every earlier count/fingerprint after this exact checked delta.
         sources = [path for path in sources
-                   if path not in compiler_data | compiler_members | {file_io_member} | core_members | map_members]
+                   if path not in compiler_data | compiler_members | {file_io_member} | core_members | library_members]
         checks = [row for row in checks
-                  if row[0] not in {root / "compiler/native", file_io_root} | core_roots | map_roots]
-        typed_entries = [path for path in typed_entries if path not in {core_example, map_example}]
-        typed_members -= len(compiler_members) + 1 + len(core_members) + len(map_members)
+                  if row[0] not in {root / "compiler/native", file_io_root} | core_roots | library_roots]
+        typed_entries = [path for path in typed_entries if path not in {core_example, *library_examples}]
+        typed_members -= len(compiler_members) + 1 + len(core_members) + len(library_members)
         byte_data = verify_repo.byte_storage_fixture_data_sources(root)
         self.assertEqual(len(byte_data), 325)
         self.assertFalse(data_sources & byte_data)
@@ -561,12 +565,14 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertFalse(owned_text_data & (data_sources | byte_data | vector_data | copy_data | owned_vector_data))
         self.assertEqual(len(verify_repo.fixture_data_sources(root) - compiler_data), 569)
         self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - GENERIC_OWNED_VECTOR_PROJECTS.keys()
-                             - CORE_TYPE_PROJECTS.keys() - INT_MAP_PROJECTS.keys()
+                             - CORE_TYPE_PROJECTS.keys() - LIBRARY_PROJECTS.keys()
                              - {"compiler/native", FILE_IO_PROJECT}), 22)
-        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 11)
+        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 12)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-option-result"), 1)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-int-map"), 1)
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/int_map"), 1)
+        self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-json"), 1)
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/json"), 1)
         predecessor_fixture_data = verify_repo.fixture_data_sources(root) - owned_vector_data - owned_text_data - compiler_data
         self.assertEqual(predecessor_fixture_data - copy_data, data_sources | byte_data | vector_data)
         self.assertEqual(len(data_sources | byte_data), 188 + 325)
@@ -642,7 +648,7 @@ class PublishedRegistrationTests(unittest.TestCase):
             name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
             if name not in OWNED_RECORD_VECTOR_PROJECTS and name not in OWNED_TEXT_PROJECTS
             and name not in GENERIC_OWNED_VECTOR_PROJECTS and name not in CORE_TYPE_PROJECTS
-            and name not in INT_MAP_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT}}
+            and name not in LIBRARY_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT}}
         language = [name for name in language if name not in OWNED_RECORD_VECTOR_MEMBERS]
         check_inventory = [row for row in check_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
         run_inventory = [row for row in run_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
@@ -721,7 +727,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS, **GROWABLE_VECTOR_PROJECTS})
         self.assertEqual(tuple(name for name in verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS
                                if name not in GENERIC_OWNED_VECTOR_PROJECTS and name not in CORE_TYPE_PROJECTS
-                               and name not in INT_MAP_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT}),
+                               and name not in LIBRARY_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT}),
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
         self.assertEqual(len(CPU_MEMBERS), 33)
         self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
@@ -1005,14 +1011,16 @@ class PublishedRegistrationTests(unittest.TestCase):
         for project, expected in (("packages/core_types", ("check",)),
                                   ("examples/typed-option-result", ("check", "run", "test")),
                                   ("packages/int_map", ("check",)),
-                                  ("examples/typed-int-map", ("check", "run", "test"))):
+                                  ("examples/typed-int-map", ("check", "run", "test")),
+                                  ("packages/json", ("check",)),
+                                  ("examples/typed-json", ("check", "run", "test"))):
             calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / project]
             self.assertEqual([call.args[0] for call in calls],
                              [[str(Path(sys.executable).resolve()), command] for command in expected])
             self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
-        core_and_map_roots = {verify_repo.ROOT / name for name in CORE_TYPE_PROJECTS | INT_MAP_PROJECTS}
+        library_roots = {verify_repo.ROOT / name for name in CORE_TYPE_PROJECTS | LIBRARY_PROJECTS}
         before_compiler_calls = [call for call in run.call_args_list
-                                 if call.kwargs.get("cwd") not in {compiler_root, file_io_root} | core_and_map_roots]
+                                 if call.kwargs.get("cwd") not in {compiler_root, file_io_root} | library_roots]
         owned_text_data = verify_repo.owned_text_fixture_data_sources(verify_repo.ROOT)
         self.assertEqual(owned_text_data, {verify_repo.ROOT / name for name in OWNED_TEXT_DATA_SOURCES})
         self.assertFalse(any(str(path) in call.args[0] for path in owned_text_data for call in run.call_args_list))
@@ -1061,7 +1069,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         predecessor_calls = [call for call in predecessor_calls if library not in call.args[0]]
         output = io.StringIO(copy_predecessor_report(record_vector_predecessor_report(
             owned_record_vector_predecessor_report(owned_record_vector_data_predecessor_report(
-                generic_owned_vector_predecessor_report(compiler_file_and_map_predecessor_report(output.getvalue())))))))
+                generic_owned_vector_predecessor_report(compiler_and_library_predecessor_report(output.getvalue())))))))
         application = verify_repo.ROOT / "apps/byte-count"
         application_calls = [call for call in predecessor_calls if call.kwargs.get("cwd") == application]
         self.assertEqual([call.args[0] for call in application_calls],
