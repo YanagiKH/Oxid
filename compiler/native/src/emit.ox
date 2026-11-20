@@ -256,24 +256,38 @@ fn check_byte_index(c: &mut Compiler, index: Value, length: i32) -> () {
     label(&mut *c, valid);
     return;
 }
-pub fn byte_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+fn byte_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
     let name = b"  %v";
     let element = b" = getelementptr inbounds ";
     let slot_prefix = b", ptr %s";
     let ordinal = b", i32 0, i32 ";
     let line = b"\n";
-    let load_instruction = b" = load i8, ptr %v";
-    let alignment = b", align 1\n";
     check_byte_index(&mut *c, index, byte_count(binding.ty));
     let pointer = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &element);
     write_type(&mut *c, 2, binding.ty, false); append(&mut *c, 2, &slot_prefix);
     number(&mut *c, 2, binding.slot); append(&mut *c, 2, &ordinal);
     operand(&mut *c, 2, index); append(&mut *c, 2, &line);
+    return pointer;
+}
+pub fn byte_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+    let name = b"  %v";
+    let load_instruction = b" = load i8, ptr %v";
+    let alignment = b", align 1\n";
+    let pointer = byte_address(&mut *c, binding, index);
     let id = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &load_instruction);
     number(&mut *c, 2, pointer); append(&mut *c, 2, &alignment);
     return Value { ty: 4, id: id };
+}
+pub fn byte_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
+    let store_instruction = b"  store i8 ";
+    let address = b", ptr %v";
+    let alignment = b", align 1\n";
+    let pointer = byte_address(&mut *c, binding, index);
+    append(&mut *c, 2, &store_instruction); operand(&mut *c, 2, value);
+    append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &alignment);
+    return;
 }
 pub fn negate_bool(c: &mut Compiler, value: Value) -> Value {
     let literal_bytes_0 = b"  %v";

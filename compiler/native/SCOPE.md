@@ -30,7 +30,8 @@ A result-mode `main` has no arguments and prints its scalar result, then exits 0
 
 Use `b"..."` for fixed byte arrays such as `let data: [u8; 3] = b"abc";`.
 Literals support byte and Unicode escapes. Call `data.len()` for the length
-and read a byte with `data[index]`. Indices are checked before reading.
+and read a byte with `data[index]`. For a `mut` binding, use
+`data[index] = value` to replace a byte. Reads and writes check the index.
 
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports

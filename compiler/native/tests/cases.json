@@ -103,5 +103,12 @@
   {"name":"bytes-wrong-index-type","source":"fn main()->u8{let a=b\"A\";return a[true];}","kind":"reject","reference":true},
   {"name":"bytes-negative-index","source":"fn main()->u8{let a=b\"A\";let index=-1;return a[index];}","kind":"runtime","error":"byte index","reference":true},
   {"name":"bytes-upper-index","source":"fn main()->u8{let a=b\"A\";let index=1;return a[index];}","kind":"runtime","error":"byte index","reference":true},
-  {"name":"bytes-empty-index","source":"fn main()->u8{let a=b\"\";return a[0];}","kind":"runtime","error":"byte index","reference":true}
+  {"name":"bytes-empty-index","source":"fn main()->u8{let a=b\"\";return a[0];}","kind":"runtime","error":"byte index","reference":true},
+  {"name":"bytes-indexed-write","source":"fn main()->u8{let mut a=b\"AB\";a[a.len()-1]=42u8;return a[1];}","kind":"value","stdout":"42\n","reference":true},
+  {"name":"bytes-write-from-same-array","source":"fn main()->u8{let mut a=b\"AB\";a[0];a[0]=a[1];return a[0];}","kind":"value","stdout":"66\n","reference":true},
+  {"name":"bytes-immutable-write","source":"fn main()->u8{let a=b\"A\";a[0]=42u8;return a[0];}","kind":"reject","reference":true},
+  {"name":"bytes-wrong-write-value","source":"fn main()->u8{let mut a=b\"A\";a[0]=42;return a[0];}","kind":"reject","reference":true},
+  {"name":"bytes-wrong-write-index","source":"fn main()->u8{let mut a=b\"A\";a[false]=42u8;return a[0];}","kind":"reject","reference":true},
+  {"name":"bytes-oversize-write-index","source":"fn main()->u8{let mut a=b\"A\";a[1]=42u8;return a[0];}","kind":"runtime","error":"byte index","reference":true},
+  {"name":"bytes-write-evaluates-value-first","source":"fn index()->i32{return 2147483647+1;}fn main()->u8{let mut a=b\"A\";a[index()]=1u8/0u8;return a[0];}","kind":"runtime","error":"byte division by zero","reference":true}
 ]

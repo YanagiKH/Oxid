@@ -268,6 +268,40 @@ fn assigned(c: &mut Compiler) -> () {
     crate::emit::store(&mut *c, binding.slot, value);
     return;
 }
+fn index_assignment_end(c: &Compiler, open: i32) -> i32 {
+    let mut at = open + 1;
+    let mut depth = 1;
+    while depth > 0 {
+        let current = token(&*c, at);
+        if current.kind == 0 || current.kind == 23 || current.kind == 25 { return -1; }
+        if current.kind == 51 { depth = depth + 1; }
+        if current.kind == 52 { depth = depth - 1; }
+        at = at + 1;
+    }
+    let following = token(&*c, at);
+    if following.kind == 28 { return at - 1; }
+    return -1;
+}
+fn index_assignment(c: &mut Compiler, end: i32) -> () {
+    let position = local(&*c, c.cursor);
+    if position < 0 { fail(&mut *c); return; }
+    let binding = c.vars[position];
+    if !binding.writable || !is_byte_array(binding.ty) { fail(&mut *c); return; }
+    let begin = c.cursor + 2;
+    // Like other Oxid array assignments, evaluate the right side before the index.
+    c.cursor = end + 2;
+    let value = expression(&mut *c, 1, 0);
+    if value.ty != 4 { fail(&mut *c); return; }
+    expect(&mut *c, 25);
+    if c.error != 0 { return; }
+    let continuation = c.cursor;
+    c.cursor = begin;
+    let index = expression(&mut *c, 1, 0);
+    if index.ty != 1 || c.cursor != end { fail(&mut *c); return; }
+    c.cursor = continuation;
+    crate::emit::byte_store(&mut *c, binding, index, value);
+    return;
+}
 fn if_statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> () {
     if depth > 64 { c.error = 68; return; }
     expect(&mut *c, 7);
@@ -336,6 +370,10 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
     }
     let next = token(&*c, c.cursor + 1);
     if k == 1 && next.kind == 28 { assigned(&mut *c); return; }
+    if k == 1 && next.kind == 51 {
+        let end = index_assignment_end(&*c, c.cursor + 1);
+        if end >= 0 { index_assignment(&mut *c, end); return; }
+    }
     expression(&mut *c, 1, 0); expect(&mut *c, 25);
     return;
 }
