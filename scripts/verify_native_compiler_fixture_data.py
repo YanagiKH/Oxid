@@ -61,8 +61,8 @@ FIXTURE_INPUTS = (('compiler/native/tests/fixtures/comments.ox',
   51,
   '1ec8b81b351357a5b5597aad6cfa9fd31e56d949d97bb3bf7d3548313107af11'))
 CASES_JSON = ('compiler/native/tests/cases.json',
- 55943,
- '5811e0a7dc96d99c9ad8c5eb77b575e5b7a0a47caf2eeb56696b7324141f0a1c')
+ 62471,
+ '82bf372c0593d937a8d216d0745dc4719096befa0b0443824dbeeda0a002a289')
 CASE_NAMES = ('forward',
  'control',
  'scopes',
@@ -361,7 +361,35 @@ CASE_NAMES = ('forward',
  'slice-project-checks-after-end-evaluates',
  'slice-project-owner-moved-in-bound',
  'slice-project-owner-moved-in-later-argument',
- 'slice-project-integer-bound-type')
+ 'slice-project-integer-bound-type',
+ 'mutable-slice-owner-sees-store',
+ 'mutable-slice-mutate-and-reborrow',
+ 'mutable-slice-projected-store',
+ 'mutable-slice-distinct-writable-owners',
+ 'mutable-slice-distinct-shared-and-mutable',
+ 'mutable-slice-nested-call-releases',
+ 'mutable-slice-scalar-read-before-borrow',
+ 'mutable-slice-empty-tail',
+ 'mutable-slice-aligned-wide-store',
+ 'mutable-slice-loop-updates',
+ 'mutable-slice-negative-write',
+ 'mutable-slice-write-past-projection',
+ 'mutable-slice-write-empty',
+ 'mutable-slice-store-evaluates-value-first',
+ 'mutable-slice-immutable-owner',
+ 'mutable-slice-upgrade-shared-view',
+ 'mutable-slice-duplicate-exclusive-view',
+ 'mutable-slice-shared-then-exclusive',
+ 'mutable-slice-exclusive-then-nested-read',
+ 'mutable-slice-exclusive-then-index-read',
+ 'mutable-slice-exclusive-then-nested-move',
+ 'mutable-slice-project-alias',
+ 'mutable-slice-project-bound-move',
+ 'mutable-slice-return-unsupported',
+ 'mutable-slice-boolean-store',
+ 'mutable-slice-character-store',
+ 'mutable-slice-unsigned-store',
+ 'mutable-slice-byte-store')
 
 
 def require(condition, message):
@@ -438,11 +466,11 @@ def parse_cases(inputs):
         cases = json.loads(inputs[CASES_JSON[0]].decode("utf-8"), object_pairs_hook=unique_object)
     except (ValueError, UnicodeError) as error:
         raise RuntimeError("invalid scalar compiler case manifest: " + str(error)) from error
-    require(isinstance(cases, list) and len(cases) == 299
+    require(isinstance(cases, list) and len(cases) == 327
             and all(isinstance(case, dict) for case in cases),
-            "scalar compiler acceptance requires all 299 cases")
+            "scalar compiler acceptance requires all 327 cases")
     require(tuple(case.get("name") for case in cases) == CASE_NAMES
-            and len(set(CASE_NAMES)) == 299,
+            and len(set(CASE_NAMES)) == 327,
             "scalar compiler acceptance case names or order changed")
     sources, referenced = {}, []
     for case in cases:
@@ -472,7 +500,7 @@ def parse_cases(inputs):
     require(len(referenced) == 11 and set(referenced) == set(FIXTURE_FILES),
             "scalar compiler file fixtures must each be exercised once")
     require({kind: sum(case["kind"] == kind for case in cases) for kind in ("value", "reject", "runtime")}
-            == {"value": 116, "reject": 118, "runtime": 65},
+            == {"value": 130, "reject": 128, "runtime": 69},
             "scalar compiler positive, negative or runtime case census changed")
     return cases, sources
 

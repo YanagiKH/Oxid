@@ -129,6 +129,16 @@ REJECT_NAMES = {
     "slice-project-owner-moved-in-bound",
     "slice-project-owner-moved-in-later-argument",
     "slice-project-integer-bound-type",
+    "mutable-slice-immutable-owner",
+    "mutable-slice-upgrade-shared-view",
+    "mutable-slice-duplicate-exclusive-view",
+    "mutable-slice-shared-then-exclusive",
+    "mutable-slice-exclusive-then-nested-read",
+    "mutable-slice-exclusive-then-index-read",
+    "mutable-slice-exclusive-then-nested-move",
+    "mutable-slice-project-alias",
+    "mutable-slice-project-bound-move",
+    "mutable-slice-return-unsupported",
 }
 
 
@@ -193,12 +203,12 @@ class NativeCompilerRegistration(unittest.TestCase):
 
     def test_all_subject_cases_and_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 299)
+        self.assertEqual(len(cases), 327)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 116, "reject": 118, "runtime": 65})
+                         {"value": 130, "reject": 128, "runtime": 69})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})
