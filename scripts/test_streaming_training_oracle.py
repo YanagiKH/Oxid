@@ -27,6 +27,20 @@ class StreamingTrainingOracleTests(unittest.TestCase):
             before, after = oracle.train(oracle.SAMPLE, epochs, size)
             self.assertLess(after, before)
 
+    def test_shuffle_is_deterministic_and_preserves_every_window(self):
+        rows = list(range(51))
+        first = list(oracle.training_batches(rows, 2, 2, 42))
+        self.assertEqual(first, list(oracle.training_batches(rows, 2, 2, 42)))
+        self.assertNotEqual(first, list(oracle.training_batches(rows, 2, 2, 43)))
+        self.assertEqual(len(first), 52)
+        for offset in (0, 26):
+            epoch = first[offset:offset + 26]
+            self.assertEqual([len(batch) for batch in epoch], [2] * 25 + [1])
+            for window in range(0, 26, 8):
+                actual = [row for batch in epoch[window:window + 8] for row in batch]
+                self.assertEqual(sorted(actual), rows[2 * window:2 * window + 16])
+        self.assertNotEqual(first[:26], first[26:])
+
     def test_summary_rejects_wrong_progress_or_losses(self):
         correct = b'Rows: 8\nEpochs: 30\nBatches: 60\nInitial MSE: 3.68184e0\nFinal MSE: 1.21309e-2\n'
         oracle.check_summary(correct, oracle.SAMPLE, 30, 4)

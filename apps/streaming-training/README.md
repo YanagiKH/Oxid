@@ -61,7 +61,15 @@ with open("training.oxds", "wb") as output:
 .oxid/bin/streaming-training training.oxds 30 4
 ```
 
-Each epoch reads selected rows in file order, seeking directly to the first selected row. Keep the dataset unchanged during the run. This example does not shuffle rows, save a trained model or resume an interrupted run. For resumable training with an in-memory dataset, see [minibatch training](../minibatch-training/README.md).
+Each epoch reads selected rows in file order. To shuffle them for training, pass a seed:
+
+```sh
+.oxid/bin/streaming-training training.oxds 30 4 --shuffle 42
+```
+
+The seed is an integer from 0 to 4,294,967,295. The trainer reads up to eight batches at a time and shuffles rows within that group. Memory use depends on the batch size and row width. Use the same seed, dataset and batch size to repeat the row order. If you pass a starting row, put it before `--shuffle`.
+
+Keep the dataset unchanged during training. For checkpointing and recovery with an in-memory dataset, see [minibatch training](../minibatch-training/README.md).
 
 ## Use the reader in Oxid
 

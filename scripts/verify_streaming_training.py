@@ -108,11 +108,26 @@ def short_reads(check, label, binary):
     (directory/'retained-pipe-input').write_bytes(payload)
 
 
-def app_case(check, label, command, directory, epochs, size, native):
-    result = check.command(label, [*command, 'input.oxds', str(epochs), str(size)], directory, native=native)
-    losses = oracle.check_summary(result.stdout, oracle.SAMPLE, epochs, size)
-    check.report['cases'].append({'name': label, 'epochs': epochs, 'batch_size': size,
-                                  'independent_initial_loss': losses[0], 'independent_final_loss': losses[1]})
+def app_case(check, label, command, directory, epochs, size, native, shuffle=None):
+    filename = 'input.oxds'
+    rows = oracle.SAMPLE
+    extra = []
+    seed = None
+    if shuffle is not None:
+        start, seed = shuffle
+        filename = 'shuffle.oxds'
+        rows = oracle.SHUFFLE_ROWS[start:]
+        if start != 0:
+            extra.append(str(start))
+        extra.extend(['--shuffle', str(seed)])
+    result = check.command(label, [*command, filename, str(epochs), str(size), *extra],
+                           directory, native=native)
+    losses = oracle.check_summary(result.stdout, rows, epochs, size, seed)
+    case = {'name': label, 'epochs': epochs, 'batch_size': size,
+            'independent_initial_loss': losses[0], 'independent_final_loss': losses[1]}
+    if shuffle is not None:
+        case.update(start_row=start, shuffle_seed=seed)
+    check.report['cases'].append(case)
     check.save()
     return result.stdout
 
@@ -149,12 +164,37 @@ def verify(args):
             for epochs, size in [(30, 4), (3, 3), (1, 128)]:
                 reference[epochs, size] = app_case(check, f'{prefix}-reference-{epochs}-{size}',
                                                   [compiler, 'run', '--'], project, epochs, size, False)
+            (project/'shuffle.oxds').write_bytes(oracle.encode(oracle.SHUFFLE_ROWS))
+            shuffled = {}
+            for epochs, size, start, seed in [(5, 2, 2, 42), (5, 2, 2, 43), (4, 3, 1, 0), (2, 2147483647, 0, 4294967295)]:
+                key = epochs, size, start, seed
+                label = '-'.join(map(str, key))
+                shuffled[key] = app_case(check, f'{prefix}-reference-shuffle-{label}', [compiler, 'run', '--'],
+                                         project, epochs, size, False, (start, seed))
+            require(shuffled[5, 2, 2, 42] != shuffled[5, 2, 2, 43],
+                    'distinct seeds produced the same measured training result')
             binaries = []
             for profile in ['dev', 'release']:
                 check.command(f'{prefix}-{profile}-build', [compiler, 'build', '--profile', profile,
                                                             '--reproducible', '--message-format=json'], project)
                 binary = check.deploy(project/'.oxid/bin/streaming-training', prefix, profile)
                 binaries.append((profile, binary))
+            limited = []
+            heap_limit = 131072
+            manifest = project/'oxid.toml'
+            original = manifest.read_text()
+            hosted = 'policy = "hosted"\n'
+            require(original.count(hosted) == 1 and 'heap-limit' not in original,
+                    'cannot apply the training heap limit')
+            try:
+                manifest.write_text(original.replace(hosted, hosted + f'heap-limit = {heap_limit}\n'))
+                for profile in ['dev', 'release']:
+                    check.command(f'{prefix}-{profile}-limited-build',
+                                  [compiler, 'build', '--profile', profile, '--reproducible'], project)
+                    binary = check.deploy(project/'.oxid/bin/streaming-training', prefix+'-limited', profile)
+                    limited.append((profile, binary))
+            finally:
+                manifest.write_text(original)
             # The probe is the same public reader test, built as a result program.
             probe = snapshot/'apps/reader-probe'
             probe.mkdir()
@@ -223,13 +263,25 @@ def verify(args):
                 for epochs, size in reference:
                     actual = app_case(check, f'{label}-train-{epochs}-{size}', [binary], directory, epochs, size, True)
                     require(actual == reference[epochs, size], 'native and reference summaries differ')
+                (directory/'shuffle.oxds').write_bytes(oracle.encode(oracle.SHUFFLE_ROWS))
+                for (epochs, size, start, seed), expected in shuffled.items():
+                    case_label = f'{label}-shuffle-{epochs}-{size}-{start}-{seed}'
+                    actual = app_case(check, case_label, [binary], directory, epochs, size, True, (start, seed))
+                    require(actual == expected, 'native and reference shuffled summaries differ')
+                repeated = app_case(check, f'{label}-shuffle-repeated', [binary], directory, 5, 2, True, (2, 42))
+                require(repeated == shuffled[5, 2, 2, 42], 'identical seeds changed shuffled training')
                 for number, arguments in enumerate([[], ['--help'], ['-h']]):
                     result = check.command(f'{label}-help-{number}', [binary, *arguments], directory, native=True)
                     require(b'streaming-training <dataset> <epochs> <batch-size>' in result.stdout, 'missing usage')
                 for number, arguments in enumerate([['input.oxds'], ['input.oxds', '0', '4'],
                         ['input.oxds', '1000001', '4'], ['input.oxds', '1', '0'],
                         ['input.oxds', '1', '2147483648'], ['input.oxds', '-1', '4'],
-                        ['input.oxds', '1', 'x'], ['input.oxds', '1', '4', 'extra']]):
+                        ['input.oxds', '1', 'x'], ['input.oxds', '1', '4', 'extra'],
+                        ['input.oxds', '1', '4', '--shuffle'],
+                        ['input.oxds', '1', '4', '--shuffle', '-1'],
+                        ['input.oxds', '1', '4', '--shuffle', '4294967296'],
+                        ['input.oxds', '1', '4', '--unknown', '42'],
+                        ['input.oxds', '1', '4', '128', '--shuffle', '42', 'extra']]):
                     check.command(f'{label}-invalid-{number}', [binary, *arguments], directory, 2, native=True)
                 for number, payload in enumerate([b'', oracle.encode(oracle.SAMPLE)[:-1],
                                                   oracle.encode(oracle.SAMPLE)+b'x']):
@@ -240,6 +292,26 @@ def verify(args):
                             'failed training reported success')
                 check.command(label+'-missing', [binary, 'missing.oxds', '1', '4'], directory, 1, native=True)
                 check.deployed(binary, prefix, profile)
+            count = 8193
+            repeats = (count + len(oracle.SHUFFLE_ROWS) - 1) // len(oracle.SHUFFLE_ROWS)
+            rows = (oracle.SHUFFLE_ROWS * repeats)[:count]
+            payload = oracle.encode(rows)
+            require(len(payload) > heap_limit, 'test dataset fits in the execution heap')
+            directory = check.output/'runs'/(prefix+'-limited')
+            directory.mkdir(parents=True)
+            dataset = directory/'large.oxds'
+            dataset.write_bytes(payload)
+            for profile, binary in limited:
+                label = f'{prefix}-{profile}-shuffle-larger-than-heap'
+                result = check.command(label, [binary, dataset.name, '1', '8', '--shuffle', '2026'],
+                                       directory, native=True)
+                losses = oracle.check_summary(result.stdout, rows, 1, 8, 2026)
+                check.report['cases'].append({
+                    'name': label, 'dataset_bytes': len(payload), 'heap_limit': heap_limit,
+                    'data_sha256': sha(dataset), 'rows': count, 'batches': (count-1)//8+1,
+                    'independent_initial_loss': losses[0], 'independent_final_loss': losses[1],
+                })
+                check.deployed(binary, prefix+'-limited', profile)
         check.finish()
     except BaseException as error:
         check.failed(error)
