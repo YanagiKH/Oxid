@@ -326,6 +326,17 @@ range `^0.2.0` stays within 0.2.x. Run `oxid lock` to cache the selected release
 and fix their versions. Run `oxid lock --update` to select newer releases.
 Restore the previous manifest and lock to roll back to its cached versions.
 
+Registry maintainers can remove a release from future range selections and
+restore it later.
+
+```sh
+oxid registry yank file:///home/me/oxid-registry math 1.2.0
+oxid registry unyank file:///home/me/oxid-registry math 1.2.0
+```
+
+Existing locks and explicit exact-version dependencies can still use the
+release. Its source archive stays available for existing builds and rollbacks.
+
 `--locked`, `--offline` and `--frozen` never fetch a missing release, even from a
 local registry. Plain `doc`, `doctor` and editor requests also use cached releases
 only. Cached source changes are refused and preserved. Trust the registry

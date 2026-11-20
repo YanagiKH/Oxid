@@ -1022,12 +1022,40 @@ fn registry_package_path(source: &str, name: &str, budget: &mut Budget) -> Resul
     budget.join(&packages, name)
 }
 
+fn yank_directory(package: &Path, budget: &mut Budget) -> Result<PathBuf, String> {
+    let root = package
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("registry package directory has no registry root")?;
+    let name = package
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("registry package name is absent")?;
+    let yanked = budget.join(root, "yanked")?;
+    budget.join(&yanked, name)
+}
+
+fn yank_marker(path: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            ordinary(path, true)?;
+            if metadata.len() != 0 {
+                return Err("registry yank marker must be empty".into());
+            }
+            Ok(true)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("cannot inspect registry yank marker: {error}")),
+    }
+}
+
 fn newest_compatible(
     package: &Path,
     requirement: CompatibleVersion,
     budget: &mut Budget,
 ) -> Result<String, String> {
     ordinary(package, false)?;
+    let yanked = yank_directory(package, budget)?;
     let entries = fs::read_dir(package)
         .map_err(|error| format!("cannot inspect registry versions: {error}"))?;
     let mut best = None;
@@ -1037,7 +1065,10 @@ fn newest_compatible(
         }
         let entry = entry.map_err(|error| format!("cannot inspect registry version: {error}"))?;
         let name = budget.scoped(255, || Ok(entry.file_name()), |value| Ok(value.capacity()))?;
-        let Some(candidate) = name.to_str().and_then(|value| version_parts(value).ok()) else {
+        let Some((version, candidate)) = name
+            .to_str()
+            .and_then(|value| version_parts(value).ok().map(|parts| (value, parts)))
+        else {
             continue;
         };
         if !requirement.accepts(candidate) {
@@ -1049,6 +1080,14 @@ fn newest_compatible(
             .is_dir()
         {
             return Err("compatible registry release must be an ordinary directory".into());
+        }
+        let marker_bytes = (yanked.as_os_str().len() + 1 + version.len()) * 2;
+        if budget.scoped(
+            marker_bytes,
+            || yank_marker(&yanked.join(version)),
+            |_| Ok(0),
+        )? {
+            continue;
         }
         if best
             .as_ref()
@@ -1675,6 +1714,97 @@ fn write(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .map_err(|e| format!("cannot stage registry input: {e}"))
 }
 
+fn ensure_yank_directory(path: &Path) -> Result<(), String> {
+    match fs::create_dir(path) {
+        Ok(()) => {
+            let parent = path
+                .parent()
+                .ok_or("registry yank directory has no parent")?;
+            fs::File::open(parent)
+                .and_then(|file| file.sync_all())
+                .map_err(|error| format!("cannot sync registry yank directory parent: {error}"))
+        }
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => ordinary(path, false),
+        Err(error) => Err(format!("cannot create registry yank directory: {error}")),
+    }
+}
+
+fn change_yank_status(args: &[String], yanked: bool) -> Result<String, String> {
+    let [_, _, source, package_name, package_version] = args else {
+        return Err("use oxid registry yank or unyank FILE_URI PACKAGE VERSION".into());
+    };
+    name(package_name)?;
+    version(package_version)?;
+    let mut budget = Budget::new()?;
+    budget.metadata(resources::yank_update_bytes())?;
+    let package = registry_package_path(source, package_name, &mut budget)?;
+    let release = budget.join(&package, package_version)?;
+    ordinary(&release, false)?;
+    let record_path = budget.join(&release, "release.toml")?;
+    let record = Record::decode(
+        &read_regular(&record_path, 1024 * 1024, &mut budget)?,
+        &mut budget,
+    )?;
+    if record.name != *package_name || record.version != *package_version {
+        return Err("registry release name/version differs from the requested identity".into());
+    }
+    let artifact = budget.join(&release, "artifact.tar")?;
+    ordinary(&artifact, true)?;
+    if fs::symlink_metadata(&artifact)
+        .map_err(|error| error.to_string())?
+        .len()
+        != record.bytes
+    {
+        return Err("registry artifact length differs from its release record".into());
+    }
+    let directory = yank_directory(&package, &mut budget)?;
+    let marker = budget.join(&directory, package_version)?;
+    let previous = yank_marker(&marker)?;
+    let action = if yanked { "yanked" } else { "restored" };
+    let mut message =
+        budget.string(action.len() + package_name.len() + package_version.len() + 3)?;
+    use std::fmt::Write as _;
+    writeln!(message, "{action} {package_name} {package_version}")
+        .map_err(|_| "cannot format registry yank result")?;
+    if previous == yanked {
+        return Ok(message);
+    }
+    if yanked {
+        let parent = directory
+            .parent()
+            .ok_or("registry yank directory has no parent")?;
+        ensure_yank_directory(parent)?;
+        ensure_yank_directory(&directory)?;
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&marker)
+        {
+            Ok(file) => file
+                .sync_all()
+                .map_err(|error| format!("cannot sync registry yank marker: {error}"))?,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                if !yank_marker(&marker)? {
+                    return Err("registry yank marker changed during creation".into());
+                }
+            }
+            Err(error) => return Err(format!("cannot create registry yank marker: {error}")),
+        }
+    } else {
+        match fs::remove_file(&marker) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("cannot remove registry yank marker: {error}")),
+        }
+    }
+    fs::File::open(&directory)
+        .and_then(|file| file.sync_all())
+        .map_err(|error| {
+            format!("registry yank status changed but directory sync failed: {error}")
+        })?;
+    Ok(message)
+}
+
 pub(crate) fn dispatch(args: &[String]) -> Option<i32> {
     if !matches!(
         args.first().map(String::as_str),
@@ -1698,8 +1828,13 @@ pub(crate) fn dispatch(args: &[String]) -> Option<i32> {
 fn command(args: &[String]) -> Result<String, String> {
     qualified()?;
     if args.first().is_some_and(|word| word == "registry") {
+        match args.get(1).map(String::as_str) {
+            Some("yank") => return change_yank_status(args, true),
+            Some("unyank") => return change_yank_status(args, false),
+            _ => {}
+        }
         if args.len() != 3 || args[1] != "init" || args[2].starts_with('-') {
-            return Err("use oxid registry init NEW_DIRECTORY".into());
+            return Err("use oxid registry init NEW_DIRECTORY or registry yank/unyank FILE_URI PACKAGE VERSION".into());
         }
         let mut budget = Budget::new()?;
         if args[2].len() > 8192 {
