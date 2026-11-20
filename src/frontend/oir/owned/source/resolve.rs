@@ -398,9 +398,10 @@ impl<'src> ResolvedOwnedProgram<'src> {
                         .signatures
                         .get(id.0)
                         .ok_or_else(|| invalid_signature_identity(anchor))?;
-                    self.work().debit(4, anchor, "process signature identity")?;
-                    if !actual.params.is_empty()
-                        || actual.result != ValueTy::Scalar(Ty::Bool)
+                    let signature = item.signature();
+                    self.work().debit((4 + signature.parameters().len()) as u64, anchor, "process signature identity")?;
+                    if actual.params != signature.parameters()
+                        || actual.result != signature.result
                         || actual.span != anchor
                     {
                         return Err(invalid_signature_identity(anchor));
@@ -1857,13 +1858,27 @@ fn resolve_index_impl(
                 if id.0 != signatures.len() {
                     return Err(vec![*invalid_signature_identity(anchor)]);
                 }
-                work.debit(1, anchor, "process signature construction")
+                let signature = item.signature();
+                work.debit((1 + signature.parameters().len()) as u64, anchor, "process signature construction")
                     .map_err(|error| vec![*error])?;
+                let mut params = Vec::new();
+                if !signature.parameters().is_empty() {
+                    let storage = paid.as_deref_mut()
+                        .ok_or_else(|| vec![*invalid_signature_identity(anchor)])?;
+                    params = storage
+                        .reserve(allocator, Kind::Parameters, signature.parameters().len(), anchor)
+                        .map_err(|error| vec![*error])?;
+                    for parameter in signature.parameters() {
+                        storage::room(&params, params.capacity(), true, anchor)
+                            .map_err(|error| vec![*error])?;
+                        params.push(*parameter);
+                    }
+                }
                 storage::room(&signatures, signatures.capacity(), true, anchor)
                     .map_err(|error| vec![*error])?;
                 signatures.push(Signature {
-                    params: Vec::new(),
-                    result: ValueTy::Scalar(Ty::Bool),
+                    params,
+                    result: signature.result,
                     span: anchor,
                 });
             }

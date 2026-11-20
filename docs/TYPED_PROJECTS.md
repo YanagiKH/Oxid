@@ -180,6 +180,10 @@ On Linux and macOS, import `enable_termination_notifications` and
 from `main` to receive SIGINT and SIGTERM. If it returns true, poll
 `termination_requested()` between work items and return from `main` to close
 files and release other owned values.
+Import `wait_for_termination` from `std::process` to wait when there is no work
+ready. Pass a timeout in milliseconds. It returns true after a notification and
+false when the wait expires. A zero timeout polls immediately. Negative timeouts
+and calls before enabling notifications return false immediately.
 
 ## Reading and writing file buffers
 

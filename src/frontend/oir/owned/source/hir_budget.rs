@@ -1367,8 +1367,11 @@ fn preflight_hir(
         for item in crate::frontend::builtin_catalog::termination::Function::ALL {
             if index.builtin_set().process().contains(item) {
                 let anchor = index.process_anchor(item, work)?;
-                visit(work, 1, anchor)?;
+                let signature = item.signature();
+                let parameters = signature.parameters().len();
+                visit(work, 1 + parameters, anchor)?;
                 increment(&mut counts.signatures, 1, anchor)?;
+                increment(&mut counts.parameters, parameters, anchor)?;
             }
         }
     }

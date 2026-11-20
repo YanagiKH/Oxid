@@ -316,6 +316,14 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
     pub(super) fn has_termination(&self) -> bool {
         !self.witness.raw_program().builtins.process().is_empty()
     }
+    pub(super) fn has_termination_wait(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        self.has_termination()
+            && self
+                .witness
+                .experimental_function(Function::WaitForTermination)
+                .is_some()
+    }
     pub(super) fn process_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
         if !self.has_termination() {
             return None;
@@ -328,6 +336,10 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
             || self
                 .witness
                 .experimental_function(Function::TerminationRequested)
+                == Some(function)
+            || self
+                .witness
+                .experimental_function(Function::WaitForTermination)
                 == Some(function))
         .then(|| {
             let term = self.witness.functions()[function.0].blocks[0]

@@ -78,6 +78,18 @@ impl Fixture {
         fs::create_dir(&root).unwrap();
         Self(root)
     }
+    #[cfg(unix)]
+    fn waiting_project() -> Self {
+        let fixture = Self::project();
+        let source = SOURCE
+            .replace(
+                "use std::process::termination_requested;",
+                "use std::process::wait_for_termination;",
+            )
+            .replace("while !termination_requested(){}", "if !wait_for_termination(20000){return 85;}");
+        fs::write(fixture.0.join("src/main.ox"), source).unwrap();
+        fixture
+    }
     fn project() -> Self {
         let fixture = Self::fresh("source");
         fs::create_dir(fixture.0.join("src")).unwrap();
@@ -121,7 +133,7 @@ fn holds_file(pid: u32, path: &Path) -> bool {
         .any(|entry| fs::read_link(entry.unwrap().path()).is_ok_and(|target| target == path))
 }
 #[cfg(unix)]
-fn exercise(command: &mut Command, data: &Path, signal: libc::c_int) {
+fn exercise(command: &mut Command, data: &Path, signal: libc::c_int, waiting: bool) {
     let mut child = ChildGuard(Some(command.spawn().unwrap()));
     let stdout = child.0.as_mut().unwrap().stdout.take().unwrap();
     let (send, receive) = mpsc::channel();
@@ -137,6 +149,11 @@ fn exercise(command: &mut Command, data: &Path, signal: libc::c_int) {
         holds_file(child.0.as_ref().unwrap().id(), &target),
         "worker File must be live before notification"
     );
+    if waiting {
+        // Let the worker enter the positive wait after announcing readiness.
+        std::thread::sleep(Duration::from_millis(40));
+        assert!(child.0.as_mut().unwrap().try_wait().unwrap().is_none());
+    }
     assert_eq!(
         unsafe { libc::kill(child.0.as_ref().unwrap().id() as libc::pid_t, signal) },
         0
@@ -182,7 +199,9 @@ fn typed_process_notifications_return_and_drop_resources_after_sigint_and_sigter
     #[cfg(unix)]
     for signal in [libc::SIGINT, libc::SIGTERM] {
         let fixture = Fixture::project();
-        exercise(&mut fixture.command(&["run"]), &fixture.0, signal);
+        exercise(&mut fixture.command(&["run"]), &fixture.0, signal, false);
+        let fixture = Fixture::waiting_project();
+        exercise(&mut fixture.command(&["run"]), &fixture.0, signal, true);
     }
 }
 
@@ -269,9 +288,18 @@ fn result_library_and_unsupported_hosts_cannot_install_handlers() {
 #[ignore = "requires the actual LLVM host toolchain; run in native acceptance"]
 fn native_termination_notifications_keep_cleanup_after_source_free_relocation() {
     let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
-    for profile in ["dev", "release"] {
+    for (profile, waiting) in [
+        ("dev", false),
+        ("dev", true),
+        ("release", false),
+        ("release", true),
+    ] {
         for signal in [libc::SIGINT, libc::SIGTERM] {
-            let fixture = Fixture::project();
+            let fixture = if waiting {
+                Fixture::waiting_project()
+            } else {
+                Fixture::project()
+            };
             let built = fixture
                 .command(&["build", "--profile", profile])
                 .env("OXID_LLVM_BIN", &llvm)
@@ -298,7 +326,7 @@ fn native_termination_notifications_keep_cleanup_after_source_free_relocation() 
                 .env_remove("RUSTC")
                 .env_remove("CC")
                 .env_remove("CXX");
-            exercise(&mut command, &deployment.0, signal);
+            exercise(&mut command, &deployment.0, signal, waiting);
         }
     }
 }
