@@ -107,6 +107,19 @@ REJECT_NAMES = {
     "record-field-write-after-rhs-move",
     "copy-record-array-field",
     "owned-record-array-field-replacement",
+    "enum-match-requires-binding",
+    "enum-wildcard-payload-rejected",
+    "enum-return-type-mismatch",
+    "enum-duplicate-variant",
+    "enum-nonexhaustive-match",
+    "enum-duplicate-arm",
+    "enum-nominal-arm-mismatch",
+    "enum-payload-type-mismatch",
+    "enum-arm-missing-payload",
+    "enum-move-before-second-match",
+    "enum-move-branch-join",
+    "enum-fallthrough-missing-return",
+    "enum-branch-binding-scope",
 }
 
 
@@ -171,12 +184,12 @@ class NativeCompilerRegistration(unittest.TestCase):
 
     def test_all_subject_cases_and_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 244)
+        self.assertEqual(len(cases), 265)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 92, "reject": 96, "runtime": 56})
+                         {"value": 100, "reject": 109, "runtime": 56})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})

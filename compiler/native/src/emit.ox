@@ -2,6 +2,7 @@ use crate::model::Compiler;
 use crate::model::Value;
 use crate::model::grown;
 use crate::model::Binding;
+use crate::model::Record;
 use crate::model::Token;
 use crate::model::array_type;
 use crate::model::is_array;
@@ -149,6 +150,29 @@ fn field_cells(ty: i32) -> i32 {
     }
     return 1;
 }
+fn product_cells(c: &Compiler, row: Record) -> i32 {
+    let mut cells = 0;
+    // A cell includes tail padding for a field aligned to at most 8 bytes.
+    for field in 0..row.field_count {
+        let descriptor = c.fields[row.first_field + field];
+        cells = cells + field_cells(descriptor.ty);
+    }
+    return cells;
+}
+fn nominal_cells(c: &Compiler, row: Record) -> i32 {
+    if !row.tagged { return product_cells(&*c, row); }
+    let mut cells = 1;
+    for variant in 0..row.field_count {
+        let payload = c.fields[row.first_field + variant];
+        if is_record(payload.ty) {
+            let product = c.records[record_index(payload.ty)];
+            cells = cells + product_cells(&*c, product);
+        } else {
+            cells = cells + field_cells(payload.ty);
+        }
+    }
+    return cells;
+}
 pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
     let literal_bytes_0 = b"  %s";
     let literal_bytes_1 = b" = alloca ";
@@ -159,12 +183,7 @@ pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
     let mut cells = field_cells(ty);
     if is_record(ty) {
         let row = c.records[record_index(ty)];
-        cells = 0;
-        // A cell includes tail padding for a field aligned to at most 8 bytes.
-        for field in 0..row.field_count {
-            let descriptor = c.fields[row.first_field + field];
-            cells = cells + field_cells(descriptor.ty);
-        }
+        cells = nominal_cells(&*c, row);
     }
     if cells > 4096 - id { c.error = 68; return 0; }
     c.next_slot = id + cells;
@@ -270,7 +289,7 @@ pub fn byte_literal(c: &mut Compiler, index: i32, length: i32) -> Value {
 pub fn insert_field(c: &mut Compiler, aggregate: Value, value: Value, field: i32) -> Value {
     let name = b"  %v";
     let insert = b" = insertvalue ";
-    let first = b" undef";
+    let first = b" zeroinitializer";
     let space = b" ";
     let comma = b", ";
     let line = b"\n";
@@ -352,6 +371,26 @@ pub fn array_store(c: &mut Compiler, binding: Binding, index: Value, value: Valu
     write_scalar_type(&mut *c, 2, value.ty, false);
     append(&mut *c, 2, &space); operand(&mut *c, 2, value);
     append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &line);
+    return;
+}
+pub fn enum_switch(c: &mut Compiler, tag: Value, labels: &Vec<i32>, invalid: i32) -> () {
+    let head = b"  switch i32 ";
+    let target = b", label %b";
+    let start = b" [\n";
+    let entry = b"    i32 ";
+    let line = b"\n";
+    let end = b"  ]\n";
+    append(&mut *c, 2, &head);
+    operand(&mut *c, 2, tag);
+    append(&mut *c, 2, &target); number(&mut *c, 2, invalid);
+    append(&mut *c, 2, &start);
+    for index in 0..vector_len(&*labels) {
+        append(&mut *c, 2, &entry); number(&mut *c, 2, index);
+        append(&mut *c, 2, &target); number(&mut *c, 2, labels[index]);
+        append(&mut *c, 2, &line);
+    }
+    append(&mut *c, 2, &end);
+    c.terminated = true;
     return;
 }
 pub fn negate_bool(c: &mut Compiler, value: Value) -> Value {
@@ -765,8 +804,13 @@ fn record_preamble(c: &mut Compiler) -> () {
     let mut index = 0;
     while index < vector_len(&*c.records) && c.error == 0 {
         let row = c.records[index];
+        if nominal_cells(&*c, row) > 4096 { c.error = 68; return; }
         append(&mut *c, 0, &prefix); number(&mut *c, 0, index);
         append(&mut *c, 0, &declaration);
+        if row.tagged {
+            let tag = b"i32, ";
+            append(&mut *c, 0, &tag);
+        }
         let mut field = 0;
         while field < row.field_count {
             if field > 0 { append(&mut *c, 0, &comma); }
