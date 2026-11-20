@@ -15,14 +15,15 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "f7fe6c5a79569002ada4358f87ecd6aaa26afad8"
-REVIEWED_PARENTS = ("4c36af96c17c403456889572ecacb13a110f7cb6",)
-REVIEWED_TREE = "106498f608b497bddfb6f6bd3527e54420234913"
+REVIEWED_SOURCE = "b902dc18b062c1b528e0623089f63e85ec3de602"
+REVIEWED_PARENTS = ("f7fe6c5a79569002ada4358f87ecd6aaa26afad8",)
+REVIEWED_TREE = "8cecf8ae408d4520637d548e1de5717ed74a15d6"
 PUBLIC_TESTS = {
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
     "tests/typed_owned_record_element_loans.rs", "tests/typed_registry_ranges.rs",
     "tests/windows_file_io.rs", "tests/windows_file_runtime.c",
 }
+PUBLIC_TEST_UPDATES = {"tests/typed_language_server.rs"}
 SOURCE_ROOTS = ("src", "native")
 RESOURCE_ADAPTER = "scripts/process_termination_resource_adapter.py"
 RESOURCE_ADAPTER_PIN = (3196, "d6b3bcd1bd0c958e4a2164d66425a231c086ba1f767657ea9c6ac360473aad0d")
@@ -68,14 +69,16 @@ def reviewed_delta(repo):
             "wrong reviewed integrated typed source")
     raw = git(repo, "diff", "--name-status", "--no-renames", "-z", PREDECESSOR, REVIEWED_SOURCE)
     words = raw.decode("utf-8").split("\0")
-    require(words[-1] == "" and len(words) == 245, "invalid reviewed compiler delta")
+    require(words[-1] == "" and len(words) == 249, "invalid reviewed compiler delta")
     rows = list(zip(words[:-1:2], words[1:-1:2]))
     added = {name for status, name in rows if status == "A"}
     modified = {name for status, name in rows if status == "M"}
-    require(len(added) == 25 and len(modified) == 97 and not added & modified,
+    require(len(added) == 25 and len(modified) == 99 and not added & modified,
             "wrong reviewed compiler delta membership")
-    require(PUBLIC_TESTS <= added and all(name.startswith(("src/", "native/"))
-            for name in (added | modified) - PUBLIC_TESTS), "unexpected reviewed compiler path")
+    require(PUBLIC_TESTS <= added and PUBLIC_TEST_UPDATES <= modified
+            and all(name.startswith(("src/", "native/"))
+                    for name in (added | modified) - PUBLIC_TESTS - PUBLIC_TEST_UPDATES),
+            "unexpected reviewed compiler path")
     return added, modified
 
 

@@ -104,6 +104,8 @@ jobs:
         run: python -c "import os, shutil; shutil.copyfile(os.environ['ATTESTATION_BUNDLE'], 'dist/' + os.environ['RELEASE_ASSET'] + '.sigstore.json')"
 
       - name: Verify archive provenance and source identity
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python scripts/verify_release_provenance.py "dist/${{ matrix.asset }}"
 
       - name: Upload release asset
@@ -123,7 +125,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      attestations: read
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Classify the validated release tag
         id: release_kind
         env:
@@ -141,6 +150,11 @@ jobs:
           pattern: oxid-*
           path: dist
           merge-multiple: true
+
+      - name: Verify downloaded release archives before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -B scripts/verify_release_provenance.py --distribution dist
 
       - name: Publish checksummed standalone binaries
         uses: softprops/action-gh-release@v2

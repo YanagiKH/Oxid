@@ -110,7 +110,7 @@ GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility
 GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
 WINDOWS_LOCAL_PACKAGE_REPLAY = 'scripts/verify_windows_local_package_compatibility.py'
 CURRENT_TYPED_POLICY = ('scripts/verify_current_typed_compatibility.py',
-    (11396, '74ce209b8f17f911c5eef449e67a733db6d7df657e96e9b9b4286504c6f4d4fb'))
+    (11543, '2f6f0bd9e7bbdddcd02dc1773676eeed978bf53f37f82d077a7b769b63e1d6ed'))
 WINDOWS_LOCAL_PACKAGE_PARENT = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = '4ec7cbdee35774e6112421736c7c921f398e5d3b'
 GENERIC_OWNED_VECTOR_POLICY = (GENERIC_OWNED_VECTOR_REPLAY,
