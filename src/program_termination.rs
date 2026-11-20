@@ -15,6 +15,8 @@ mod platform {
         ptr,
         rc::Rc,
         sync::atomic::{AtomicBool, Ordering},
+        thread,
+        time::{Duration, Instant},
     };
 
     // AtomicBool uses the supported ABIs' lock-free byte atomic. The handler
@@ -200,6 +202,47 @@ mod platform {
         })
     }
 
+    pub(crate) fn wait(timeout_ms: i32) -> bool {
+        let Ok(timeout_ms) = u64::try_from(timeout_ms) else {
+            return false;
+        };
+        let enabled = CURRENT.with(|current| {
+            current
+                .try_borrow()
+                .is_ok_and(|context| context.active && context.enabled)
+        });
+        if !enabled {
+            return false;
+        }
+        let timeout = Duration::from_millis(timeout_ms);
+        let started = Instant::now();
+        while !REQUESTED.load(Ordering::Relaxed) {
+            let elapsed = started.elapsed();
+            if elapsed >= timeout {
+                return REQUESTED.load(Ordering::Relaxed);
+            }
+            // A notification may be delivered to another thread between the
+            // poll and the sleep. Bound the delay before the next poll.
+            thread::sleep((timeout - elapsed).min(Duration::from_millis(10)));
+        }
+        true
+    }
+
+    #[allow(dead_code)]
+    struct WaitControl {
+        start: Instant,
+        timeout: Duration,
+        elapsed: Duration,
+        remaining: Duration,
+        delay: Duration,
+        timeout_ms: u64,
+        enabled: bool,
+        result: bool,
+    }
+    pub(crate) const fn wait_bytes() -> usize {
+        size_of::<WaitControl>()
+    }
+
     impl Drop for Scope {
         fn drop(&mut self) {
             CURRENT.with(|current| {
@@ -338,6 +381,18 @@ mod platform {
                         assert_eq!(unsafe { libc::raise(libc::SIGTERM) }, 0);
                         assert!(requested());
                     }
+                    "timed-wait" => {
+                        assert!(!wait(i32::MAX));
+                        assert!(enable());
+                        assert!(!wait(0));
+                        let started = Instant::now();
+                        assert!(!wait(25));
+                        assert!(started.elapsed() >= Duration::from_millis(25));
+                        assert_eq!(unsafe { libc::raise(libc::SIGTERM) }, 0);
+                        assert!(!wait(-1));
+                        assert!(wait(0));
+                        assert!(wait(i32::MAX));
+                    }
                     "early-return" => {
                         assert!(enable());
                         drop(scope);
@@ -377,6 +432,7 @@ mod platform {
                 "first-install-fails",
                 "second-install-fails",
                 "sticky",
+                "timed-wait",
                 "early-return",
                 "error-return",
             ] {
@@ -415,6 +471,12 @@ mod platform {
     pub(crate) fn requested() -> bool {
         false
     }
+    pub(crate) fn wait(_: i32) -> bool {
+        false
+    }
+    pub(crate) const fn wait_bytes() -> usize {
+        0
+    }
     pub(crate) const fn control_bytes() -> usize {
         0
     }
@@ -428,6 +490,6 @@ mod platform {
     pub(crate) fn delivered() {}
 }
 
-pub(crate) use platform::{control_bytes, enable, requested, Scope};
+pub(crate) use platform::{control_bytes, enable, requested, wait, wait_bytes, Scope};
 #[cfg(test)]
 pub(crate) use platform::{delivered, observation, reset_observation};

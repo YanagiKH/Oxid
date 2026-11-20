@@ -6,9 +6,13 @@
     (defined(__linux__) || defined(__APPLE__)) && \
     (defined(__x86_64__) || defined(__aarch64__)) && UINTPTR_MAX == UINT64_MAX && \
     defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#include <errno.h>
 #include <signal.h>
 #include <stddef.h>
+#include <time.h>
 #include <unistd.h>
+
+_Static_assert(sizeof(struct timespec) == 2 * sizeof(int64_t), "termination wait timespec layout");
 
 static volatile sig_atomic_t termination_flag;
 static int termination_active;
@@ -74,6 +78,27 @@ int32_t __oxid_termination_requested(void) {
     return termination_active && termination_enabled && termination_flag != 0;
 }
 
+int32_t __oxid_wait_for_termination(int32_t timeout_ms) {
+    if (timeout_ms < 0 || !termination_active || !termination_enabled) return 0;
+    if (__oxid_termination_requested()) return 1;
+    if (timeout_ms == 0) return 0;
+    const int64_t duration = (int64_t)timeout_ms * 1000000;
+    struct timespec started;
+    if (clock_gettime(CLOCK_MONOTONIC, &started) != 0) return 0;
+    while (!__oxid_termination_requested()) {
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < started.tv_sec) return 0;
+        const uint64_t seconds = (uint64_t)now.tv_sec - (uint64_t)started.tv_sec;
+        if (seconds > (uint64_t)timeout_ms / 1000 + 1) break;
+        const int64_t elapsed = (int64_t)seconds * 1000000000 + now.tv_nsec - started.tv_nsec;
+        if (elapsed >= duration) break;
+        const int64_t remaining = duration - elapsed;
+        struct timespec slice = {0, (long)(remaining < 10000000 ? remaining : 10000000)};
+        if (nanosleep(&slice, NULL) != 0 && errno != EINTR) return 0;
+    }
+    return __oxid_termination_requested();
+}
+
 void __oxid_termination_scope_end(void) {
     if (!termination_active) return;
     if (termination_enabled) {
@@ -91,5 +116,6 @@ void __oxid_termination_scope_end(void) {
 int32_t __oxid_termination_scope_start(void) { return -1; }
 int32_t __oxid_enable_termination_notifications(void) { return 0; }
 int32_t __oxid_termination_requested(void) { return 0; }
+int32_t __oxid_wait_for_termination(int32_t timeout_ms) { (void)timeout_ms; return 0; }
 void __oxid_termination_scope_end(void) {}
 #endif

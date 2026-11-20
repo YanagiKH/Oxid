@@ -4549,6 +4549,7 @@ fn checked_entry_policy<W: PlanWitness>(
         for operation in [
             crate::frontend::builtin_catalog::experimental::Function::EnableTermination,
             crate::frontend::builtin_catalog::experimental::Function::TerminationRequested,
+            crate::frontend::builtin_catalog::experimental::Function::WaitForTermination,
         ] {
             #[cfg(test)]
             super::termination_queries::vm_catalog_row();
@@ -5126,6 +5127,12 @@ fn execute_plan_policy_with_termination<V: StoredValue, W: PlanWitness>(
             experimental::process_delivery_control_bytes(),
         )?,
     )?;
+    if plan.has_termination_wait() {
+        machine.header_bytes = plan::add(
+            machine.header_bytes,
+            crate::program_termination::wait_bytes(),
+        )?;
+    }
     let mut termination_scope = None;
     let mut result = (|| {
         machine.activation_preflight(

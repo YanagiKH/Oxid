@@ -791,6 +791,123 @@ fn function_definitions_follow_import_aliases_unsaved_lines_and_privacy() {
     p.unchanged();
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn type_definitions_follow_aliases_qualified_names_and_unsaved_declarations() {
+    let p = Project::new();
+    let main = "mod shapes;use crate::shapes::Point as Dot;use crate::shapes::Choice as Selected;\nfn inspect(p:&Dot)->crate::shapes::Choice{let local:Dot=crate::shapes::Point{x:42};return crate::shapes::Choice::One(local.x); }\nfn main()->i32{let value=Selected::None;match value{Selected::None=>{return 42;},Selected::One(n)=>{return n;},}}";
+    p.package("", "app", "", main);
+    let declared = "pub struct Point{pub x:i32}\npub enum Choice{One(i32),None}\nstruct Hidden{n:i32}\nenum HiddenChoice{Only}\n";
+    p.write("src/shapes.ox", declared);
+    let path = p.uri("src/main.ox");
+    let library = p.uri("src/shapes.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&path, main);
+    let unsaved = format!("\n// 🦀\n{declared}");
+    c.open(&library, &unsaved);
+    c.clean(&path);
+    for (needle, declaration, width) in [
+        ("Dot)->", "Point{", 5),
+        ("Dot=", "Point{", 5),
+        ("Point{x:42}", "Point{", 5),
+        ("Choice{let", "Choice{", 6),
+        ("One(local", "One(i32)", 3),
+        ("None;", "None}", 4),
+        ("None=>", "None}", 4),
+    ] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(main,needle)}),
+        );
+        let start = position_at(&unsaved, declaration);
+        let mut end = start.clone();
+        end["character"] = json!(start["character"].as_u64().unwrap() + width);
+        assert_eq!(
+            result["result"],
+            json!([{"uri":library,"range":{"start":start,"end":end}}]),
+            "{needle}: {result}"
+        );
+    }
+    let invalid = "mod shapes;fn inspect(p:&crate::shapes::Hidden)->(){return;}fn main()->i32{let secret=crate::shapes::HiddenChoice::Only;return 42;}";
+    c.change(&path, 2, json!([{"text":invalid}]));
+    for needle in ["Hidden)", "Only;"] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(invalid,needle)}),
+        );
+        assert!(result.get("error").is_none(), "{result}");
+        assert_eq!(result["result"], Value::Null, "{result}");
+    }
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn type_definitions_follow_generic_annotations_and_type_parameters() {
+    let p = Project::new();
+    let text = "struct Point{x:i32}\nstruct Wrapper<T>{value:T}\nstruct T{flag:bool}\nfn inspect(value:&Wrapper<Wrapper<Point>>)->(){return;}\nfn keep<T>(value:T)->T{return value;}\nfn main()->i32{return 42;}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    c.clean(&path);
+    for (needle, declaration, width) in [
+        ("Wrapper<Wrapper", "Wrapper<T>", 7),
+        ("Wrapper<Point", "Wrapper<T>", 7),
+        ("Point>>", "Point{", 5),
+        ("T)->T", "T>(value:T)", 1),
+    ] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(text,needle)}),
+        );
+        let start = position_at(text, declaration);
+        let mut end = start.clone();
+        end["character"] = json!(start["character"].as_u64().unwrap() + width);
+        assert_eq!(
+            result["result"],
+            json!([{"uri":path,"range":{"start":start,"end":end}}]),
+            "{needle}: {result}"
+        );
+    }
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn variant_definitions_follow_generic_construction_and_match_patterns() {
+    let p = Project::new();
+    let text = "enum Wrong { Some }\nenum Choice<T> { None, Some(T) }\nfn main()->i32{let chosen=Choice::<i32>::Some(42);match chosen{Choice::Some(number)=>{return number;},Choice::None=>{return 0;},}}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    c.clean(&path);
+    for (needle, declaration, width) in [
+        ("Some(42)", "Some(T)", 4),
+        ("Some(number)", "Some(T)", 4),
+        ("None=>", "None,", 4),
+    ] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(text,needle)}),
+        );
+        let start = position_at(text, declaration);
+        let mut end = start.clone();
+        end["character"] = json!(start["character"].as_u64().unwrap() + width);
+        assert_eq!(
+            result["result"],
+            json!([{"uri":path,"range":{"start":start,"end":end}}]),
+            "{needle}: {result}"
+        );
+    }
+    c.finish();
+    p.unchanged();
+}
+
 #[test]
 fn document_outline_uses_declarations_and_survives_body_type_errors() {
     let p = Project::new();

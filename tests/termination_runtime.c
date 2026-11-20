@@ -67,6 +67,7 @@ int main(void) {
     assert(sigprocmask(SIG_SETMASK, NULL, &before_mask) == 0);
     assert(__oxid_enable_termination_notifications() == 0);
     assert(__oxid_termination_requested() == 0);
+    assert(__oxid_wait_for_termination(2000000000) == 0);
 
 #if defined(OXID_TERMINATION_FORCE_UNSUPPORTED)
     assert(__oxid_termination_scope_start() == -1);
@@ -76,6 +77,7 @@ int main(void) {
 #else
     assert(__oxid_termination_scope_start() == 0);
     assert(__oxid_termination_scope_start() == -1);
+    assert(__oxid_wait_for_termination(2000000000) == 0);
     assert(raise(SIGINT) == 0);
     assert(old_notification == SIGINT);
     assert(__oxid_termination_requested() == 0);
@@ -91,8 +93,19 @@ int main(void) {
     fail_install = 0;
     assert(__oxid_enable_termination_notifications() == 1);
     assert(__oxid_termination_requested() == 0);
+    assert(__oxid_wait_for_termination(0) == 0);
+    struct timespec started, finished;
+    assert(clock_gettime(CLOCK_MONOTONIC, &started) == 0);
+    assert(__oxid_wait_for_termination(25) == 0);
+    assert(clock_gettime(CLOCK_MONOTONIC, &finished) == 0);
+    int64_t elapsed_ns = (finished.tv_sec - started.tv_sec) * INT64_C(1000000000)
+        + finished.tv_nsec - started.tv_nsec;
+    assert(elapsed_ns >= 25 * INT64_C(1000000));
     assert(raise(SIGINT) == 0);
     assert(__oxid_termination_requested() == 1);
+    assert(__oxid_wait_for_termination(-1) == 0);
+    assert(__oxid_wait_for_termination(0) == 1);
+    assert(__oxid_wait_for_termination(2000000000) == 1);
     assert(__oxid_enable_termination_notifications() == 1);
     assert(__oxid_termination_requested() == 1);
     assert(raise(SIGTERM) == 0);

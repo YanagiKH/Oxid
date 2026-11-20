@@ -3844,7 +3844,18 @@ impl<'a, 's> Walker<'a, 's> {
                 if !self.index.builtin_set().process().contains(item) {
                     return Err(bad(at));
                 }
-                return Ok((Vec::new(), ValueTy::Scalar(Ty::Bool)));
+                let signature = item.signature();
+                let mut parameters = Vec::new();
+                for parameter in signature.parameters() {
+                    self.storage.push(
+                        &mut parameters,
+                        *parameter,
+                        self.allocator,
+                        self.work,
+                        at,
+                    )?;
+                }
+                return Ok((parameters, signature.result));
             }
         }
         let rank = definition

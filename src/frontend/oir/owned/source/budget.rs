@@ -346,7 +346,7 @@ pub(super) fn preflight(
     if !typed.index().builtin_set().process().is_empty() {
         for item in crate::frontend::builtin_catalog::termination::Function::ALL {
             if typed.index().builtin_set().process().contains(item) {
-                let count = super::process_lower::counts();
+                let count = super::process_lower::counts(item);
                 raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
                 bytes = cap(
                     add(bytes, function_bytes(count)?)?,

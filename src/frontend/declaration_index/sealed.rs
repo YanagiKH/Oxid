@@ -2219,7 +2219,7 @@ impl<'s> DeclarationIndex<'s> {
             .map(DefId)
             .ok_or_else(|| overflow(at))
     }
-    /// At most the two canonical process descriptors call this metered lookup.
+    /// Each canonical process descriptor calls this metered lookup.
     /// Source call sites use cached signatures/IDs, never repeat this scan.
     pub fn process_anchor(
         &self,
