@@ -3,8 +3,7 @@ use super::*;
 use crate::frontend::{
     ast,
     declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
-    hir::DefId,
-    project::{ItemPathRef, ModuleId},
+    project::{ItemPathRef, ModuleId, QualifiedPathRef},
 };
 
 fn contains(span: Span, offset: usize) -> bool {
@@ -120,6 +119,55 @@ fn type_use(syntax: &ast::Program, offset: usize) -> Option<(ast::ItemPath, Span
     None
 }
 
+enum ValueUse {
+    Call(ast::ItemPath),
+    Qualified(ast::PathId),
+    VariantPattern(ast::PathId),
+    GenericVariant(ast::ItemPath, Span),
+}
+
+fn value_use(syntax: &ast::Program, offset: usize) -> Option<ValueUse> {
+    syntax
+        .expressions
+        .iter()
+        .find_map(|expression| match expression.kind {
+            ast::ExprKind::Call { callee, .. } => {
+                contains(path_name(syntax, callee)?, offset).then_some(ValueUse::Call(callee))
+            }
+            ast::ExprKind::QualifiedValue { path, .. } => {
+                contains(path_name(syntax, ast::ItemPath::Absolute(path))?, offset)
+                    .then_some(ValueUse::Qualified(path))
+            }
+            ast::ExprKind::GenericVariant {
+                application,
+                variant,
+                ..
+            } if contains(variant, offset) => Some(ValueUse::GenericVariant(
+                syntax.generic_application(application)?.path,
+                variant,
+            )),
+            _ => None,
+        })
+        .or_else(|| {
+            syntax
+                .functions
+                .iter()
+                .flat_map(|function| &function.blocks)
+                .flat_map(|block| &block.body)
+                .filter_map(|statement| match &statement.kind {
+                    ast::StmtKind::Match { arms, .. } if contains(statement.span, offset) => {
+                        Some(arms)
+                    }
+                    _ => None,
+                })
+                .flatten()
+                .find_map(|arm| {
+                    let name = path_name(syntax, ast::ItemPath::Absolute(arm.variant))?;
+                    contains(name, offset).then_some(ValueUse::VariantPattern(arm.variant))
+                })
+        })
+}
+
 pub(in crate::frontend) fn definition(
     owner: SourceOwner<'_>,
     sources: &SourceMap,
@@ -156,15 +204,8 @@ pub(in crate::frontend) fn definition(
             return Ok(location(sources, parameter.name));
         }
     }
-    let selected_call = syntax.expressions.iter().find_map(|expression| {
-        let (callee, qualified) = match expression.kind {
-            ast::ExprKind::Call { callee, .. } => (callee, false),
-            ast::ExprKind::QualifiedValue { path, .. } => (ast::ItemPath::Absolute(path), true),
-            _ => return None,
-        };
-        contains(path_name(syntax, callee)?, offset).then_some((callee, qualified))
-    });
-    if selected_type.is_none() && selected_call.is_none() {
+    let selected_value = value_use(syntax, offset);
+    if selected_type.is_none() && selected_value.is_none() {
         return Ok(None);
     }
     let limits = IndexLimits::default();
@@ -172,95 +213,33 @@ pub(in crate::frontend) fn definition(
     let mut allocator = Allocator::default();
     let facts = index::collect_originals(owner, limits, &work, &mut allocator)
         .map_err(|error| vec![*error])?;
-    if let Some((type_path, _)) = selected_type {
-        let index = facts.finish(&work, &mut allocator)?;
-        let path = ItemPathRef {
-            file: source.span(0, 0).file,
-            path: type_path,
-        };
-        return match index.query(&work).type_declaration_name(module, path) {
-            Ok(target) => Ok(target.and_then(|span| location(sources, span))),
-            Err(error) if matches!(error.code, "E0400" | "E0500") => Err(vec![*error]),
-            Err(_) => Ok(None),
-        };
-    }
-    let Some((callee, qualified)) = selected_call else {
-        return Ok(None);
-    };
-    let mut names = Vec::new();
-    allocator
-        .vector(
-            &mut names,
-            facts.source_function_count(),
-            "editor function declarations",
-        )
-        .map_err(|_| {
-            vec![*Diagnostic::new(
-                "E0400",
-                "editor",
-                "cannot reserve function navigation",
-                None,
-            )]
-        })?;
-    for ordinal in 0..facts.source_function_count() {
-        let (key, decl_module) = facts
-            .function(DefId(ordinal))
-            .map_err(|error| vec![*error])?;
-        let name = owner
-            .ast(decl_module)
-            .map_err(|error| vec![*error])?
-            .functions
-            .get(key.index)
-            .ok_or_else(|| {
-                vec![*Diagnostic::new(
-                    "E0500",
-                    "editor",
-                    "invalid function declaration",
-                    None,
-                )]
-            })?
-            .name;
-        names.push(name);
-    }
     let index = facts.finish(&work, &mut allocator)?;
     let mut query = index.query(&work);
-    let selected = if qualified {
-        let ast::ItemPath::Absolute(path) = callee else {
-            return Ok(None);
-        };
-        query
-            .qualified_value_endpoint(
-                module,
-                crate::frontend::project::QualifiedPathRef {
-                    file: source.span(0, 0).file,
-                    path,
-                },
-            )
-            .map(|target| match target {
-                index::QualifiedValueEndpoint::Function(target) => Some(target),
-                index::QualifiedValueEndpoint::Variant(_) => None,
-            })
-    } else {
-        query
-            .callee(
-                module,
-                ItemPathRef {
-                    file: source.span(0, 0).file,
-                    path: callee,
-                },
-                false,
-            )
-            .map(Some)
+    let file = source.span(0, 0).file;
+    let target = match (selected_type, selected_value) {
+        (Some((path, _)), _) => query.type_declaration_name(module, ItemPathRef { file, path }),
+        (_, Some(ValueUse::Call(path))) => query
+            .callee(module, ItemPathRef { file, path }, false)
+            .and_then(|target| query.function_declaration_name(target)),
+        (_, Some(ValueUse::Qualified(path))) => query
+            .qualified_value_endpoint(module, QualifiedPathRef { file, path })
+            .and_then(|target| match target {
+                index::QualifiedValueEndpoint::Function(id) => query.function_declaration_name(id),
+                index::QualifiedValueEndpoint::Variant(id) => query.variant_declaration_name(id),
+            }),
+        (_, Some(ValueUse::VariantPattern(path))) => query
+            .variant(module, QualifiedPathRef { file, path })
+            .and_then(|target| query.variant_declaration_name(target)),
+        (_, Some(ValueUse::GenericVariant(path, name))) => index
+            .generic_variant_template(module, path, name, &work)
+            .and_then(|target| query.variant_declaration_name(target)),
+        (None, None) => return Ok(None),
     };
-    let target = match selected {
-        Ok(Some(target)) => target,
-        Ok(None) => return Ok(None),
-        Err(error) if matches!(error.code, "E0400" | "E0500") => return Err(vec![*error]),
-        Err(_) => return Ok(None),
-    };
-    Ok(names
-        .get(target.0)
-        .and_then(|span| location(sources, *span)))
+    match target {
+        Ok(target) => Ok(target.and_then(|span| location(sources, span))),
+        Err(error) if matches!(error.code, "E0400" | "E0500") => Err(vec![*error]),
+        Err(_) => Ok(None),
+    }
 }
 
 fn local_definition(
