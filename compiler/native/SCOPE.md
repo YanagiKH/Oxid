@@ -20,13 +20,16 @@ they do not parse or check Oxid source. Existing output paths are refused.
 
 Supported input uses ASCII identifiers/comments, i32/i64/u8/bool/unit, named functions
 with typed parameters/results, initialized let bindings, optional type
-annotations, mut/assignment, lexical blocks, calls, if/else, while, break,
+annotations, mut/assignment, lexical blocks, calls, if/else, while, for, break,
 continue, explicit returns and short-circuit boolean operators. Active names
 cannot shadow bindings or functions. Integer arithmetic is checked; division
 and remainder reject zero and signed MIN/-1 before the LLVM operation. Use
 decimal literals such as `255u8` and `9007199254740993i64`. Convert local
 bindings with `.to_i64()`, `.to_i32_checked()` or `.to_u8_checked()`.
 A result-mode `main` has no arguments and prints its scalar result, then exits 0.
+Use `for index in start..end { ... }` to iterate over matching integer bounds.
+The bounds evaluate once from left to right, and the end is excluded. The
+index is immutable and available inside the loop body.
 
 Use `b"..."` for fixed byte arrays such as `let data: [u8; 3] = b"abc";`.
 Literals support byte and Unicode escapes. Use `[1u8, 2u8]` to build an array

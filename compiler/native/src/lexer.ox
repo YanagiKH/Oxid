@@ -34,6 +34,8 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     let use_word = b"use";
     let as_word = b"as";
     let struct_word = b"struct";
+    let for_word = b"for";
+    let in_word = b"in";
 
     if word(&*source, start, end, &literal_bytes_0) { return 3; }
     if word(&*source, start, end, &literal_bytes_1) { return 4; }
@@ -56,6 +58,8 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     if word(&*source, start, end, &as_word) { return 47; }
     if word(&*source, start, end, &long_type) { return 48; }
     if word(&*source, start, end, &struct_word) { return 54; }
+    if word(&*source, start, end, &for_word) { return 55; }
+    if word(&*source, start, end, &in_word) { return 56; }
     return 1;
 }
 fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i64) -> () {
@@ -251,6 +255,7 @@ fn paired_kind(b: i32, next: i32) -> i32 {
     if b == 38 && next == 38 { return 41; }
     if b == 124 && next == 124 { return 42; }
     if b == 58 && next == 58 { return 45; }
+    if b == 46 && next == 46 { return 57; }
     return 0;
 }
 fn punctuation(c: &mut Compiler, start: i32, size: i32) -> i32 {
