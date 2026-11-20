@@ -1,9 +1,10 @@
 # utf8-normalize
 
 Validate UTF-8 from standard input, convert CRLF and CR line endings to LF, and
-write the result to standard output. Invalid UTF-8 returns status 65 without
-writing output. All other characters, including NUL and a byte order mark, are
-preserved. This tool does not perform Unicode normalization such as NFC.
+write the result to standard output. The default mode returns status 65 and
+produces no output for invalid UTF-8. All other characters, including NUL and a
+byte order mark, are preserved. This tool does not perform Unicode normalization
+such as NFC.
 
 With `oxid` on `PATH`, run these commands from the repository root:
 
@@ -26,10 +27,19 @@ cd app
 oxid run --frozen < input.txt > output.txt
 ```
 
-The application reads and validates all input before writing, then changes line
-endings in the same byte buffer. Memory use grows with the input and remains
-subject to the runtime memory limit. An output
-error can leave a partial result; check the exit status before using the file.
+By default, the application validates all input before writing. Memory use
+grows with the input and is subject to the runtime memory limit.
+
+Use `--stream` for large files or pipes:
+
+```sh
+app/.oxid/bin/utf8-normalize --stream < input.txt > output.txt
+```
+
+Streaming uses a fixed 4 KiB buffer. UTF-8 characters and CRLF pairs can span
+reads. Earlier valid text may already be written when a later read contains
+invalid UTF-8. An output error can also leave a partial result. Check the exit
+status before using the file.
 
 | Exit status | Meaning |
 | --- | --- |
