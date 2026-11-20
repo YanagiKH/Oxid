@@ -39,8 +39,8 @@ unsigned integers such as `4294967295u32`, and `.to_u32_checked()` or
 `.to_i64_checked()` for checked conversions between integer types.
 
 Use `[i32; 3]` for a fixed array type and `[10, 20, 30]` for a value.
-An array can hold up to 1024 values of one type: `i32`, `i64`, `u8`, `u32`,
-`bool` or `char`. Passing or assigning a whole array moves it. Use a new value to reinitialize
+An array holds up to 1024 values of the same type. Use `i32`, `i64`, `u8`,
+`u32`, `bool` or `char`. Passing or assigning a whole array moves it. Use a new value to reinitialize
 a mutable binding after a move. A loop can move arrays declared inside its body.
 Use `data.len()` for the length and `data[index]` to read an element. For a
 `mut` binding, use `data[index] = value` to replace an element. Reads and

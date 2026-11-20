@@ -48,6 +48,7 @@ shutil.copyfile(pathlib.Path(os.environ['TEST_DOWNLOADS'])/url.rsplit('/',1)[1],
             **os.environ, "PATH": str(self.tools) + os.pathsep + os.environ["PATH"],
             "TMPDIR": str(self.root / "temporary"), "OXID_INSTALL_DIR": str(self.destination),
             "OXID_VERSION": "v0.9.0", "OXID_ARCHIVE": "", "TEST_MACHINE": "aarch64",
+            "OXID_VERIFY_SIGNATURE": "0", "OXID_TRUSTED_ROOT": "",
             "TEST_DOWNLOADS": str(self.mirror), "TEST_REQUESTS": str(self.root / "requests.jsonl"),
         }
 
@@ -98,6 +99,84 @@ shutil.copyfile(pathlib.Path(os.environ['TEST_DOWNLOADS'])/url.rsplit('/',1)[1],
             requests = [json.loads(line) for line in (self.root / "requests.jsonl").read_text().splitlines()]
             self.assertEqual(requests[-2:], [url + self.asset, url + self.asset + ".sha256"])
             self.assertEqual(list((self.root / "temporary").iterdir()), [])
+
+    def signature_bundle(self):
+        (self.mirror / (self.asset + ".sigstore.json")).write_bytes(b"test bundle")
+        self.environment.update(OXID_VERIFY_SIGNATURE="1", TEST_SIGNATURE_STATE="true",
+                                TEST_SIGNATURE_COMMAND=str(self.root / "signature-command"))
+        self.tool("gh", '''import json,os,pathlib,sys
+arguments=sys.argv[1:]
+bundle=pathlib.Path(arguments[arguments.index('--bundle')+1])
+assert bundle.read_bytes()==b'test bundle'
+pathlib.Path(os.environ['TEST_SIGNATURE_COMMAND']).write_text(json.dumps(arguments))
+result=os.environ['TEST_SIGNATURE_STATE']
+print(result)
+if result == 'invalid':
+    raise SystemExit(1)
+''')
+
+    def test_signature_checks_selected_release_workflow_and_archive(self):
+        self.signature_bundle()
+        self.environment["OXID_VERSION"] = "v1.0.0-rc.1"
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.destination / "oxid").read_bytes(), self.payload)
+        command = json.loads((self.root / "signature-command").read_text())
+        self.assertEqual(command[:2], ["attestation", "verify"])
+        self.assertEqual(Path(command[2]).name, self.asset)
+        self.assertEqual(Path(command[command.index("--bundle") + 1]).name, self.asset + ".sigstore.json")
+        self.assertEqual(command[command.index("--repo") + 1], "YanagiKH/Oxid")
+        self.assertEqual(command[command.index("--signer-workflow") + 1],
+                         "YanagiKH/Oxid/.github/workflows/release.yml")
+        self.assertEqual(command[command.index("--source-ref") + 1], "refs/tags/v1.0.0-rc.1")
+        self.assertIn("--deny-self-hosted-runners", command)
+        expected_digest = hashlib.sha256((self.mirror / self.asset).read_bytes()).hexdigest()
+        rule = command[command.index("--jq") + 1]
+        self.assertIn(f'.name == "{self.asset}"', rule)
+        self.assertIn(f'.digest.sha256 == "{expected_digest}"', rule)
+        requests = [json.loads(line) for line in (self.root / "requests.jsonl").read_text().splitlines()]
+        self.assertEqual(len(requests), 3)
+        self.assertTrue(requests[-1].endswith(f"/v1.0.0-rc.1/{self.asset}.sigstore.json"))
+        self.assert_clean()
+
+    def test_required_invalid_or_missing_signature_preserves_installation(self):
+        binary = self.previous_executable()
+        self.signature_bundle()
+        self.environment["OXID_ARCHIVE"] = str(self.mirror / self.asset)
+        bundle = self.mirror / (self.asset + ".sigstore.json")
+        for state in ["invalid", "false", "missing"]:
+            with self.subTest(state=state):
+                if state == "missing":
+                    bundle.unlink()
+                self.environment["TEST_SIGNATURE_STATE"] = state
+                result = self.run_installer()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(binary.read_bytes(), b"previous executable")
+                self.assertFalse((self.root / "requests.jsonl").exists())
+                self.assert_clean()
+
+    def test_signed_local_archive_can_use_a_separate_trusted_root(self):
+        self.signature_bundle()
+        trust = self.root / "trusted root.jsonl"
+        trust.write_text("test trusted root")
+        self.environment.update(OXID_ARCHIVE=str(self.mirror / self.asset), OXID_TRUSTED_ROOT=str(trust))
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        command = json.loads((self.root / "signature-command").read_text())
+        self.assertEqual(command[-2:], ["--custom-trusted-root", str(trust)])
+        self.assertFalse((self.root / "requests.jsonl").exists())
+        self.assert_clean()
+
+    def test_signature_verification_requires_an_explicit_tag_before_downloads(self):
+        self.signature_bundle()
+        for version in ["latest", "../v1.0.0", "v1.0.0\nv1.0.1"]:
+            with self.subTest(version=version):
+                self.environment["OXID_VERSION"] = version
+                result = self.run_installer()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b"specific release tag", result.stderr)
+                self.assertFalse((self.root / "requests.jsonl").exists())
+                self.assert_clean()
 
     def test_bad_checksum_preserves_the_previous_executable(self):
         self.destination.mkdir()
