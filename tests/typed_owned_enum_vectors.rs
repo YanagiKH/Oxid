@@ -222,12 +222,19 @@ fn token_queue_moves_real_utf8_text_file_and_sixteen_byte_payloads() {
         let checked = project.invoke(&["check"]);
         assert!(checked.status.success(), "{checked:?}");
         let ran = project.invoke(&["run"]);
-        if cfg!(all(
+        let file_host = cfg!(all(
             any(target_os = "linux", target_os = "macos"),
             target_pointer_width = "64",
             target_endian = "little",
             any(target_arch = "x86_64", target_arch = "aarch64")
-        )) {
+        )) || cfg!(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        ));
+        if file_host {
             assert!(ran.status.success(), "{ran:?}");
             assert_eq!(ran.stdout, b"42\n");
             assert!(ran.stderr.is_empty(), "{ran:?}");

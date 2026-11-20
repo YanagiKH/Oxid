@@ -10,6 +10,8 @@ use super::{
 pub(super) mod experimental;
 #[path = "owned_vector_builtins.rs"]
 pub(super) mod owned_vector;
+#[path = "termination_builtins.rs"]
+pub(super) mod termination;
 #[path = "vector_builtins.rs"]
 pub(super) mod vector;
 
@@ -53,7 +55,7 @@ struct BuiltinSetControls {
     inventory_caller_result: experimental::Inventory,
 }
 pub(in crate::frontend) const fn builtin_set_control_bytes() -> usize {
-    std::mem::size_of::<BuiltinSetControls>()
+    std::mem::size_of::<BuiltinSetControls>() + termination::shared_selector_bytes()
 }
 impl BuiltinSet {
     pub fn legacy(self) -> Self {
@@ -172,6 +174,9 @@ impl BuiltinSet {
             BuiltinItem::Vector(item) => {
                 self.with_experimental(self.experimental().admit_vector(item))
             }
+            BuiltinItem::Process(item) => {
+                self.with_experimental(self.experimental().admit_process(item))
+            }
         }
     }
     pub fn contains_enum(self, item: BuiltinEnum) -> bool {
@@ -201,6 +206,9 @@ impl BuiltinSet {
         usize::from(self.contains_function(BuiltinFunction::ReadStdin))
             + usize::from(self.has_output_function())
             + self.experimental().functions()
+    }
+    pub fn process(self) -> termination::Inventory {
+        self.experimental().process()
     }
     pub fn contains_vector(self, item: vector::Item) -> bool {
         self.experimental().contains_vector(item)
@@ -267,6 +275,7 @@ pub(super) enum BuiltinItem {
     Function(BuiltinFunction),
     Experimental(experimental::Item),
     Vector(vector::Item),
+    Process(termination::Function),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum BuiltinEnum {
@@ -288,21 +297,21 @@ impl BuiltinItem {
         match self {
             Self::Enum(item) => item.variant_count(),
             Self::Experimental(item) => item.enumeration().map_or(0, |item| item.members().len()),
-            Self::Function(_) | Self::Vector(_) => 0,
+            Self::Function(_) | Self::Vector(_) | Self::Process(_) => 0,
         }
     }
     pub fn member_name(self, index: usize) -> Option<&'static str> {
         match self {
             Self::Enum(item) => item.member_name(index),
             Self::Experimental(item) => item.enumeration()?.members().get(index).copied(),
-            Self::Function(_) | Self::Vector(_) => None,
+            Self::Function(_) | Self::Vector(_) | Self::Process(_) => None,
         }
     }
     pub fn member_payload(self, index: usize) -> Option<Ty> {
         match self {
             Self::Enum(item) => item.member_payload(index),
             Self::Experimental(item) => item.enumeration()?.payload(index),
-            Self::Function(_) | Self::Vector(_) => None,
+            Self::Function(_) | Self::Vector(_) | Self::Process(_) => None,
         }
     }
     pub fn name(self) -> &'static str {
@@ -311,12 +320,14 @@ impl BuiltinItem {
             Self::Function(item) => item.name(),
             Self::Experimental(item) => item.name(),
             Self::Vector(item) => item.name(),
+            Self::Process(item) => item.name(),
         }
     }
     pub fn path(self) -> [&'static str; 3] {
         match self {
             Self::Experimental(item) => item.path(),
             Self::Vector(item) => item.path(),
+            Self::Process(item) => item.path(),
             _ => ["std", "io", self.name()],
         }
     }

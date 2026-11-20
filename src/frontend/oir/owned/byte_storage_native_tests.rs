@@ -996,7 +996,7 @@ fn byte_text_oracles() -> [ByteTextOracle; 2] {
             locals: &[hir::Ty::U8,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32],
             roster: &[Live(0),Empty(0),Live(1),Move(1,0),End(0),Integer(1,0),Read(2,1),Copy(0,2,hir::Ty::U8),Copy(3,0,hir::Ty::U8),Widen(4,3),End(1)],
             length: 0, text_bytes: 3279, diagnostic_bytes: 83,
-            metadata_bytes: 33080, native_bytes: 44,
+            metadata_bytes: 34648, native_bytes: 44,
             ordinary_visits: 39, cost: 34,
         },
         ByteTextOracle {
@@ -1006,7 +1006,7 @@ fn byte_text_oracles() -> [ByteTextOracle; 2] {
             locals: &[hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32,hir::Ty::U8,hir::Ty::U8,hir::Ty::I32],
             roster: &[Integer(3,128),Copy(0,3,hir::Ty::I32),Copy(4,0,hir::Ty::I32),Narrow(5,4),Copy(1,5,hir::Ty::U8),Copy(6,1,hir::Ty::U8),Live(0),Construct(0,6),Live(1),Move(1,0),End(0),Integer(7,0),Read(8,7),Copy(2,8,hir::Ty::U8),Copy(9,2,hir::Ty::U8),Widen(10,9),End(1)],
             length: 1, text_bytes: 5982, diagnostic_bytes: 176,
-            metadata_bytes: 33144, native_bytes: 92,
+            metadata_bytes: 34712, native_bytes: 92,
             ordinary_visits: 64, cost: 46,
         },
     ];
@@ -1132,19 +1132,25 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
         assert_byte_text_roster(&case, &oracle);
         let scalar = oracle.locals.len();
         let unique = oracle.diagnostics.len();
-        let plan_bytes = size_of::<plan::FunctionPlan>() + 2 * size_of::<usize>();
-        assert_eq!(plan_bytes, 200);
+        let plan_bytes = element_loan_budget_oracle::PLAN_BUILDER + 208 + 2 * size_of::<usize>();
+        let native_metadata_bytes = oracle.metadata_bytes
+            + TERMINATION_PLAN_SELECTOR_BYTES
+            + TERMINATION_RAW_SELECTOR_BYTES;
+        assert_eq!(plan_bytes, 1544);
+        let plan_bytes = plan_bytes + TERMINATION_PLAN_SELECTOR_BYTES;
         assert_eq!(oracle.text.len(), oracle.text_bytes);
         assert_eq!(
             oracle.diagnostics.iter().map(|s| s.len()).sum::<usize>(),
             oracle.diagnostic_bytes
         );
         assert_eq!(
-            oracle.metadata_bytes,
+            native_metadata_bytes,
             plan_bytes
                 + size_of::<Bound>()
                 + unique * (size_of::<DiagnosticLookup>() + size_of::<String>())
                 + EMITTER_TRANSIENT_BYTES
+                + element_loan_budget_oracle::NATIVE_QUERY
+                + TERMINATION_RAW_SELECTOR_BYTES
         );
         let exact = Limits {
             function_slots: scalar + 2,
@@ -1155,7 +1161,7 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
             bytes: oracle.native_bytes,
             live_bytes: oracle.native_bytes,
             diagnostic_bytes: oracle.diagnostic_bytes,
-            metadata_bytes: oracle.metadata_bytes,
+            metadata_bytes: native_metadata_bytes,
             ir_bytes: oracle.text_bytes,
             ..Limits::DEFAULT
         };
@@ -1173,7 +1179,7 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
             &case.sources,
             false,
             oracle.diagnostic_bytes,
-            oracle.metadata_bytes,
+            native_metadata_bytes,
             &mut diagnostic_accounting,
         )
         .unwrap();
@@ -1209,7 +1215,7 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
         );
         assert_eq!((m.occurrences, m.unique), (unique, unique));
         assert_eq!(m.plan_bytes, plan_bytes);
-        assert_eq!(m.metadata_peak, oracle.metadata_bytes);
+        assert_eq!(m.metadata_peak, native_metadata_bytes);
         assert_eq!(m.transfer_inventory_visits, oracle.roster.len() + 3);
         assert_eq!(
             (m.count_ordinary_visits, m.render_ordinary_visits),
@@ -1352,7 +1358,7 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
             ),
             (
                 Limits {
-                    metadata_bytes: oracle.metadata_bytes - 1,
+                    metadata_bytes: native_metadata_bytes - 1,
                     ..exact
                 },
                 "emission metadata bytes",
@@ -1387,7 +1393,7 @@ fn byte_storage_native_independent_templates_and_allocation_topology() {
                 assert_eq!(denied.metrics.count_bytes, 0);
             }
         }
-        println!("RFC0031 independent frozen native N={} plan={} I={} W=2 native={} cost={} diagnostic={} LLVM={} metadata={} transfer_visits={} ordinary_visits={} plan_sites=5 including_zero=3 native_sites={} all_exact_and_one_short_pass", oracle.length, plan_bytes, scalar + 2, oracle.native_bytes, oracle.cost, oracle.diagnostic_bytes, oracle.text_bytes, oracle.metadata_bytes, oracle.roster.len() + 3, oracle.ordinary_visits, 4 + unique);
+        println!("RFC0031 independent frozen native N={} plan={} I={} W=2 native={} cost={} diagnostic={} LLVM={} metadata={} transfer_visits={} ordinary_visits={} plan_sites=5 including_zero=3 native_sites={} all_exact_and_one_short_pass", oracle.length, plan_bytes, scalar + 2, oracle.native_bytes, oracle.cost, oracle.diagnostic_bytes, oracle.text_bytes, native_metadata_bytes, oracle.roster.len() + 3, oracle.ordinary_visits, 4 + unique);
     }
 }
 

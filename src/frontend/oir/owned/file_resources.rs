@@ -2,6 +2,31 @@
 //! A file is a distinct language resource; byte-buffer descriptors cannot name it.
 use super::*;
 
+#[cfg(all(
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+))]
+#[path = "file_resources_windows.rs"]
+mod windows;
+
+pub(super) const fn supported_host() -> bool {
+    cfg!(all(
+        any(target_os = "linux", target_os = "macos"),
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) || cfg!(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))
+}
+
 pub(super) const FILE_NODE: u32 = u32::MAX;
 pub(in crate::frontend::oir::owned) const PATH_BYTES: usize = 4096;
 
@@ -67,7 +92,28 @@ struct HelperCarriers {
     descriptor_words: [[u8; 8]; 2],
 }
 pub(super) const fn helper_control_bytes() -> usize {
-    size_of::<HelperCarriers>()
+    size_of::<HelperCarriers>() + {
+        #[cfg(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        ))]
+        {
+            windows::control_bytes()
+        }
+        #[cfg(not(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )))]
+        {
+            0
+        }
+    }
 }
 
 /// Additional scalar roles of seek, admitted only for a seek-bearing witness.
@@ -78,7 +124,28 @@ struct SeekHelperCarriers {
     syscall_return: libc::off_t,
 }
 pub(super) const fn seek_helper_control_bytes() -> usize {
-    size_of::<SeekHelperCarriers>()
+    size_of::<SeekHelperCarriers>() + {
+        #[cfg(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        ))]
+        {
+            windows::seek_control_bytes()
+        }
+        #[cfg(not(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        )))]
+        {
+            0
+        }
+    }
 }
 
 impl Heap {
@@ -125,7 +192,24 @@ impl Heap {
         if path.len() >= PATH_BYTES {
             #[cfg(target_os = "macos")]
             let code = libc::ENAMETOOLONG;
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ))]
+            let code = 38;
+            #[cfg(not(any(
+                target_os = "macos",
+                all(
+                    target_os = "windows",
+                    target_env = "msvc",
+                    target_arch = "x86_64",
+                    target_pointer_width = "64",
+                    target_endian = "little"
+                )
+            )))]
             let code = 36;
             return Ok(OpenValue::Error(code));
         }
@@ -138,24 +222,56 @@ impl Heap {
         if path.contains(&0) {
             return Ok(OpenValue::Error(22));
         }
-        #[cfg(not(all(
-            any(target_os = "linux", target_os = "macos"),
-            target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
+        #[cfg(not(any(
+            all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ),
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            )
         )))]
         {
             let _ = create;
             return Ok(OpenValue::Error(38));
         }
-        #[cfg(all(
-            any(target_os = "linux", target_os = "macos"),
-            target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
+        #[cfg(any(
+            all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ),
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            )
         ))]
         {
+            #[cfg(not(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )))]
             let mut terminated = [0u8; PATH_BYTES];
+            #[cfg(not(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )))]
             terminated[..path.len()].copy_from_slice(path);
             if self
                 .ledger
@@ -206,6 +322,13 @@ impl Heap {
                 self.unlink(node);
                 return Ok(OpenValue::AllocationFailed);
             }
+            #[cfg(not(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )))]
             let flags = libc::O_CLOEXEC
                 | libc::O_NOCTTY
                 | if create {
@@ -213,13 +336,41 @@ impl Heap {
                 } else {
                     libc::O_RDONLY
                 };
+            #[cfg(not(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )))]
             // SAFETY: The path is NUL terminated; C varargs promote Darwin's u16 mode_t to int.
             let fd = unsafe { libc::open(terminated.as_ptr().cast(), flags, 0o600 as libc::c_int) };
+            #[cfg(not(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )))]
             if fd < 0 {
                 let error = errno();
                 self.unlink(node);
                 return Ok(OpenValue::Error(error));
             }
+            #[cfg(all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ))]
+            let fd = match windows::open(path, create) {
+                Ok(fd) => fd,
+                Err(error) => {
+                    self.unlink(node);
+                    return Ok(OpenValue::Error(error));
+                }
+            };
             // No fallible operation remains between open and ownership commit.
             // SAFETY: This execution owns the live pending registry header.
             unsafe {
@@ -266,11 +417,30 @@ impl Heap {
                 Ok(())
             })
         }
-        #[cfg(not(all(
-            any(target_os = "linux", target_os = "macos"),
+        #[cfg(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
             target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
+            target_endian = "little"
+        ))]
+        {
+            Ok(windows::sync(fd))
+        }
+        #[cfg(not(any(
+            all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ),
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            )
         )))]
         {
             let _ = fd;
@@ -305,11 +475,30 @@ impl Heap {
             let position = unsafe { libc::lseek(fd, offset as libc::off_t, libc::SEEK_SET) };
             Ok(if position < 0 { Err(errno()) } else { Ok(()) })
         }
-        #[cfg(not(all(
-            any(target_os = "linux", target_os = "macos"),
+        #[cfg(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
             target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
+            target_endian = "little"
+        ))]
+        {
+            Ok(windows::seek(fd, offset))
+        }
+        #[cfg(not(any(
+            all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ),
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            )
         )))]
         {
             let _ = fd;
@@ -358,11 +547,30 @@ pub(super) unsafe fn close_node(header: &Header) -> std::result::Result<(), i32>
             Ok(())
         }
     }
-    #[cfg(not(all(
-        any(target_os = "linux", target_os = "macos"),
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
         target_pointer_width = "64",
-        target_endian = "little",
-        any(target_arch = "x86_64", target_arch = "aarch64")
+        target_endian = "little"
+    ))]
+    {
+        windows::close(header.initialized as i32)
+    }
+    #[cfg(not(any(
+        all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
+            target_pointer_width = "64",
+            target_endian = "little"
+        ),
+        all(
+            any(target_os = "linux", target_os = "macos"),
+            target_pointer_width = "64",
+            target_endian = "little",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )
     )))]
     {
         Err(38)
@@ -402,11 +610,30 @@ impl FileAccess {
                 Ok(count as usize)
             })
         }
-        #[cfg(not(all(
-            any(target_os = "linux", target_os = "macos"),
+        #[cfg(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
             target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
+            target_endian = "little"
+        ))]
+        {
+            Ok(windows::read(fd, bytes))
+        }
+        #[cfg(not(any(
+            all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ),
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            )
         )))]
         {
             let _ = fd;
@@ -441,11 +668,30 @@ impl FileAccess {
                 Ok(count as usize)
             })
         }
-        #[cfg(not(all(
-            any(target_os = "linux", target_os = "macos"),
+        #[cfg(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
             target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
+            target_endian = "little"
+        ))]
+        {
+            Ok(windows::write(fd, bytes))
+        }
+        #[cfg(not(any(
+            all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            ),
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            )
         )))]
         {
             let _ = fd;
@@ -457,3 +703,14 @@ impl FileAccess {
 #[cfg(test)]
 #[path = "file_resource_tests.rs"]
 mod tests;
+
+#[cfg(all(
+    test,
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+))]
+#[path = "file_resources_windows_tests.rs"]
+mod windows_tests;

@@ -221,22 +221,19 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         }
         let root = self.base(frame, AccessBase::Parameter(reference), Access::Write, span)?;
         let view = self.base_view(frame, AccessBase::Parameter(reference), root, span)?;
-        let owner = self.owner_extent(root, span)?;
-        let start = owner
-            .start
-            .checked_add(index(view.offset, span)?)
-            .ok_or_else(|| bad("file offset", span))?;
-        let end = start
-            .checked_add(16)
-            .filter(|end| *end <= owner.end)
-            .ok_or_else(|| bad("file extent", span))?;
-        let frame = index(root.frame, span)?;
-        let bytes = start..end;
+        let place = self.resource_place(
+            frame,
+            AccessBase::Parameter(reference),
+            root,
+            view.offset,
+            16,
+            span,
+        )?;
         let value = self
             .heap
-            .file_descriptor(&self.frames[frame].payload[bytes.clone()])
+            .file_descriptor(self.resource_bytes(&place))
             .map_err(|failure| heap_failure(failure, span))?;
-        Ok((BufferPlace { frame, bytes }, value))
+        Ok((place, value))
     }
     fn commit_file_result(&mut self, frame: usize, place: ResultPlace, value: &Value) {
         let ResultPlace::Owner {
@@ -281,6 +278,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 // Activation paths pay the same public work model.
                 let length = match &region {
                     ByteRegion::Activation { bytes, .. } => bytes.len(),
+                    ByteRegion::Cell(address) => address.len(),
                     ByteRegion::Buffer { start, end, .. }
                     | ByteRegion::Vector { start, end, .. } => (*end - *start) as usize,
                 };
@@ -289,18 +287,47 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 }
                 let mut copied = [0u8; 4096];
                 let result = match region {
-                    ByteRegion::Activation { frame, bytes } => self.heap.file_open(
-                        &self.frames[frame].payload[bytes],
-                        operation == Function::Create,
-                        &mut fuel,
-                    ),
+                    ByteRegion::Activation { frame, bytes } => {
+                        let place = BufferPlace::Activation { frame, bytes };
+                        let bytes = self.resource_bytes(&place);
+                        let pointer = bytes.as_ptr();
+                        let length = bytes.len();
+                        // SAFETY: the admitted shared path loan pins this
+                        // disjoint activation or outer vector allocation.
+                        let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
+                        self.heap
+                            .file_open(bytes, operation == Function::Create, &mut fuel)
+                    }
+                    ByteRegion::Cell(address) => {
+                        let place = BufferPlace::Cell(address);
+                        let bytes = self.resource_bytes(&place);
+                        let pointer = bytes.as_ptr();
+                        let length = bytes.len();
+                        // SAFETY: opening/registering a distinct File cannot
+                        // invalidate the pinned outer vector path bytes.
+                        let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
+                        self.heap
+                            .file_open(bytes, operation == Function::Create, &mut fuel)
+                    }
                     ByteRegion::Buffer { value, start, end } => {
                         let bytes = self
                             .heap
                             .range(&value, start, end)
                             .map_err(|failure| heap_failure(failure, span))?;
                         if bytes.len() >= copied.len() {
-                            Ok(byte_buffer::OpenValue::Error(36))
+                            Ok(byte_buffer::OpenValue::Error(
+                                if cfg!(all(
+                                    target_os = "windows",
+                                    target_env = "msvc",
+                                    target_arch = "x86_64",
+                                    target_pointer_width = "64",
+                                    target_endian = "little"
+                                )) {
+                                    38
+                                } else {
+                                    36
+                                },
+                            ))
                         } else {
                             let length = bytes.len();
                             copied[..length].copy_from_slice(bytes);
@@ -317,7 +344,19 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                             .vector_range(&value, byte_buffer::VectorElement::U8, start, end)
                             .map_err(|failure| heap_failure(failure, span))?;
                         if bytes.len() >= copied.len() {
-                            Ok(byte_buffer::OpenValue::Error(36))
+                            Ok(byte_buffer::OpenValue::Error(
+                                if cfg!(all(
+                                    target_os = "windows",
+                                    target_env = "msvc",
+                                    target_arch = "x86_64",
+                                    target_pointer_width = "64",
+                                    target_endian = "little"
+                                )) {
+                                    38
+                                } else {
+                                    36
+                                },
+                            ))
                         } else {
                             let length = bytes.len();
                             copied[..length].copy_from_slice(bytes);
@@ -379,24 +418,42 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                             (bytes.is_empty(), access.write(bytes, &mut fuel))
                         }
                     }
-                    region => {
-                        let bytes = match region {
-                            ByteRegion::Activation { frame, bytes } => {
-                                &mut self.frames[frame].payload[bytes]
-                            }
-                            ByteRegion::Buffer { value, start, end } => self
+                    ByteRegion::Activation { frame, bytes } => {
+                        let place = BufferPlace::Activation { frame, bytes };
+                        if reading {
+                            let bytes =
+                                super::super::element_loans::bytes_mut(&mut self.frames, &place);
+                            (bytes.is_empty(), access.read(bytes, &mut fuel))
+                        } else {
+                            let bytes = super::super::element_loans::bytes(&self.frames, &place);
+                            (bytes.is_empty(), access.write(bytes, &mut fuel))
+                        }
+                    }
+                    ByteRegion::Cell(address) => {
+                        let place = BufferPlace::Cell(address);
+                        if reading {
+                            let bytes =
+                                super::super::element_loans::bytes_mut(&mut self.frames, &place);
+                            (bytes.is_empty(), access.read(bytes, &mut fuel))
+                        } else {
+                            let bytes = super::super::element_loans::bytes(&self.frames, &place);
+                            (bytes.is_empty(), access.write(bytes, &mut fuel))
+                        }
+                    }
+                    ByteRegion::Buffer { value, start, end } => {
+                        if reading {
+                            let bytes = self
                                 .heap
                                 .range_mut(&value, start, end)
-                                .map_err(|failure| heap_failure(failure, span))?,
-                            ByteRegion::Vector { .. } => unreachable!("handled vector byte region"),
-                        };
-                        let empty = bytes.is_empty();
-                        let result = if reading {
-                            access.read(bytes, &mut fuel)
+                                .map_err(|failure| heap_failure(failure, span))?;
+                            (bytes.is_empty(), access.read(bytes, &mut fuel))
                         } else {
-                            access.write(bytes, &mut fuel)
-                        };
-                        (empty, result)
+                            let bytes = self
+                                .heap
+                                .range(&value, start, end)
+                                .map_err(|failure| heap_failure(failure, span))?;
+                            (bytes.is_empty(), access.write(bytes, &mut fuel))
+                        }
                     }
                 };
                 let result = result.map_err(|failure| heap_failure(failure, span))?;
@@ -434,7 +491,8 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                         .heap
                         .file_close(&mut file)
                         .map_err(|failure| heap_failure(failure, span))?;
-                    self.frames[place.frame].payload[place.bytes].copy_from_slice(&file.encoding());
+                    self.resource_bytes_mut(&place)
+                        .copy_from_slice(&file.encoding());
                     result
                 } else {
                     self.heap

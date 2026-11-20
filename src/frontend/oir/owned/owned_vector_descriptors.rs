@@ -74,7 +74,11 @@ pub(super) struct FunctionDomains {
 }
 impl FunctionDomains {
     fn check(raw: &RawOwnedProgram, owned: usize) -> Result<Self, OwnedFailure> {
-        let end = raw.functions.len();
+        let end = raw
+            .functions
+            .len()
+            .checked_sub(raw.builtins.process().count())
+            .ok_or_else(bad)?;
         let owned_start = end.checked_sub(owned).ok_or_else(bad)?;
         let old_start = owned_start
             .checked_sub(raw.vector_functions.len())

@@ -29,6 +29,7 @@ pub(in crate::frontend) mod process;
 mod resource_gate_tests;
 mod shape;
 pub(super) mod source;
+mod termination_queries;
 mod vector_descriptors;
 mod vector_type;
 pub(super) use source::SourceProgram;
@@ -36,6 +37,29 @@ mod storage;
 mod verified;
 #[cfg(test)]
 use verified::{verify_owned, verify_with_limits};
+
+// The ordinary verifier, planner and interpreter all carry the shared
+// process selectors. The test oracles add those measured roles to the
+// existing independently counted per-program and per-activation rows.
+#[cfg(test)]
+const TERMINATION_RAW_SELECTOR_BYTES: usize =
+    crate::frontend::builtin_catalog::termination::shared_selector_bytes()
+        + termination_queries::raw_bytes();
+#[cfg(test)]
+const TERMINATION_PLAN_SELECTOR_BYTES: usize =
+    termination_queries::plan_bytes::<verified::VerifiedOwnedProgram>();
+#[cfg(test)]
+const TERMINATION_VM_SELECTOR_BYTES: usize =
+    TERMINATION_RAW_SELECTOR_BYTES + TERMINATION_PLAN_SELECTOR_BYTES;
+
+#[cfg(test)]
+mod element_loan_budget_oracle {
+    // Measured on both the normal compiler and its cfg(test) build.
+    // The literal allowances preserve independent exact/one-less limits.
+    pub(super) const PLAN_BUILDER: usize = 1320;
+    pub(super) const NATIVE_QUERY: usize = 224;
+    pub(super) const SCALAR_VM: usize = 11008 + NATIVE_QUERY;
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ReferenceParamId(usize);
@@ -82,6 +106,7 @@ impl RawOwnedProgram {
     fn fixed_builtin_base(&self) -> Option<usize> {
         self.functions
             .len()
+            .checked_sub(self.builtins.process().count())?
             .checked_sub(self.vector_functions.len())?
             .checked_sub(self.builtins.extra_functions())
     }
@@ -100,6 +125,7 @@ impl RawOwnedProgram {
         let base = self
             .functions
             .len()
+            .checked_sub(self.builtins.process().count())?
             .checked_sub(self.vector_functions.len())?;
         self.vector_functions.get(id.0.checked_sub(base)?).copied()
     }
@@ -410,6 +436,11 @@ enum OwnedInstruction {
         loan: LoanId,
     },
     AcquireLocalBorrow(LoanId),
+    /// Captures one initialized non-Copy record cell without moving its owner.
+    AcquireLocalElementBorrow {
+        loan: LoanId,
+        index: Operand,
+    },
     ReleaseLocalBorrow(LoanId),
     /// Checked finite record copy. Source stays live; validate all leaves
     /// before writing any initialized destination leaf. Padding is never read.

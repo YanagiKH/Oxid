@@ -200,36 +200,54 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         // construct vector_range_mut under a shared language loan merely to
         // feed a write-only syscall that consumes immutable bytes.
         if operation == Function::WriteSome {
-            if let ByteRegion::Vector { value, start, end } = region {
-                let bytes = self
+            let bytes = match region {
+                ByteRegion::Activation { frame, bytes } => super::super::element_loans::bytes(
+                    &self.frames,
+                    &BufferPlace::Activation { frame, bytes },
+                ),
+                ByteRegion::Cell(address) => {
+                    super::super::element_loans::bytes(&self.frames, &BufferPlace::Cell(address))
+                }
+                ByteRegion::Buffer { value, start, end } => self
+                    .heap
+                    .range(&value, start, end)
+                    .map_err(|failure| heap_failure(failure, span))?,
+                ByteRegion::Vector { value, start, end } => self
                     .heap
                     .vector_range(&value, byte_buffer::VectorElement::U8, start, end)
-                    .map_err(|failure| heap_failure(failure, span))?;
-                let mut operation_fuel = self.fuel;
-                let admission =
-                    binary_io::admit_delivery(bytes.len(), delivery.cost, &mut operation_fuel);
-                if self.fuel != crate::frontend::build_config::HOSTED_FUEL {
-                    self.fuel = operation_fuel;
-                }
-                admission.map_err(|failure| io_failure(failure, span))?;
-                let value = match binary_io::write_admitted(bytes) {
-                    binary_io::WriteStatus::Written(value) => OperationValue::Status {
-                        tag: 0,
-                        payload: Some(value),
-                    },
-                    binary_io::WriteStatus::Error(value) => OperationValue::Status {
-                        tag: 1,
-                        payload: Some(value),
-                    },
-                };
-                self.complete_binary_delivery(frame, delivery, value, span);
-                return Ok(());
+                    .map_err(|failure| heap_failure(failure, span))?,
+            };
+            let mut operation_fuel = self.fuel;
+            let admission =
+                binary_io::admit_delivery(bytes.len(), delivery.cost, &mut operation_fuel);
+            if self.fuel != crate::frontend::build_config::HOSTED_FUEL {
+                self.fuel = operation_fuel;
             }
+            admission.map_err(|failure| io_failure(failure, span))?;
+            let value = match binary_io::write_admitted(bytes) {
+                binary_io::WriteStatus::Written(value) => OperationValue::Status {
+                    tag: 0,
+                    payload: Some(value),
+                },
+                binary_io::WriteStatus::Error(value) => OperationValue::Status {
+                    tag: 1,
+                    payload: Some(value),
+                },
+            };
+            self.complete_binary_delivery(frame, delivery, value, span);
+            return Ok(());
         }
         // Resolve the final slice and all resource validation before admission.
         // No user instruction or nested call can run between here and delivery.
         let bytes = match region {
-            ByteRegion::Activation { frame, bytes } => &mut self.frames[frame].payload[bytes],
+            ByteRegion::Activation { frame, bytes } => super::super::element_loans::bytes_mut(
+                &mut self.frames,
+                &BufferPlace::Activation { frame, bytes },
+            ),
+            ByteRegion::Cell(address) => super::super::element_loans::bytes_mut(
+                &mut self.frames,
+                &BufferPlace::Cell(address),
+            ),
             ByteRegion::Buffer { value, start, end } => self
                 .heap
                 .range_mut(&value, start, end)

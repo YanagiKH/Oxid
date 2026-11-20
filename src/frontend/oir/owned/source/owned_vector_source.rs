@@ -165,10 +165,65 @@ struct AssociationStorageRoles {
     selected_domain: bool,
 }
 
+// These new synchronous roles have no retained cache, argument vector or
+// runtime owner. Prepay them in the private source domain even for definitions
+// whose indexed local loan is unreachable or never instantiated.
+#[allow(dead_code)]
+struct LocalElementSourceCarriers {
+    ast_expression: &'static crate::frontend::ast::Expr,
+    source_places: [BorrowPlace; 3],
+    source_index: ExprId,
+    source_binding: BindingId,
+    source_span: Span,
+    annotation: Option<ParameterTy>,
+    resolved_index: Result<ExprId, Box<Diagnostic>>,
+    resolved_annotation: Result<ParameterTy, Box<Diagnostic>>,
+    constructed_statement: StmtKind,
+    returned_statement: Result<StmtKind, Box<Diagnostic>>,
+    index_type: Option<ValueTy>,
+    source_type: ParameterTy,
+    source_type_return: Result<ParameterTy, Box<Diagnostic>>,
+    element_type: ParameterTy,
+    record: crate::frontend::oir::owned_types::RecordId,
+    kind: crate::frontend::oir::owned_types::BorrowKind,
+    lowered_base: super::super::AccessBase,
+    lowered_base_return: Result<super::super::AccessBase, super::super::OwnedFailure>,
+    operand: crate::frontend::oir::Operand,
+    operand_return: Result<crate::frontend::oir::Operand, super::super::OwnedFailure>,
+    loan: super::super::LoanId,
+    declaration: super::super::LoanDecl,
+    instruction: super::super::OwnedInstruction,
+    source_binding_match: Option<(
+        BindingId,
+        crate::frontend::oir::owned_types::BorrowKind,
+        BorrowPlace,
+        Option<ExprId>,
+    )>,
+    raw_function: &'static super::super::RawOwnedFunction,
+    raw_local: &'static crate::frontend::oir::LocalDecl,
+    raw_index: Option<crate::frontend::oir::Operand>,
+    selected_index: crate::frontend::oir::Operand,
+    matched_sites: usize,
+    checked_visits: Option<usize>,
+    visited: Result<(), Box<Diagnostic>>,
+    work_spans: [Span; 2],
+    borrowed_slot:
+        Result<super::super::BorrowedSlot, crate::frontend::oir::owned_types::DeclarationError>,
+}
+pub(super) const fn local_element_carrier_bytes() -> usize {
+    std::mem::size_of::<LocalElementSourceCarriers>()
+}
+
 pub(super) const fn carrier_bytes() -> usize {
-    std::mem::size_of::<Carriers>() + typeck::owned_vector_formatter_carrier_bytes()
+    std::mem::size_of::<Carriers>()
+        + typeck::owned_vector_formatter_carrier_bytes()
+        + local_element_carrier_bytes()
 }
 
 #[cfg(test)]
 #[path = "owned_vector_source_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "owned_record_element_source_tests.rs"]
+mod local_element_tests;

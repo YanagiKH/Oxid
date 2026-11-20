@@ -21,6 +21,7 @@ pub(in crate::frontend::oir::owned) trait SignatureDeclarationQueries:
 pub(in crate::frontend::oir::owned) trait ShapeDeclarationQueries<'facade>:
     SignatureDeclarationQueries
 {
+    fn local_record_element(&mut self, vector: AggregateTy) -> Result<RecordId, OwnedFailure>;
     fn core(&self) -> &'facade Declarations;
     fn authenticates_function(&self, function: &RawOwnedFunction) -> bool;
     fn fixed_builtin_base(&self, raw: &RawOwnedProgram) -> Option<usize>;
@@ -78,6 +79,9 @@ impl SignatureDeclarationQueries for &Declarations {
 }
 
 impl<'facade> ShapeDeclarationQueries<'facade> for &'facade Declarations {
+    fn local_record_element(&mut self, _: AggregateTy) -> Result<RecordId, OwnedFailure> {
+        Err(DeclarationError::TypeMismatch.into())
+    }
     fn core(&self) -> &'facade Declarations {
         self
     }
@@ -213,6 +217,9 @@ struct ScopeControls {
     cfg_return: Result<(), OirFailure>,
     mapped_cfg_return: Result<(), OwnedFailure>,
     flow_return: Result<(), OwnedFailure>,
+    local_element: RecordId,
+    local_element_return: Result<RecordId, OwnedFailure>,
+    local_element_caller_return: Result<RecordId, OwnedFailure>,
 }
 
 impl<'context, 'program, 'budget> ScopedSignatureQueries<'context, 'program, 'budget> {
@@ -289,6 +296,14 @@ impl<'context, 'program, 'budget> ScopedSignatureQueries<'context, 'program, 'bu
 }
 
 impl<'program> ShapeDeclarationQueries<'program> for ScopedSignatureQueries<'_, 'program, '_> {
+    fn local_record_element(&mut self, vector: AggregateTy) -> Result<RecordId, OwnedFailure> {
+        self.aggregate(vector)?;
+        let AggregateTy::OwnedRecordVector(record) = vector else {
+            return Err(DeclarationError::TypeMismatch.into());
+        };
+        self.aggregate(AggregateTy::Record(record))?;
+        Ok(record)
+    }
     fn core(&self) -> &'program Declarations {
         self.declarations
     }

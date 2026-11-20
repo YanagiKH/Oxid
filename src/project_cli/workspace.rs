@@ -320,11 +320,13 @@ impl Workspace {
         locked: bool,
         offline: bool,
         registry_no_fetch: bool,
+        registry_update: bool,
         registry_budget: Option<crate::project_registry::Allowance>,
     ) -> Result<Vec<PackageGraph>, String> {
         let mut reader = RegularProjectReader::new(self.root.clone(), locked, offline);
         reader.registry_budget = registry_budget;
         reader.registry_no_fetch = registry_no_fetch;
+        reader.registry_update = registry_update;
         self.graphs_with_reader(scope, &mut reader)
     }
     fn graphs_with_reader(
@@ -434,7 +436,7 @@ impl Workspace {
         let existing =
             project_lock::read_with_registry(&self.root, false, true, &mut registry_budget)?;
         let scope = (0..self.members.len()).collect::<Vec<_>>();
-        let graphs = self.graphs(&scope, true, true, true, registry_budget)?;
+        let graphs = self.graphs(&scope, true, true, true, false, registry_budget)?;
         let mut prepared = Vec::new();
         let (mut files, mut bytes) = (0, 0);
         for graph in &graphs {
@@ -593,6 +595,7 @@ impl Workspace {
             options.requires_lock(),
             options.offline || options.frozen,
             options.command() == "doc",
+            options.update,
             registry_budget,
         )?;
         let mut prepared = Vec::new();

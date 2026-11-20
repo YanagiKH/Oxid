@@ -655,6 +655,7 @@ trait ProjectReader {
     fn registry_dependency(
         &mut self,
         _root: &Path,
+        _alias: &str,
         _dependency: &crate::project_registry::Dependency,
     ) -> Result<PathBuf, String> {
         Err("registry dependencies are unavailable inside a portable source boundary".into())
@@ -687,6 +688,7 @@ struct RegularProjectReader {
     registry: Option<Box<crate::project_registry::Session>>,
     registry_budget: Option<crate::project_registry::Allowance>,
     registry_no_fetch: bool,
+    registry_update: bool,
 }
 impl RegularProjectReader {
     fn new(root: PathBuf, locked: bool, offline: bool) -> Self {
@@ -698,6 +700,7 @@ impl RegularProjectReader {
             registry: None,
             registry_budget: None,
             registry_no_fetch: false,
+            registry_update: false,
         }
     }
 }
@@ -732,6 +735,7 @@ impl ProjectReader for RegularProjectReader {
     fn registry_dependency(
         &mut self,
         root: &Path,
+        alias: &str,
         dependency: &crate::project_registry::Dependency,
     ) -> Result<PathBuf, String> {
         if self.registry.is_none() {
@@ -748,10 +752,12 @@ impl ProjectReader for RegularProjectReader {
             )?;
             self.registry = Some(session.boxed()?);
         }
-        self.registry
-            .as_mut()
-            .expect("registry session")
-            .resolve(root, dependency)
+        self.registry.as_mut().expect("registry session").resolve(
+            root,
+            alias,
+            dependency,
+            self.registry_update,
+        )
     }
     fn registry_origin(
         &self,
@@ -873,6 +879,7 @@ fn project_operation_graph(
     locked: bool,
     offline: bool,
     registry_no_fetch: bool,
+    registry_update: bool,
 ) -> Result<(Option<project_lock::Existing>, PackageGraph), String> {
     let mut reader = RegularProjectReader::new(
         fs::canonicalize(root).map_err(|error| error.to_string())?,
@@ -881,6 +888,7 @@ fn project_operation_graph(
     );
     reader.registry_manifest(snapshot)?;
     reader.registry_no_fetch = registry_no_fetch;
+    reader.registry_update = registry_update;
     let existing =
         project_lock::read_with_registry(root, required, false, &mut reader.registry_budget)?;
     let graph = package_graph_with(root, snapshot, &mut reader)?;
@@ -1005,7 +1013,7 @@ fn package_graph_with(
                     return Err(format!("dependencies: invalid source for `{alias}`"));
                 }
                 let target = match descriptor {
-                    Some(dependency) => self.reader.registry_dependency(&root, dependency),
+                    Some(dependency) => self.reader.registry_dependency(&root, &alias, dependency),
                     None => self.reader.dependency(&root, &source),
                 }
                     .map_err(|error| {
@@ -1272,7 +1280,8 @@ pub(crate) fn native_doctor_project() -> Result<Option<String>, String> {
     }
     validate_settings(&snapshot.manifest)?;
     let root = path.parent().expect("manifest parent");
-    let (existing, graph) = project_operation_graph(root, &snapshot, false, true, true, true)?;
+    let (existing, graph) =
+        project_operation_graph(root, &snapshot, false, true, true, true, false)?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
     if existing.is_some() {
@@ -1307,6 +1316,7 @@ fn execute_project(
         options.requires_lock(),
         options.requires_lock(),
         options.offline || options.frozen,
+        false,
         false,
     )?;
     let entry_override = entry_override
@@ -1361,6 +1371,7 @@ fn lock_project(
         options.requires_lock(),
         options.offline || options.frozen,
         false,
+        options.update,
     )?;
     let prepared =
         frontend::prepare_package_project(&graph.specs, None).map_err(|error| error.message())?;
@@ -1562,6 +1573,7 @@ fn test(
         options.requires_lock(),
         options.requires_lock(),
         options.offline || options.frozen,
+        false,
         false,
     )?;
     if existing.is_some() {

@@ -78,8 +78,9 @@ fn builtin_origin_header_padding_is_charged_at_metadata_endpoint() {
     let usage = budget::preflight(&raw, budget::Limits::DEFAULT).unwrap();
     // Historical empty inventory includes its enum Vec header (24 bytes).
     // Add the complete padded raw-header growth, not the one-byte discriminant.
-    let expected =
-        size_of::<Vec<RawEnumDecl>>() + size_of::<RawOwnedProgram>() - 3 * size_of::<Vec<()>>();
+    let expected = size_of::<Vec<RawEnumDecl>>() + size_of::<RawOwnedProgram>()
+        - 3 * size_of::<Vec<()>>()
+        + TERMINATION_RAW_SELECTOR_BYTES;
     assert_eq!(usage.metadata_bytes, expected);
     let limits = budget::Limits {
         metadata: expected,

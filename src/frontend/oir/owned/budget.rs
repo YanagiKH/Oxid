@@ -127,11 +127,33 @@ pub(super) fn account_builtin_descriptors(
     limits: Limits,
     program: &mut ProgramCounts,
 ) -> Result<(), OwnedFailure> {
+    // Shared absent-family selectors precede the conditional descriptor banks.
+    program.usage.metadata_bytes = cap(
+        add(
+            program.usage.metadata_bytes,
+            add(
+                crate::frontend::builtin_catalog::termination::shared_selector_bytes(),
+                super::termination_queries::raw_bytes(),
+            )?,
+        )?,
+        limits.bounded().metadata,
+        "ownership metadata",
+    )?;
     if !origin.experimental().is_empty() {
         program.usage.metadata_bytes = cap(
             add(
                 program.usage.metadata_bytes,
                 crate::frontend::builtin_catalog::experimental::compiler_carrier_bytes(),
+            )?,
+            limits.bounded().metadata,
+            "ownership metadata",
+        )?;
+    }
+    if !origin.process().is_empty() {
+        program.usage.metadata_bytes = cap(
+            add(
+                program.usage.metadata_bytes,
+                crate::frontend::builtin_catalog::termination::compiler_carrier_bytes(),
             )?,
             limits.bounded().metadata,
             "ownership metadata",

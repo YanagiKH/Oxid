@@ -343,6 +343,23 @@ pub(super) fn preflight(
             super::vector_lower::owned_extra_bytes(),
         )?);
     }
+    if !typed.index().builtin_set().process().is_empty() {
+        for item in crate::frontend::builtin_catalog::termination::Function::ALL {
+            if typed.index().builtin_set().process().contains(item) {
+                let count = super::process_lower::counts();
+                raw_budget::account_function(count, raw_budget::Limits::DEFAULT, &mut counts)?;
+                bytes = cap(
+                    add(bytes, function_bytes(count)?)?,
+                    ceiling,
+                    "source raw payload",
+                )?;
+            }
+        }
+        scratch = scratch.max(add(
+            super::builtin_lower::carrier_bytes(),
+            super::process_lower::extra_bytes(),
+        )?);
+    }
     if !typed.index().vector_functions().is_empty() {
         scratch = scratch.max(add(
             super::builtin_lower::carrier_bytes(),

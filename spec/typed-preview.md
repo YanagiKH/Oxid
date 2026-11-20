@@ -422,9 +422,12 @@ shows workspace packages, growth and partial I/O together.
 
 ## Native files
 
-On Linux and macOS x86_64/ARM64, `std::fs::open_read` and `create` return an `OpenResult`:
-`Opened(File)`, `Error(errno)`, `MemoryLimit` or `AllocationFailed`. A `File`
-is move-only and closes automatically when its owner leaves scope.
+Use `std::fs::open_read` and `create` on Linux and macOS x86_64/ARM64, or
+in bounded Windows MSVC x64 result programs. Both operations return an
+`OpenResult` with `Opened(File)`, `Error(errno)`, `MemoryLimit` or
+`AllocationFailed`. A `File` is move-only and closes automatically when its
+owner leaves scope. On Windows, pass paths as UTF-8 bytes. File input and
+output preserve every byte.
 
 `std::fs::read_some(&mut file, &mut bytes)` and
 `std::fs::write_some(&mut file, &bytes)` use the existing partial I/O status

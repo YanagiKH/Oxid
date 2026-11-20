@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-from legacy_scalar_observer_vectors import adapt_wrapper as _adapt_wrapper, SCHEMA
+from legacy_scalar_observer_element_borrows import adapt_wrapper as _adapt_wrapper, SCHEMA
 
 
 def adapt_wrapper(name, original):
@@ -35,6 +35,7 @@ SOURCE_FILES = (
     "owned_vector_builtins.rs", "oir/owned_types/owned_vector.rs",
     "declaration_index/generics/owned_candidate.rs",
     "declaration_index/generics/owned_builtin_enum_keys.rs",
+    "termination_builtins.rs",
 )
 WRAPPER_FILES = (
     ("main.rs", "main.rs"),

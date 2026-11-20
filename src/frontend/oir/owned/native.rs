@@ -34,6 +34,18 @@ mod resources;
 #[path = "native_vector.rs"]
 mod vector;
 use reachability::EmittedFunctions;
+#[cfg(any(
+    test,
+    all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    )
+))]
+#[path = "native_windows_file.rs"]
+mod windows_file;
 
 const MAX_FUNCTIONS: usize = 256;
 const MAX_PARAMS: usize = 64;
@@ -678,6 +690,29 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
     }
     // Inventory policy precedes plan allocation or emitted effects, including
     // unused output functions. Status-only declarations do not require it.
+    if !witness.raw_program().builtins.process().is_empty() {
+        for operation in crate::frontend::builtin_catalog::termination::Function::ALL {
+            #[cfg(test)]
+            super::termination_queries::native_catalog_row();
+            if witness
+                .experimental_function(operation.operation())
+                .is_some()
+            {
+                if !policy.process() {
+                    return Err(reject(
+                        "termination notifications require process entry",
+                        None,
+                    ));
+                }
+                if !super::process::supported_host() {
+                    return Err(reject(
+                        "termination notifications require Linux or macOS on x86_64 or ARM64",
+                        None,
+                    ));
+                }
+            }
+        }
+    }
     if !policy.process() {
         for operation in [
             crate::frontend::builtin_catalog::experimental::Function::ReadSome,
@@ -788,8 +823,32 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
     )?;
     let inherited_emitter_transient = add(
         inherited_emitter_transient,
+        add(
+            crate::frontend::builtin_catalog::termination::shared_selector_bytes(),
+            super::termination_queries::raw_bytes(),
+        )?,
+    )?;
+    let inherited_emitter_transient = add(
+        inherited_emitter_transient,
+        if plan.has_termination() {
+            crate::frontend::builtin_catalog::termination::compiler_carrier_bytes()
+        } else {
+            0
+        },
+    )?;
+    let inherited_emitter_transient = add(
+        inherited_emitter_transient,
+        plan::element_loan_accounting::query_control_bytes::<W>(),
+    )?;
+    let inherited_emitter_transient = add(
+        inherited_emitter_transient,
         if plan.uses_owned_vectors() {
             owned_vector::control_bytes()
+                + if plan.has_local_record_element_loans() {
+                    owned_vector::element_borrow_emitter_bytes()
+                } else {
+                    0
+                }
         } else {
             0
         },
@@ -826,6 +885,18 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
             },
         )?,
     )?;
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    let emitter_transient = if plan.has_file_delivery() {
+        add(emitter_transient, windows_file::control_bytes())?
+    } else {
+        emitter_transient
+    };
     let emission_metadata = add(
         add(
             add(
@@ -847,6 +918,16 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         "emission metadata bytes",
         root.span,
     )?;
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    if plan.has_file_delivery() && !windows_file::allowed(witness, id) {
+        return Err(reject("Windows native File programs support only File byte I/O, byte arrays/slices and their standard status enums", None));
+    }
     let selected = R::build(&plan, id)?;
     let (transfer_cells, transfer_visits) = transfer_inventory_selected(&plan, selected)?;
     accounting.metrics.transfer_cells = transfer_cells;
@@ -1224,6 +1305,19 @@ fn runtime_storage_bytes<W: PlanWitness>(
         runtime_bytes,
         if plan.uses_owned_vectors() {
             owned_vector::RUNTIME_BYTES
+                + if plan.has_local_record_element_loans() {
+                    owned_vector::ELEMENT_BORROW_RUNTIME_BYTES
+                } else {
+                    0
+                }
+        } else {
+            0
+        },
+    )?;
+    let runtime_bytes = add(
+        runtime_bytes,
+        if plan.has_termination() {
+            crate::program_termination::control_bytes()
         } else {
             0
         },
@@ -1312,6 +1406,7 @@ struct Emission {
     exceeded: bool,
     policy: NativeEntryPolicy,
     resources: bool,
+    termination: bool,
     call_scratch_peak: usize,
     expansions: usize,
     expansion_kinds: [usize; 3],
@@ -1348,6 +1443,7 @@ impl Emission {
             exceeded: false,
             policy: NativeEntryPolicy::Result,
             resources: false,
+            termination: false,
             debug: false,
             call_scratch_peak: 0,
             expansions: 0,
@@ -1793,7 +1889,9 @@ fn diagnostic_occurrences<W: PlanWitness>(
                         value: Rvalue::CheckedI64ToU8 { name_span, .. },
                         ..
                     })) => visit(FailureKind::I64ToU8Range, *name_span)?,
-                    OwnedInstruction::Vector { .. } | OwnedInstruction::OwnedVector { .. } => {
+                    OwnedInstruction::Vector { .. }
+                    | OwnedInstruction::OwnedVector { .. }
+                    | OwnedInstruction::AcquireLocalElementBorrow { .. } => {
                         // The helper emits a fuel refusal label in hosted mode
                         // too; its fresh budget does not remove that IR block.
                         if !guarded {
@@ -2241,6 +2339,10 @@ impl Diagnostics {
 fn emit_failure(out: &mut Emission, diagnostics: &Diagnostics, kind: FailureKind, span: Span) {
     if out.resources {
         out.write_str("  call void @__oxid_bytebuf_cleanup()\n")
+            .unwrap();
+    }
+    if out.termination {
+        out.write_str("  call void @__oxid_termination_scope_end()\n")
             .unwrap();
     }
     let (id, len) = diagnostics.get(kind, span);
@@ -2730,6 +2832,7 @@ fn transfer_inventory_selected<W: PlanWitness, R: EmittedFunctions>(
                 // the caller; its immediate return emits no transfer tree.
                 if plan.binary_delivery_cost(f.id).is_none()
                     && plan.file_delivery_cost(f.id).is_none()
+                    && plan.process_delivery_cost(f.id).is_none()
                     && !vector::delivery(plan, f.id)
                     && !owned_vector::delivery(plan, f.id)
                 {
@@ -2826,6 +2929,7 @@ fn transfer_inventory_selected<W: PlanWitness, R: EmittedFunctions>(
                 block.terminator.as_ref().expect("verified terminator").kind,
                 OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_)
             ) && plan.file_delivery_cost(function.id).is_none()
+                && plan.process_delivery_cost(function.id).is_none()
                 && !vector::delivery(plan, function.id)
                 && !owned_vector::delivery(plan, function.id)
             {
@@ -3806,10 +3910,14 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
 ) {
     let plan = storage.execution();
     out.resources = plan.uses_dynamic_resources();
+    out.termination = plan.has_termination();
     let guarded = storage.guarded();
     out.write_str(crate::frontend::build_config::NativeBuildSettings::ir_header(true))
         .unwrap();
     vector::schemas(plan, out);
+    if out.termination {
+        out.write_str("@__oxid_process_termination = constant i1 true\ndeclare i32 @__oxid_termination_scope_start()\ndeclare void @__oxid_termination_scope_end()\ndeclare i32 @__oxid_enable_termination_notifications()\ndeclare i32 @__oxid_termination_requested()\n").unwrap();
+    }
     if plan.uses_owned_vectors() {
         let elements = plan
             .witness()
@@ -3820,6 +3928,9 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
             return;
         }
         owned_vector::declarations(out);
+        if plan.has_local_record_element_loans() {
+            owned_vector::element_borrow_declaration(out);
+        }
     }
     if out.policy.recursive() {
         hosted_frames::globals(out);
@@ -3959,6 +4070,9 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
         out.write_str("  call void @__oxid_bytebuf_start()\n")
             .unwrap();
     }
+    if out.termination {
+        out.write_str("  %termination_setup = call i32 @__oxid_termination_scope_start()\n  %termination_ready = icmp eq i32 %termination_setup, 0\n  br i1 %termination_ready, label %termination_body, label %termination_setup_error\ntermination_setup_error:\n  ret i32 74\ntermination_body:\n").unwrap();
+    }
     if storage.wrapper_fuel_bytes() != 0 {
         writeln!(
             out,
@@ -4000,8 +4114,12 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
         // Unsigned comparison rejects negatives without truncating i32 status.
         out.write_str("  %status_valid = icmp ule i32 %value, 255\n  br i1 %status_valid, label %process_complete, label %process_status_error\nprocess_status_error:\n").unwrap();
         emit_failure(out, diagnostics, FailureKind::ProcessStatus, root.span);
-        out.write_str("process_complete:\n  ret i32 %value\n}\n")
-            .unwrap();
+        out.write_str("process_complete:\n").unwrap();
+        if out.termination {
+            out.write_str("  call void @__oxid_termination_scope_end()\n")
+                .unwrap();
+        }
+        out.write_str("  ret i32 %value\n}\n").unwrap();
         return;
     }
     match result {
@@ -4077,6 +4195,7 @@ fn continuation<W: PlanWitness>(
         }
     }
     match instruction {
+        OwnedInstruction::AcquireLocalElementBorrow { .. } => Continuation::Bounds,
         OwnedInstruction::PrepareBorrow { loan, .. }
         | OwnedInstruction::AcquireLocalBorrow(loan)
             if vector::borrow_splits(plan, f, *loan) =>
@@ -4575,6 +4694,7 @@ fn emit_function<W: PlanWitness>(
         if guarded
             && plan.binary_delivery_cost(id).is_none()
             && plan.file_delivery_cost(id).is_none()
+            && plan.process_delivery_cost(id).is_none()
             && !vector::delivery(plan, id)
             && !owned_vector::delivery(plan, id)
         {
@@ -5609,6 +5729,21 @@ fn emit_statement<W: PlanWitness>(
             plan::instruction_span(statement),
             out,
         ),
+        OwnedInstruction::AcquireLocalElementBorrow { loan, index } => {
+            if plan.function(f.id).element_index(*loan) != Some(*index) {
+                out.exceeded = true;
+                return;
+            }
+            owned_vector::borrow_record(
+                storage,
+                name,
+                *loan,
+                *index,
+                diagnostics,
+                plan::instruction_span(statement),
+                out,
+            );
+        }
         OwnedInstruction::PrepareBorrow { loan, .. }
         | OwnedInstruction::AcquireLocalBorrow(loan) => {
             if experimental::resource_borrow(plan, f, *loan) {

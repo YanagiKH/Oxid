@@ -190,6 +190,7 @@ impl ProjectReader for Reader {
     fn registry_dependency(
         &mut self,
         root: &Path,
+        alias: &str,
         dependency: &crate::project_registry::Dependency,
     ) -> Result<PathBuf, String> {
         if self.boundary.is_some() {
@@ -200,7 +201,7 @@ impl ProjectReader for Reader {
             .as_mut()
             .ok_or("source package resolver is missing")?;
         inner.registry_budget = self.registry_budget.clone();
-        let path = inner.registry_dependency(root, dependency)?;
+        let path = inner.registry_dependency(root, alias, dependency)?;
         self.registry_budget = inner.registry_budget.clone();
         let allowance = self
             .registry_budget
@@ -1414,6 +1415,7 @@ mod tests {
             registry: None,
             registry_budget: None,
             registry_no_fetch: false,
+            registry_update: false,
         });
         let snapshot = reader.manifest(&root.join("oxid.toml")).unwrap();
         let graphs = vec![

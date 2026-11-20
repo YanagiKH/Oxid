@@ -166,7 +166,8 @@ fn origin_only_admission_has_exact_payload_and_work_without_ownership_activity()
         metadata: (std::mem::size_of::<Vec<RawEnumDecl>>()
             + std::mem::size_of::<usize>()
             + std::mem::size_of::<Vec<MatchDecl>>())
-            + VECTOR_RAW_HEADER_GROWTH,
+            + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES,
     };
     assert!(verify_with_limits(raw(s), &sources, zero).is_ok());
     let build = || {
@@ -184,6 +185,7 @@ fn origin_only_admission_has_exact_payload_and_work_without_ownership_activity()
                 + std::mem::size_of::<usize>()
                 + std::mem::size_of::<Vec<MatchDecl>>())
                 + VECTOR_RAW_HEADER_GROWTH
+                + TERMINATION_RAW_SELECTOR_BYTES
                 + 2 * std::mem::size_of::<Option<DiagnosticOrigins>>(),
             ..OwnershipUsage::default()
         }
@@ -234,6 +236,7 @@ fn active_metadata_charges_all_embedded_fields_and_some_adds_four_checks() {
             + std::mem::size_of::<usize>()
             + std::mem::size_of::<Vec<MatchDecl>>())
             + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES
             + std::mem::size_of::<shape::OwnerSites>()
             + 4 * std::mem::size_of::<Option<DiagnosticOrigins>>()
     );
@@ -460,6 +463,12 @@ fn shared_counts_match_independently_inventoried_raw_without_bypassing_global_ca
     let mut program = budget::ProgramCounts::default();
     budget::account_enum_declarations(EnumUsage::default(), budget::Limits::DEFAULT, &mut program)
         .unwrap();
+    budget::account_builtin_descriptors(
+        BuiltinOrigins::None,
+        budget::Limits::DEFAULT,
+        &mut program,
+    )
+    .unwrap();
     budget::account_function(counts, budget::Limits::DEFAULT, &mut program).unwrap();
     assert_eq!(
         program.usage(),
@@ -525,7 +534,10 @@ fn maximum_block_some_origins_retain_linear_scratch_and_exact_work() {
     assert_eq!(usage.work, 33_600_192);
     assert_eq!(
         usage.metadata_bytes,
-        16_800_248 + std::mem::size_of::<Vec<MatchDecl>>() + VECTOR_RAW_HEADER_GROWTH
+        16_800_248
+            + std::mem::size_of::<Vec<MatchDecl>>()
+            + VECTOR_RAW_HEADER_GROWTH
+            + TERMINATION_RAW_SELECTOR_BYTES
     );
     assert_eq!(usage.scratch_bytes, 9_900_000);
     let w = verify_owned(p, &sources).unwrap();

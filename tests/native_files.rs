@@ -274,6 +274,131 @@ fn buffer_paths_and_file_moves_through_nested_records_and_enums() {
     assert_eq!(fs::read(project.0.join("field.bin")).unwrap(), b"field");
 }
 
+const FILE_TRANSFER: &str = r#"
+use crate::file_io::read_exact;
+use crate::file_io::write_all;
+use crate::file_io::ReadExact;
+use crate::file_io::WriteAll;
+use std::fs::File;
+use std::fs::create;
+use std::fs::open_read;
+use std::fs::OpenResult;
+use std::fs::close;
+use std::fs::FileStatus;
+
+fn fill(file:&mut File)->i32 {
+    let data=[0u8,42u8,13u8,10u8,26u8,255u8];
+    let written=write_all(&mut *file,&data);
+    match written { WriteAll::Complete=>{return 0;},
+        WriteAll::NoProgress(count)=>{return 1;}, WriteAll::Error(error)=>{return 2;}, }
+}
+
+fn verify(file:&mut File)->i32 {
+    let mut first=[99u8,99u8,99u8,99u8];
+    let read_first=read_exact(&mut *file,&mut first);
+    match read_first { ReadExact::Complete=>{},
+        ReadExact::EndOfFile(count)=>{return 3;}, ReadExact::Error(error)=>{return 4;}, }
+    if first[0]!=0u8 || first[1]!=42u8 || first[2]!=13u8 || first[3]!=10u8{return 5;}
+    let mut second=[99u8,99u8,99u8,99u8];
+    let read_second=read_exact(&mut *file,&mut second);
+    match read_second { ReadExact::Complete=>{return 6;},
+        ReadExact::EndOfFile(count)=>{if count!=2{return 7;}}, ReadExact::Error(error)=>{return 8;}, }
+    if second[0]!=26u8 || second[1]!=255u8 || second[2]!=99u8 || second[3]!=99u8{return 9;}
+    let empty=read_exact(&mut *file,&mut second[0..0]);
+    match empty { ReadExact::Complete=>{},
+        ReadExact::EndOfFile(count)=>{return 10;}, ReadExact::Error(error)=>{return 11;}, }
+    let rejected=write_all(&mut *file,&first);
+    match rejected { WriteAll::Complete=>{return 12;}, WriteAll::NoProgress(count)=>{return 13;},
+        WriteAll::Error(error)=>{if error.transferred!=0 || error.code<=0{return 14;}}, }
+    return 42;
+}
+
+fn main()->i32 {
+    let path=b"payload.dat";
+    let output=create(&path);
+    match output {
+        OpenResult::Opened(value)=>{
+            let mut file=value;
+            let status=fill(&mut file);
+            if status!=0{return status;}
+            let closed=close(&mut file);
+            match closed { FileStatus::Ok=>{}, FileStatus::Error(code)=>{return 15;}, }
+        }, OpenResult::Error(code)=>{return 16;},
+        OpenResult::MemoryLimit=>{return 17;}, OpenResult::AllocationFailed=>{return 18;},
+    }
+    let input=open_read(&path);
+    match input {
+        OpenResult::Opened(value)=>{let mut file=value; return verify(&mut file);},
+        OpenResult::Error(code)=>{return 19;},
+        OpenResult::MemoryLimit=>{return 20;}, OpenResult::AllocationFailed=>{return 21;},
+    }
+}
+"#;
+const TRANSFERRED_BYTES: [u8; 6] = [0, 42, 13, 10, 26, 255];
+
+fn file_transfer_project() -> Project {
+    let project = Project::new(FILE_TRANSFER);
+    let library = project.0.join("file_io");
+    fs::create_dir_all(library.join("src")).unwrap();
+    fs::write(
+        library.join("oxid.toml"),
+        include_str!("../packages/file_io/oxid.toml"),
+    )
+    .unwrap();
+    fs::write(
+        library.join("src/lib.ox"),
+        include_str!("../packages/file_io/src/lib.ox"),
+    )
+    .unwrap();
+    let manifest = project.0.join("oxid.toml");
+    let mut contents = fs::read_to_string(&manifest).unwrap();
+    contents.push_str("[dependencies]\nfile_io = \"file_io\"\n");
+    fs::write(manifest, contents).unwrap();
+    project
+}
+
+#[test]
+fn file_transfer_library_preserves_the_prefix_and_reports_partial_eof() {
+    let project = file_transfer_project();
+    success(project.command(&["run"]), b"42\n");
+    assert_eq!(
+        fs::read(project.0.join("payload.dat")).unwrap(),
+        TRANSFERRED_BYTES
+    );
+}
+
+#[test]
+#[ignore = "requires Linux x86_64 or ARM64 LLVM 19.1.7 in OXID_LLVM_BIN"]
+fn file_transfer_library_deploys_without_package_sources() {
+    let project = file_transfer_project();
+    for profile in ["dev", "release"] {
+        let built = project.command(&["build", "--profile", profile]);
+        assert!(built.status.success(), "{built:?}");
+        let deployment = project.0.join(profile);
+        fs::create_dir(&deployment).unwrap();
+        fs::copy(project.0.join(".oxid/bin/files"), deployment.join("files")).unwrap();
+    }
+    for directory in ["src", "file_io", ".oxid"] {
+        fs::remove_dir_all(project.0.join(directory)).unwrap();
+    }
+    fs::remove_file(project.0.join("oxid.toml")).unwrap();
+    for profile in ["dev", "release"] {
+        let deployment = project.0.join(profile);
+        success(
+            Command::new(deployment.join("files"))
+                .current_dir(&deployment)
+                .env_clear()
+                .output()
+                .unwrap(),
+            b"42\n",
+        );
+        assert_eq!(
+            fs::read(deployment.join("payload.dat")).unwrap(),
+            TRANSFERRED_BYTES
+        );
+    }
+}
+
 #[test]
 #[ignore = "requires Linux x86_64 or ARM64 LLVM 19.1.7 in OXID_LLVM_BIN"]
 fn native_files_preserve_binary_data_and_survive_source_removal() {

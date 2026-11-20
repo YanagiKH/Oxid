@@ -234,7 +234,8 @@ fn bounded_stdin_current_hir_prices_only_actual_production_extras() {
     let base = HirPlan::calculate(plan.counts, index.sources().eof()).unwrap();
     let extra = 2 * resolve::signature_identity_carrier_bytes()
         + size_of::<ProductionBuiltinPreflightCarriers>()
-        + super::super::program::builtin_production_extra_bytes();
+        + super::super::program::builtin_production_extra_bytes()
+        + crate::frontend::builtin_catalog::termination::shared_selector_bytes();
     assert_eq!(plan.fixed - base.fixed, extra);
     assert_eq!(plan.total - base.total, extra);
     assert_eq!(plan.resolved, base.resolved);

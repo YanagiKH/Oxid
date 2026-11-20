@@ -48,6 +48,19 @@ pub(crate) fn registry_release_plan(
     let replacements = crate::project_registry::publication_replacements(
         descriptors,
         source,
+        |alias| {
+            let edge = graph.specs[0]
+                .dependencies
+                .iter()
+                .find(|edge| edge.alias == alias)?;
+            graph
+                .registries
+                .as_ref()?
+                .entries
+                .iter()
+                .find(|(index, _)| *index == edge.package)
+                .map(|(_, origin)| &origin.pin)
+        },
         &mut budget.borrow_mut(),
     )?;
     let root = &graph.specs[0].root;
@@ -336,6 +349,7 @@ pub(crate) fn registry_recheck_release(
         fn registry_dependency(
             &mut self,
             root: &Path,
+            alias: &str,
             dependency: &crate::project_registry::Dependency,
         ) -> Result<PathBuf, String> {
             if root == self.root {
@@ -355,9 +369,9 @@ pub(crate) fn registry_recheck_release(
                         version: budget.text(&dependency.version)?,
                     }
                 };
-                self.inner.registry_dependency(root, &bound)
+                self.inner.registry_dependency(root, alias, &bound)
             } else {
-                self.inner.registry_dependency(root, dependency)
+                self.inner.registry_dependency(root, alias, dependency)
             }
         }
         fn registry_graph(

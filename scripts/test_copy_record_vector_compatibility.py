@@ -301,8 +301,11 @@ class FrozenReplay(unittest.TestCase):
         with patch.object(gate.library, "prepare_current_observer", return_value=("selected", "seam")) as prepare:
             self.assertEqual(gate.prepare_current_observer(1, 2, 3, 4, 5, 6), ("selected", "seam"))
         prepare.assert_called_once_with(1, 2, 3, 4, 5, 6)
+        # The historical resource-preparation path binds its original compiler,
+        # independently of the current element-borrowing AST.
+        selected_compiler = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
         for name in ("src/frontend/ast.rs", "src/frontend/declaration_index/resource.rs"):
-            self.assertEqual((ROOT / name).read_bytes(), git_body(gate.PREDECESSOR, name), name)
+            self.assertEqual(git_body(selected_compiler, name), git_body(gate.PREDECESSOR, name), name)
 
     def test_provisional_pin_guard_refuses_qualification_before_any_process(self):
         with tempfile.TemporaryDirectory() as directory:

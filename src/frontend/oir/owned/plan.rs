@@ -16,6 +16,9 @@ pub(super) mod native_vector_layout;
 #[path = "owned_vector_plan.rs"]
 mod owned_vector_accounting;
 
+#[path = "element_loan_plan.rs"]
+pub(super) mod element_loan_accounting;
+
 pub(super) const ENUM_VALUE_COST: usize = 3;
 pub(super) const MATCH_DISPATCH_COST: usize = 1;
 
@@ -113,8 +116,12 @@ pub(super) struct FunctionPlan {
     calls: Vec<CallPlan>,
     owned_stages: Vec<OwnerPlaceId>,
     borrowed_loans: Vec<LoanId>,
+    element_indices: Vec<Option<Operand>>,
 }
 impl FunctionPlan {
+    pub fn element_index(&self, loan: LoanId) -> Option<Operand> {
+        self.element_indices.get(loan.0).copied().flatten()
+    }
     pub fn usage(&self) -> FrameUsage {
         self.usage
     }
@@ -148,6 +155,9 @@ const _: () = assert!(
         == size_of::<&VerifiedOwnedProgram>() + size_of::<Vec<FunctionPlan>>() + size_of::<usize>()
 );
 impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
+    pub(super) fn has_local_record_element_loans(&self) -> bool {
+        self.scalar_mode & 4 != 0
+    }
     pub(super) fn uses_owned_vectors(&self) -> bool {
         self.witness.uses_owned_vectors()
     }
@@ -303,12 +313,32 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
             .into_iter()
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }
-    pub(super) fn has_file_delivery(&self) -> bool {
+    pub(super) fn has_termination(&self) -> bool {
+        !self.witness.raw_program().builtins.process().is_empty()
+    }
+    pub(super) fn process_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
+        if !self.has_termination() {
+            return None;
+        }
         use crate::frontend::builtin_catalog::experimental::Function;
-        Function::ALL
-            .into_iter()
-            .filter(|operation| operation.is_file())
-            .any(|operation| self.witness.experimental_function(operation).is_some())
+        (self
+            .witness
+            .experimental_function(Function::EnableTermination)
+            == Some(function)
+            || self
+                .witness
+                .experimental_function(Function::TerminationRequested)
+                == Some(function))
+        .then(|| {
+            let term = self.witness.functions()[function.0].blocks[0]
+                .terminator
+                .as_ref()
+                .expect("sealed process return");
+            self.terminator_cost(function, &term.kind)
+        })
+    }
+    pub(super) fn has_file_delivery(&self) -> bool {
+        self.witness.has_file_delivery()
     }
     pub(super) fn has_file_seek(&self) -> bool {
         self.witness
@@ -437,9 +467,12 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
 
     #[cfg(test)]
     pub(super) fn compiler_work_request(witness: &W) -> Result<usize, AdmissionFailure> {
-        Ok(
+        let legacy_plan_work =
             owned_vector_accounting::requested(witness, budget::Limits::DEFAULT.work)?
-                .map_or(0, |request| request.work),
+                .map_or(witness.usage().work, |request| request.work);
+        add(
+            legacy_plan_work,
+            element_loan_accounting::additional_work(witness.functions())?,
         )
     }
 
@@ -450,6 +483,11 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
     ) -> Result<Self, AdmissionFailure> {
         let extension = owned_vector_accounting::requested(witness, work_limit)?;
         let functions = witness.functions();
+        element_loan_accounting::admit_work(
+            functions,
+            extension.map_or(witness.usage().work, |request| request.work),
+            work_limit,
+        )?;
         let wide_type = |ty: hir::Ty| {
             ty == hir::Ty::Char
                 || ty == hir::Ty::I64
@@ -590,9 +628,24 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
             extension.map_or(0, |request| request.metadata_bytes),
             mul(functions.len(), size_of::<FunctionPlan>())?,
         )?;
+        metadata_bytes = add(
+            metadata_bytes,
+            super::termination_queries::plan_bytes::<W>(),
+        )?;
+        metadata_bytes = add(
+            metadata_bytes,
+            element_loan_accounting::builder_control_bytes(),
+        )?;
         let mut largest_frame = 0;
         // Complete ALL metadata-length and activation-cost preflights before any allocation.
         for f in functions {
+            metadata_bytes = add(
+                metadata_bytes,
+                mul(
+                    element_loan_accounting::requested_len(f),
+                    size_of::<Option<Operand>>(),
+                )?,
+            )?;
             dynamic_resources |= f.references.iter().any(|reference| {
                 matches!(
                     reference.referent(),
@@ -643,13 +696,14 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
         }
         let mut plans = reserve(functions.len())?;
         owned_vector_accounting::admit_capacity::<FunctionPlan>(
-            extension.is_some(),
+            true,
             &mut metadata_bytes,
             plans.capacity(),
             functions.len(),
             limit,
         )?;
         for f in functions {
+            let element_indices = element_loan_accounting::build(f, &mut metadata_bytes, limit)?;
             let current_usage = usage(witness, f, scalar_bytes)?;
             let mut owner_offsets = reserve(f.owners.len())?;
             owned_vector_accounting::admit_capacity::<usize>(
@@ -741,6 +795,7 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
                 calls,
                 owned_stages,
                 borrowed_loans,
+                element_indices,
             });
         }
         let mut result = Self {
@@ -788,6 +843,12 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
                 // final closed policy bit. No second discovery scan or carrier.
                 if matches!(statement.kind, OwnedInstruction::CopyInitialize { .. }) {
                     result.integer_extension |= 128;
+                }
+                if matches!(
+                    statement.kind,
+                    OwnedInstruction::AcquireLocalElementBorrow { .. }
+                ) {
+                    result.scalar_mode |= 4;
                 }
                 if let OwnedInstruction::DestructureRecord { source, fields } = &statement.kind {
                     add(
@@ -1032,7 +1093,7 @@ mod tests {
             OwnedBlock => 328,
             Operand => 32,
             ParameterBinding => 16,
-            FunctionPlan => 184,
+            FunctionPlan => 208,
             CallPlan => 48,
             FrameUsage => 88,
             OwnerRuntime => 32,

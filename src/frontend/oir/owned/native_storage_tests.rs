@@ -23,7 +23,7 @@ fn native_storage_fixed_carriers_and_existing_plan_layout() {
     );
     assert_eq!(size_of::<NativeSliceMappings<'_>>(), 24);
     assert_eq!(size_of::<NativeSliceMapping>(), 32);
-    assert_eq!(size_of::<FunctionPlan>(), 184);
+    assert_eq!(size_of::<FunctionPlan>(), 208);
     assert_eq!(size_of::<CallPlan>(), 48);
     assert_eq!(size_of::<FrameUsage>(), 88);
 }

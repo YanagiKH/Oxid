@@ -720,6 +720,438 @@ impl HirPlan {
             total,
         })
     }
+    /// A distinct authenticated suffix; the old20+1 guard above stays closed.
+    fn calculate_with_process(
+        c: HirCounts,
+        at: Span,
+        experimental_functions: usize,
+        vector_functions: usize,
+        inventory: crate::frontend::builtin_catalog::BuiltinSet,
+    ) -> Result<Self, Box<Diagnostic>> {
+        let process = inventory.process();
+        if process.is_empty() || process.count() > 2 {
+            return Err(invalid(at));
+        }
+        if experimental_functions != inventory.experimental().functions()
+            || experimental_functions
+                > crate::frontend::builtin_catalog::experimental::Function::ALL.len()
+            || vector_functions
+                > crate::frontend::builtin_catalog::vector::Operation::ALL.len() * 17
+            || c.signatures
+                .checked_sub(c.functions)
+                .and_then(|suffix| suffix.checked_sub(experimental_functions))
+                .and_then(|suffix| suffix.checked_sub(vector_functions))
+                .and_then(|suffix| suffix.checked_sub(process.count()))
+                .is_none_or(|legacy_suffix| legacy_suffix != inventory.legacy().extra_functions())
+        {
+            return Err(invalid(at));
+        }
+        let mut resolved = 0;
+        charge::<Record>(&mut resolved, c.records, at)?;
+        charge::<Field>(&mut resolved, c.record_fields, at)?;
+        charge::<Signature>(&mut resolved, c.signatures, at)?;
+        charge::<Function>(&mut resolved, c.functions, at)?;
+        charge::<ParameterTy>(&mut resolved, c.parameters, at)?;
+        charge::<Binding>(&mut resolved, c.bindings, at)?;
+        charge::<Expr>(&mut resolved, c.expressions, at)?;
+        charge::<BodyBlock>(&mut resolved, c.blocks, at)?;
+        charge::<Stmt>(&mut resolved, c.statements, at)?;
+        charge::<Argument>(&mut resolved, c.call_arguments, at)?;
+        charge::<FieldInit>(&mut resolved, c.field_initializers, at)?;
+        charge::<ExprId>(&mut resolved, c.array_entries, at)?;
+        charge::<u8>(&mut resolved, c.byte_string_bytes, at)?;
+        // Match's Vec header is already inside Stmt, never charged twice.
+        charge::<MatchArm>(&mut resolved, c.match_arms, at)?;
+
+        let mut typed = 0;
+        // All SIX headers, including sparse borrow projections, are embedded.
+        charge::<typeck::TypedBody>(&mut typed, c.functions, at)?;
+        charge::<ValueTy>(&mut typed, c.expressions, at)?;
+        charge::<Option<Projection>>(&mut typed, c.expressions, at)?;
+        charge::<ParameterTy>(&mut typed, c.bindings, at)?;
+        charge::<typeck::FlowSummary>(&mut typed, c.blocks, at)?;
+        charge::<Vec<Option<Projection>>>(&mut typed, c.blocks, at)?;
+        charge::<Option<Projection>>(&mut typed, c.statements, at)?;
+        charge::<typeck::BorrowProjection>(&mut typed, c.borrow_arguments, at)?;
+
+        // Explicitly coexist with all final vectors; no assumed collect reuse.
+        let mut staging = 0;
+        charge::<Option<ValueTy>>(&mut staging, c.expressions, at)?;
+        charge::<Option<ParameterTy>>(&mut staging, c.bindings, at)?;
+        charge::<Option<typeck::FlowSummary>>(&mut staging, c.blocks, at)?;
+        charge::<Vec<Option<ValueTy>>>(&mut staging, c.functions, at)?;
+        charge::<Vec<Option<ParameterTy>>>(&mut staging, c.functions, at)?;
+        charge::<Vec<Option<typeck::FlowSummary>>>(&mut staging, c.functions, at)?;
+
+        let mut resolver_scratch = 0;
+        // PaidScope is embedded in the complete Resolver policy below. Its
+        // backing rows are separate; do not charge that embedded header twice.
+        increment(
+            &mut resolver_scratch,
+            mul(c.functions, resolver_storage::function_carrier_bytes(), at)?,
+            at,
+        )?;
+        charge::<ScopeName>(&mut resolver_scratch, c.bindings, at)?;
+        charge::<usize>(&mut resolver_scratch, c.bindings, at)?;
+        charge::<usize>(&mut resolver_scratch, c.scope_marks, at)?;
+        charge::<LoopId>(&mut resolver_scratch, c.loop_slots, at)?;
+        charge::<Vec<LoopId>>(&mut resolver_scratch, c.functions, at)?;
+        charge::<resolve::ResolveFrame>(&mut resolver_scratch, c.resolve_frames, at)?;
+        charge::<Vec<resolve::ResolveFrame>>(&mut resolver_scratch, c.functions, at)?;
+        // Complete current resolver header, including inherited inline map.
+        increment(
+            &mut resolver_scratch,
+            mul(c.functions, resolve::resolver_carrier_bytes(), at)?,
+            at,
+        )?;
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.signatures
+                    .checked_sub(c.functions)
+                    .ok_or_else(|| invalid(at))?,
+                resolve::builtin_signature_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+        charge::<BuiltinPreflightCarriers>(&mut resolver_scratch, c.signatures - c.functions, at)?;
+        // Pending local vector headers coexist with complete prepaid HIR rows.
+        // Sum across visits rather than assume only the largest nested call.
+        charge::<Vec<Argument>>(&mut resolver_scratch, c.calls, at)?;
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.call_arguments,
+                resolver_storage::argument_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.record_literals,
+                resolver_storage::literal_lookup_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+        // Newly reachable enum branches retain only bounded borrowed views,
+        // one actual match builder and one cursor per active match. Charge
+        // their actual complete source-side carriers before any body reserve.
+        increment(
+            &mut resolver_scratch,
+            mul(c.matches, resolve::enum_match_carrier_bytes(), at)?,
+            at,
+        )?;
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.max_expression_depth,
+                resolve::enum_expression_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+        charge::<Vec<FieldInit>>(&mut resolver_scratch, c.record_literals, at)?;
+        charge::<Vec<ExprId>>(&mut resolver_scratch, c.array_literals, at)?;
+        charge::<Vec<Field>>(&mut resolver_scratch, c.records, at)?;
+        charge::<Vec<ParameterTy>>(&mut resolver_scratch, c.signatures, at)?;
+        charge::<Vec<BodyBlock>>(&mut resolver_scratch, c.functions, at)?;
+        // Paid branches additionally name inner params/blocks/frames before
+        // transfer to the existing outer buffers, plus each block body and
+        // each call's resolved-arguments builder. Keep the old charges above.
+        increment(
+            &mut resolver_scratch,
+            mul(
+                c.functions,
+                resolver_storage::function_branch_header_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+        charge::<Vec<Stmt>>(&mut resolver_scratch, c.blocks, at)?;
+        charge::<Vec<Argument>>(&mut resolver_scratch, c.calls, at)?;
+        // The paid duplicate branches retain empty local legacy map headers,
+        // never their backing tables. Count those changed complete headers.
+        charge::<std::collections::HashMap<&str, Span>>(
+            &mut resolver_scratch,
+            add(c.records, c.record_literals, at)?,
+            at,
+        )?;
+
+        // Each non-invoking opaque-type witness runs once. These are the
+        // existing four-transport envelopes' sole caller array roles; do not
+        // create a separate pricing table, retained plan or duplicate result.
+        let checker_iterators = typeck::semantic_iterator_layout();
+        let checker_map_or = typeck::semantic_map_or_layout();
+        let mut typeck_scratch = 0;
+        charge::<typeck::TypeFrame>(&mut typeck_scratch, c.type_frames, at)?;
+        charge::<Vec<typeck::TypeFrame>>(&mut typeck_scratch, c.functions, at)?;
+        charge::<(ParameterTy, Span)>(&mut typeck_scratch, c.call_arguments, at)?;
+        charge::<Vec<(ParameterTy, Span)>>(&mut typeck_scratch, c.calls, at)?;
+        // The selected record is unresolved here. Every literal can require
+        // the largest whole declaration's presence vector, even when missing
+        // all fields. Cumulative sums cover nested pending outer vectors.
+        charge::<bool>(
+            &mut typeck_scratch,
+            mul(c.record_literals, c.max_record_fields, at)?,
+            at,
+        )?;
+        charge::<Vec<bool>>(&mut typeck_scratch, c.record_literals, at)?;
+        charge::<[u64; 4]>(&mut typeck_scratch, c.matches, at)?;
+        // T0 output objects only. No retained per-function plan table, paid
+        // checker invocation or T1 owner/admission/receiver claim follows.
+        charge::<type_storage::FunctionQuota>(&mut typeck_scratch, c.functions, at)?;
+        // First denied T1 slice: complete body construction/return/caller
+        // transports, separate from retained TypedBody backing and T0 helpers.
+        increment(
+            &mut typeck_scratch,
+            mul(
+                c.functions,
+                typeck::borrowed_body_return_carrier_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+
+        // Checked per-function, block, call and literal semantic controls.
+        // Existing stage/frame/actuals/presence/quota/TypedBody roles above stay
+        // paid exactly once. Statement patterns are a separate component here.
+        charge::<typeck::PaidBodyControls>(&mut typeck_scratch, c.functions, at)?;
+        charge::<typeck::PaidBodyReceivers>(&mut typeck_scratch, c.functions, at)?;
+        charge::<typeck::semantic_carriers::StatementPatternCarriers>(
+            &mut typeck_scratch,
+            c.functions,
+            at,
+        )?;
+        charge::<typeck::semantic_carriers::BodyFrameSemanticCarriers>(
+            &mut typeck_scratch,
+            c.functions,
+            at,
+        )?;
+        charge::<typeck::semantic_carriers::InitializerSemanticCarriers>(
+            &mut typeck_scratch,
+            c.functions,
+            at,
+        )?;
+        increment(
+            &mut typeck_scratch,
+            mul(c.functions, checker_map_or[0], at)?,
+            at,
+        )?;
+        charge::<typeck::PaidRowReceiver>(&mut typeck_scratch, c.blocks, at)?;
+        charge::<typeck::semantic_carriers::CallSemanticCarriers>(
+            &mut typeck_scratch,
+            c.calls,
+            at,
+        )?;
+        charge::<typeck::semantic_carriers::LiteralSemanticCarriers>(
+            &mut typeck_scratch,
+            c.record_literals,
+            at,
+        )?;
+        // Observation source-call banks. BodyPaid's already-enclosed growth
+        // remains in PaidBodyControls above, never added again here.
+        increment(
+            &mut typeck_scratch,
+            mul(c.functions, typeck::body_completion_control_bytes(), at)?,
+            at,
+        )?;
+        increment(
+            &mut typeck_scratch,
+            mul(c.functions, typeck::body_sampling_control_bytes(), at)?,
+            at,
+        )?;
+        increment(
+            &mut typeck_scratch,
+            mul(c.calls, typeck::call_sampling_control_bytes(), at)?,
+            at,
+        )?;
+        increment(
+            &mut typeck_scratch,
+            mul(
+                c.record_literals,
+                typeck::literal_sampling_control_bytes(),
+                at,
+            )?,
+            at,
+        )?;
+
+        let mut fixed = size_of::<typeck::TypedOwnedProgram<'_>>();
+        // RFC0030 named successor: keep all predecessor banks intact, and pay
+        // conversion/provenance/consuming-authentication roles explicitly.
+        increment(&mut fixed, super::u8_resources::fixed_bytes(), at)?;
+        // RFC0031 separately pays both complete byte-record guard roles.
+        // Historical banks and the global ceiling are unchanged.
+        increment(&mut fixed, byte_storage_resources::fixed_bytes(), at)?;
+        increment(&mut fixed, super::byte_string_resources::fixed_bytes(), at)?;
+        // TypedOwnedProgram already encloses ResolvedOwnedProgram, its index
+        // owner, source view and all top-level Vec headers. Do not add them again.
+        // These whole measured models include each embedded Result/Option
+        // payload once, plus the separately named copies/temporaries above.
+        // This is an explicit carrier envelope, not a machine-stack/RSS bound.
+        charge::<PlanReturnEnvelope>(&mut fixed, 1, at)?;
+        charge::<CapacityReturnEnvelope>(&mut fixed, 1, at)?;
+        charge::<CursorTemporaries>(&mut fixed, 1, at)?;
+        charge::<ScalarReturnEnvelope>(&mut fixed, 1, at)?;
+        increment(&mut fixed, resolver_storage::fixed_carrier_bytes(), at)?;
+        increment(&mut fixed, VECTOR_RETURN_ENVELOPE_BYTES, at)?;
+        // The T0 core excludes the selected Capacity/Vec transports above.
+        // Metered projection reuses that same nonrecursive core/primitive role;
+        // only its separately modeled work surface is newly charged below.
+        increment(&mut fixed, type_storage::fixed_control_carrier_bytes(), at)?;
+        // Actual new borrowed checker and denied entrypoint carriers only.
+        // This does not yet admit a successful paid checker or fresh owner.
+        increment(&mut fixed, typeck::borrowed_check_carrier_bytes(), at)?;
+        increment(&mut fixed, resolve::denied_type_probe_carrier_bytes(), at)?;
+        // Passive checker-only fixed bank. Observation additions are separate
+        // below; payment does not make either private source helper reachable.
+        charge::<typeck::PaidProgramControls>(&mut fixed, 1, at)?;
+        charge::<typeck::semantic_carriers::ProjectionSemanticCarriers>(&mut fixed, 1, at)?;
+        charge::<typeck::semantic_carriers::PredicateInvocationCarriers>(&mut fixed, 1, at)?;
+        increment(&mut fixed, checker_iterators[0], at)?;
+        increment(&mut fixed, checker_iterators[2], at)?;
+        increment(&mut fixed, checker_map_or[2], at)?;
+        charge::<type_storage::MeteredProjectionWorkControls>(&mut fixed, 1, at)?;
+        // Current fresh resolver adds one HIR node per supported source
+        // expression and only source-child edges. Indexed assignment may omit
+        // a target wrapper, never add depth. Typing never enters callee bodies.
+        // Thus HIR recursion <= admitted source depth <= MAX_NESTING, not
+        // equality and not a claim for forged HIR or future desugarings. Enum
+        // constructors retain exactly their one source-child payload edge;
+        // match bodies use separate block frames and do not add expression depth.
+        // Initializer controls are F-paid; projection does not type children.
+        charge::<typeck::semantic_carriers::ExpressionSemanticCarriers>(
+            &mut fixed,
+            MAX_NESTING,
+            at,
+        )?;
+        charge::<typeck::PaidExpressionReborrows>(&mut fixed, MAX_NESTING, at)?;
+        // Twenty actual observation banks, including complete embedded return
+        // types exactly once. Generic maxima stay within each helper family.
+        // Nonrecursive completion/sampling/inventory state is fixed; F/C/L
+        // source selections are charged separately above. No pricing array or
+        // new caller aggregate is constructed. The sizeof helper return and
+        // existing checked arithmetic transports retain their stated banks.
+        increment(
+            &mut fixed,
+            type_storage::observed_construction_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, type_storage::sample_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            type_storage::endpoint_sample_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, type_storage::path_sample_carrier_bytes(), at)?;
+        increment(&mut fixed, type_storage::completion_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            type_storage::quota_completion_carrier_bytes(),
+            at,
+        )?;
+        increment(
+            &mut fixed,
+            type_storage::plan_completion_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, type_storage::counts_access_carrier_bytes(), at)?;
+        increment(&mut fixed, type_storage::sample_sizing_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            type_storage::inventory_construction_carrier_bytes(),
+            at,
+        )?;
+        increment(
+            &mut fixed,
+            type_storage::retained_sample_carrier_bytes(),
+            at,
+        )?;
+        increment(
+            &mut fixed,
+            type_storage::typed_reconciliation_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, typeck::body_inventory_carrier_bytes(), at)?;
+        increment(&mut fixed, typeck::path_inventory_carrier_bytes(), at)?;
+        increment(&mut fixed, typeck::inventory_sum_carrier_bytes(), at)?;
+        increment(&mut fixed, typeck::program_observation_control_bytes(), at)?;
+        increment(&mut fixed, typeck::projection_sampling_control_bytes(), at)?;
+        increment(
+            &mut fixed,
+            resolve::fresh_type_observation_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, resolve::type_storage_cell_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            typeck::borrowed_type_observation_carrier_bytes(),
+            at,
+        )?;
+        // Denied private pipeline precursor: actual new named enclosing
+        // carriers are paid before its source selector can be activated.
+        increment(&mut fixed, resolve::enum_pipeline_source_extra_bytes(), at)?;
+        increment(&mut fixed, typeck::enum_pipeline_type_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            super::program::enum_pipeline_program_carrier_bytes(),
+            at,
+        )?;
+        // Fresh production typed-owner returns are their own actual surfaces,
+        // independent of private statistics/artifact output envelopes.
+        increment(&mut fixed, resolve::production_source_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            resolve::element_range_routing_carrier_bytes(),
+            at,
+        )?;
+        increment(&mut fixed, typeck::production_type_carrier_bytes(), at)?;
+        increment(
+            &mut fixed,
+            super::program::production_program_carrier_bytes(),
+            at,
+        )?;
+        increment(
+            &mut fixed,
+            crate::frontend::oir::source::enum_facade_carrier_bytes(),
+            at,
+        )?;
+        // The witnessed ValueTy::Scalar function-item local is zero-sized;
+        // there is no function pointer or additional receiver to invent.
+        charge::<[Option<ExprCursor>; MAX_NESTING]>(&mut fixed, 1, at)?;
+        charge::<[Option<BlockCursor>; MAX_BLOCK_NESTING]>(&mut fixed, 1, at)?;
+        let mut lower_fixed = 0;
+        for bytes in lower::fixed_carrier_bytes() {
+            increment(&mut lower_fixed, bytes, at)?;
+        }
+        let mut total = 0;
+        for bytes in [
+            resolved,
+            typed,
+            staging,
+            resolver_scratch,
+            typeck_scratch,
+            fixed,
+            lower_fixed,
+        ] {
+            total = admit(total, bytes, MAX_HIR_BYTES, at)?;
+        }
+        Ok(Self {
+            counts: c,
+            resolved,
+            typed,
+            staging,
+            resolver_scratch,
+            typeck_scratch,
+            fixed,
+            lower_fixed,
+            total,
+        })
+    }
+
     /// Model the one shared seed-plus-projection boundary without mutating a
     /// resolved program or granting authority to allocate any particular vector.
     pub(super) fn with_dynamic(self, bytes: usize, at: Span) -> Result<usize, Box<Diagnostic>> {
@@ -931,17 +1363,47 @@ fn preflight_hir(
             selected.anchor,
         )?;
     }
+    if !index.builtin_set().process().is_empty() {
+        for item in crate::frontend::builtin_catalog::termination::Function::ALL {
+            if index.builtin_set().process().contains(item) {
+                let anchor = index.process_anchor(item, work)?;
+                visit(work, 1, anchor)?;
+                increment(&mut counts.signatures, 1, anchor)?;
+            }
+        }
+    }
     let experimental_functions = index.builtin_set().experimental().functions();
     let vectors = index.vector_functions().len();
-    let mut plan = if vectors != 0 {
+    let mut plan = if !index.builtin_set().process().is_empty() {
+        HirPlan::calculate_with_process(
+            counts,
+            at,
+            experimental_functions,
+            vectors,
+            index.builtin_set(),
+        )?
+    } else if vectors != 0 {
         HirPlan::calculate_with_vectors(counts, at, experimental_functions, vectors)?
     } else if experimental_functions == 0 {
         HirPlan::calculate(counts, at)?
     } else {
         HirPlan::calculate_with_experimental(counts, at, experimental_functions)?
     };
+    // Family absence is selected through the shared getters as well.
+    let shared_selectors = crate::frontend::builtin_catalog::termination::shared_selector_bytes();
+    plan.fixed = add(plan.fixed, shared_selectors, at)?;
+    plan.total = admit(plan.total, shared_selectors, MAX_HIR_BYTES, at)?;
     if !index.builtin_set().experimental().is_empty() {
         let extra = crate::frontend::builtin_catalog::experimental::compiler_carrier_bytes();
+        plan.fixed = add(plan.fixed, extra, at)?;
+        plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
+    }
+    if !index.builtin_set().process().is_empty() {
+        let extra = add(
+            crate::frontend::builtin_catalog::termination::compiler_carrier_bytes(),
+            size_of::<HirCounts>() + size_of::<HirPlan>(),
+            at,
+        )?;
         plan.fixed = add(plan.fixed, extra, at)?;
         plan.total = admit(plan.total, extra, MAX_HIR_BYTES, at)?;
     }
@@ -1103,7 +1565,10 @@ fn count_statement(
     match &statement.kind {
         ast::StmtKind::Let { init, .. } => {
             increment(&mut c.bindings, 1, at)?;
-            if matches!(ast.expressions[init.0].kind, ast::ExprKind::Borrow { .. }) {
+            if let ast::ExprKind::BorrowElement { index, .. } = ast.expressions[init.0].kind {
+                visit(work, 1, at)?;
+                count_expression(ast, index, at, work, c)?;
+            } else if matches!(ast.expressions[init.0].kind, ast::ExprKind::Borrow { .. }) {
                 visit(work, 1, at)?;
             } else {
                 count_expression(ast, *init, at, work, c)?;
@@ -1219,7 +1684,10 @@ fn count_expression(
                 | ast::ExprKind::BitNot { operand: inner, .. }
                 | ast::ExprKind::Negate { operand: inner, .. }
                 | ast::ExprKind::Not { operand: inner, .. }
-                | ast::ExprKind::IndexRead { index: inner, .. } => (next == 0).then_some(*inner),
+                | ast::ExprKind::IndexRead { index: inner, .. }
+                | ast::ExprKind::BorrowElement { index: inner, .. } => {
+                    (next == 0).then_some(*inner)
+                }
                 ast::ExprKind::Bitwise { left, right, .. }
                 | ast::ExprKind::Arithmetic { left, right, .. }
                 | ast::ExprKind::Comparison { left, right, .. }
@@ -1533,5 +2001,97 @@ mod experimental_suffix_tests {
                 "E0400"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod process_suffix_tests {
+    use super::*;
+    use crate::frontend::builtin_catalog::{experimental, termination, BuiltinItem, BuiltinSet};
+
+    #[test]
+    fn process_signature_counts_require_the_separate_authenticated_inventory() {
+        let at = Span {
+            file: crate::frontend::source::SourceFileId(0),
+            start: 0,
+            end: 0,
+        };
+        for process in [
+            BuiltinSet::None.admit(BuiltinItem::Process(termination::Function::Enable)),
+            BuiltinSet::None.admit(BuiltinItem::Process(termination::Function::Requested)),
+            BuiltinSet::None
+                .admit(BuiltinItem::Process(termination::Function::Enable))
+                .admit(BuiltinItem::Process(termination::Function::Requested)),
+        ] {
+            for with_old_functions in [false, true] {
+                let mut inventory = process;
+                if with_old_functions {
+                    for item in experimental::Item::ALL {
+                        inventory = inventory.admit(BuiltinItem::Experimental(item));
+                    }
+                }
+                let old = inventory.experimental().functions();
+                let counts = HirCounts {
+                    functions: 1,
+                    signatures: 1 + old + inventory.process().count(),
+                    ..Default::default()
+                };
+                let plan = HirPlan::calculate_with_process(counts, at, old, 0, inventory).unwrap();
+                assert_eq!(plan.counts.signatures, counts.signatures);
+                assert!(
+                    HirPlan::calculate_with_process(counts, at, old, 0, inventory.legacy())
+                        .is_err()
+                );
+                assert!(
+                    HirPlan::calculate_with_process(
+                        HirCounts {
+                            signatures: counts.signatures + 1,
+                            ..counts
+                        },
+                        at,
+                        old,
+                        0,
+                        inventory
+                    )
+                    .is_err(),
+                    "an extra descriptor cannot borrow either family's authority"
+                );
+                assert!(HirPlan::calculate_with_process(
+                    HirCounts {
+                        signatures: counts.signatures - 1,
+                        ..counts
+                    },
+                    at,
+                    old,
+                    0,
+                    inventory
+                )
+                .is_err());
+                assert!(
+                    HirPlan::calculate_with_process(counts, at, old + 1, 0, inventory).is_err(),
+                    "an unauthenticated old-family count cannot absorb a process row"
+                );
+                let one_over_old = experimental::Function::ALL.len() + 1;
+                assert!(
+                    HirPlan::calculate_with_process(counts, at, one_over_old, 0, inventory)
+                        .is_err()
+                );
+            }
+        }
+        assert_eq!(experimental::Function::ALL.len(), 20);
+        assert!(
+            HirPlan::calculate_with_vectors(
+                HirCounts {
+                    functions: 1,
+                    signatures: 22,
+                    ..Default::default()
+                },
+                at,
+                21,
+                0
+            )
+            .is_err(),
+            "the historical count-only entry still rejects its twenty-first row"
+        );
     }
 }

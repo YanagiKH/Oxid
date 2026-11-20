@@ -227,6 +227,7 @@ TYPED_MANIFEST_PROJECTS = {
         'apps/streaming-training/reader/src/lib.ox',
     ),
     "packages/owned_vec": ("packages/owned_vec/src/lib.ox",),
+    "packages/file_io": ("packages/file_io/src/lib.ox",),
     "examples/owned-vector-results": ("examples/owned-vector-results/src/main.ox",),
     "compiler/native": (
         "compiler/native/src/main.ox",
@@ -254,6 +255,7 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "apps/minibatch-training",
     "apps/streaming-training",
     "packages/owned_vec",
+    "packages/file_io",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix", "examples/typed-vectors")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records", "examples/copy-record-vectors")

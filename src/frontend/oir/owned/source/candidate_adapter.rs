@@ -321,7 +321,8 @@ fn scalar_statement(value: &Statement) -> String {
 
 fn instruction(value: &OwnedInstruction) -> String {
     match value {
-        OwnedInstruction::OwnedVector { .. } => {
+        OwnedInstruction::AcquireLocalElementBorrow { .. }
+        | OwnedInstruction::OwnedVector { .. } => {
             object([("unsupported", json_string("owned-vector"))])
         }
         OwnedInstruction::PrepareBorrowRange { .. }

@@ -2,7 +2,7 @@
 
 Use Oxid's typed mode to check code, test local packages and build native
 executables. Native project builds target Linux and macOS on x86_64 and ARM64.
-A bounded scalar preview also targets Windows MSVC x64.
+Windows MSVC x64 supports bounded result programs with binary file I/O.
 Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
 Oxid selects that host's native target automatically.
 
@@ -46,8 +46,9 @@ oxid build --profile release
 
 New Windows projects select result entry. For an existing project, set
 `entry-mode = "result"` under `[build]`. Native programs currently support
-bounded `bool`, `i32` and `()` functions, conditions and `while` loops. Declared
-tests use bounded pure functions and require a no-argument `fn main() -> i32`:
+bounded `bool`, `i32` and `()` functions, conditions and `while` loops. Use
+`std::fs::File` with byte arrays or slices for [binary files](../spec/typed-preview.md#native-files).
+Declared tests use bounded pure functions and require a no-argument `fn main() -> i32`:
 zero passes and any other value fails. Checking and reference execution retain
 their existing language scope.
 
@@ -174,6 +175,21 @@ smoke = "tests/smoke.ox"
 A process entry is `fn main() -> i32`; return zero for success.
 `reproducible = true` uses project-relative paths in native error messages.
 
+On Linux and macOS, import `enable_termination_notifications` and
+`termination_requested` from `std::process`. Call `enable_termination_notifications()`
+from `main` to receive SIGINT and SIGTERM. If it returns true, poll
+`termination_requested()` between work items and return from `main` to close
+files and release other owned values.
+
+## Reading and writing file buffers
+
+Add the [file I/O library](../packages/file_io/oxid.toml) as a local dependency
+and import `read_exact` and `write_all` through its dependency name. `read_exact`
+fills a mutable byte slice or reports how many bytes it read before EOF.
+`write_all` continues until the slice is written or a write makes no progress.
+Both functions report the number of bytes transferred and the system error code
+if an I/O error occurs.
+
 ## Build profiles
 
 ```sh
@@ -264,9 +280,8 @@ source bodies remain editable.
 
 ## Private registry libraries
 
-On Linux, a private file registry can share immutable library versions between
-projects. This is experimental and uses exact versions; version ranges, HTTPS
-registries and publisher authentication are not available yet.
+On Linux, use a private file registry to share versioned libraries between
+projects.
 
 Create a new registry directory:
 
@@ -294,21 +309,21 @@ oxid publish --registry file:///home/me/oxid-registry
 
 Use `--package NAME` to select a workspace library. Publishing checks the full
 author lock and the library's declared tests without running their bodies.
-An existing version cannot be replaced. A published library's dependencies must
-be exact releases in the same registry; path and Git dependencies are refused.
+Use dependencies from the same registry when publishing. The published library
+records the dependency versions from your lockfile.
 
-The consumer chooses a dependency alias, package name and exact version:
+Choose an alias, package name and version for each dependency.
 
 ```toml
 [dependencies]
-math = { registry = "file:///home/me/oxid-registry", package = "math", version = "1.2.0" }
+math = { registry = "file:///home/me/oxid-registry", package = "math", version = "^1.2.0" }
 old_math = { registry = "file:///home/me/oxid-registry", package = "math", version = "1.1.0" }
 ```
 
-Use public items through `crate::math` or `crate::old_math`. Run `oxid lock` to
-cache the releases and record their hashes. Ordinary commands verify an existing
-lock. After selecting a different version, run `oxid lock --update`; it cannot
-accept replacement bytes under an already locked name, version and registry.
+Use public items through `crate::math` or `crate::old_math`. The range `^1.2.0`
+selects the newest available release at or above 1.2.0 and below 2.0.0. The
+range `^0.2.0` stays within 0.2.x. Run `oxid lock` to cache the selected releases
+and fix their versions. Run `oxid lock --update` to select newer releases.
 Restore the previous manifest and lock to roll back to its cached versions.
 
 `--locked`, `--offline` and `--frozen` never fetch a missing release, even from a

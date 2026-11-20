@@ -75,6 +75,10 @@ jobs:
       - name: Cache Rust builds
         uses: Swatinem/rust-cache@v2
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Build optimized runtime
         run: cargo build --release --locked
 
@@ -83,6 +87,9 @@ jobs:
 
       - name: Package runtime and checksum
         run: python scripts/package_release.py "${{ matrix.binary }}" "${{ matrix.asset }}"
+
+      - name: Install the archive and run an Oxid project
+        run: python -B scripts/verify_release_install.py "dist/${{ matrix.asset }}"
 
       - name: Sign archive build provenance
         id: provenance
