@@ -1322,6 +1322,14 @@ fn runtime_storage_bytes<W: PlanWitness>(
             0
         },
     )?;
+    let runtime_bytes = add(
+        runtime_bytes,
+        if plan.has_termination_wait() {
+            experimental::TERMINATION_WAIT_BYTES
+        } else {
+            0
+        },
+    )?;
     add(
         runtime_bytes,
         if policy.recursive() {
@@ -3917,6 +3925,10 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
     vector::schemas(plan, out);
     if out.termination {
         out.write_str("@__oxid_process_termination = constant i1 true\ndeclare i32 @__oxid_termination_scope_start()\ndeclare void @__oxid_termination_scope_end()\ndeclare i32 @__oxid_enable_termination_notifications()\ndeclare i32 @__oxid_termination_requested()\n").unwrap();
+    }
+    if plan.has_termination_wait() {
+        out.write_str("declare i32 @__oxid_wait_for_termination(i32)\n")
+            .unwrap();
     }
     if plan.uses_owned_vectors() {
         let elements = plan

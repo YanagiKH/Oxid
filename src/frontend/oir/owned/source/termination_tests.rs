@@ -64,7 +64,13 @@ fn process_source_mints_two_separate_scalar_descriptors_after_old_suffixes() {
     assert_eq!(raw.builtins.process().count(), 2);
     assert_eq!(raw.builtins.extra_functions(), 0);
     assert_eq!(raw.functions.len(), 3);
-    for (rank, item) in termination::Function::ALL.into_iter().enumerate() {
+    for (rank, item) in [
+        termination::Function::Enable,
+        termination::Function::Requested,
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let id = program
             .witness
             .experimental_function(item.operation())
@@ -215,7 +221,10 @@ fn canonical_process_lookup_is_bounded_paid_and_uses_the_first_family_import() {
     .unwrap()
     .finish(&work, &mut allocator)
     .unwrap();
-    for item in termination::Function::ALL {
+    for item in [
+        termination::Function::Enable,
+        termination::Function::Requested,
+    ] {
         let measured = WorkMeter::default();
         measured.enable_observation();
         let anchor = index.process_anchor(item, &measured).unwrap();

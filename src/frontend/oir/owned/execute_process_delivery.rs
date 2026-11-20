@@ -34,9 +34,16 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         span: Span,
     ) -> Result<Delivery> {
         let f = self.function(self.frames[frame].function);
+        let valid_parameters = match operation {
+            Function::WaitForTermination => matches!(
+                f.parameters.as_slice(),
+                [ParameterBinding::Scalar(LocalId(0))]
+            ),
+            _ => f.parameters.is_empty(),
+        };
         if operation.process().is_none()
             || self.plan.witness().experimental_function(operation) != Some(f.id)
-            || !f.parameters.is_empty()
+            || !valid_parameters
             || !f.owners.is_empty()
             || !f.references.is_empty()
             || !f.calls.is_empty()
@@ -114,6 +121,12 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         let value = match operation {
             Function::EnableTermination => crate::program_termination::enable(),
             Function::TerminationRequested => crate::program_termination::requested(),
+            Function::WaitForTermination => {
+                let Scalar::I32(timeout_ms) = self.experimental_scalar(frame, 0, span)? else {
+                    return Err(bad("process timeout type", span));
+                };
+                crate::program_termination::wait(timeout_ms)
+            }
             _ => unreachable!("prepared process operation"),
         };
         // Every possible failure, source charge, caller range and return check
