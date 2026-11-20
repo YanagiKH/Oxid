@@ -236,6 +236,11 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     byte_frames = ("fn descend(n:i32)->u8{" + arrays
                    + "if n==0{return v31[0];}return 1u8+descend(n-1);}")
     frame_cases.append(("u8", "full-byte-array-frames", byte_frames, "descend(126)-126u8"))
+    record_fields = ",".join(f"x{index}:i64" for index in range(64))
+    record_values = ",".join(f"x{index}:42i64" for index in range(64))
+    record_frame = (f"#[derive(Copy)]struct Row{{{record_fields}}}"
+                    f"fn main()->i64{{let original=Row{{{record_values}}};"
+                    + "".join(f"let copy{index}=original;" for index in range(63)))
     for ty, prefix, descend, admitted in frame_cases:
         for name, entry, expected in (
             (prefix, admitted, (0, b"42\n", b"")),
@@ -256,11 +261,29 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
                 rows.append({**row, "build": receipt})
                 require((result.returncode, result.stdout, result.stderr) == expected,
                         f'{name}: wrong result at {receipt["profile"]}')
+    source = evidence / "full-record-frame.ox"
+    source.write_text(record_frame + "return copy62.x63;}", encoding="ascii")
+    receipts = []
+    for profile in ("dev", "release"):
+        binary = evidence / f"full-record-frame-{profile}"
+        receipts.append(driver.build(compiler, source, clang, runtime, binary,
+                                     profile, timeout, evidence / f"full-record-frame-{profile}-build"))
+    source.rename(evidence / "full-record-frame.retained")
+    for receipt in receipts:
+        command = [receipt["output"]]
+        result = run(command, evidence, timeout)
+        row = record(evidence, f'full-record-frame-{receipt["profile"]}', command, result)
+        rows.append({**row, "build": receipt})
+        require((result.returncode, result.stdout, result.stderr) == (0, b"42\n", b""),
+                "full record frame did not preserve the final field")
     for name, code in (
         ("byte-array-frame-limit", byte_frames.replace("if n==0", "let extra=0;if n==0")
          + "fn main()->u8{return descend(0);}"),
         ("byte-literal-limit", 'fn main()->i32{let bytes=b"' + 'A' * 1025 + '";return 0;}'),
         ("byte-list-limit", 'fn main()->i32{let bytes=[' + '0u8,' * 1025 + '];return 0;}'),
+        ("record-field-limit", f"#[derive(Copy)]struct Row{{{record_fields},extra:i32}}"
+         "fn main()->i32{return 42;}"),
+        ("record-frame-limit", record_frame + "let extra=original;return extra.x63;}"),
     ):
         source = evidence / (name + ".ox")
         source.write_text(code, encoding="ascii")
@@ -371,6 +394,17 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
         ("combined-input-limit", 68, False, {
             "main.ox": "mod a;fn main()->i32{return 42;}",
             "a.ox": " " * 65536,
+        }),
+        ("module-local-records", 0, True, {
+            "main.ox": "mod data;#[derive(Copy)]struct Row{local:i32}"
+                       "fn main()->i32{let value=Row{local:40};return value.local+crate::data::amount();}",
+            "data.ox": "#[derive(Copy)]struct Row{value:i32}"
+                       "fn make()->Row{return Row{value:2};}"
+                       "pub fn amount()->i32{let value=make();return value.value;}",
+        }),
+        ("record-not-visible-in-a-different-module", 65, True, {
+            "main.ox": "mod data;fn main()->i32{let value=Row{value:42};return value.value;}",
+            "data.ox": "#[derive(Copy)]struct Row{value:i32}",
         }),
     )
     rows = []

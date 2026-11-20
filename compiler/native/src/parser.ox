@@ -13,6 +13,11 @@ use crate::model::function_visible;
 use crate::model::path_module;
 use crate::model::is_byte_array;
 use crate::model::byte_count;
+use crate::model::record;
+use crate::model::record_type;
+use crate::model::record_index;
+use crate::model::is_record;
+use crate::model::record_field;
 use crate::model::word;
 use crate::headers::ty as parse_type;
 use crate::headers::path_name;
@@ -110,15 +115,59 @@ fn array_length(c: &mut Compiler, ty: i32) -> Value {
     let length = byte_count(ty);
     return crate::emit::constant(&mut *c, 1, length.to_i64());
 }
+fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
+    let row = c.records[index];
+    let mut seen = new::<bool>();
+    while len(&seen) < row.field_count {
+        if !grown(try_push(&mut seen, false)) { c.error = 68; return invalid(); }
+    }
+    expect(&mut *c, 22);
+    let mut count = 0;
+    let mut aggregate = Value { ty: record_type(index), id: -1 };
+    while kind(&*c) != 23 && c.error == 0 {
+        let field = record_field(&*c, row, c.cursor);
+        expect(&mut *c, 1); expect(&mut *c, 24);
+        if field < 0 || seen[field] { fail(&mut *c); return invalid(); }
+        let descriptor = c.fields[row.first_field + field];
+        let value = expression(&mut *c, 1, depth + 1);
+        if value.ty != descriptor.ty { fail(&mut *c); return invalid(); }
+        seen[field] = true;
+        aggregate = crate::emit::insert_field(&mut *c, aggregate, value, field);
+        count = count + 1;
+        if kind(&*c) != 23 { expect(&mut *c, 26); }
+    }
+    expect(&mut *c, 23);
+    if count != row.field_count { fail(&mut *c); return invalid(); }
+    return aggregate;
+}
+
+fn field_value(c: &mut Compiler, binding: Binding) -> Value {
+    expect(&mut *c, 43);
+    let row = c.records[record_index(binding.ty)];
+    let field = record_field(&*c, row, c.cursor);
+    expect(&mut *c, 1);
+    if field < 0 { fail(&mut *c); return invalid(); }
+    let descriptor = c.fields[row.first_field + field];
+    let aggregate = crate::emit::load(&mut *c, binding.slot, binding.ty);
+    return crate::emit::extract_field(&mut *c, aggregate, field, descriptor.ty);
+}
+
 fn named_value(c: &mut Compiler, depth: i32) -> Value {
     let name = c.cursor;
     c.cursor = c.cursor + 1;
+    let owner = c.functions[c.current];
     if kind(&*c) == 20 {
-        let owner = c.functions[c.current];
         let target = function_binding(&*c, owner.source_module, name);
         return called(&mut *c, target, depth);
     }
     let position = local(&*c, name);
+    if kind(&*c) == 22 {
+        let separator = token(&*c, c.cursor + 2);
+        if position < 0 || separator.kind == 24 {
+            let index = record(&*c, owner.source_module, name);
+            if index >= 0 { return record_literal(&mut *c, index, depth); }
+        }
+    }
     if position < 0 { fail(&mut *c); return invalid(); }
     let binding = c.vars[position];
     if kind(&*c) == 51 {
@@ -130,6 +179,7 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
         return crate::emit::byte_index(&mut *c, binding, index);
     }
     if is_byte_array(binding.ty) && kind(&*c) == 43 { return array_length(&mut *c, binding.ty); }
+    if is_record(binding.ty) && kind(&*c) == 43 { return field_value(&mut *c, binding); }
     let value = crate::emit::load(&mut *c, binding.slot, binding.ty);
     if kind(&*c) == 43 { return convert_binding(&mut *c, value); }
     return value;
@@ -245,7 +295,8 @@ pub fn expression(c: &mut Compiler, minimum: i32, depth: i32) -> Value {
             left = short_circuit(&mut *c, op, left, rank, depth);
         } else {
             let right = expression(&mut *c, rank + 1, depth + 1);
-            if left.ty != right.ty || left.ty == 3 || left.ty == 0 || is_byte_array(left.ty) { fail(&mut *c); return invalid(); }
+            if left.ty != right.ty || left.ty == 3 || left.ty == 0
+                || is_byte_array(left.ty) || is_record(left.ty) { fail(&mut *c); return invalid(); }
             if op != 35 && op != 36 && left.ty != 1 && left.ty != 4 && left.ty != 5 { fail(&mut *c); return invalid(); }
             if left.ty == 4 { left = crate::emit::byte_binary(&mut *c, op, left, right); }
             else { left = crate::emit::binary(&mut *c, op, left, right); }
@@ -260,7 +311,11 @@ fn declared(c: &mut Compiler) -> () {
     let name = c.cursor;
     expect(&mut *c, 1);
     let mut expected = 0;
-    if kind(&*c) == 24 { c.cursor = c.cursor + 1; expected = parse_type(&mut *c); }
+    if kind(&*c) == 24 {
+        c.cursor = c.cursor + 1;
+        let owner = c.functions[c.current];
+        expected = parse_type(&mut *c, owner.source_module);
+    }
     expect(&mut *c, 28);
     let value = expression(&mut *c, 1, 0);
     if expected != 0 && value.ty != expected { fail(&mut *c); return; }
@@ -281,6 +336,25 @@ fn assigned(c: &mut Compiler) -> () {
     if value.ty != binding.ty { fail(&mut *c); return; }
     expect(&mut *c, 25);
     crate::emit::store(&mut *c, binding.slot, value);
+    return;
+}
+fn assign_field(c: &mut Compiler) -> () {
+    let position = local(&*c, c.cursor);
+    if position < 0 { fail(&mut *c); return; }
+    let binding = c.vars[position];
+    if !binding.writable || !is_record(binding.ty) { fail(&mut *c); return; }
+    let row = c.records[record_index(binding.ty)];
+    c.cursor = c.cursor + 2;
+    let field = record_field(&*c, row, c.cursor);
+    expect(&mut *c, 1); expect(&mut *c, 28);
+    if field < 0 { fail(&mut *c); return; }
+    let descriptor = c.fields[row.first_field + field];
+    let value = expression(&mut *c, 1, 0);
+    if value.ty != descriptor.ty { fail(&mut *c); return; }
+    expect(&mut *c, 25);
+    let aggregate = crate::emit::load(&mut *c, binding.slot, binding.ty);
+    let updated = crate::emit::insert_field(&mut *c, aggregate, value, field);
+    crate::emit::store(&mut *c, binding.slot, updated);
     return;
 }
 fn index_assignment_end(c: &Compiler, open: i32) -> i32 {
@@ -385,6 +459,10 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
     }
     let next = token(&*c, c.cursor + 1);
     if k == 1 && next.kind == 28 { assigned(&mut *c); return; }
+    if k == 1 && next.kind == 43 {
+        let assign = token(&*c, c.cursor + 3);
+        if assign.kind == 28 { assign_field(&mut *c); return; }
+    }
     if k == 1 && next.kind == 51 {
         let end = index_assignment_end(&*c, c.cursor + 1);
         if end >= 0 { index_assignment(&mut *c, end); return; }

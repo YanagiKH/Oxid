@@ -7,6 +7,8 @@ use crate::model::byte_array;
 use crate::model::is_byte_array;
 use crate::model::byte_count;
 use crate::model::code;
+use crate::model::is_record;
+use crate::model::record_index;
 use alloc::vec::len as vector_len;
 use alloc::vec::Vec;
 use alloc::bytes::len;
@@ -58,6 +60,12 @@ pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> 
     if ty == 1 { append(&mut *c, destination, &literal_bytes_0); return; }
     if ty == 4 { append(&mut *c, destination, &byte_type); return; }
     if ty == 5 { append(&mut *c, destination, &long_type); return; }
+    if is_record(ty) {
+        let record = b"%r";
+        append(&mut *c, destination, &record);
+        number(&mut *c, destination, record_index(ty));
+        return;
+    }
     if is_byte_array(ty) {
         let open = b"[";
         let end = b" x i8]";
@@ -137,6 +145,10 @@ pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
     if is_byte_array(ty) {
         cells = (byte_count(ty) + 7) / 8;
         if cells == 0 { cells = 1; }
+    }
+    if is_record(ty) {
+        let row = c.records[record_index(ty)];
+        cells = row.field_count;
     }
     if cells > 4096 - id { c.error = 68; return 0; }
     c.next_slot = id + cells;
@@ -239,27 +251,43 @@ pub fn byte_literal(c: &mut Compiler, index: i32, length: i32) -> Value {
     literal_name(&mut *c, 2, index); append(&mut *c, 2, &end);
     return Value { ty: ty, id: id };
 }
-pub fn byte_array_values(c: &mut Compiler, values: &Vec<Value>) -> Value {
+pub fn insert_field(c: &mut Compiler, aggregate: Value, value: Value, field: i32) -> Value {
     let name = b"  %v";
     let insert = b" = insertvalue ";
     let first = b" undef";
     let space = b" ";
-    let byte = b", i8 ";
     let comma = b", ";
     let line = b"\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &insert);
+    write_type(&mut *c, 2, aggregate.ty, false);
+    if aggregate.id < 0 { append(&mut *c, 2, &first); }
+    else { append(&mut *c, 2, &space); operand(&mut *c, 2, aggregate); }
+    append(&mut *c, 2, &comma); write_type(&mut *c, 2, value.ty, false);
+    append(&mut *c, 2, &space); operand(&mut *c, 2, value);
+    append(&mut *c, 2, &comma); number(&mut *c, 2, field); append(&mut *c, 2, &line);
+    return Value { ty: aggregate.ty, id: id };
+}
+pub fn extract_field(c: &mut Compiler, aggregate: Value, field: i32, ty: i32) -> Value {
+    let name = b"  %v";
+    let extract = b" = extractvalue ";
+    let space = b" ";
+    let comma = b", ";
+    let line = b"\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &extract);
+    write_type(&mut *c, 2, aggregate.ty, false);
+    append(&mut *c, 2, &space); operand(&mut *c, 2, aggregate);
+    append(&mut *c, 2, &comma); number(&mut *c, 2, field); append(&mut *c, 2, &line);
+    return Value { ty: ty, id: id };
+}
+pub fn byte_array_values(c: &mut Compiler, values: &Vec<Value>) -> Value {
     let count = vector_len(&*values);
     let ty = byte_array(count);
     let mut array = Value { ty: ty, id: -1 };
     let mut index = 0;
     while index < count && c.error == 0 {
-        let id = fresh(&mut *c);
-        append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &insert);
-        write_type(&mut *c, 2, ty, false);
-        if index == 0 { append(&mut *c, 2, &first); }
-        else { append(&mut *c, 2, &space); operand(&mut *c, 2, array); }
-        append(&mut *c, 2, &byte); operand(&mut *c, 2, values[index]);
-        append(&mut *c, 2, &comma); number(&mut *c, 2, index); append(&mut *c, 2, &line);
-        array = Value { ty: ty, id: id };
+        array = insert_field(&mut *c, array, values[index], index);
         index = index + 1;
     }
     return array;
@@ -681,11 +709,34 @@ fn array_preamble(c: &mut Compiler) -> () {
     byte_literals(&mut *c);
     return;
 }
+fn record_preamble(c: &mut Compiler) -> () {
+    let prefix = b"%r";
+    let declaration = b" = type { ";
+    let comma = b", ";
+    let end = b" }\n";
+    let mut index = 0;
+    while index < vector_len(&*c.records) && c.error == 0 {
+        let row = c.records[index];
+        append(&mut *c, 0, &prefix); number(&mut *c, 0, index);
+        append(&mut *c, 0, &declaration);
+        let mut field = 0;
+        while field < row.field_count {
+            if field > 0 { append(&mut *c, 0, &comma); }
+            let element = c.fields[row.first_field + field];
+            write_type(&mut *c, 0, element.ty, false);
+            field = field + 1;
+        }
+        append(&mut *c, 0, &end);
+        index = index + 1;
+    }
+    return;
+}
 pub fn preamble(c: &mut Compiler) -> () {
     let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
     let int_error = b"@int_conversion = private constant [28 x i8] c\"i32 conversion out of range\\0A\"\n";
     let print_long = b"declare i32 @__oxid_print_i64(i64)\n";
     preamble_text_0_0(&mut *c);
+    record_preamble(&mut *c);
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
     append(&mut *c, 0, &depth_error); append(&mut *c, 0, &int_error); append(&mut *c, 0, &print_long);
