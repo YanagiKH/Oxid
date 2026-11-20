@@ -36,7 +36,7 @@ pub struct Value { pub ty: i32, pub id: i32 }
 #[derive(Copy)]
 pub struct Record {
     pub name: i32, pub source_module: i32, pub first_field: i32, pub field_count: i32,
-    pub start: i32, pub end: i32
+    pub start: i32, pub end: i32, pub copy: bool
 }
 #[derive(Copy)]
 pub struct Field { pub name: i32, pub ty: i32 }
@@ -144,7 +144,7 @@ pub fn code(bytes: &[u8], index: i32) -> i32 {
     return selected.to_i32();
 }
 
-pub fn array_element_type(ty: i32) -> bool { return ty >= 1 && ty <= 7 && ty != 3; }
+pub fn is_value_scalar(ty: i32) -> bool { return ty >= 1 && ty <= 7 && ty != 3; }
 
 // Each scalar gets a range of 1025 tags, one per supported array length.
 pub fn array_type(element: i32, length: i32) -> i32 { return 1024 + (element - 1) * 1025 + length; }

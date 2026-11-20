@@ -19,6 +19,7 @@ use crate::model::child_module;
 use crate::model::path_module;
 use crate::model::array_type;
 use crate::model::is_array;
+use crate::model::is_value_scalar;
 use crate::model::record;
 use crate::model::record_type;
 use crate::model::is_record;
@@ -69,30 +70,32 @@ fn collect_record(c: &mut Compiler, source_module: i32) -> () {
     let copy = b"Copy";
     if len(&*c.records) >= 128 { c.error = 68; return; }
     let start = c.cursor;
-    expect(&mut *c, 53); expect(&mut *c, 51);
-    let attribute = token(&*c, c.cursor);
-    expect(&mut *c, 1); expect(&mut *c, 20);
-    let trait_name = token(&*c, c.cursor);
-    expect(&mut *c, 1); expect(&mut *c, 21); expect(&mut *c, 52); expect(&mut *c, 54);
-    if !word(&*c.source, attribute.start, attribute.end, &derive)
-        || !word(&*c.source, trait_name.start, trait_name.end, &copy) {
-        fail(&mut *c); return;
+    let copy_record = kind(&*c) == 53;
+    if copy_record {
+        expect(&mut *c, 53); expect(&mut *c, 51);
+        let attribute = token(&*c, c.cursor);
+        expect(&mut *c, 1); expect(&mut *c, 20);
+        let trait_name = token(&*c, c.cursor);
+        expect(&mut *c, 1); expect(&mut *c, 21); expect(&mut *c, 52);
+        if !word(&*c.source, attribute.start, attribute.end, &derive)
+            || !word(&*c.source, trait_name.start, trait_name.end, &copy) {
+            fail(&mut *c); return;
+        }
     }
+    expect(&mut *c, 54);
     let name = c.cursor;
     expect(&mut *c, 1); expect(&mut *c, 22);
     if record(&*c, source_module, name) >= 0 { fail(&mut *c); return; }
     let mut row = Record { name: name, source_module: source_module,
-        first_field: len(&*c.fields), field_count: 0, start: start, end: 0 };
+        first_field: len(&*c.fields), field_count: 0, start: start, end: 0, copy: copy_record };
     while kind(&*c) != 23 && c.error == 0 {
         if row.field_count >= 64 { c.error = 68; return; }
         if kind(&*c) == 19 { expect(&mut *c, 19); }
         let field_name = c.cursor;
         expect(&mut *c, 1); expect(&mut *c, 24);
-        let field_type = scalar_type(kind(&*c));
-        if field_type == 0 || record_field(&*c, row, field_name) >= 0 {
-            fail(&mut *c); return;
-        }
-        c.cursor = c.cursor + 1;
+        let field_type = ty(&mut *c, source_module);
+        let allowed = is_value_scalar(field_type) || (!copy_record && is_array(field_type));
+        if !allowed || record_field(&*c, row, field_name) >= 0 { fail(&mut *c); return; }
         let field = Field { name: field_name, ty: field_type };
         if !grown(try_push(&mut *c.fields, field)) { c.error = 68; return; }
         row.field_count = row.field_count + 1;
@@ -109,7 +112,7 @@ fn discover_records(c: &mut Compiler, source_module: i32) -> () {
     let mut depth = 0;
     while kind(&*c) != 0 && c.error == 0 {
         let k = kind(&*c);
-        if k == 53 && depth == 0 { collect_record(&mut *c, source_module); continue; }
+        if (k == 53 || k == 54) && depth == 0 { collect_record(&mut *c, source_module); continue; }
         if k == 22 { depth = depth + 1; }
         if k == 23 { depth = depth - 1; }
         c.cursor = c.cursor + 1;
@@ -239,7 +242,8 @@ fn collect_module(c: &mut Compiler, source_module: i32) -> () {
     c.cursor = input.first_token;
 
     while kind(&*c) != 0 && c.error == 0 {
-        if kind(&*c) == 53 {
+        let declaration = kind(&*c);
+        if declaration == 53 || declaration == 54 {
             if next_record >= len(&*c.records) { fail(&mut *c); return; }
             let row = c.records[next_record];
             if row.start != c.cursor { fail(&mut *c); return; }

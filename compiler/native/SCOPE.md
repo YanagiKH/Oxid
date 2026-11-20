@@ -41,7 +41,7 @@ unsigned integers such as `4294967295u32`, and `.to_u32_checked()` or
 Use `[i32; 3]` for a fixed array type and `[10, 20, 30]` for a value.
 An array holds up to 1024 values of the same type. Use `i32`, `i64`, `u8`,
 `u32`, `bool` or `char`. Passing or assigning a whole array moves it. Use a new value to reinitialize
-a mutable binding after a move. A loop can move arrays declared inside its body.
+a mutable binding after a move. A loop can move arrays and owned structs declared inside its body.
 Use `data.len()` for the length and `data[index]` to read an element. For a
 `mut` binding, use `data[index] = value` to replace an element. Reads and
 writes check the index. Use `b"abc"` for the byte array `[97u8, 98u8, 99u8]`
@@ -53,11 +53,16 @@ fields. Construct it with `Point { y: 2, x: 40 }` and read a field with
 arguments hold independent values. These structs are private to their
 module and have 1–64 fields of type `i32`, `i64`, `u8`, `u32`, `bool` or `char`.
 
+Declare `struct Row { id: i32, bytes: [u8; 2] }` to group scalars and fixed
+arrays in an owned value. Passing or assigning the value moves it. Use
+`let Row { id: row_id, bytes: data } = row;` to take all its fields. To replace
+an array field, assign a new value to the whole mutable struct.
+
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-owned structs, enums, references, generics, text strings, nested arrays,
+nested structs, enums, references, generics, text strings, nested arrays,
 I/O in compiled input and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 

@@ -142,6 +142,13 @@ pub fn conditional(c: &mut Compiler, value: Value, yes: i32, no: i32) -> () {
     c.terminated = true;
     return;
 }
+fn field_cells(ty: i32) -> i32 {
+    if is_array(ty) {
+        let cells = (array_bytes(ty) + 7) / 8;
+        if cells > 0 { return cells; }
+    }
+    return 1;
+}
 pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
     let literal_bytes_0 = b"  %s";
     let literal_bytes_1 = b" = alloca ";
@@ -149,14 +156,15 @@ pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
 
     if ty == 3 { return -1; }
     let id = c.next_slot;
-    let mut cells = 1;
-    if is_array(ty) {
-        cells = (array_bytes(ty) + 7) / 8;
-        if cells == 0 { cells = 1; }
-    }
+    let mut cells = field_cells(ty);
     if is_record(ty) {
         let row = c.records[record_index(ty)];
-        cells = row.field_count;
+        cells = 0;
+        // A cell includes tail padding for a field aligned to at most 8 bytes.
+        for field in 0..row.field_count {
+            let descriptor = c.fields[row.first_field + field];
+            cells = cells + field_cells(descriptor.ty);
+        }
     }
     if cells > 4096 - id { c.error = 68; return 0; }
     c.next_slot = id + cells;
