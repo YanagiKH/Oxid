@@ -65,6 +65,12 @@ REJECT_NAMES = {
     "record-move-only-not-copied",
     "record-public-signature-with-private-type",
     "record-aggregate-entry-result",
+    "range-index-is-immutable",
+    "range-index-not-visible-after-loop",
+    "range-mismatched-bounds",
+    "range-noninteger-bounds",
+    "range-inclusive-is-unsupported",
+    "range-index-cannot-shadow-binding",
 }
 
 
@@ -127,14 +133,14 @@ class NativeCompilerRegistration(unittest.TestCase):
         self.assertEqual(manifest["build"]["entry-mode"], "process")
         self.assertEqual(manifest["execution"]["policy"], "hosted")
 
-    def test_all_136_subject_cases_and_all_55_rejections_remain_active_data(self):
+    def test_all_154_subject_cases_and_all_61_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 136)
+        self.assertEqual(len(cases), 154)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 45, "reject": 55, "runtime": 36})
+                         {"value": 55, "reject": 61, "runtime": 38})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})

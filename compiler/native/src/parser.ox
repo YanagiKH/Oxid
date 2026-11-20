@@ -434,12 +434,55 @@ fn while_statement(c: &mut Compiler, depth: i32) -> () {
     crate::emit::label(&mut *c, end); c.live = before;
     return;
 }
+fn for_statement(c: &mut Compiler, depth: i32) -> () {
+    expect(&mut *c, 55);
+    let name = c.cursor;
+    expect(&mut *c, 1); expect(&mut *c, 56);
+    let first = expression(&mut *c, 1, 0);
+    expect(&mut *c, 57);
+    let limit = expression(&mut *c, 1, 0);
+    let ty = first.ty;
+    if ty != limit.ty || (ty != 1 && ty != 4 && ty != 5) { fail(&mut *c); return; }
+
+    let before = c.live;
+    let slot = crate::emit::slot(&mut *c, ty);
+    crate::emit::store(&mut *c, slot, first);
+    let test = crate::emit::new_label(&mut *c);
+    let body = crate::emit::new_label(&mut *c);
+    let advance = crate::emit::new_label(&mut *c);
+    let end = crate::emit::new_label(&mut *c);
+    crate::emit::branch(&mut *c, test);
+    crate::emit::label(&mut *c, test);
+    let index = crate::emit::load(&mut *c, slot, ty);
+    let mut has_next = Value { ty: 2, id: 0 };
+    if ty == 4 { has_next = crate::emit::byte_binary(&mut *c, 37, index, limit); }
+    else { has_next = crate::emit::binary(&mut *c, 37, index, limit); }
+    crate::emit::conditional(&mut *c, has_next, body, end);
+
+    crate::emit::label(&mut *c, body); c.live = before;
+    let saved = len(&*c.vars);
+    bind(&mut *c, name, ty, false, slot);
+    block(&mut *c, end, advance, depth + 1);
+    truncate(&mut *c.vars, saved);
+    crate::emit::branch(&mut *c, advance);
+
+    crate::emit::label(&mut *c, advance);
+    let one = crate::emit::constant(&mut *c, ty, 1i64);
+    let mut next = Value { ty: ty, id: 0 };
+    if ty == 4 { next = crate::emit::byte_binary(&mut *c, 29, index, one); }
+    else { next = crate::emit::binary(&mut *c, 29, index, one); }
+    crate::emit::store(&mut *c, slot, next);
+    crate::emit::branch(&mut *c, test);
+    crate::emit::label(&mut *c, end); c.live = before;
+    return;
+}
 fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> () {
     crate::emit::ensure(&mut *c);
     let k = kind(&*c);
     if k == 4 { declared(&mut *c); return; }
     if k == 7 { if_statement(&mut *c, break_to, continue_to, depth); return; }
     if k == 9 { while_statement(&mut *c, depth); return; }
+    if k == 55 { for_statement(&mut *c, depth); return; }
     if k == 22 { block(&mut *c, break_to, continue_to, depth + 1); return; }
     if k == 10 || k == 11 {
         if break_to < 0 || continue_to < 0 { fail(&mut *c); return; }

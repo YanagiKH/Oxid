@@ -78,7 +78,7 @@ class RuntimeDiagnostics(unittest.TestCase):
     def test_i32_runtime_cases_use_their_checked_family(self):
         families = {row[0] for row in FAMILIES}
         runtime = [selected for selected in self.cases if selected.get("error") in families]
-        self.assertEqual(len(runtime), 10)
+        self.assertEqual(len(runtime), 12)
         for selected in runtime:
             for family, native, code, message in FAMILIES:
                 with self.subTest(case=selected["name"], family=family):
@@ -218,7 +218,7 @@ class RuntimeDiagnostics(unittest.TestCase):
         verifier.check_reference_behavior(case("overflow"), result(stdout=framed(valid_unicode)))
 
     def test_original_value_and_reject_reference_contracts_are_preserved(self):
-        self.assertEqual(len(self.cases), 136)
+        self.assertEqual(len(self.cases), 154)
         for selected in self.cases:
             if selected["kind"] == "value":
                 value = result(stdout=selected["stdout"].encode(), status=0)
