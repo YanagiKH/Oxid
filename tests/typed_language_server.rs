@@ -839,6 +839,39 @@ fn type_definitions_follow_aliases_qualified_names_and_unsaved_declarations() {
 }
 
 #[test]
+fn type_definitions_follow_generic_annotations_and_type_parameters() {
+    let p = Project::new();
+    let text = "struct Point{x:i32}\nstruct Wrapper<T>{value:T}\nstruct T{flag:bool}\nfn inspect(value:&Wrapper<Wrapper<Point>>)->(){return;}\nfn keep<T>(value:T)->T{return value;}\nfn main()->i32{return 42;}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    c.clean(&path);
+    for (needle, declaration, width) in [
+        ("Wrapper<Wrapper", "Wrapper<T>", 7),
+        ("Wrapper<Point", "Wrapper<T>", 7),
+        ("Point>>", "Point{", 5),
+        ("T)->T", "T>(value:T)", 1),
+    ] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(text,needle)}),
+        );
+        let start = position_at(text, declaration);
+        let mut end = start.clone();
+        end["character"] = json!(start["character"].as_u64().unwrap() + width);
+        assert_eq!(
+            result["result"],
+            json!([{"uri":path,"range":{"start":start,"end":end}}]),
+            "{needle}: {result}"
+        );
+    }
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
 fn document_outline_uses_declarations_and_survives_body_type_errors() {
     let p = Project::new();
     let text="pub struct Pair{pub left:i32,right:i32}\npub enum Choice{Yes(i32),No}\nfn main()->i32{return missing;}";

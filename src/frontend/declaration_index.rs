@@ -1761,6 +1761,21 @@ impl<'i, 's> QuerySession<'i, 's> {
             },
         })
     }
+    pub(in crate::frontend) fn type_declaration_name(
+        &mut self,
+        requester: ModuleId,
+        path: ItemPathRef,
+    ) -> Result<Option<Span>, Box<Diagnostic>> {
+        let Some(handle) = self.select(requester, path, true)? else {
+            return Ok(None);
+        };
+        let DeclarationProjection::SourceOriginal(original) = self.tables.project_handle(handle)? else {
+            return Ok(None);
+        };
+        let original = self.tables.original(original)?;
+        Ok(matches!(original.flags & KIND_MASK, RECORD | ENUM).then_some(original.name.span()))
+    }
+
     pub fn record_type(
         &mut self,
         requester: ModuleId,
