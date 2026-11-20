@@ -159,8 +159,11 @@ pub fn array_bytes(ty: i32) -> i32 {
     return length * 4;
 }
 pub fn record_type(index: i32) -> i32 { return 8199 + index; }
-pub fn is_record(ty: i32) -> bool { return ty >= 8199; }
+pub fn is_record(ty: i32) -> bool { return ty >= 8199 && ty < 8327; }
 pub fn record_index(ty: i32) -> i32 { return ty - 8199; }
+pub fn slice_type(element: i32) -> i32 { return 9000 + element; }
+pub fn is_slice(ty: i32) -> bool { return ty > 9000 && ty <= 9007; }
+pub fn slice_element(ty: i32) -> i32 { return ty - 9000; }
 
 pub fn record(c: &Compiler, source_module: i32, name: i32) -> i32 {
     let mut index = 0;

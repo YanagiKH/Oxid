@@ -47,6 +47,24 @@ Use `data.len()` for the length and `data[index]` to read an element. For a
 writes check the index. Use `b"abc"` for the byte array `[97u8, 98u8, 99u8]`
 and `b""` for an empty byte array. Byte strings support byte and Unicode escapes.
 
+Use a shared slice parameter to read a fixed array during a call.
+
+```rust
+fn first(values: &[i32]) -> i32 {
+    return values[0];
+}
+
+fn main() -> i32 {
+    let numbers = [42, 0];
+    return first(&numbers);
+}
+```
+
+Inside the function, check the length with `values.len()` and read by index.
+Pass `&numbers[start..end]` to borrow a range. The start is included and the
+end is excluded. Pass `&*values` or `&*values[start..end]` to share a slice with
+another function.
+
 Declare `#[derive(Copy)] struct Point { x: i32, y: i32 }` to group scalar
 fields. Construct it with `Point { y: 2, x: 40 }` and read a field with
 `point.x`. Use a `mut` binding to replace a field. Copies and function
@@ -76,7 +94,7 @@ Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-nested structs and enums, references, generics, text strings, nested arrays,
+nested structs and enums, other reference forms, generics, text strings, nested arrays,
 I/O in compiled input and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 

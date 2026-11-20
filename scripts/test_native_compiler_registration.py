@@ -120,6 +120,15 @@ REJECT_NAMES = {
     "enum-move-branch-join",
     "enum-fallthrough-missing-return",
     "enum-branch-binding-scope",
+    "slice-different-element-type",
+    "slice-read-after-move",
+    "slice-write-shared-reference",
+    "slice-move-during-call",
+    "slice-nested-move-during-call",
+    "slice-return-reference",
+    "slice-project-owner-moved-in-bound",
+    "slice-project-owner-moved-in-later-argument",
+    "slice-project-integer-bound-type",
 }
 
 
@@ -184,12 +193,12 @@ class NativeCompilerRegistration(unittest.TestCase):
 
     def test_all_subject_cases_and_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 265)
+        self.assertEqual(len(cases), 299)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 100, "reject": 109, "runtime": 56})
+                         {"value": 116, "reject": 118, "runtime": 65})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})
