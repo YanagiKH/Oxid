@@ -416,6 +416,17 @@ def owned_record_vector_data_predecessor_report(text):
 
 FILE_IO_PROJECT = "packages/file_io"
 FILE_IO_MEMBER = "packages/file_io/src/lib.ox"
+CORE_TYPE_PROJECTS = {
+    "packages/core_types": (
+        "packages/core_types/src/lib.ox",
+        "packages/core_types/src/option.ox",
+        "packages/core_types/src/result.ox",
+    ),
+    "examples/typed-option-result": (
+        "examples/typed-option-result/src/main.ox",
+        "examples/typed-option-result/tests/outcomes.ox",
+    ),
+}
 
 
 def check_only_successors_predecessor_report(text):
@@ -493,10 +504,23 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual([row for row in checks if row[0] == file_io_root], [(file_io_root, True)])
         self.assertNotIn(file_io_root, typed_entries)
         self.assertFalse(any(path == file_io_member for path, _ in checks))
+        core_roots = {root / name for name in CORE_TYPE_PROJECTS}
+        core_members = {root / name for members in CORE_TYPE_PROJECTS.values() for name in members}
+        core_example = root / "examples/typed-option-result"
+        self.assertEqual({name: verify_repo.TYPED_MANIFEST_PROJECTS[name] for name in CORE_TYPE_PROJECTS},
+                         CORE_TYPE_PROJECTS)
+        self.assertTrue(core_members <= set(sources))
+        self.assertEqual([row for row in checks if row[0] in core_roots],
+                         [(path, True) for path in sorted(core_roots)])
+        self.assertEqual([path for path in typed_entries if path in core_roots], [core_example])
+        self.assertFalse(any(path in core_members for path, _ in checks))
+        self.assertFalse(core_members & verify_repo.fixture_data_sources(root))
         # Retain every earlier count/fingerprint after this exact checked delta.
-        sources = [path for path in sources if path not in compiler_data | compiler_members | {file_io_member}]
-        checks = [row for row in checks if row[0] not in {root / "compiler/native", file_io_root}]
-        typed_members -= len(compiler_members) + 1
+        sources = [path for path in sources
+                   if path not in compiler_data | compiler_members | {file_io_member} | core_members]
+        checks = [row for row in checks if row[0] not in {root / "compiler/native", file_io_root} | core_roots]
+        typed_entries = [path for path in typed_entries if path != core_example]
+        typed_members -= len(compiler_members) + 1 + len(core_members)
         byte_data = verify_repo.byte_storage_fixture_data_sources(root)
         self.assertEqual(len(byte_data), 325)
         self.assertFalse(data_sources & byte_data)
@@ -518,8 +542,9 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertFalse(owned_text_data & (data_sources | byte_data | vector_data | copy_data | owned_vector_data))
         self.assertEqual(len(verify_repo.fixture_data_sources(root) - compiler_data), 569)
         self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - GENERIC_OWNED_VECTOR_PROJECTS.keys()
-                             - {"compiler/native", FILE_IO_PROJECT}), 22)
-        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 9)
+                             - CORE_TYPE_PROJECTS.keys() - {"compiler/native", FILE_IO_PROJECT}), 22)
+        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 10)
+        self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-option-result"), 1)
         predecessor_fixture_data = verify_repo.fixture_data_sources(root) - owned_vector_data - owned_text_data - compiler_data
         self.assertEqual(predecessor_fixture_data - copy_data, data_sources | byte_data | vector_data)
         self.assertEqual(len(data_sources | byte_data), 188 + 325)
@@ -594,7 +619,8 @@ class PublishedRegistrationTests(unittest.TestCase):
         before_owned_vector_manifest_projects = {
             name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
             if name not in OWNED_RECORD_VECTOR_PROJECTS and name not in OWNED_TEXT_PROJECTS
-            and name not in GENERIC_OWNED_VECTOR_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT}}
+            and name not in GENERIC_OWNED_VECTOR_PROJECTS and name not in CORE_TYPE_PROJECTS
+            and name not in {"compiler/native", FILE_IO_PROJECT}}
         language = [name for name in language if name not in OWNED_RECORD_VECTOR_MEMBERS]
         check_inventory = [row for row in check_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
         run_inventory = [row for row in run_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
@@ -672,7 +698,8 @@ class PublishedRegistrationTests(unittest.TestCase):
                           if name not in COPY_PROJECTS},
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS, **GROWABLE_VECTOR_PROJECTS})
         self.assertEqual(tuple(name for name in verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS
-                               if name not in GENERIC_OWNED_VECTOR_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT}),
+                               if name not in GENERIC_OWNED_VECTOR_PROJECTS and name not in CORE_TYPE_PROJECTS
+                               and name not in {"compiler/native", FILE_IO_PROJECT}),
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
         self.assertEqual(len(CPU_MEMBERS), 33)
         self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
@@ -953,8 +980,15 @@ class PublishedRegistrationTests(unittest.TestCase):
                          [[str(Path(sys.executable).resolve()), "check"]])
         self.assertFalse(any(str(verify_repo.ROOT / FILE_IO_MEMBER) in call.args[0]
                              for call in run.call_args_list))
+        for project, expected in (("packages/core_types", ("check",)),
+                                  ("examples/typed-option-result", ("check", "run", "test"))):
+            calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / project]
+            self.assertEqual([call.args[0] for call in calls],
+                             [[str(Path(sys.executable).resolve()), command] for command in expected])
+            self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
+        core_roots = {verify_repo.ROOT / name for name in CORE_TYPE_PROJECTS}
         before_compiler_calls = [call for call in run.call_args_list
-                                 if call.kwargs.get("cwd") not in {compiler_root, file_io_root}]
+                                 if call.kwargs.get("cwd") not in {compiler_root, file_io_root} | core_roots]
         owned_text_data = verify_repo.owned_text_fixture_data_sources(verify_repo.ROOT)
         self.assertEqual(owned_text_data, {verify_repo.ROOT / name for name in OWNED_TEXT_DATA_SOURCES})
         self.assertFalse(any(str(path) in call.args[0] for path in owned_text_data for call in run.call_args_list))
@@ -1102,14 +1136,15 @@ class PublishedRegistrationTests(unittest.TestCase):
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
                               + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
         application_members = len(verify_repo.TYPED_MANIFEST_PROJECTS["apps/byte-count"])
-        self.assertIn(f"{146 + 1 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(OWNED_TEXT_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES)} language sources, "
-                      f"{131 + 2 + 1 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(UNICODE_PROJECTS) + len(VECTOR_PROJECTS) + len(MATRIX_PROJECTS) + len(CPU_PROJECTS) + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS)} checks, "
-                      f"{83 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS)} runnable programs", output.getvalue())
-        self.assertIn(f"{17 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS)} manifest projects checked; "
-                      f"{7 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS)} run; {4 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS)} tested", output.getvalue())
+        core_member_count = sum(map(len, CORE_TYPE_PROJECTS.values()))
+        self.assertIn(f"{146 + 1 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(OWNED_TEXT_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES) + core_member_count} language sources, "
+                      f"{131 + 2 + 1 + len(ENUM_PROJECTS) + len(BUFFER_PROJECTS) + len(TEXT_PROJECTS) + len(UNICODE_PROJECTS) + len(VECTOR_PROJECTS) + len(MATRIX_PROJECTS) + len(CPU_PROJECTS) + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS) + len(verify_repo.TYPED_CHECK_ONLY_PROJECTS) + len(V2_ROOTS) + len(WIDE_ROOTS) + len(CORE_TYPE_PROJECTS)} checks, "
+                      f"{83 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS) + 1} runnable programs", output.getvalue())
+        self.assertIn(f"{17 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS) + len(CORE_TYPE_PROJECTS)} manifest projects checked; "
+                      f"{7 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS) + 1} run; {4 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS) + 1} tested", output.getvalue())
         self.assertIn(f"121 legacy sources, 67 legacy runnable programs, "
-                      f"{25 + 1 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(OWNED_TEXT_MEMBERS) + len(additional_members)} typed source members / "
-                      f"{16 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS)} typed entry runs", output.getvalue())
+                      f"{25 + 1 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(OWNED_TEXT_MEMBERS) + len(additional_members) + core_member_count} typed source members / "
+                      f"{16 + len(GROWABLE_VECTOR_PROJECTS) + len(OWNED_TEXT_PROJECTS) + 1} typed entry runs", output.getvalue())
         self.assertIn("11 wide parser overlay members / 2 materialized typed checks", output.getvalue())
         self.assertIn("9 v2 overlay source members / 2 materialized typed checks in a 31-module closure",
                       output.getvalue())
