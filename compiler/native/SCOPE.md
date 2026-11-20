@@ -61,7 +61,9 @@ fn main() -> i32 {
 ```
 
 Inside the function, check the length with `values.len()` and read by index.
-Pass `&*values` to share the slice with another function.
+Pass `&numbers[start..end]` to borrow a range. The start is included and the
+end is excluded. Pass `&*values` or `&*values[start..end]` to share a slice with
+another function.
 
 Declare `#[derive(Copy)] struct Point { x: i32, y: i32 }` to group scalar
 fields. Construct it with `Point { y: 2, x: 40 }` and read a field with

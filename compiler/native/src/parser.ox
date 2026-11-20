@@ -85,20 +85,37 @@ fn intersect_availability(c: &mut Compiler, previous: &Vec<bool>) -> () {
     }
     return;
 }
-fn slice_argument(c: &mut Compiler, expected: i32) -> i32 {
+fn slice_argument(c: &mut Compiler, expected: i32, borrowed: &mut Vec<i32>, depth: i32) -> Value {
     expect(&mut *c, 65);
     let reborrow = kind(&*c) == 31;
     if reborrow { expect(&mut *c, 31); }
     let position = local(&*c, c.cursor);
     expect(&mut *c, 1);
-    if position < 0 || c.error != 0 { fail(&mut *c); return -1; }
+    if position < 0 || c.error != 0 { fail(&mut *c); return invalid(); }
     let binding = c.vars[position];
-    if !binding.available { fail(&mut *c); return -1; }
-    if reborrow && binding.ty == expected { return position; }
-    if !reborrow && is_array(binding.ty) && slice_type(array_element(binding.ty)) == expected {
-        return position;
+    if !binding.available { fail(&mut *c); return invalid(); }
+
+    let mut view = invalid();
+    if reborrow && binding.ty == expected {
+        view = crate::emit::load(&mut *c, binding.slot, binding.ty);
+    } else {
+        if !reborrow && is_array(binding.ty) && slice_type(array_element(binding.ty)) == expected {
+            view = crate::emit::borrow_array(&mut *c, binding);
+        } else { fail(&mut *c); return invalid(); }
     }
-    fail(&mut *c); return -1;
+
+    if kind(&*c) == 51 {
+        expect(&mut *c, 51);
+        let start = expression(&mut *c, 1, depth + 1);
+        expect(&mut *c, 57);
+        let end = expression(&mut *c, 1, depth + 1);
+        expect(&mut *c, 52);
+        let target = c.vars[position];
+        if start.ty != 1 || end.ty != 1 || !target.available { fail(&mut *c); return invalid(); }
+        view = crate::emit::project_slice(&mut *c, view, start, end);
+    }
+    if !grown(try_push(&mut *borrowed, position)) { c.error = 68; return invalid(); }
+    return view;
 }
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     if target < 0 { fail(&mut *c); return invalid(); }
@@ -112,12 +129,7 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
         let expected = c.params[f.params + count];
         let mut value = invalid();
         if is_slice(expected.ty) {
-            let position = slice_argument(&mut *c, expected.ty);
-            if position < 0 { return invalid(); }
-            let binding = c.vars[position];
-            if is_slice(binding.ty) { value = crate::emit::load(&mut *c, binding.slot, binding.ty); }
-            else { value = crate::emit::borrow_array(&mut *c, binding); }
-            if !grown(try_push(&mut borrowed, position)) { c.error = 68; return invalid(); }
+            value = slice_argument(&mut *c, expected.ty, &mut borrowed, depth);
         } else {
             value = expression(&mut *c, 1, depth + 1);
         }
