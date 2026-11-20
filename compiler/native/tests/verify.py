@@ -314,6 +314,10 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     for name, code in (
         ("wide-array-frame-limit", wide_frame + "let extra=third;return 0i64;}"
          + "fn main()->i32{return 42;}"),
+        ("enum-variant-limit", "enum Choice{" + ",".join(f"V{i}" for i in range(65))
+         + "}fn main()->i32{return 42;}"),
+        ("enum-storage-limit", "enum Choice{" + ",".join(f"V{i}([i64;1024])" for i in range(4))
+         + "}fn main()->i32{return 42;}"),
         ("record-array-storage-limit",
          "struct Wide{a:[i64;1024],b:[i64;1024],c:[i64;1024],d:[i64;1024],extra:bool}"
          "fn unsupported(a:Wide)->i32{return 0;}fn main()->i32{return 42;}"),

@@ -58,11 +58,25 @@ arrays in an owned value. Passing or assigning the value moves it. Use
 `let Row { id: row_id, bytes: data } = row;` to take all its fields. To replace
 an array field, assign a new value to the whole mutable struct.
 
+Declare `enum Value { Empty, Count(i64) }` and construct `Value::Count(42i64)`.
+A variant can carry one scalar, fixed array or struct declared above the enum.
+Match a binding and give one arm for each variant.
+
+```rust
+let value = Value::Count(42i64);
+match value {
+    Value::Empty => { return 0i64; },
+    Value::Count(count) => { return count; },
+}
+```
+
+Passing, assigning or matching an enum moves it.
+
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-nested structs, enums, references, generics, text strings, nested arrays,
+nested structs and enums, references, generics, text strings, nested arrays,
 I/O in compiled input and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 
@@ -75,7 +89,7 @@ Source files share the input and function limits. The compiler accepts up to
 128 source files including the entry file and up to 32 levels of modules.
 
 Input is limited to 65536 bytes, 32768 tokens, 128 functions, 16 parameters/function,
-128 structs, 4096 call sites and a 32 KiB budget for local storage per function. Expression/block/comment nesting
+128 struct and enum declarations, 4096 call sites and a 32 KiB budget for local storage per function. Expression/block/comment nesting
 is limited to 64 and LLVM output to 8 MiB. Each function also has checked budgets
 of 4096 active bindings, 131072 temporary values and 65536 labels.
 Compiler status 64 means usage, 65 rejected

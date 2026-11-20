@@ -87,7 +87,8 @@ fn collect_record(c: &mut Compiler, source_module: i32) -> () {
     expect(&mut *c, 1); expect(&mut *c, 22);
     if record(&*c, source_module, name) >= 0 { fail(&mut *c); return; }
     let mut row = Record { name: name, source_module: source_module,
-        first_field: len(&*c.fields), field_count: 0, start: start, end: 0, copy: copy_record };
+        first_field: len(&*c.fields), field_count: 0, start: start, end: 0,
+        copy: copy_record, tagged: false };
     while kind(&*c) != 23 && c.error == 0 {
         if row.field_count >= 64 { c.error = 68; return; }
         if kind(&*c) == 19 { expect(&mut *c, 19); }
@@ -108,11 +109,51 @@ fn collect_record(c: &mut Compiler, source_module: i32) -> () {
     return;
 }
 
+fn collect_enum(c: &mut Compiler, source_module: i32) -> () {
+    if len(&*c.records) >= 128 { c.error = 68; return; }
+    let start = c.cursor;
+    expect(&mut *c, 62);
+    let name = c.cursor;
+    expect(&mut *c, 1);
+    expect(&mut *c, 22);
+    if record(&*c, source_module, name) >= 0 { fail(&mut *c); return; }
+    let mut row = Record { name: name, source_module: source_module,
+        first_field: len(&*c.fields), field_count: 0, start: start, end: 0,
+        copy: false, tagged: true };
+    while kind(&*c) != 23 && c.error == 0 {
+        if row.field_count >= 64 { c.error = 68; return; }
+        let variant = c.cursor;
+        expect(&mut *c, 1);
+        if record_field(&*c, row, variant) >= 0 { fail(&mut *c); return; }
+        let mut payload = 3;
+        if kind(&*c) == 20 {
+            expect(&mut *c, 20);
+            payload = ty(&mut *c, source_module);
+            expect(&mut *c, 21);
+            if payload == 3 { fail(&mut *c); return; }
+            if is_record(payload) {
+                let nested = c.records[crate::model::record_index(payload)];
+                if nested.tagged { fail(&mut *c); return; }
+            }
+        }
+        if c.error != 0 { return; }
+        if !grown(try_push(&mut *c.fields, Field { name: variant, ty: payload })) { c.error = 68; return; }
+        row.field_count = row.field_count + 1;
+        if kind(&*c) != 23 { expect(&mut *c, 26); }
+    }
+    expect(&mut *c, 23);
+    if row.field_count == 0 { fail(&mut *c); return; }
+    row.end = c.cursor;
+    if c.error == 0 && !grown(try_push(&mut *c.records, row)) { c.error = 68; }
+    return;
+}
+
 fn discover_records(c: &mut Compiler, source_module: i32) -> () {
     let mut depth = 0;
     while kind(&*c) != 0 && c.error == 0 {
         let k = kind(&*c);
         if (k == 53 || k == 54) && depth == 0 { collect_record(&mut *c, source_module); continue; }
+        if k == 62 && depth == 0 { collect_enum(&mut *c, source_module); continue; }
         if k == 22 { depth = depth + 1; }
         if k == 23 { depth = depth - 1; }
         c.cursor = c.cursor + 1;
@@ -243,7 +284,7 @@ fn collect_module(c: &mut Compiler, source_module: i32) -> () {
 
     while kind(&*c) != 0 && c.error == 0 {
         let declaration = kind(&*c);
-        if declaration == 53 || declaration == 54 {
+        if declaration == 53 || declaration == 54 || declaration == 62 {
             if next_record >= len(&*c.records) { fail(&mut *c); return; }
             let row = c.records[next_record];
             if row.start != c.cursor { fail(&mut *c); return; }

@@ -2,6 +2,7 @@ use crate::model::Compiler;
 use crate::model::Value;
 use crate::model::Token;
 use crate::model::Binding;
+use crate::model::Record;
 use crate::model::grown;
 use crate::model::token;
 use crate::model::kind;
@@ -71,6 +72,14 @@ fn restore_availability(c: &mut Compiler, state: &Vec<bool>) -> () {
     while index < len(&*state) && c.error == 0 {
         set_available(&mut *c, index, state[index]);
         index = index + 1;
+    }
+    return;
+}
+fn intersect_availability(c: &mut Compiler, previous: &Vec<bool>) -> () {
+    for index in 0..len(&*previous) {
+        let binding = c.vars[index];
+        let available = binding.available && previous[index];
+        set_available(&mut *c, index, available);
     }
     return;
 }
@@ -180,8 +189,29 @@ fn array_length(c: &mut Compiler, ty: i32) -> Value {
     let length = array_count(ty);
     return crate::emit::constant(&mut *c, 1, length.to_i64());
 }
+fn enum_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
+    if index < 0 { fail(&mut *c); return invalid(); }
+    let row = c.records[index];
+    if !row.tagged { fail(&mut *c); return invalid(); }
+    expect(&mut *c, 45);
+    let variant = record_field(&*c, row, c.cursor);
+    expect(&mut *c, 1);
+    if variant < 0 { fail(&mut *c); return invalid(); }
+    let field = c.fields[row.first_field + variant];
+    let tag = crate::emit::constant(&mut *c, 1, variant.to_i64());
+    let tagged = crate::emit::insert_field(
+        &mut *c, Value { ty: record_type(index), id: -1 }, tag, 0
+    );
+    if field.ty == 3 { return tagged; }
+    expect(&mut *c, 20);
+    let payload = expression(&mut *c, 1, depth + 1);
+    expect(&mut *c, 21);
+    if payload.ty != field.ty { fail(&mut *c); return invalid(); }
+    return crate::emit::insert_field(&mut *c, tagged, payload, variant + 1);
+}
 fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
     let row = c.records[index];
+    if row.tagged { fail(&mut *c); return invalid(); }
     let mut seen = new::<bool>();
     while len(&seen) < row.field_count {
         if !grown(try_push(&mut seen, false)) { c.error = 68; return invalid(); }
@@ -209,6 +239,7 @@ fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
 fn field_value(c: &mut Compiler, binding: Binding) -> Value {
     expect(&mut *c, 43);
     let row = c.records[record_index(binding.ty)];
+    if row.tagged { fail(&mut *c); return invalid(); }
     let field = record_field(&*c, row, c.cursor);
     expect(&mut *c, 1);
     if field < 0 { fail(&mut *c); return invalid(); }
@@ -230,6 +261,10 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
     let name = c.cursor;
     c.cursor = c.cursor + 1;
     let owner = c.functions[c.current];
+    if kind(&*c) == 45 {
+        let index = record(&*c, owner.source_module, name);
+        return enum_literal(&mut *c, index, depth);
+    }
     if kind(&*c) == 20 {
         let target = function_binding(&*c, owner.source_module, name);
         return called(&mut *c, target, depth);
@@ -409,6 +444,7 @@ fn destructure(c: &mut Compiler) -> () {
     let index = record(&*c, owner.source_module, c.cursor);
     if index < 0 { fail(&mut *c); return; }
     let row = c.records[index];
+    if row.tagged { fail(&mut *c); return; }
     expect(&mut *c, 1);
     expect(&mut *c, 22);
     let mut destinations = new::<i32>();
@@ -486,6 +522,7 @@ fn assign_field(c: &mut Compiler) -> () {
     let binding = c.vars[position];
     if !binding.writable || !is_record(binding.ty) { fail(&mut *c); return; }
     let row = c.records[record_index(binding.ty)];
+    if row.tagged { fail(&mut *c); return; }
     c.cursor = c.cursor + 2;
     let field = record_field(&*c, row, c.cursor);
     expect(&mut *c, 1); expect(&mut *c, 28);
@@ -562,18 +599,100 @@ fn if_statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -
         else { block(&mut *c, break_to, continue_to, depth + 1); }
     }
     let right_falls = c.live;
-    if left_falls {
-        let mut index = 0;
-        while index < len(&left) && c.error == 0 {
-            let binding = c.vars[index];
-            let available = left[index] && (!right_falls || binding.available);
-            set_available(&mut *c, index, available);
-            index = index + 1;
-        }
+    if left_falls && c.error == 0 {
+        if right_falls { intersect_availability(&mut *c, &left); }
+        else { restore_availability(&mut *c, &left); }
     }
     crate::emit::branch(&mut *c, merge);
     crate::emit::label(&mut *c, merge);
     c.live = left_falls || right_falls;
+    return;
+}
+fn match_variant(c: &mut Compiler, row: Record, type_index: i32) -> i32 {
+    let owner = c.functions[c.current];
+    let arm_type = record(&*c, owner.source_module, c.cursor);
+    expect(&mut *c, 1);
+    expect(&mut *c, 45);
+    let variant = record_field(&*c, row, c.cursor);
+    expect(&mut *c, 1);
+    if arm_type != type_index || variant < 0 { fail(&mut *c); return -1; }
+    return variant;
+}
+fn match_payload(c: &mut Compiler, aggregate: Value, variant: i32, ty: i32) -> () {
+    if ty == 3 { return; }
+    expect(&mut *c, 20);
+    let binding = c.cursor;
+    expect(&mut *c, 1);
+    expect(&mut *c, 21);
+    if c.error != 0 { return; }
+    let name = token(&*c, binding);
+    let discard = b"_";
+    if word(&*c.source, name.start, name.end, &discard) { fail(&mut *c); return; }
+    let payload = crate::emit::extract_field(&mut *c, aggregate, variant + 1, ty);
+    let slot = crate::emit::slot(&mut *c, ty);
+    bind(&mut *c, binding, ty, false, slot);
+    crate::emit::store(&mut *c, slot, payload);
+    return;
+}
+fn match_statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> () {
+    let unreachable = b"  unreachable\n";
+    expect(&mut *c, 63);
+    let following = token(&*c, c.cursor + 1);
+    if kind(&*c) != 1 || following.kind != 22 || local(&*c, c.cursor) < 0 { fail(&mut *c); return; }
+    let was_live = c.live;
+    let aggregate = named_value(&mut *c, 0);
+    if !is_record(aggregate.ty) { fail(&mut *c); return; }
+    let type_index = record_index(aggregate.ty);
+    let row = c.records[type_index];
+    if !row.tagged { fail(&mut *c); return; }
+    expect(&mut *c, 22);
+
+    let mut labels = new::<i32>();
+    let mut seen = new::<bool>();
+    for variant in 0..row.field_count {
+        let label = crate::emit::new_label(&mut *c);
+        if !grown(try_push(&mut labels, label)) || !grown(try_push(&mut seen, false)) {
+            c.error = 68; return;
+        }
+    }
+    let tag = crate::emit::extract_field(&mut *c, aggregate, 0, 1);
+    let bad_tag = crate::emit::new_label(&mut *c);
+    let merge = crate::emit::new_label(&mut *c);
+    crate::emit::enum_switch(&mut *c, tag, &labels, bad_tag);
+
+    let incoming = availability(&mut *c);
+    let locals = len(&incoming);
+    let mut outgoing = new::<bool>();
+    let mut falls_through = false;
+    let mut count = 0;
+    while kind(&*c) != 23 && c.error == 0 {
+        let variant = match_variant(&mut *c, row, type_index);
+        if variant < 0 || seen[variant] { fail(&mut *c); return; }
+        seen[variant] = true;
+        count = count + 1;
+        restore_availability(&mut *c, &incoming);
+        crate::emit::label(&mut *c, labels[variant]);
+        c.live = was_live;
+        let payload = c.fields[row.first_field + variant];
+        match_payload(&mut *c, aggregate, variant, payload.ty);
+        expect(&mut *c, 64);
+        block(&mut *c, break_to, continue_to, depth + 1);
+        truncate(&mut *c.vars, locals);
+        if c.live && c.error == 0 {
+            if falls_through { intersect_availability(&mut *c, &outgoing); }
+            outgoing = availability(&mut *c);
+            falls_through = true;
+        }
+        crate::emit::branch(&mut *c, merge);
+        if kind(&*c) != 23 { expect(&mut *c, 26); }
+    }
+    expect(&mut *c, 23);
+    if count != row.field_count { fail(&mut *c); return; }
+    crate::emit::label(&mut *c, bad_tag);
+    crate::emit::append(&mut *c, 2, &unreachable);
+    crate::emit::label(&mut *c, merge);
+    if falls_through { restore_availability(&mut *c, &outgoing); }
+    c.live = falls_through;
     return;
 }
 fn while_statement(c: &mut Compiler, depth: i32) -> () {
@@ -646,6 +765,7 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
     let k = kind(&*c);
     if k == 4 { declared(&mut *c); return; }
     if k == 7 { if_statement(&mut *c, break_to, continue_to, depth); return; }
+    if k == 63 { match_statement(&mut *c, break_to, continue_to, depth); return; }
     if k == 9 { while_statement(&mut *c, depth); return; }
     if k == 55 { for_statement(&mut *c, depth); return; }
     if k == 22 { block(&mut *c, break_to, continue_to, depth + 1); return; }
