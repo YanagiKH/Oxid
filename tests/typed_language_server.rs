@@ -791,6 +791,53 @@ fn function_definitions_follow_import_aliases_unsaved_lines_and_privacy() {
     p.unchanged();
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn type_definitions_follow_aliases_qualified_names_and_unsaved_declarations() {
+    let p = Project::new();
+    let main = "mod shapes;use crate::shapes::Point as Dot;\nfn inspect(p:&Dot)->crate::shapes::Choice{let local:Dot=crate::shapes::Point{x:42};return crate::shapes::Choice::One(local.x); }\nfn main()->i32{return 42;}";
+    p.package("", "app", "", main);
+    let declared = "pub struct Point{pub x:i32}\npub enum Choice{One(i32),None}\nstruct Hidden{n:i32}\n";
+    p.write("src/shapes.ox", declared);
+    let path = p.uri("src/main.ox");
+    let library = p.uri("src/shapes.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&path, main);
+    let unsaved = format!("\n// 🦀\n{declared}");
+    c.open(&library, &unsaved);
+    c.clean(&path);
+    for (needle, declaration, width) in [
+        ("Dot)->", "Point{", 5),
+        ("Dot=", "Point{", 5),
+        ("Point{x:42}", "Point{", 5),
+        ("Choice{let", "Choice{", 6),
+    ] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(main,needle)}),
+        );
+        let start = position_at(&unsaved, declaration);
+        let mut end = start.clone();
+        end["character"] = json!(start["character"].as_u64().unwrap() + width);
+        assert_eq!(
+            result["result"],
+            json!([{"uri":library,"range":{"start":start,"end":end}}]),
+            "{needle}: {result}"
+        );
+    }
+    let invalid = "mod shapes;fn inspect(p:&crate::shapes::Hidden)->(){return;}fn main()->i32{return 42;}";
+    c.change(&path, 2, json!([{"text":invalid}]));
+    let result = c.request(
+        "textDocument/definition",
+        json!({"textDocument":{"uri":path},"position":position_at(invalid,"Hidden)")}),
+    );
+    assert!(result.get("error").is_none(), "{result}");
+    assert_eq!(result["result"], Value::Null, "{result}");
+    c.finish();
+    p.unchanged();
+}
+
 #[test]
 fn document_outline_uses_declarations_and_survives_body_type_errors() {
     let p = Project::new();

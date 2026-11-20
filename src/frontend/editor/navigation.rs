@@ -2,7 +2,9 @@
 use super::*;
 use crate::frontend::{
     ast,
-    declaration_index::{self as index, IndexLimits, SourceOwner, WorkMeter},
+    declaration_index::{
+        self as index, IndexLimits, NominalId, SourceOwner, TypeContext, WorkMeter,
+    },
     hir::DefId,
     project::{ItemPathRef, ModuleId},
 };
@@ -13,6 +15,127 @@ fn contains(span: Span, offset: usize) -> bool {
 fn same_path(source: &str, path: &Path) -> bool {
     let source = Path::new(source);
     source == path || source.canonicalize().is_ok_and(|source| source == path)
+}
+
+fn path_name(syntax: &ast::Program, path: ast::ItemPath) -> Option<Span> {
+    match path {
+        ast::ItemPath::Unqualified(span) => Some(span),
+        ast::ItemPath::Absolute(id) => {
+            let path = syntax.paths.get(id.0)?;
+            let end = path
+                .segment_start
+                .checked_add(usize::from(path.segment_len))?;
+            syntax
+                .path_segments
+                .get(path.segment_start..end)?
+                .last()
+                .copied()
+        }
+    }
+}
+
+fn type_path(syntax: &ast::Program, ty: ast::TypeSyntax, offset: usize) -> Option<ast::ItemPath> {
+    if !contains(ty.span, offset) {
+        return None;
+    }
+    let path = match ty.kind {
+        ast::TypeSyntaxKind::Name(path) | ast::TypeSyntaxKind::Reference { referent: path, .. } => {
+            path
+        }
+        _ => return None,
+    };
+    path_name(syntax, path).filter(|span| contains(*span, offset))?;
+    Some(path)
+}
+
+fn type_use(syntax: &ast::Program, offset: usize) -> Option<(ast::ItemPath, TypeContext, Span)> {
+    for function in &syntax.functions {
+        if offset < function.name.start || offset >= function.end.end {
+            continue;
+        }
+        let types = function
+            .params
+            .iter()
+            .map(|parameter| parameter.ty)
+            .chain(std::iter::once(function.result))
+            .chain(
+                function
+                    .blocks
+                    .iter()
+                    .flat_map(|block| &block.body)
+                    .filter_map(|statement| match statement.kind {
+                        ast::StmtKind::Let { annotation, .. } => annotation,
+                        _ => None,
+                    }),
+            );
+        for ty in types {
+            if let Some(path) = type_path(syntax, ty, offset) {
+                return Some((path, TypeContext::Value, function.name));
+            }
+        }
+        for expression in &syntax.expressions {
+            if contains(expression.span, offset) {
+                if let ast::ExprKind::StructLiteral { record, .. } = expression.kind {
+                    if path_name(syntax, record).is_some_and(|name| contains(name, offset)) {
+                        return Some((record, TypeContext::Constructor, function.name));
+                    }
+                }
+            }
+        }
+    }
+    for record in &syntax.records {
+        for field in &record.fields {
+            if let Some(path) = type_path(syntax, field.ty, offset) {
+                return Some((path, TypeContext::Value, record.name));
+            }
+        }
+    }
+    for enumeration in &syntax.enums {
+        for variant in &enumeration.variants {
+            if let Some(path) = variant
+                .payload
+                .and_then(|payload| type_path(syntax, payload.value_type(), offset))
+            {
+                return Some((path, TypeContext::Value, enumeration.name));
+            }
+        }
+    }
+    None
+}
+
+fn type_definition(
+    index: &index::DeclarationIndex<'_>,
+    module: ModuleId,
+    path: ItemPathRef,
+    context: TypeContext,
+    work: &WorkMeter,
+) -> Result<Option<Span>, Vec<Diagnostic>> {
+    let selected = index.query(work).nominal_type(module, path, context);
+    let owner = index.sources();
+    let declaration = match selected {
+        Ok(NominalId::Record(id)) => {
+            let (key, selected_module) = index.record(id).map_err(|error| vec![*error])?;
+            owner
+                .ast(selected_module)
+                .map_err(|error| vec![*error])?
+                .records
+                .get(key.index)
+                .map(|record| record.name)
+        }
+        Ok(NominalId::Enum(id)) if id.0 < index.source_enum_count() => {
+            let (key, selected_module) = index.enumeration(id).map_err(|error| vec![*error])?;
+            owner
+                .ast(selected_module)
+                .map_err(|error| vec![*error])?
+                .enums
+                .get(key.index)
+                .map(|enumeration| enumeration.name)
+        }
+        Ok(_) => None,
+        Err(error) if matches!(error.code, "E0400" | "E0500") => return Err(vec![*error]),
+        Err(_) => None,
+    };
+    Ok(declaration)
 }
 
 pub(in crate::frontend) fn definition(
@@ -41,31 +164,44 @@ pub(in crate::frontend) fn definition(
             return Ok(location(sources, span));
         }
     }
-    let Some((callee, qualified)) = syntax.expressions.iter().find_map(|expression| {
+    let selected_type = type_use(syntax, offset);
+    if let Some((ast::ItemPath::Unqualified(name), _, declaration)) = selected_type {
+        if syntax
+            .generic_parameters(declaration)
+            .iter()
+            .any(|parameter| source.text_at(parameter.name) == source.text_at(name))
+        {
+            return Ok(None);
+        }
+    }
+    let selected_call = syntax.expressions.iter().find_map(|expression| {
         let (callee, qualified) = match expression.kind {
             ast::ExprKind::Call { callee, .. } => (callee, false),
             ast::ExprKind::QualifiedValue { path, .. } => (ast::ItemPath::Absolute(path), true),
             _ => return None,
         };
-        let selected = match callee {
-            ast::ItemPath::Unqualified(span) => span,
-            ast::ItemPath::Absolute(id) => {
-                let path = syntax.paths.get(id.0)?;
-                *syntax
-                    .path_segments
-                    .get(path.segment_start..path.segment_start + usize::from(path.segment_len))?
-                    .last()?
-            }
-        };
-        contains(selected, offset).then_some((callee, qualified))
-    }) else {
+        contains(path_name(syntax, callee)?, offset).then_some((callee, qualified))
+    });
+    if selected_type.is_none() && selected_call.is_none() {
         return Ok(None);
-    };
+    }
     let limits = IndexLimits::default();
     let work = WorkMeter::new(limits.work);
     let mut allocator = Allocator::default();
     let facts = index::collect_originals(owner, limits, &work, &mut allocator)
         .map_err(|error| vec![*error])?;
+    if let Some((type_path, context, _)) = selected_type {
+        let index = facts.finish(&work, &mut allocator)?;
+        let path = ItemPathRef {
+            file: source.span(0, 0).file,
+            path: type_path,
+        };
+        return type_definition(&index, module, path, context, &work)
+            .map(|target| target.and_then(|span| location(sources, span)));
+    }
+    let Some((callee, qualified)) = selected_call else {
+        return Ok(None);
+    };
     let mut names = Vec::new();
     allocator
         .vector(

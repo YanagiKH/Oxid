@@ -132,10 +132,10 @@ Workspace checks include every member and declared test entry. Dependencies are
 resolved offline; prepare Git dependencies with ordinary project commands first.
 Manifests and lockfiles are read from disk. Diagnostics reflect editor source
 buffers and do not replace `oxid check --frozen` for saved-input verification.
-Cross-file loading follows the ordinary project's host and path rules. Method
-completion, rename and navigation to types or members are not yet provided. See the
-[language server contract](../rfcs/0065-typed-language-server.md) and
-[navigation scope](../rfcs/0066-editor-symbol-navigation.md).
+Use Go to Definition on a record or enum name in a type annotation, or on a
+record name in a constructor. This works with visible imports and unsaved
+source. See the [language server contract](../rfcs/0065-typed-language-server.md)
+and [navigation scope](../rfcs/0066-editor-symbol-navigation.md).
 
 ## Generate API documentation
 
