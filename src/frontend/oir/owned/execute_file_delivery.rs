@@ -300,7 +300,19 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                             .range(&value, start, end)
                             .map_err(|failure| heap_failure(failure, span))?;
                         if bytes.len() >= copied.len() {
-                            Ok(byte_buffer::OpenValue::Error(36))
+                            Ok(byte_buffer::OpenValue::Error(
+                                if cfg!(all(
+                                    target_os = "windows",
+                                    target_env = "msvc",
+                                    target_arch = "x86_64",
+                                    target_pointer_width = "64",
+                                    target_endian = "little"
+                                )) {
+                                    38
+                                } else {
+                                    36
+                                },
+                            ))
                         } else {
                             let length = bytes.len();
                             copied[..length].copy_from_slice(bytes);
@@ -317,7 +329,19 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                             .vector_range(&value, byte_buffer::VectorElement::U8, start, end)
                             .map_err(|failure| heap_failure(failure, span))?;
                         if bytes.len() >= copied.len() {
-                            Ok(byte_buffer::OpenValue::Error(36))
+                            Ok(byte_buffer::OpenValue::Error(
+                                if cfg!(all(
+                                    target_os = "windows",
+                                    target_env = "msvc",
+                                    target_arch = "x86_64",
+                                    target_pointer_width = "64",
+                                    target_endian = "little"
+                                )) {
+                                    38
+                                } else {
+                                    36
+                                },
+                            ))
                         } else {
                             let length = bytes.len();
                             copied[..length].copy_from_slice(bytes);

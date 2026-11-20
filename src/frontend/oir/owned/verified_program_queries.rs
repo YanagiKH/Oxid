@@ -105,6 +105,12 @@ pub(in crate::frontend::oir::owned) trait PlanWitness:
             .experimental_function_rank(item)?;
         self.fixed_builtin_base()?.checked_add(rank).map(hir::DefId)
     }
+    fn has_file_delivery(&self) -> bool {
+        experimental::Function::ALL
+            .into_iter()
+            .filter(|operation| operation.is_file())
+            .any(|operation| self.experimental_function(operation).is_some())
+    }
     fn has_experimental_operations(&self) -> bool {
         self.raw_program().builtins.experimental().functions() != 0
             || !self.raw_program().vector_functions.is_empty()

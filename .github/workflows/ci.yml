@@ -50,7 +50,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          python3 -B scripts/verify_windows_local_package_compatibility.py \
+          python3 -B scripts/verify_windows_file_compatibility.py \
             --repo . \
             --expected-head "$EXPECTED_HEAD" \
             --output "$RUNNER_TEMP/current-project-unit2"
@@ -641,6 +641,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  windows-local-package-source-policy-predecessor:
+    name: Windows package source-policy controls on their frozen predecessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Retain the current replay controller
+        run: cp scripts/replay_windows_local_package_source_policy.py "$RUNNER_TEMP/windows-local-package-source-policy-replay.py"
+      - uses: actions/checkout@v4
+        with:
+          ref: 197ab7cad557038c40b9bac3b3019f9cdffcbab4
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -B "$RUNNER_TEMP/windows-local-package-source-policy-replay.py" --repo . --output "$RUNNER_TEMP/windows-local-package-source-policy-replay"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-local-package-source-policy-predecessor
+          path: ${{ runner.temp }}/windows-local-package-source-policy-replay
+          if-no-files-found: error
+          retention-days: 14
+
   macos-native:
     name: Current macOS native (${{ matrix.os }})
     strategy:
@@ -1099,6 +1124,11 @@ jobs:
           cargo test --locked --bin oxid frontend::native::doctor::windows::tests:: -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --test native_doctor --test typed_windows_native -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows binary file programs
+        run: |
+          $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN
+          cargo test --locked --test windows_file_io -- --include-ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify PE execution, publication and standalone deployment
         run: |

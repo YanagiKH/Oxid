@@ -18,6 +18,30 @@ struct FileOpenFrame {
     create: i32,
     result: *mut (),
     path: [u8; 4096],
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    wide_path: [u16; 4096],
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    conversion_arguments: (u32, u32, *const i8, i32, *mut u16, i32),
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    converted: i32,
     node: *mut (),
     flags: i32,
     descriptor: i32,
@@ -77,6 +101,14 @@ struct FileControl {
     open: FileOpenFrame,
     attempt: FileAttemptFrame,
     hosted_budget: u64,
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    crt_errno_transports: [*mut i32; 6],
 }
 pub(super) const FILE_DELIVERY_BYTES: usize = size_of::<FileControl>();
 
@@ -92,6 +124,14 @@ struct FileSeekFrame {
     status: i32,
     error: i32,
     position: i64,
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    crt_errno_pointer: *mut i32,
 }
 #[allow(dead_code)]
 #[repr(C)]

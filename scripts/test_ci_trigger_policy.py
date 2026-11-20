@@ -109,6 +109,8 @@ OWNED_ENUM_VECTOR_OBSERVER = ('scripts/owned_enum_vector_compatibility_observer.
 GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility.py'
 GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
 WINDOWS_LOCAL_PACKAGE_REPLAY = 'scripts/verify_windows_local_package_compatibility.py'
+WINDOWS_FILE_POLICY = ('scripts/verify_windows_file_compatibility.py',
+    (9959, 'd6534dfe643605ec90416b9c44f426313adb157a68d34b464b5296d749112dff'))
 WINDOWS_LOCAL_PACKAGE_PARENT = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = '4ec7cbdee35774e6112421736c7c921f398e5d3b'
 GENERIC_OWNED_VECTOR_POLICY = (GENERIC_OWNED_VECTOR_REPLAY,
@@ -126,6 +128,7 @@ REPLAY_ROUTES = {
     (OWNED_ENUM_VECTOR_REPLAY,): ('owned-enum-vector', OFFLINE_VENDOR_POLICY),
     (GENERIC_OWNED_VECTOR_REPLAY,): ('generic-owned-vector', OWNED_ENUM_VECTOR_POLICY),
     (WINDOWS_LOCAL_PACKAGE_REPLAY,): ('windows-local-package', GENERIC_OWNED_VECTOR_POLICY),
+    (WINDOWS_FILE_POLICY[0],): ('windows-file', WINDOWS_FILE_POLICY),
 }
 
 
@@ -702,6 +705,26 @@ def require_retained_replay_binding(route, read=None):
         raise AssertionError('immutable retained policy changed: ' + policy)
     if kind == 'direct':
         return
+    if kind == 'windows-file':
+        controller = ast.parse(raw)
+        predecessor = _literal(controller.body, 'PREDECESSOR')
+        selected = _literal(controller.body, 'REVIEWED_SOURCE')
+        changed = set(subprocess.check_output(
+            ['git', 'diff', '--no-renames', '--name-only', '--diff-filter=M', '-z', predecessor, selected],
+            cwd=REPO, timeout=30).decode().split('\0')[:-1])
+
+        def read_predecessor(name):
+            if name not in changed:
+                return read(name)
+            original = subprocess.check_output(
+                ['git', 'show', selected + ':' + name], cwd=REPO, timeout=30)
+            if read(name) != original:
+                raise AssertionError('Windows File compiled input differs from reviewed source: ' + name)
+            return subprocess.check_output(
+                ['git', 'show', predecessor + ':' + name], cwd=REPO, timeout=30)
+
+        require_retained_replay_binding((WINDOWS_LOCAL_PACKAGE_REPLAY,), read_predecessor)
+        return
     tree = ast.parse(read(route[0]))
     if kind == 'msvc':
         expected = {
@@ -1187,6 +1210,22 @@ class CiTriggerPolicyTests(unittest.TestCase):
             ENGINE: ENGINE_SHA,
         }''')
 
+    def test_windows_package_replay_runs_the_complete_frozen_suite(self):
+        job = block(self.ci, 'windows-local-package-source-policy-predecessor', 2)
+        self.assertEqual(job.count('actions/checkout@v4'), 2)
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', job)
+        self.assertIn('ref: 197ab7cad557038c40b9bac3b3019f9cdffcbab4', job)
+        self.assertIn('fetch-depth: 0', job)
+        self.assertIn('cp scripts/replay_windows_local_package_source_policy.py ', job)
+        self.assertIn('python3 -B "$RUNNER_TEMP/windows-local-package-source-policy-replay.py" '
+                      '--repo . --output "$RUNNER_TEMP/windows-local-package-source-policy-replay"', job)
+        self.assertIn('if-no-files-found: error', job)
+        self.assertNotRegex(job, r'(?m)^    if:|continue-on-error:')
+        controller = ast.parse((REPO / 'scripts/replay_windows_local_package_source_policy.py').read_bytes())
+        self.assertEqual(_literal(controller.body, 'REVISION'), '197ab7cad557038c40b9bac3b3019f9cdffcbab4')
+        self.assertEqual(_literal(controller.body, 'MODULES'), {
+            'test_windows_local_package_compatibility': ('2476f4e1a3aed89fea83114f258771fd6e00c005e2b89799bead2a5fb7c5bafd', 18)})
+
     def test_generic_source_policy_replay_keeps_all_sixteen_frozen_controls_mandatory(self):
         replay = block(self.ci, 'generic-owned-vector-source-policy-predecessor', 2)
         self.assertEqual(replay.count('actions/checkout@v4'), 2)
@@ -1650,32 +1689,41 @@ class RetainedReplayRouteTests(unittest.TestCase):
 
     def test_text_route_still_binds_the_pinned_owned_vector_wrapper_and_exact_source_membership(self):
         route = (OWNED_TEXT_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 10)
+        self.assertEqual(len(REPLAY_ROUTES), 11)
         self.assertEqual(REPLAY_ROUTES[route], ('owned-text', OWNED_VECTOR_POLICY))
         require_retained_replay_binding(route)
 
     def test_vendor_route_still_binds_the_pinned_text_wrapper_and_exact_source_membership(self):
         route = (OFFLINE_VENDOR_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 10)
+        self.assertEqual(len(REPLAY_ROUTES), 11)
         self.assertEqual(REPLAY_ROUTES[route], ('offline-vendor', OWNED_TEXT_POLICY))
         require_retained_replay_binding(route)
 
     def test_live_enum_route_binds_the_public_vendor_policy_and_full_source_and_observer_pipeline(self):
         route = (OWNED_ENUM_VECTOR_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 10)
+        self.assertEqual(len(REPLAY_ROUTES), 11)
         self.assertEqual(REPLAY_ROUTES[route], ('owned-enum-vector', OFFLINE_VENDOR_POLICY))
         require_retained_replay_binding(route)
 
     def test_generic_route_keeps_the_complete_enum_controller_and_original_observer(self):
         route = (GENERIC_OWNED_VECTOR_REPLAY,)
-        self.assertEqual(len(REPLAY_ROUTES), 10)
+        self.assertEqual(len(REPLAY_ROUTES), 11)
         self.assertEqual(REPLAY_ROUTES[route], ('generic-owned-vector', OWNED_ENUM_VECTOR_POLICY))
         require_retained_replay_binding(route)
 
-    def test_live_windows_route_keeps_the_complete_generic_and_original_observer_pipeline(self):
-        self.assertEqual(self.route, (WINDOWS_LOCAL_PACKAGE_REPLAY,))
-        self.assertEqual(REPLAY_ROUTES[self.route], ('windows-local-package', GENERIC_OWNED_VECTOR_POLICY))
+    def test_live_windows_file_route_keeps_the_complete_windows_and_observer_pipeline(self):
+        self.assertEqual(self.route, (WINDOWS_FILE_POLICY[0],))
+        self.assertEqual(REPLAY_ROUTES[self.route], ('windows-file', WINDOWS_FILE_POLICY))
         require_retained_replay_binding(self.route)
+
+    def test_windows_file_route_checks_the_changed_driver_before_replaying_its_parent(self):
+        driver = 'src/frontend/driver.rs'
+
+        def changed(name):
+            return (REPO / name).read_bytes() + (b'\n' if name == driver else b'')
+
+        with self.assertRaisesRegex(AssertionError, 'Windows File compiled input differs'):
+            require_retained_replay_binding((WINDOWS_FILE_POLICY[0],), changed)
 
     def test_windows_source_roster_loader_observer_pipeline_and_refusals_cannot_drift(self):
         wrapper = WINDOWS_LOCAL_PACKAGE_REPLAY
@@ -1923,8 +1971,8 @@ class RetainedReplayRouteTests(unittest.TestCase):
 
     def test_wrapper_parent_runner_scope_and_failure_refusal_cannot_drift(self):
         kind, _ = REPLAY_ROUTES[self.route]
-        if kind == 'direct':
-            # Direct routes already bind the complete immutable original runner.
+        if kind in {'direct', 'windows-file'}:
+            # These routes already bind the entire runner.
             require_retained_replay_binding(self.route)
             return
         wrapper = self.route[0]

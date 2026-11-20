@@ -58,6 +58,10 @@ HISTORICAL_ONLY = {
 # These complete source-pinned modules test policies on their exact parent
 # compilers. ci.yml replays them unchanged in separate required jobs.
 PREDECESSOR_ONLY = {
+    "test_windows_local_package_compatibility": (
+        "2476f4e1a3aed89fea83114f258771fd6e00c005e2b89799bead2a5fb7c5bafd",
+        "197ab7cad557038c40b9bac3b3019f9cdffcbab4",
+        "requires the original Windows package source identity before Windows File support"),
     "test_generic_owned_vector_compatibility": (
         "916fcbd204b221fabf1286eb48e08149a9b47b2cca40aa10a2d2ee0e69959be2",
         "1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e",
