@@ -235,6 +235,10 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
         c.cursor = c.cursor + 1;
         return crate::emit::constant(&mut *c, 4, t.value);
     }
+    if t.kind == 59 {
+        c.cursor = c.cursor + 1;
+        return crate::emit::constant(&mut *c, 6, t.value);
+    }
     if t.kind == 50 {
         let index = c.cursor;
         c.cursor = c.cursor + 1;
@@ -297,7 +301,9 @@ pub fn expression(c: &mut Compiler, minimum: i32, depth: i32) -> Value {
             let right = expression(&mut *c, rank + 1, depth + 1);
             if left.ty != right.ty || left.ty == 3 || left.ty == 0
                 || is_byte_array(left.ty) || is_record(left.ty) { fail(&mut *c); return invalid(); }
-            if op != 35 && op != 36 && left.ty != 1 && left.ty != 4 && left.ty != 5 { fail(&mut *c); return invalid(); }
+            if left.ty == 6 && op >= 29 && op <= 33 { fail(&mut *c); return invalid(); }
+            if op != 35 && op != 36 && left.ty != 1 && left.ty != 4 && left.ty != 5
+                && left.ty != 6 { fail(&mut *c); return invalid(); }
             if left.ty == 4 { left = crate::emit::byte_binary(&mut *c, op, left, right); }
             else { left = crate::emit::binary(&mut *c, op, left, right); }
         }

@@ -18,7 +18,7 @@ output or any bytes after the module footer. It never strips a printed `0` or
 other lines. LLVM/Clang and the scalar C I/O adapter are explicit dependencies;
 they do not parse or check Oxid source. Existing output paths are refused.
 
-Supported input uses ASCII identifiers/comments, i32/i64/u8/bool/unit, named functions
+Supported input uses ASCII identifiers, i32/i64/u8/bool/char/unit, named functions
 with typed parameters/results, initialized let bindings, optional type
 annotations, mut/assignment, lexical blocks, calls, if/else, while, for, break,
 continue, explicit returns and short-circuit boolean operators. Active names
@@ -30,6 +30,9 @@ A result-mode `main` has no arguments and prints its scalar result, then exits 0
 Use `for index in start..end { ... }` to iterate over matching integer bounds.
 The bounds evaluate once from left to right, and the end is excluded. The
 index is immutable and available inside the loop body.
+Use `'雪'` or `'\u{1f980}'` for a Unicode character. A `char` can be passed,
+returned, stored in a record or compared by Unicode scalar value. A `char`
+result prints UTF-8. Comments and byte string literals also accept UTF-8.
 
 Use `b"..."` for fixed byte arrays such as `let data: [u8; 3] = b"abc";`.
 Literals support byte and Unicode escapes. Use `[1u8, 2u8]` to build an array
@@ -41,7 +44,7 @@ Declare `#[derive(Copy)] struct Point { x: i32, y: i32 }` to group scalar
 fields. Construct it with `Point { y: 2, x: 40 }` and read a field with
 `point.x`. Use a `mut` binding to replace a field. Copies and function
 arguments hold independent values. These structs are private to their
-module and have 1–64 fields of type `i32`, `i64`, `u8` or `bool`.
+module and have 1–64 fields of type `i32`, `i64`, `u8`, `bool` or `char`.
 
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
