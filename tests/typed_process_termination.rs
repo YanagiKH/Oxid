@@ -51,6 +51,18 @@ fn main() -> i32 {
     return 42;
 }
 "#;
+const SLEEP_SOURCE: &str = r#"
+use std::time::sleep_millis;
+use std::time::monotonic_millis;
+fn main() -> i32 {
+    if sleep_millis(-1) || !sleep_millis(0) { return 81; }
+    let start = monotonic_millis();
+    if !sleep_millis(120) { return 82; }
+    let end = monotonic_millis();
+    if start < 0i64 || end < start || end - start < 100i64 { return 83; }
+    return 42;
+}
+"#;
 const SOURCE: &str = r#"
 use std::process::enable_termination_notifications;
 use std::process::termination_requested;
@@ -254,6 +266,67 @@ fn native_monotonic_clock_measures_elapsed_time_after_source_free_relocation() {
         measure_child_delay(&mut command);
     }
 }
+
+#[test]
+fn typed_sleep_validates_durations_and_pauses_the_thread() {
+    let fixture = Fixture::project();
+    fs::write(fixture.0.join("src/main.ox"), SLEEP_SOURCE).unwrap();
+    let started = Instant::now();
+    let output = fixture.command(&["run"]).output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(if CLOCK_SUPPORTED { 42 } else { 82 }),
+        "{output:?}"
+    );
+    if CLOCK_SUPPORTED {
+        assert!(started.elapsed() >= Duration::from_millis(100));
+    }
+    fs::write(
+        fixture.0.join("src/main.ox"),
+        "use std::time::sleep_millis;fn main()->i32{if sleep_millis(-1)||!sleep_millis(0){return 81;}return 42;}",
+    )
+    .unwrap();
+    let output = fixture
+        .command(&["run", "src/main.ox", "--edition=typed-preview"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, b"42\n");
+}
+
+#[test]
+#[ignore = "requires LLVM 19.1.7 and a supported native target"]
+fn native_sleep_pauses_after_source_free_relocation() {
+    if !CLOCK_SUPPORTED {
+        return;
+    }
+    let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
+    for profile in ["dev", "release"] {
+        let fixture = Fixture::project();
+        fs::write(fixture.0.join("src/main.ox"), SLEEP_SOURCE).unwrap();
+        let built = fixture
+            .command(&["build", "--profile", profile])
+            .env("OXID_LLVM_BIN", &llvm)
+            .output()
+            .unwrap();
+        assert!(built.status.success(), "{profile}: {built:?}");
+        let deployment = Fixture::fresh("sleep-deployment");
+        let artifact = format!("worker{}", std::env::consts::EXE_SUFFIX);
+        let executable = deployment.0.join(&artifact);
+        fs::copy(fixture.0.join(".oxid/bin").join(&artifact), &executable).unwrap();
+        fs::remove_dir_all(&fixture.0).unwrap();
+        let started = Instant::now();
+        let output = Command::new(executable)
+            .current_dir(&deployment.0)
+            .env("PATH", deployment.0.join("missing-tools"))
+            .env("OXID_LLVM_BIN", deployment.0.join("missing-tools"))
+            .env("OXID_PATH", deployment.0.join("missing-source"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(42), "{profile}: {output:?}");
+        assert!(started.elapsed() >= Duration::from_millis(100), "{profile}");
+    }
+}
 #[cfg(target_os = "linux")]
 fn holds_file(pid: u32, path: &Path) -> bool {
     fs::read_dir(format!("/proc/{pid}/fd"))
@@ -331,6 +404,29 @@ fn typed_process_notifications_return_and_drop_resources_after_sigint_and_sigter
         let fixture = Fixture::waiting_project();
         exercise(&mut fixture.command(&["run"]), &fixture.0, signal, true);
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn typed_sleep_finishes_the_requested_interval_after_notification() {
+    if !SUPPORTED {
+        return;
+    }
+    let fixture = Fixture::project();
+    let source = format!(
+        "use std::time::sleep_millis;use std::time::monotonic_millis;use std::process::wait_for_termination;\n{SOURCE}"
+    );
+    let source = source.replace(
+        "while !termination_requested(){}",
+        "let before=monotonic_millis();if !sleep_millis(400){return 85;}let after=monotonic_millis();if before<0i64||after<before||after-before<395i64||!termination_requested()||!wait_for_termination(0){return 86;}",
+    );
+    fs::write(fixture.0.join("src/main.ox"), source).unwrap();
+    exercise(
+        &mut fixture.command(&["run"]),
+        &fixture.0,
+        libc::SIGTERM,
+        true,
+    );
 }
 
 #[test]

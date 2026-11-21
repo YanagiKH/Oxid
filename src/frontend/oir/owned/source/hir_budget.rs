@@ -729,7 +729,7 @@ impl HirPlan {
         inventory: crate::frontend::builtin_catalog::BuiltinSet,
     ) -> Result<Self, Box<Diagnostic>> {
         let process = inventory.process();
-        if process.is_empty() || process.count() > 2 {
+        if process.is_empty() {
             return Err(invalid(at));
         }
         if experimental_functions != inventory.experimental().functions()
@@ -2019,12 +2019,18 @@ mod process_suffix_tests {
             start: 0,
             end: 0,
         };
+        let all = termination::Function::ALL
+            .into_iter()
+            .fold(BuiltinSet::None, |set, item| {
+                set.admit(BuiltinItem::Process(item))
+            });
         for process in [
             BuiltinSet::None.admit(BuiltinItem::Process(termination::Function::Enable)),
             BuiltinSet::None.admit(BuiltinItem::Process(termination::Function::Requested)),
             BuiltinSet::None
                 .admit(BuiltinItem::Process(termination::Function::Enable))
                 .admit(BuiltinItem::Process(termination::Function::Requested)),
+            all,
         ] {
             for with_old_functions in [false, true] {
                 let mut inventory = process;

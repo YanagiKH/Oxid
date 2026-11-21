@@ -555,3 +555,73 @@ struct ClockCarriers {
 pub(crate) const fn clock_bytes() -> usize {
     std::mem::size_of::<ClockCarriers>()
 }
+
+pub(crate) fn sleep_millis(milliseconds: i32) -> bool {
+    if milliseconds <= 0 {
+        return milliseconds == 0;
+    }
+    sleep_positive(milliseconds as u32)
+}
+
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+fn sleep_positive(milliseconds: u32) -> bool {
+    let mut request = libc::timespec {
+        tv_sec: i64::from(milliseconds / 1000),
+        tv_nsec: i64::from(milliseconds % 1000) * 1_000_000,
+    };
+    let mut remaining = std::mem::MaybeUninit::<libc::timespec>::uninit();
+    loop {
+        // SAFETY: request and remaining are distinct C-layout timespecs.
+        if unsafe { libc::nanosleep(&request, remaining.as_mut_ptr()) } == 0 {
+            return true;
+        }
+        if std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
+            return false;
+        }
+        // SAFETY: nanosleep writes the unslept interval on EINTR.
+        request = unsafe { remaining.assume_init() };
+    }
+}
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+fn sleep_positive(milliseconds: u32) -> bool {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn Sleep(milliseconds: u32);
+    }
+    // SAFETY: the positive i32 duration fits DWORD and is below INFINITE.
+    unsafe { Sleep(milliseconds) };
+    true
+}
+
+#[cfg(not(any(
+    all(windows, target_arch = "x86_64"),
+    all(
+        any(target_os = "linux", target_os = "macos"),
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
+)))]
+fn sleep_positive(_: u32) -> bool {
+    false
+}
+
+#[allow(dead_code)]
+struct SleepCarriers {
+    request: [i64; 2],
+    remaining: [i64; 2],
+    duration: u32,
+    status: i32,
+    os_error: std::io::Error,
+    completed: bool,
+}
+
+pub(crate) const fn sleep_bytes() -> usize {
+    std::mem::size_of::<SleepCarriers>()
+}

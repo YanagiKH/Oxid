@@ -1332,6 +1332,14 @@ fn runtime_storage_bytes<W: PlanWitness>(
     )?;
     let runtime_bytes = add(
         runtime_bytes,
+        if plan.has_sleep() {
+            crate::program_termination::sleep_bytes()
+        } else {
+            0
+        },
+    )?;
+    let runtime_bytes = add(
+        runtime_bytes,
         if plan.has_termination_wait() {
             experimental::TERMINATION_WAIT_BYTES
         } else {
@@ -3936,6 +3944,10 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
     }
     if plan.has_clock() {
         out.write_str("declare i64 @__oxid_monotonic_millis()\n")
+            .unwrap();
+    }
+    if plan.has_sleep() {
+        out.write_str("declare i32 @__oxid_sleep_millis(i32)\n")
             .unwrap();
     }
     if plan.has_termination_wait() {

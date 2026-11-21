@@ -327,6 +327,14 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
             .process()
             .contains(Function::MonotonicMillis)
     }
+    pub(super) fn has_sleep(&self) -> bool {
+        use crate::frontend::builtin_catalog::termination::Function;
+        self.witness
+            .raw_program()
+            .builtins
+            .process()
+            .contains(Function::SleepMillis)
+    }
     pub(super) fn has_termination_wait(&self) -> bool {
         use crate::frontend::builtin_catalog::experimental::Function;
         self.has_termination()
