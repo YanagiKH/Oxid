@@ -106,6 +106,7 @@ pub(super) struct FunctionCounts {
     // Only the bounded ancestry multiplier is retained, not a second exact
     // declaration count. Every descriptor is still independently inventoried.
     pub local_loan_depth_bound: u8,
+    pub projected_local_loans: bool,
 }
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ProgramCounts {
@@ -338,6 +339,11 @@ pub(super) fn account_function(
             let ancestry = usize::from(c.local_loan_depth_bound).min(MAX_LOCAL_REFERENCE_DEPTH);
             work = add(work, mul(mul(mul(8, c.loans)?, ancestry)?, n)?)?;
         }
+        if c.projected_local_loans {
+            // A local reference can contribute its path to every descendant
+            // use. Each comparison follows at most one nominal containment chain.
+            work = add(work, mul(mul(c.loans, n)?, MAX_CONTAINMENT_DEPTH)?)?;
+        }
         // Retained acquisition sites are included here once. Their lifetime
         // extends through flow; no duplicate loan-origin vector is allocated.
         for (count, size) in [
@@ -369,7 +375,10 @@ pub(super) fn account_function(
     )?;
     if ownership_active {
         // Availability queue is dropped before reverse-path reconstruction.
-        let availability = mul(c.blocks, 1 + 4 * size_of::<usize>())?;
+        let mut availability = mul(c.blocks, 1 + 4 * size_of::<usize>())?;
+        if c.projected_local_loans {
+            availability = add(availability, flow::projected_region_scratch_bytes())?;
+        }
         let reconstruction = add(
             mul(2, c.blocks)?,
             mul(
@@ -482,6 +491,7 @@ pub(super) fn preflight(
                     .local_loan_depth_bound
                     .saturating_add(1)
                     .min(MAX_LOCAL_REFERENCE_DEPTH as u8);
+                c.projected_local_loans |= !loan.projection.is_empty();
             }
             cap(
                 loan.projection.len(),

@@ -1476,26 +1476,10 @@ impl Parser<'_> {
             let start = self.bump().span.start;
             let mutable = self.take(Kind::Mut).is_some();
             let star = self.take(Kind::Star);
-            let mut name = self
+            let root = self
                 .expect(Kind::Ident, "borrow argument requires a binding name")?
                 .span;
-            let mut hops = 0;
-            while self.take(Kind::Dot).is_some() {
-                if hops >= 64 {
-                    return Err(self.diagnostic(
-                        "E0400",
-                        "parse",
-                        "record access path depth limit exceeded",
-                        Some(self.peek().span),
-                    ));
-                }
-                self.node()?;
-                name.end = self
-                    .expect(Kind::Ident, "expected field name after `.`")?
-                    .span
-                    .end;
-                hops += 1;
-            }
+            let name = self.borrow_field_path(root)?;
             if self.mode == SourceMode::ProjectCandidate && self.double_colon() {
                 self.project_recovery = true;
                 return Err(self.diagnostic(
@@ -1841,6 +1825,30 @@ impl Parser<'_> {
             _ => return None,
         })
     }
+    fn borrow_field_path(
+        &mut self,
+        mut name: super::source::Span,
+    ) -> Result<super::source::Span, Box<Diagnostic>> {
+        let mut hops = 0;
+        while self.take(Kind::Dot).is_some() {
+            if hops >= 64 {
+                return Err(self.diagnostic(
+                    "E0400",
+                    "parse",
+                    "record access path depth limit exceeded",
+                    Some(self.peek().span),
+                ));
+            }
+            self.node()?;
+            name.end = self
+                .expect(Kind::Ident, "expected field name after `.`")?
+                .span
+                .end;
+            hops += 1;
+        }
+        Ok(name)
+    }
+
     fn local_reference_initializer(&mut self) -> Result<ExprId, Box<Diagnostic>> {
         self.node()?;
         let start = self
@@ -1849,10 +1857,14 @@ impl Parser<'_> {
             .start;
         let mutable = self.take(Kind::Mut).is_some();
         let forwarded = self.take(Kind::Star).is_some();
-        let name = self
+        let root = self
             .expect(Kind::Ident, "reference requires a binding name")?
             .span;
+        let name = self.borrow_field_path(root)?;
         if self.arrays_enabled() && self.array_punctuation("[") {
+            if name != root {
+                return Err(self.error("local element references require a whole binding"));
+            }
             self.bump();
             let index = self.expression(0, LiteralContext::Allowed)?;
             let end = self.array_close("element reference requires `]`")?;
@@ -1870,7 +1882,7 @@ impl Parser<'_> {
             );
         }
         if self.peek().kind != Kind::Semi {
-            return Err(self.error("local reference initializer must borrow a whole binding"));
+            return Err(self.error("local reference must be a complete local initializer"));
         }
         self.push_expr(
             ExprKind::Borrow {

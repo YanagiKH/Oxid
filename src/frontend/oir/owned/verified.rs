@@ -438,7 +438,8 @@ fn projection_permission<'a, W: PlanWitness>(
         }
         (
             OwnedInstruction::PrepareBorrow { loan, .. }
-            | OwnedInstruction::PrepareBorrowRange { loan, .. },
+            | OwnedInstruction::PrepareBorrowRange { loan, .. }
+            | OwnedInstruction::AcquireLocalBorrow(loan),
             ProjectionRequest::Borrow(requested),
         ) if *loan == requested => {
             let loan = f.loans.get(loan.0)?;
