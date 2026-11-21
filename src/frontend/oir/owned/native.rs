@@ -5810,8 +5810,8 @@ fn emit_statement<W: PlanWitness>(
                     projection(plan, f, declaration.authority, &declaration.projection);
                 let projected_length = match value {
                     ValueTy::Owned(AggregateTy::FixedArray(array)) => Some(array.length()),
-                    ValueTy::Owned(AggregateTy::Record(_)) => None,
-                    _ => unreachable!("verified projected record or array slice"),
+                    ValueTy::Owned(aggregate) if aggregate.supports_local_field_borrow() => None,
+                    _ => unreachable!("verified projected borrow type"),
                 };
                 (
                     field_pointer(out, &format!("{name}_borrow_projection"), &base, offset),

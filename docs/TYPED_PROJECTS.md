@@ -539,8 +539,8 @@ its fields have the same layout. An owned enum payload transfers ownership to
 its match binding. Reading a generic scalar field requires `T: Copy`; record
 fields otherwise keep the existing move rules. Different record fields may be
 [borrowed together](../rfcs/0067-disjoint-field-borrows.md), including nested
-fields and fields that own buffers. The whole record cannot move while a field
-is borrowed. Whole values can also have [local reference bindings](../rfcs/0068-local-reference-bindings.md)
+fields and fields that own buffers or vectors. A record can move once its field
+references have ended. Whole values can also have [local reference bindings](../rfcs/0068-local-reference-bindings.md)
 such as `let current = &mut value;`. A local reference lasts until its declaring
 block ends; `return`, `break` and `continue` also end the scopes they leave.
 Forward it to a helper with `&*current` or `&mut *current`. References cannot
