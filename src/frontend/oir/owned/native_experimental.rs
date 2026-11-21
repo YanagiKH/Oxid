@@ -339,9 +339,18 @@ pub(super) fn operation<W: PlanWitness>(
                 "  %{name}_process_status = call i32 @__oxid_termination_requested()"
             )
             .unwrap(),
-            Process::Wait => {
+            Process::Wait | Process::SleepMillis => {
+                let runtime_function = if process == Process::Wait {
+                    "__oxid_wait_for_termination"
+                } else {
+                    "__oxid_sleep_millis"
+                };
                 writeln!(out, "  %{name}_timeout = load i32, ptr %s0, align 4").unwrap();
-                writeln!(out, "  %{name}_process_status = call i32 @__oxid_wait_for_termination(i32 %{name}_timeout)").unwrap();
+                writeln!(
+                    out,
+                    "  %{name}_process_status = call i32 @{runtime_function}(i32 %{name}_timeout)"
+                )
+                .unwrap();
             }
         }
         writeln!(out, "  %{name}_process_value = icmp ne i32 %{name}_process_status, 0\n  store i1 %{name}_process_value, ptr %s{}, align 1", local.0).unwrap();

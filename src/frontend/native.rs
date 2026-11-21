@@ -591,7 +591,10 @@ fn compile_inner(
     let clock = module
         .lines()
         .any(|line| line == "declare i64 @__oxid_monotonic_millis()");
-    if termination || clock {
+    let sleep = module
+        .lines()
+        .any(|line| line == "declare i32 @__oxid_sleep_millis(i32)");
+    if termination || clock || sleep {
         let runtime_path = workspace.0.join("runtime.c");
         let runtime = fs::read_to_string(&runtime_path).map_err(io)?;
         let clock_define = if clock {
@@ -599,14 +602,19 @@ fn compile_inner(
         } else {
             ""
         };
-        let clock_only = if termination {
+        let sleep_define = if sleep {
+            "#define OXID_SLEEP_MILLIS 1\n"
+        } else {
+            ""
+        };
+        let time_only = if termination {
             ""
         } else {
-            "#define OXID_CLOCK_ONLY 1\n"
+            "#define OXID_TIME_ONLY 1\n"
         };
         fs::write(
             runtime_path,
-            format!("#define _POSIX_C_SOURCE 200809L\n{clock_define}{clock_only}{runtime}\n{TERMINATION_RUNTIME}"),
+            format!("#define _POSIX_C_SOURCE 200809L\n{clock_define}{sleep_define}{time_only}{runtime}\n{TERMINATION_RUNTIME}"),
         )
         .map_err(io)?;
     }

@@ -34,17 +34,18 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         span: Span,
     ) -> Result<Delivery> {
         let f = self.function(self.frames[frame].function);
-        let valid_parameters = match operation {
-            Function::WaitForTermination => matches!(
+        let process = operation
+            .process()
+            .ok_or_else(|| bad("process delivery identity", span))?;
+        let valid_parameters = if process.takes_millis() {
+            matches!(
                 f.parameters.as_slice(),
                 [ParameterBinding::Scalar(LocalId(0))]
-            ),
-            _ => f.parameters.is_empty(),
+            )
+        } else {
+            f.parameters.is_empty()
         };
-        let result_ty = operation
-            .process()
-            .ok_or_else(|| bad("process delivery identity", span))?
-            .result_ty();
+        let result_ty = process.result_ty();
         if self.plan.witness().experimental_function(operation) != Some(f.id)
             || !valid_parameters
             || !f.owners.is_empty()
@@ -132,11 +133,16 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 V::from_wide(crate::program_termination::monotonic_millis())
                     .expect("sealed i64 clock storage")
             }
-            Function::WaitForTermination => {
+            Function::WaitForTermination | Function::SleepMillis => {
                 let Scalar::I32(timeout_ms) = self.experimental_scalar(frame, 0, span)? else {
                     return Err(bad("process timeout type", span));
                 };
-                Scalar::Bool(crate::program_termination::wait(timeout_ms)).into()
+                let completed = if operation == Function::WaitForTermination {
+                    crate::program_termination::wait(timeout_ms)
+                } else {
+                    crate::program_termination::sleep_millis(timeout_ms)
+                };
+                Scalar::Bool(completed).into()
             }
             _ => unreachable!("prepared process operation"),
         };
@@ -155,7 +161,12 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         #[cfg(test)]
         {
             self.record_event(Event::Return(id));
-            if operation != Function::MonotonicMillis {
+            if matches!(
+                operation,
+                Function::EnableTermination
+                    | Function::TerminationRequested
+                    | Function::WaitForTermination
+            ) {
                 crate::program_termination::delivered();
             }
         }

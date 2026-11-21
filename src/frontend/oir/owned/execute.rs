@@ -5136,6 +5136,12 @@ fn execute_plan_policy_with_process_delivery<V: StoredValue, W: PlanWitness>(
             crate::program_termination::clock_bytes(),
         )?;
     }
+    if plan.has_sleep() {
+        machine.header_bytes = plan::add(
+            machine.header_bytes,
+            crate::program_termination::sleep_bytes(),
+        )?;
+    }
     if plan.has_termination_wait() {
         machine.header_bytes = plan::add(
             machine.header_bytes,

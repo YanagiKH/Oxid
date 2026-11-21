@@ -2,7 +2,7 @@
  * _POSIX_C_SOURCE must be selected before the first runtime system header. */
 #include <stdint.h>
 
-#ifndef OXID_CLOCK_ONLY
+#ifndef OXID_TIME_ONLY
 #if !defined(OXID_TERMINATION_FORCE_UNSUPPORTED) && \
     (defined(__linux__) || defined(__APPLE__)) && \
     (defined(__x86_64__) || defined(__aarch64__)) && UINTPTR_MAX == UINT64_MAX && \
@@ -148,4 +148,42 @@ int64_t __oxid_monotonic_millis(void) {
 #else
 int64_t __oxid_monotonic_millis(void) { return -1; }
 #endif
+#endif
+
+#ifdef OXID_SLEEP_MILLIS
+#if (defined(__linux__) || defined(__APPLE__)) && \
+    (defined(__x86_64__) || defined(__aarch64__)) && UINTPTR_MAX == UINT64_MAX && \
+    defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#include <errno.h>
+#include <time.h>
+
+_Static_assert(sizeof(struct timespec) == 2 * sizeof(int64_t), "sleep timespec layout");
+
+static int sleep_positive(uint32_t milliseconds) {
+    struct timespec remaining;
+    struct timespec request = {milliseconds / 1000, (long)(milliseconds % 1000) * 1000000};
+    while (nanosleep(&request, &remaining) != 0) {
+        if (errno != EINTR) return 0;
+        request = remaining;
+    }
+    return 1;
+}
+#elif defined(_WIN64) && (defined(_M_X64) || defined(__x86_64__))
+#include <windows.h>
+
+static int sleep_positive(uint32_t milliseconds) {
+    Sleep(milliseconds);
+    return 1;
+}
+#else
+static int sleep_positive(uint32_t milliseconds) {
+    (void)milliseconds;
+    return 0;
+}
+#endif
+
+int32_t __oxid_sleep_millis(int32_t milliseconds) {
+    if (milliseconds <= 0) return milliseconds == 0;
+    return sleep_positive((uint32_t)milliseconds);
+}
 #endif

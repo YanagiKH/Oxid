@@ -415,7 +415,8 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             Function::EnableTermination
             | Function::TerminationRequested
             | Function::WaitForTermination
-            | Function::MonotonicMillis => {
+            | Function::MonotonicMillis
+            | Function::SleepMillis => {
                 return Err(bad("process operation requires prepared delivery", span));
             }
             Function::New => OperationValue::EmptyBuffer,
