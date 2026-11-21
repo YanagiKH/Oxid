@@ -188,6 +188,14 @@ ready. Pass a timeout in milliseconds. It returns true after a notification and
 false when the wait expires. A zero timeout polls immediately. Negative timeouts
 and calls before enabling notifications return false immediately.
 
+## Measuring elapsed time
+
+Import `monotonic_millis` from `std::time`. Save a reading before your work
+and subtract it from a later reading to get elapsed milliseconds as an `i64`.
+Check both readings for `-1`, which means the clock is unavailable. It works
+on Linux and macOS with x86-64 or ARM64, and on Windows with x86-64. Changes
+to the system date and time do not affect the readings.
+
 ## Reading and writing file buffers
 
 Add the [file I/O library](../packages/file_io/oxid.toml) as a local dependency

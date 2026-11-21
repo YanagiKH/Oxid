@@ -587,12 +587,26 @@ fn compile_inner(
         runtime.push_str(INTEGER128_RUNTIME);
         fs::write(runtime_path, runtime).map_err(io)?;
     }
-    if termination_runtime_declared(module) {
+    let termination = termination_runtime_declared(module);
+    let clock = module
+        .lines()
+        .any(|line| line == "declare i64 @__oxid_monotonic_millis()");
+    if termination || clock {
         let runtime_path = workspace.0.join("runtime.c");
         let runtime = fs::read_to_string(&runtime_path).map_err(io)?;
+        let clock_define = if clock {
+            "#define OXID_MONOTONIC_MILLIS 1\n"
+        } else {
+            ""
+        };
+        let clock_only = if termination {
+            ""
+        } else {
+            "#define OXID_CLOCK_ONLY 1\n"
+        };
         fs::write(
             runtime_path,
-            format!("#define _POSIX_C_SOURCE 200809L\n{runtime}\n{TERMINATION_RUNTIME}"),
+            format!("#define _POSIX_C_SOURCE 200809L\n{clock_define}{clock_only}{runtime}\n{TERMINATION_RUNTIME}"),
         )
         .map_err(io)?;
     }

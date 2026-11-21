@@ -690,8 +690,8 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
     }
     // Inventory policy precedes plan allocation or emitted effects, including
     // unused output functions. Status-only declarations do not require it.
-    if !witness.raw_program().builtins.process().is_empty() {
-        for operation in crate::frontend::builtin_catalog::termination::Function::ALL {
+    if witness.raw_program().builtins.process().has_signals() {
+        for operation in crate::frontend::builtin_catalog::termination::Function::SIGNALS {
             #[cfg(test)]
             super::termination_queries::native_catalog_row();
             if witness
@@ -830,7 +830,7 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
     )?;
     let inherited_emitter_transient = add(
         inherited_emitter_transient,
-        if plan.has_termination() {
+        if plan.has_process_delivery() {
             crate::frontend::builtin_catalog::termination::compiler_carrier_bytes()
         } else {
             0
@@ -1318,6 +1318,14 @@ fn runtime_storage_bytes<W: PlanWitness>(
         runtime_bytes,
         if plan.has_termination() {
             crate::program_termination::control_bytes()
+        } else {
+            0
+        },
+    )?;
+    let runtime_bytes = add(
+        runtime_bytes,
+        if plan.has_clock() {
+            crate::program_termination::clock_bytes()
         } else {
             0
         },
@@ -3925,6 +3933,10 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
     vector::schemas(plan, out);
     if out.termination {
         out.write_str("@__oxid_process_termination = constant i1 true\ndeclare i32 @__oxid_termination_scope_start()\ndeclare void @__oxid_termination_scope_end()\ndeclare i32 @__oxid_enable_termination_notifications()\ndeclare i32 @__oxid_termination_requested()\n").unwrap();
+    }
+    if plan.has_clock() {
+        out.write_str("declare i64 @__oxid_monotonic_millis()\n")
+            .unwrap();
     }
     if plan.has_termination_wait() {
         out.write_str("declare i32 @__oxid_wait_for_termination(i32)\n")

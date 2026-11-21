@@ -41,8 +41,11 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             ),
             _ => f.parameters.is_empty(),
         };
-        if operation.process().is_none()
-            || self.plan.witness().experimental_function(operation) != Some(f.id)
+        let result_ty = operation
+            .process()
+            .ok_or_else(|| bad("process delivery identity", span))?
+            .result_ty();
+        if self.plan.witness().experimental_function(operation) != Some(f.id)
             || !valid_parameters
             || !f.owners.is_empty()
             || !f.references.is_empty()
@@ -73,7 +76,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             .locals
             .get(target.0)
             .ok_or_else(|| bad("process caller result", span))?;
-        if declaration.ty != hir::Ty::Bool
+        if declaration.ty != result_ty
             || declaration.kind == LocalKind::Parameter
             || self.frames[caller].slots.get(target.0).is_none()
             || self.frames[caller]
@@ -118,28 +121,43 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         self.charge(delivery.cost, span)?;
         let id = self.frames[frame].function;
         let usage = self.plan.function(id).usage();
-        let value = match operation {
-            Function::EnableTermination => crate::program_termination::enable(),
-            Function::TerminationRequested => crate::program_termination::requested(),
+        let value: V = match operation {
+            Function::EnableTermination => {
+                Scalar::Bool(crate::program_termination::enable()).into()
+            }
+            Function::TerminationRequested => {
+                Scalar::Bool(crate::program_termination::requested()).into()
+            }
+            Function::MonotonicMillis => {
+                V::from_wide(crate::program_termination::monotonic_millis())
+                    .expect("sealed i64 clock storage")
+            }
             Function::WaitForTermination => {
                 let Scalar::I32(timeout_ms) = self.experimental_scalar(frame, 0, span)? else {
                     return Err(bad("process timeout type", span));
                 };
-                crate::program_termination::wait(timeout_ms)
+                Scalar::Bool(crate::program_termination::wait(timeout_ms)).into()
             }
             _ => unreachable!("prepared process operation"),
         };
         // Every possible failure, source charge, caller range and return check
         // precedes installation. Completion below has no allocation or failure.
-        let value = OperationValue::Scalar(Scalar::Bool(value));
-        self.commit_experimental_result(frame, delivery.local, value);
-        self.commit_experimental_result(delivery.caller, delivery.caller_result, value);
+        let ResultPlace::Scalar(local) = delivery.local else {
+            unreachable!("prepared scalar result");
+        };
+        let ResultPlace::Scalar(caller_result) = delivery.caller_result else {
+            unreachable!("prepared scalar caller result");
+        };
+        self.frames[frame].slots[local.0] = Some(value);
+        self.frames[delivery.caller].slots[caller_result.0] = Some(value);
         self.frames[delivery.caller].calls[delivery.resume.call.0] = CallRuntime::default();
         self.branch(delivery.caller, delivery.resume.continuation);
         #[cfg(test)]
         {
             self.record_event(Event::Return(id));
-            crate::program_termination::delivered();
+            if operation != Function::MonotonicMillis {
+                crate::program_termination::delivered();
+            }
         }
         self.frames.pop();
         self.live_slots -= usage.scalar_slots;

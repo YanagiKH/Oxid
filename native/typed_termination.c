@@ -1,7 +1,8 @@
-/* Included only for the explicitly admitted process-notification family.
+/* Included for process notifications or monotonic time.
  * _POSIX_C_SOURCE must be selected before the first runtime system header. */
 #include <stdint.h>
 
+#ifndef OXID_CLOCK_ONLY
 #if !defined(OXID_TERMINATION_FORCE_UNSUPPORTED) && \
     (defined(__linux__) || defined(__APPLE__)) && \
     (defined(__x86_64__) || defined(__aarch64__)) && UINTPTR_MAX == UINT64_MAX && \
@@ -118,4 +119,33 @@ int32_t __oxid_enable_termination_notifications(void) { return 0; }
 int32_t __oxid_termination_requested(void) { return 0; }
 int32_t __oxid_wait_for_termination(int32_t timeout_ms) { (void)timeout_ms; return 0; }
 void __oxid_termination_scope_end(void) {}
+#endif
+#endif
+
+#ifdef OXID_MONOTONIC_MILLIS
+#if (defined(__linux__) || defined(__APPLE__)) && \
+    (defined(__x86_64__) || defined(__aarch64__)) && UINTPTR_MAX == UINT64_MAX && \
+    defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#include <time.h>
+
+_Static_assert(sizeof(struct timespec) == 2 * sizeof(int64_t), "monotonic clock timespec layout");
+
+int64_t __oxid_monotonic_millis(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0 ||
+        now.tv_nsec < 0 || now.tv_nsec >= 1000000000) return -1;
+    const int64_t millis = now.tv_nsec / 1000000;
+    if (now.tv_sec > (INT64_MAX - millis) / 1000) return -1;
+    return (int64_t)now.tv_sec * 1000 + millis;
+}
+#elif defined(_WIN64) && (defined(_M_X64) || defined(__x86_64__))
+#include <windows.h>
+
+int64_t __oxid_monotonic_millis(void) {
+    const ULONGLONG millis = GetTickCount64();
+    return millis <= (uint64_t)INT64_MAX ? (int64_t)millis : -1;
+}
+#else
+int64_t __oxid_monotonic_millis(void) { return -1; }
+#endif
 #endif
