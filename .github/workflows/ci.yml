@@ -1144,6 +1144,11 @@ jobs:
           $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN
           cargo test --locked --test windows_file_io -- --include-ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows native clocks and timers
+        run: |
+          $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN
+          cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify PE execution, publication and standalone deployment
         run: |
           python -B scripts/verify_windows_native.py target/debug/oxid.exe target/release/oxid.exe `
