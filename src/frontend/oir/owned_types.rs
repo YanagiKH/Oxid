@@ -204,6 +204,8 @@ impl AggregateTy {
                 | Self::File
                 | Self::Vector(_)
                 | Self::RecordVector(_)
+                | Self::OwnedRecordVector(_)
+                | Self::OwnedEnumVector(_)
         )
     }
 }

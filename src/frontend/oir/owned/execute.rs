@@ -1951,17 +1951,7 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
             .ok_or_else(|| bad("loan view type", span))?
             .aggregate();
         if !descriptor.projection.is_empty() {
-            let (
-                ValueTy::Owned(
-                    projected @ (AggregateTy::Record(_)
-                    | AggregateTy::FixedArray(_)
-                    | AggregateTy::ByteBuf
-                    | AggregateTy::File
-                    | AggregateTy::Vector(_)
-                    | AggregateTy::RecordVector(_)),
-                ),
-                relative,
-            ) = self
+            let (ValueTy::Owned(projected), relative) = self
                 .plan
                 .witness()
                 .declarations()
@@ -1970,6 +1960,9 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
             else {
                 return Err(bad("loan projection type", span));
             };
+            if !projected.supports_local_field_borrow() {
+                return Err(bad("loan projection type", span));
+            }
             view.offset = view
                 .offset
                 .checked_add(relative as u64)
