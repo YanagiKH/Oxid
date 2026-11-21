@@ -205,7 +205,10 @@ fn current_builtin_endpoint(
         && segments.len() == 3
         && (sources.text(segments[0])? == "alloc"
             || (sources.text(segments[0])? == "std"
-                && matches!(sources.text(segments[1])?, "fs" | "env" | "process")))
+                && matches!(
+                    sources.text(segments[1])?,
+                    "fs" | "env" | "process" | "time"
+                )))
     {
         return experimental_endpoint(sources, segments, work, at);
     }
@@ -258,7 +261,9 @@ fn experimental_endpoint(
     at: Span,
 ) -> Result<BuiltinItem, Box<Diagnostic>> {
     if segments.len() == 3 {
-        if sources.text(segments[0])? == "std" && sources.text(segments[1])? == "process" {
+        if sources.text(segments[0])? == "std"
+            && matches!(sources.text(segments[1])?, "process" | "time")
+        {
             return process_endpoint(sources, segments, work, at).map(BuiltinItem::Process);
         }
         let mut alias = true;
@@ -327,7 +332,7 @@ fn process_endpoint(
     Err(diagnostic(
         "E0205",
         "resolve",
-        "unsupported process import",
+        "unsupported process or time import",
         at,
     ))
 }
@@ -2240,7 +2245,7 @@ impl<'s> DeclarationIndex<'s> {
             if view.root() == ast::PathRoot::Std
                 && segments.len() == 3
                 && self.tables.sources.text(segments[0])? == "std"
-                && self.tables.sources.text(segments[1])? == "process"
+                && matches!(self.tables.sources.text(segments[1])?, "process" | "time")
             {
                 let selected = process_endpoint(self.tables.sources, segments, work, view.span())?;
                 if !self.builtin_set().process().contains(selected) {

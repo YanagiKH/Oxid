@@ -566,8 +566,10 @@ macro_rules! source_program_methods {
                 &self,
                 sources: &SourceMap,
             ) -> Result<(), Box<Diagnostic>> {
-                if !self.witness.raw_program().builtins.process().is_empty() {
-                    for operation in crate::frontend::builtin_catalog::termination::Function::ALL {
+                if self.witness.raw_program().builtins.process().has_signals() {
+                    for operation in
+                        crate::frontend::builtin_catalog::termination::Function::SIGNALS
+                    {
                         #[cfg(test)]
                         super::super::termination_queries::source_catalog_row();
                         if let Some(id) = self.witness.experimental_function(operation.operation())

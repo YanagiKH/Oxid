@@ -37,6 +37,7 @@ pub(in crate::frontend) enum Item {
     EnableTermination,
     TerminationRequested,
     WaitForTermination,
+    MonotonicMillis,
 }
 impl Item {
     pub const ALL: [Self; 28] = [
@@ -102,6 +103,7 @@ impl Item {
             Self::EnableTermination => "enable_termination_notifications",
             Self::TerminationRequested => "termination_requested",
             Self::WaitForTermination => "wait_for_termination",
+            Self::MonotonicMillis => "monotonic_millis",
         }
     }
     pub fn family(self) -> usize {
@@ -120,6 +122,7 @@ impl Item {
             | Self::SeekAbsolute => 3,
             Self::ArgStatus | Self::ArgCount | Self::ArgBytes => 4,
             Self::EnableTermination | Self::TerminationRequested | Self::WaitForTermination => 5,
+            Self::MonotonicMillis => 6,
             _ => 0,
         }
     }
@@ -129,6 +132,7 @@ impl Item {
             3 => ["std", "fs", self.name()],
             4 => ["std", "env", self.name()],
             5 => ["std", "process", self.name()],
+            6 => ["std", "time", self.name()],
             _ => ["std", "io", self.name()],
         }
     }
@@ -157,6 +161,7 @@ impl Item {
             Self::EnableTermination => Function::EnableTermination,
             Self::TerminationRequested => Function::TerminationRequested,
             Self::WaitForTermination => Function::WaitForTermination,
+            Self::MonotonicMillis => Function::MonotonicMillis,
 
             _ => return None,
         })
@@ -255,6 +260,7 @@ pub(in crate::frontend) enum Function {
     EnableTermination,
     TerminationRequested,
     WaitForTermination,
+    MonotonicMillis,
 }
 impl Function {
     pub fn process(self) -> Option<super::termination::Function> {
@@ -262,6 +268,7 @@ impl Function {
             Self::EnableTermination => Some(super::termination::Function::Enable),
             Self::TerminationRequested => Some(super::termination::Function::Requested),
             Self::WaitForTermination => Some(super::termination::Function::Wait),
+            Self::MonotonicMillis => Some(super::termination::Function::MonotonicMillis),
             _ => None,
         }
     }
@@ -318,6 +325,7 @@ impl Function {
             Self::EnableTermination => Item::EnableTermination,
             Self::TerminationRequested => Item::TerminationRequested,
             Self::WaitForTermination => Item::WaitForTermination,
+            Self::MonotonicMillis => Item::MonotonicMillis,
         }
     }
     pub fn result_enum(self) -> Option<Enumeration> {
@@ -353,7 +361,9 @@ impl Function {
         };
         let scalar = |ty| ParameterTy::Value(ValueTy::Scalar(ty));
         let (parameters, count) = match self {
-            New | ArgCount | EnableTermination | TerminationRequested => ([unit; 3], 0),
+            New | ArgCount | EnableTermination | TerminationRequested | MonotonicMillis => {
+                ([unit; 3], 0)
+            }
             WaitForTermination => ([scalar(Ty::I32), unit, unit], 1),
             Take => ([exclusive, unit, unit], 1),
             Len | Capacity => ([shared, unit, unit], 1),
@@ -372,6 +382,7 @@ impl Function {
         let result = match self {
             New | Take => ValueTy::Owned(AggregateTy::ByteBuf),
             Len | Capacity | ArgCount => ValueTy::Scalar(Ty::I32),
+            MonotonicMillis => ValueTy::Scalar(Ty::I64),
             Truncate => ValueTy::Scalar(Ty::Unit),
             EnableTermination | TerminationRequested | WaitForTermination => {
                 ValueTy::Scalar(Ty::Bool)
@@ -435,6 +446,7 @@ impl Item {
             Self::EnableTermination => PROCESS_ITEM_START,
             Self::TerminationRequested => PROCESS_ITEM_START + 1,
             Self::WaitForTermination => PROCESS_ITEM_START + 2,
+            Self::MonotonicMillis => PROCESS_ITEM_START + 3,
             _ => self as usize,
         }
     }
@@ -515,7 +527,10 @@ impl Inventory {
     pub fn contains(self, item: Item) -> bool {
         if matches!(
             item,
-            Item::EnableTermination | Item::TerminationRequested | Item::WaitForTermination
+            Item::EnableTermination
+                | Item::TerminationRequested
+                | Item::WaitForTermination
+                | Item::MonotonicMillis
         ) {
             return false;
         }
@@ -597,7 +612,10 @@ impl Inventory {
     pub fn admit(self, item: Item) -> Self {
         if matches!(
             item,
-            Item::EnableTermination | Item::TerminationRequested | Item::WaitForTermination
+            Item::EnableTermination
+                | Item::TerminationRequested
+                | Item::WaitForTermination
+                | Item::MonotonicMillis
         ) {
             return self;
         }

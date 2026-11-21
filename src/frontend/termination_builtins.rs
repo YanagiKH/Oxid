@@ -1,4 +1,4 @@
-//! Closed process-only family. Neither its flags nor ordinals are vector keys.
+//! Packed standard-library operations for termination notifications and time.
 use super::{experimental, Ty};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -7,32 +7,43 @@ pub(in crate::frontend) enum Function {
     Enable,
     Requested,
     Wait,
+    MonotonicMillis,
 }
 impl Function {
-    pub const ALL: [Self; 3] = [Self::Enable, Self::Requested, Self::Wait];
+    pub const SIGNALS: [Self; 3] = [Self::Enable, Self::Requested, Self::Wait];
+    pub const ALL: [Self; 4] = [
+        Self::Enable,
+        Self::Requested,
+        Self::Wait,
+        Self::MonotonicMillis,
+    ];
     pub fn name(self) -> &'static str {
         match self {
             Self::Enable => "enable_termination_notifications",
             Self::Requested => "termination_requested",
             Self::Wait => "wait_for_termination",
-        }
-    }
-    pub fn named(name: &str) -> Option<Self> {
-        match name {
-            "enable_termination_notifications" => Some(Self::Enable),
-            "termination_requested" => Some(Self::Requested),
-            "wait_for_termination" => Some(Self::Wait),
-            _ => None,
+            Self::MonotonicMillis => "monotonic_millis",
         }
     }
     pub fn path(self) -> [&'static str; 3] {
-        ["std", "process", self.name()]
+        let module = match self {
+            Self::MonotonicMillis => "time",
+            _ => "process",
+        };
+        ["std", module, self.name()]
+    }
+    pub fn result_ty(self) -> Ty {
+        match self {
+            Self::MonotonicMillis => Ty::I64,
+            _ => Ty::Bool,
+        }
     }
     pub fn operation(self) -> experimental::Function {
         match self {
             Self::Enable => experimental::Function::EnableTermination,
             Self::Requested => experimental::Function::TerminationRequested,
             Self::Wait => experimental::Function::WaitForTermination,
+            Self::MonotonicMillis => experimental::Function::MonotonicMillis,
         }
     }
     pub fn signature(self) -> experimental::Signature {
@@ -58,6 +69,9 @@ impl Inventory {
     }
     pub fn is_empty(self) -> bool {
         self.0 == 0
+    }
+    pub fn has_signals(self) -> bool {
+        self.0 & ((1 << Function::SIGNALS.len()) - 1) != 0
     }
     pub fn rank(self, item: Function) -> Option<usize> {
         self.contains(item).then(|| {
@@ -115,17 +129,17 @@ struct CompilerCarriers {
     catalog_inventory: [super::BuiltinSet; 4],
     inventory: [Inventory; 6],
     selected: [Option<Function>; 8],
-    endpoint_catalog: std::array::IntoIter<Function, 3>,
-    hir_catalog: std::array::IntoIter<Function, 3>,
-    resolver_catalog: std::array::IntoIter<Function, 3>,
-    signature_check_catalog: std::array::IntoIter<Function, 3>,
-    raw_budget_catalog: std::array::IntoIter<Function, 3>,
-    raw_lower_catalog: std::array::IntoIter<Function, 3>,
-    association_catalog: std::array::IntoIter<Function, 3>,
-    descriptor_check_catalog: std::array::IntoIter<Function, 3>,
-    source_entry_catalog: std::array::IntoIter<Function, 3>,
-    native_entry_catalog: std::array::IntoIter<Function, 3>,
-    vm_entry_catalog: std::array::IntoIter<experimental::Function, 3>,
+    endpoint_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    hir_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    resolver_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    signature_check_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    raw_budget_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    raw_lower_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    association_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    descriptor_check_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    source_entry_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    native_entry_catalog: std::array::IntoIter<Function, { Function::ALL.len() }>,
+    vm_entry_catalog: std::array::IntoIter<experimental::Function, { Function::ALL.len() }>,
     path_iterator: std::array::IntoIter<&'static str, 3>,
     path_zip: std::iter::Zip<
         std::array::IntoIter<&'static str, 3>,
