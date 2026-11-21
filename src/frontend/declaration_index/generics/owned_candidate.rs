@@ -1768,32 +1768,33 @@ mod tests {
             let project = fixture.project();
             assert_refused(candidate(&project, MAX_STORAGE, &WorkMeter::default(), &mut Allocator::default()).unwrap_err());
         }
-        // An owning function parameter may now defer its element until a call
-        // supplies an independently checked concrete root. Merely checking an
-        // unused affine definition must not mint an executable vector key.
-        let source = format!(
-            "{IMPORTS}fn unbounded<T>(values:Vec<T>)->(){{return;}}fn main()->i32{{return 0;}}"
-        );
-        let fixture = Fixture::new(&source);
-        let project = fixture.project();
-        let index = candidate(
-            &project,
-            MAX_STORAGE,
-            &WorkMeter::default(),
-            &mut Allocator::default(),
-        )
-        .unwrap();
-        assert!(index.owned_vector_source_needed());
-        assert!(index.owned_vector_functions().is_empty());
-        assert!(index.vector_functions().is_empty());
-        assert_eq!(index.source_function_count(), 1);
-        index
-            .validate_owned_vector_candidate(&WorkMeter::default(), &mut Allocator::default())
+        // Declaring an owning parameter or a record field does not mint an
+        // executable vector key without a concrete operation.
+        for declaration in [
+            "fn unbounded<T>(values:Vec<T>)->(){return;}",
+            "struct Holder{values:Vec<Entry>}",
+        ] {
+            let source = format!("{IMPORTS}{declaration}fn main()->i32{{return 0;}}");
+            let fixture = Fixture::new(&source);
+            let project = fixture.project();
+            let index = candidate(
+                &project,
+                MAX_STORAGE,
+                &WorkMeter::default(),
+                &mut Allocator::default(),
+            )
             .unwrap();
+            assert!(index.owned_vector_source_needed());
+            assert!(index.owned_vector_functions().is_empty());
+            assert!(index.vector_functions().is_empty());
+            assert_eq!(index.source_function_count(), 1);
+            index
+                .validate_owned_vector_candidate(&WorkMeter::default(), &mut Allocator::default())
+                .unwrap();
+        }
 
         for declaration in [
             "fn unbounded<T>(values:Vec<T>)->(){let moved=values;let duplicate=values;return;}",
-            "struct Holder{values:Vec<Entry>}",
             "enum Holder{Values(Vec<Entry>)}",
             "fn borrowed(values:&[Entry])->(){return;}",
             "fn invalid_moves<Marker>()->(){let mut values=new::<Entry>();let first=values;let second=values;return;}",

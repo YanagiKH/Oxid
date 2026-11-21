@@ -265,7 +265,7 @@ fn enum_vectors_preserve_move_loan_and_closed_element_operation_refusals() {
         ("enum E{N(i32)}fn main()->i32{let mut values=new::<E>();let selected=values[0];return 0;}", "E0205"),
         ("enum E{N(i32)}fn inspect(values:&[E])->(){return;}fn main()->i32{return 0;}", "E0205"),
         ("enum E{N(i32)}fn main()->i32{let values=new::<Vec<E>>();return 0;}", "E0205"),
-        ("struct R{value:i32}struct H{values:Vec<R>}fn main()->i32{return 0;}", "E0205"),
+        ("struct R{value:i32}struct H{values:Vec<R>}fn main()->i32{let values=new::<H>();return 0;}", "E0300"),
         ("enum E{N(i32)}struct H{values:Vec<E>}fn main()->i32{let values=new::<H>();return 0;}", "E0300"),
         ("enum E{N(i32)}struct H{values:Vec<E>}enum Outer{Value(H)}fn main()->i32{let values=new::<Outer>();return 0;}", "E0300"),
         ("enum E{Value(H)}struct H{values:Vec<E>}fn main()->i32{return 0;}", "E0205"),

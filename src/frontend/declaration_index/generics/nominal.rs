@@ -644,14 +644,6 @@ impl Nominals {
                     field.ty.span,
                 ));
             }
-            if matches!(value, Value::Vector(element) if element.owned()
-                && !matches!(element, Element::OwnedEnumApplication(_) | Element::OwnedBuiltinEnum(_)))
-            {
-                return Err(error(
-                    "owned record vectors cannot be stored in record declarations",
-                    field.ty.span,
-                ));
-            }
             storage.push(&mut fields, value, allocator, work, field.span)?;
         }
         self.records[id].fields = fields;
