@@ -1446,10 +1446,12 @@ malformed/value/labeled transfer statements give E0100/parse. See
 Whole aggregates additionally support [local reference bindings](../rfcs/0068-local-reference-bindings.md).
 `let view = &value;` and `let view = &mut value;` retain a borrow until the
 declaring block ends. Explicit reborrows use `&*view` or `&mut *view`.
+Use `let view = &mut value.field;` to borrow a struct field whose type is a
+struct. Disjoint fields can be borrowed independently within the block.
 An optional reference annotation must match the initializer exactly. Early
 returns and loop exits release references in reverse declaration order before
 ending owner storage. This does not add reference returns, references stored
-inside values, local field/slice borrows or lifetimes shortened to the last use.
+inside values, local slice borrows or lifetimes shortened to the last use.
 
 The owned contract is [RFC 0014](../rfcs/0014-owned-structs-call-borrows.md).
 Type names have a separate namespace from functions/locals; fields belong to

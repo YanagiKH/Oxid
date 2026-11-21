@@ -31,7 +31,7 @@ impl Drop for Input {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-fn samples() -> [(&'static str, &'static [u8]); 18] {
+fn samples() -> [(&'static str, &'static [u8]); 24] {
     [
         ("struct Cell<T>{value:T} fn main()->i32{let value=Cell{value:42};let r=&value;return r.value;}",b"42\n"),
         ("struct Value{x:i32} fn main()->i32{let value=Value{x:42};let r=&value;let copy=r.x;return copy;}",b"42\n"),
@@ -51,6 +51,12 @@ fn samples() -> [(&'static str, &'static [u8]); 18] {
         ("struct Cell<T>{value:T}fn read<T:Copy>(cell:&Cell<T>)->T{let r=&*cell;return r.value;}fn main()->i32{let cell=Cell{value:42};return read(&cell);}",b"42\n"),
         ("enum Choice{No,Yes}struct Value{x:i32}fn main()->i32{let mut value=Value{x:0};let choice=Choice::Yes;match choice{Choice::No=>{let r=&mut value;r.x=1;},Choice::Yes=>{let r=&mut value;r.x=42;},}return value.x;}",b"42\n"),
         ("struct Cell<T>{value:T,n:i32}fn update<T>(cell:&mut Cell<T>)->i32{let current=&mut *cell;current.n=42;return current.n;}fn main()->i32{let mut cell=Cell{value:true,n:0};return update(&mut cell);}",b"42\n"),
+        ("struct Part{n:i32}struct Pair{left:Part,right:Part}fn bump(part:&mut Part)->(){part.n=part.n+1;return;}fn main()->i32{let mut pair=Pair{left:Part{n:19},right:Part{n:21}};if true{let left=&mut pair.left;let right=&mut pair.right;bump(&mut *left);right.n=22;}return pair.left.n+pair.right.n;}",b"42\n"),
+        ("struct Part{n:i32}struct Middle{part:Part}struct Root{middle:Middle}fn main()->i32{let mut root=Root{middle:Middle{part:Part{n:40}}};let whole=&mut root;if true{let selected=&mut *whole.middle.part;selected.n=42;}return whole.middle.part.n;}",b"42\n"),
+        ("struct Part{n:i32}struct Pair{left:Part,right:Part}fn main()->i32{let mut pair=Pair{left:Part{n:20},right:Part{n:0}};let left:&Part=&pair.left;pair.right.n=22;return left.n+pair.right.n;}",b"42\n"),
+        ("struct Part{n:i32}struct Wrap{part:Part}fn main()->i32{let mut root=Wrap{part:Part{n:39}};let mut i=0;while i<3{let child=&mut root.part;child.n=child.n+1;i=i+1;continue;}let last=&root.part;return last.n;}",b"42\n"),
+        ("struct Part{n:i32}struct Root{part:Part}fn read<T>(root:&Root)->i32{let selected=&*root.part;return selected.n;}fn main()->i32{let root=Root{part:Part{n:42}};return read::<bool>(&root);}",b"42\n"),
+        ("struct Part{n:i32}struct Middle{part:Part}struct Pair{left:Middle,right:Middle}fn main()->i32{let mut pair=Pair{left:Middle{part:Part{n:1}},right:Middle{part:Part{n:2}}};let left=&mut pair.left;let right=&mut pair.right;let a=&mut *left.part;let b=&mut *right.part;a.n=20;b.n=22;return a.n+b.n;}",b"42\n"),
     ]
 }
 #[test]
@@ -99,6 +105,29 @@ fn local_references_reject_unavailable_owners_conflicts_and_invalid_grants() {
         assert!(error.contains("main.ox"),"{error}");
         assert!(!error.contains("E0500"),"{error}");
     }
+}
+
+#[test]
+fn local_field_references_reject_overlap_and_wrong_field_types() {
+    let declarations = "struct Part{n:i32}struct Pair{left:Part,right:Part}";
+    for (source, diagnostic) in [
+        ("fn main()->i32{let mut pair=Pair{left:Part{n:1},right:Part{n:2}};let a=&pair.left;let b=&mut pair.left;return a.n+b.n;}", "E0311"),
+        ("fn main()->i32{let pair=Pair{left:Part{n:1},right:Part{n:2}};let a=&pair.left;let moved=pair;return a.n;}", "E0311"),
+        ("fn reader(pair:&Pair)->i32{let a=&mut *pair.left;return a.n;}", "E0313"),
+        ("fn main()->i32{let pair=Pair{left:Part{n:1},right:Part{n:2}};let field=&pair.left.n;return 0;}", "E0300"),
+        ("fn main()->i32{let pair=Pair{left:Part{n:1},right:Part{n:2}};let field=&pair.unknown;return 0;}", "E0305"),
+        ("fn main()->i32{let pair=Pair{left:Part{n:1},right:Part{n:2}};let field:&Pair=&pair.left;return 0;}", "E0300"),
+    ] {
+        let input = Input::new(&format!("{declarations}{source}"));
+        let result = input.invoke(&["check", "main.ox", "--edition=typed-preview"]);
+        assert!(!result.status.success(), "{source}");
+        let message = String::from_utf8(result.stderr).unwrap();
+        assert!(message.contains(diagnostic) && !message.contains("E0500"), "{message}");
+    }
+    let nested = "struct Part{n:i32}struct Middle{part:Part}struct Root{middle:Middle}fn main()->i32{let mut root=Root{middle:Middle{part:Part{n:42}}};let parent=&mut root.middle;let child=&mut *parent.part;parent.part.n=0;return child.n;}";
+    let result = Input::new(nested).invoke(&["check", "main.ox", "--edition=typed-preview"]);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("E0311"));
 }
 
 #[test]
