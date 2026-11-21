@@ -1,17 +1,19 @@
 //! Typed termination is observed through real child handshakes and file handles.
 use std::{
     fs,
+    io::{Read, Write},
     path::PathBuf,
-    process::{Command, Stdio},
-    sync::atomic::{AtomicUsize, Ordering},
+    process::{Child, Command, Stdio},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
+    time::{Duration, Instant},
 };
 #[cfg(unix)]
 use std::{
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader},
     path::Path,
-    process::Child,
-    sync::mpsc,
-    time::{Duration, Instant},
 };
 const SUPPORTED: bool = cfg!(all(
     any(target_os = "linux", target_os = "macos"),
@@ -20,6 +22,35 @@ const SUPPORTED: bool = cfg!(all(
     any(target_arch = "x86_64", target_arch = "aarch64")
 ));
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+const CLOCK_SUPPORTED: bool = SUPPORTED || cfg!(all(windows, target_arch = "x86_64"));
+const CLOCK_SOURCE: &str = r#"
+use std::time::monotonic_millis as clock;
+use std::io::read_some;
+use std::io::ReadSomeStatus;
+use std::io::write_some;
+use std::io::WriteSomeStatus;
+
+fn main() -> i32 {
+    let start = clock();
+    if start < 0i64 { return 81; }
+    let ready = b"R";
+    let written = write_some(&ready);
+    match written {
+        WriteSomeStatus::Written(count) => { if count != 1 { return 82; } },
+        WriteSomeStatus::Error(code) => { return 82; },
+    }
+    let mut input = b".";
+    let read = read_some(&mut input);
+    match read {
+        ReadSomeStatus::Data(count) => { if count != 1 { return 83; } },
+        ReadSomeStatus::Eof => { return 83; },
+        ReadSomeStatus::Error(code) => { return 83; },
+    }
+    let end = clock();
+    if end < start || end - start < 55i64 || input[0] != 71u8 { return 84; }
+    return 42;
+}
+"#;
 const SOURCE: &str = r#"
 use std::process::enable_termination_notifications;
 use std::process::termination_requested;
@@ -118,15 +149,109 @@ impl Drop for Fixture {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-#[cfg(unix)]
 struct ChildGuard(Option<Child>);
-#[cfg(unix)]
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if let Some(child) = &mut self.0 {
             let _ = child.kill();
             let _ = child.wait();
         }
+    }
+}
+
+fn measure_child_delay(command: &mut Command) {
+    let mut child = ChildGuard(Some(command.stdin(Stdio::piped()).spawn().unwrap()));
+    let process = child.0.as_mut().unwrap();
+    let mut stdout = process.stdout.take().unwrap();
+    let (send, receive) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut ready = [0];
+        let result = stdout.read_exact(&mut ready).map(|()| ready);
+        let _ = send.send(result);
+    });
+    assert_eq!(
+        receive
+            .recv_timeout(Duration::from_secs(30))
+            .unwrap()
+            .unwrap(),
+        *b"R"
+    );
+    reader.join().unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    process.stdin.take().unwrap().write_all(b"G").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = process.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "clock program did not finish");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let mut stderr = String::new();
+    process
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert_eq!(status.code(), Some(42), "{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    drop(child.0.take());
+}
+
+#[test]
+fn typed_monotonic_clock_measures_elapsed_time() {
+    let fixture = Fixture::project();
+    if CLOCK_SUPPORTED {
+        fs::write(fixture.0.join("src/main.ox"), CLOCK_SOURCE).unwrap();
+        measure_child_delay(&mut fixture.command(&["run"]));
+    }
+    fs::write(
+        fixture.0.join("src/main.ox"),
+        "use std::time::monotonic_millis;fn main()->i32{let t=monotonic_millis();if t<0i64{return 1;}return 42;}",
+    ).unwrap();
+    let output = fixture
+        .command(&["run", "src/main.ox", "--edition=typed-preview"])
+        .output()
+        .unwrap();
+    let value = if CLOCK_SUPPORTED { 42 } else { 1 };
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("{value}\n")
+    );
+}
+
+#[test]
+#[ignore = "requires LLVM 19.1.7 and a supported native target"]
+fn native_monotonic_clock_measures_elapsed_time_after_source_free_relocation() {
+    if !CLOCK_SUPPORTED {
+        return;
+    }
+    let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
+    for profile in ["dev", "release"] {
+        let fixture = Fixture::project();
+        fs::write(fixture.0.join("src/main.ox"), CLOCK_SOURCE).unwrap();
+        let built = fixture
+            .command(&["build", "--profile", profile])
+            .env("OXID_LLVM_BIN", &llvm)
+            .output()
+            .unwrap();
+        assert!(built.status.success(), "{profile}: {built:?}");
+        let deployment = Fixture::fresh("clock-deployment");
+        let artifact = format!("worker{}", std::env::consts::EXE_SUFFIX);
+        let executable = deployment.0.join(&artifact);
+        fs::copy(fixture.0.join(".oxid/bin").join(&artifact), &executable).unwrap();
+        fs::remove_dir_all(&fixture.0).unwrap();
+        let mut command = Command::new(executable);
+        command
+            .current_dir(&deployment.0)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env("PATH", deployment.0.join("missing-tools"))
+            .env("OXID_LLVM_BIN", deployment.0.join("missing-tools"))
+            .env("OXID_PATH", deployment.0.join("missing-source"));
+        measure_child_delay(&mut command);
     }
 }
 #[cfg(target_os = "linux")]

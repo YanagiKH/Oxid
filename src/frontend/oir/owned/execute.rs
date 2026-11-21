@@ -4545,7 +4545,7 @@ fn checked_entry_policy<W: PlanWitness>(
     entry: Option<hir::DefId>,
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
-    if !witness.raw_program().builtins.process().is_empty() {
+    if witness.raw_program().builtins.process().has_signals() {
         for operation in [
             crate::frontend::builtin_catalog::experimental::Function::EnableTermination,
             crate::frontend::builtin_catalog::experimental::Function::TerminationRequested,
@@ -4685,8 +4685,8 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
     #[cfg(test)] mut observation: Option<&mut array_observe::Observer>,
     #[cfg(test)] remaining_fuel: Option<&mut usize>,
 ) -> Result<V> {
-    if plan.has_termination() {
-        return execute_plan_policy_with_termination(
+    if plan.has_process_delivery() {
+        return execute_plan_policy_with_process_delivery(
             plan,
             entry,
             limits,
@@ -4944,7 +4944,7 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
     }
 }
 #[allow(clippy::too_many_arguments)] // Separate prepaid process-family activation.
-fn execute_plan_policy_with_termination<V: StoredValue, W: PlanWitness>(
+fn execute_plan_policy_with_process_delivery<V: StoredValue, W: PlanWitness>(
     plan: &ExecutionPlan<'_, W>,
     entry: hir::DefId,
     limits: Limits,
@@ -5122,11 +5122,20 @@ fn execute_plan_policy_with_termination<V: StoredValue, W: PlanWitness>(
     }
     machine.header_bytes = plan::add(
         machine.header_bytes,
-        plan::add(
-            crate::program_termination::control_bytes(),
-            experimental::process_delivery_control_bytes(),
-        )?,
+        experimental::process_delivery_control_bytes(),
     )?;
+    if plan.has_termination() {
+        machine.header_bytes = plan::add(
+            machine.header_bytes,
+            crate::program_termination::control_bytes(),
+        )?;
+    }
+    if plan.has_clock() {
+        machine.header_bytes = plan::add(
+            machine.header_bytes,
+            crate::program_termination::clock_bytes(),
+        )?;
+    }
     if plan.has_termination_wait() {
         machine.header_bytes = plan::add(
             machine.header_bytes,
@@ -5145,10 +5154,12 @@ fn execute_plan_policy_with_termination<V: StoredValue, W: PlanWitness>(
         let root = ValueFrame::<V>::allocate(plan, entry, machine.next_activation, None)
             .map_err(|error| error.at_runtime(f.span))?;
         machine.install(root);
-        termination_scope = Some(
-            crate::program_termination::Scope::enter()
-                .map_err(|_| OwnedRunFailure::ProcessSetup)?,
-        );
+        if plan.has_termination() {
+            termination_scope = Some(
+                crate::program_termination::Scope::enter()
+                    .map_err(|_| OwnedRunFailure::ProcessSetup)?,
+            );
+        }
         machine.execute()
     })();
     if result.is_ok() && machine.heap.ledger().live_allocations != 0 {

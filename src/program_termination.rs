@@ -493,3 +493,65 @@ mod platform {
 pub(crate) use platform::{control_bytes, enable, requested, wait, wait_bytes, Scope};
 #[cfg(test)]
 pub(crate) use platform::{delivered, observation, reset_observation};
+
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(crate) fn monotonic_millis() -> i64 {
+    let mut sample = std::mem::MaybeUninit::<libc::timespec>::uninit();
+    // SAFETY: sample points to a full writable timespec. A successful clock
+    // read initializes both fields before they are read below.
+    let sample = unsafe {
+        if libc::clock_gettime(libc::CLOCK_MONOTONIC, sample.as_mut_ptr()) != 0 {
+            return -1;
+        }
+        sample.assume_init()
+    };
+    if sample.tv_sec < 0 || !(0..1_000_000_000).contains(&sample.tv_nsec) {
+        return -1;
+    }
+    sample
+        .tv_sec
+        .checked_mul(1000)
+        .and_then(|seconds| seconds.checked_add(sample.tv_nsec / 1_000_000))
+        .unwrap_or(-1)
+}
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+pub(crate) fn monotonic_millis() -> i64 {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetTickCount64() -> u64;
+    }
+    // SAFETY: GetTickCount64 takes no arguments and returns a scalar.
+    i64::try_from(unsafe { GetTickCount64() }).unwrap_or(-1)
+}
+
+#[cfg(not(any(
+    all(windows, target_arch = "x86_64"),
+    all(
+        any(target_os = "linux", target_os = "macos"),
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
+)))]
+pub(crate) fn monotonic_millis() -> i64 {
+    -1
+}
+
+#[allow(dead_code)]
+struct ClockCarriers {
+    clock_sample: [i64; 2],
+    clock_status: i32,
+    millis: i64,
+    checked_millis: Option<i64>,
+    returned: i64,
+}
+
+pub(crate) const fn clock_bytes() -> usize {
+    std::mem::size_of::<ClockCarriers>()
+}

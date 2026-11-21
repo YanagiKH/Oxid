@@ -58,7 +58,7 @@ pub(super) fn function(
     budget::append(
         &mut locals,
         LocalDecl {
-            ty: hir::Ty::Bool,
+            ty: operation.result_ty(),
             kind: LocalKind::Temporary,
             span,
         },
@@ -101,7 +101,7 @@ pub(super) fn function(
     Ok(RawOwnedFunction {
         id,
         span,
-        result: ValueTy::Scalar(hir::Ty::Bool),
+        result: ValueTy::Scalar(operation.result_ty()),
         parameters,
         locals,
         places: Vec::new(),
