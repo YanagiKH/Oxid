@@ -196,6 +196,10 @@ Check both readings for `-1`, which means the clock is unavailable. It works
 on Linux and macOS with x86-64 or ARM64, and on Windows with x86-64. Changes
 to the system date and time do not affect the readings.
 
+Use `sleep_millis(100)` from `std::time` to pause the current thread for
+about 100 milliseconds. It returns true when the wait completes. Zero completes
+immediately. A negative duration or a failed wait returns false.
+
 ## Reading and writing file buffers
 
 Add the [file I/O library](../packages/file_io/oxid.toml) as a local dependency
