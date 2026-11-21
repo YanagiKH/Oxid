@@ -915,12 +915,15 @@ fn root_base(
     f: &RawOwnedFunction,
     mut base: AccessBase,
     meter: &mut Meter,
-) -> Result<AccessBase, OwnedFailure> {
+) -> Result<(AccessBase, bool), OwnedFailure> {
+    let mut projected = false;
     while let AccessBase::Loan(id) = base {
         meter.visit()?;
-        base = f.loans[id.0].authority;
+        let loan = &f.loans[id.0];
+        projected |= !loan.projection.is_empty();
+        base = loan.authority;
     }
-    Ok(base)
+    Ok((base, projected))
 }
 fn through_loan(
     f: &RawOwnedFunction,
@@ -943,9 +946,13 @@ fn overlap(
     b: AccessBase,
     meter: &mut Meter,
 ) -> Result<bool, OwnedFailure> {
-    let a = root_base(f, a, meter)?;
-    let b = root_base(f, b, meter)?;
-    Ok(match (a, b) {
+    let (a, _) = root_base(f, a, meter)?;
+    let (b, _) = root_base(f, b, meter)?;
+    Ok(root_bases_overlap(f, a, b))
+}
+
+fn root_bases_overlap(f: &RawOwnedFunction, a: AccessBase, b: AccessBase) -> bool {
+    match (a, b) {
         (AccessBase::Owner(a), AccessBase::Owner(b)) => a == b,
         (AccessBase::Parameter(a), AccessBase::Parameter(b)) => {
             a == b
@@ -954,7 +961,7 @@ fn overlap(
                     && f.references[b.0].kind == BorrowKind::Shared)
         }
         _ => false,
-    })
+    }
 }
 fn accesses(
     f: &RawOwnedFunction,
@@ -1277,12 +1284,10 @@ fn access_region<'a>(
     }
 }
 
-fn regions_overlap(
-    left: &[FieldId],
-    right: &[FieldId],
+fn regions_overlap<'a>(
+    mut pairs: impl Iterator<Item = (&'a FieldId, &'a FieldId)>,
     meter: &mut Meter,
 ) -> Result<bool, OwnedFailure> {
-    let mut pairs = left.iter().zip(right);
     let Some((left, right)) = pairs.next() else {
         return Ok(true);
     };
@@ -1299,6 +1304,79 @@ fn regions_overlap(
         }
     }
     Ok(true)
+}
+
+type RegionSegments<'a> = [&'a [FieldId]; MAX_LOCAL_REFERENCE_DEPTH];
+
+pub(super) const fn projected_region_scratch_bytes() -> usize {
+    2 * size_of::<RegionSegments<'_>>()
+}
+
+fn projected_ancestors<'a>(
+    f: &'a RawOwnedFunction,
+    mut authority: AccessBase,
+    storage: &mut RegionSegments<'a>,
+    meter: &mut Meter,
+) -> Result<usize, OwnedFailure> {
+    let mut count = 0;
+    while let AccessBase::Loan(id) = authority {
+        meter.visit()?;
+        let loan = &f.loans[id.0];
+        if !loan.projection.is_empty() {
+            let slot = storage
+                .get_mut(count)
+                .ok_or_else(|| OwnedFailure::resource("local reference ancestry"))?;
+            *slot = &loan.projection;
+            count += 1;
+        }
+        authority = loan.authority;
+    }
+    Ok(count)
+}
+
+fn projected_regions_overlap(
+    f: &RawOwnedFunction,
+    loan: &LoanDecl,
+    base: AccessBase,
+    path: &[FieldId],
+    meter: &mut Meter,
+) -> Result<bool, OwnedFailure> {
+    let mut left = [&[][..]; MAX_LOCAL_REFERENCE_DEPTH];
+    let mut right = [&[][..]; MAX_LOCAL_REFERENCE_DEPTH];
+    let left_count = projected_ancestors(f, loan.authority, &mut left, meter)?;
+    let right_count = projected_ancestors(f, base, &mut right, meter)?;
+    let left = left[..left_count]
+        .iter()
+        .rev()
+        .copied()
+        .flatten()
+        .chain(&loan.projection);
+    let right = right[..right_count]
+        .iter()
+        .rev()
+        .copied()
+        .flatten()
+        .chain(path);
+    regions_overlap(left.zip(right), meter)
+}
+
+fn conflicting_regions(
+    f: &RawOwnedFunction,
+    loan: &LoanDecl,
+    base: AccessBase,
+    access: Access,
+    path: &[FieldId],
+    meter: &mut Meter,
+) -> Result<bool, OwnedFailure> {
+    let (left, left_projected) = root_base(f, loan.authority, meter)?;
+    let (right, right_projected) = root_base(f, base, meter)?;
+    if !root_bases_overlap(f, left, right) || !conflict(loan.kind, access) {
+        return Ok(false);
+    }
+    if left_projected || right_projected {
+        return projected_regions_overlap(f, loan, base, path, meter);
+    }
+    regions_overlap(loan.projection.iter().zip(path), meter)
 }
 fn permissions(f: &RawOwnedFunction) -> Result<(), OwnedFailure> {
     for b in &f.blocks {
@@ -1462,9 +1540,14 @@ fn loans(
                         return Ok(());
                     }
                     if state == 1
-                        && overlap(f, l.authority, base, meter)?
-                        && conflict(l.kind, access)
-                        && regions_overlap(&l.projection, access_region(f, &i.kind, role), meter)?
+                        && conflicting_regions(
+                            f,
+                            l,
+                            base,
+                            access,
+                            access_region(f, &i.kind, role),
+                            meter,
+                        )?
                     {
                         let mut e = OwnedFailure::violation(
                             Violation::LoanConflict,

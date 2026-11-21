@@ -1288,8 +1288,14 @@ fn check_impl<const OWNED_VECTOR: bool>(
                             .hir()
                             .blocks
                             .iter()
-                            .flat_map(|block| &block.body)
-                            .find_map(|row| {
+                            .enumerate()
+                            .flat_map(|(block, body)| {
+                                body.body
+                                    .iter()
+                                    .enumerate()
+                                    .map(move |(index, row)| (block, index, row))
+                            })
+                            .find_map(|(block, statement, row)| {
                                 if let super::hir::StmtKind::BorrowElementLet {
                                     binding,
                                     kind,
@@ -1304,6 +1310,7 @@ fn check_impl<const OWNED_VECTOR: bool>(
                                         kind,
                                         place,
                                         Some(index),
+                                        None,
                                     ))
                                 } else if let super::hir::StmtKind::BorrowLet {
                                     binding,
@@ -1313,20 +1320,35 @@ fn check_impl<const OWNED_VECTOR: bool>(
                                     ..
                                 } = row.kind
                                 {
-                                    (origin == borrow_span).then_some((binding, kind, place, None))
+                                    (origin == borrow_span).then(|| {
+                                        let projection = view.statement_projection(
+                                            super::hir::BodyBlockId(block),
+                                            statement,
+                                        );
+                                        (binding, kind, place, None, projection)
+                                    })
                                 } else {
                                     None
                                 }
                             })
                             .ok_or_else(bad)?;
-                        let (binding, kind, place, element_index) = source_binding;
+                        let (binding, kind, place, element_index, projection) = source_binding;
+                        let expected_path =
+                            projection.map_or(&[][..], |expected| expected.path.as_slice());
+                        if !expected_path.is_empty() {
+                            typed.work().debit(
+                                u64::try_from(expected_path.len()).map_err(|_| bad())?,
+                                borrow_span,
+                                "local field reference correspondence",
+                            )?;
+                        }
                         if view.binding_ty(binding)
                             != (ParameterTy::Reference {
                                 referent: loan.referent(),
                                 kind: loan.kind,
                             })
                             || kind != loan.kind
-                            || !loan.projection.is_empty()
+                            || loan.projection != expected_path
                         {
                             return Err(bad());
                         }

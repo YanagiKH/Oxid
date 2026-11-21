@@ -595,7 +595,7 @@ pub(super) fn check_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
             if c.arguments.get(argument) != Some(&ArgumentSlot::Borrow(LoanId(id))) {
                 return Err(bad(Malformed::Binding, l.span));
             }
-        } else if !l.projection.is_empty() || !matches!(l.referent(), BorrowedTy::Exact(_)) {
+        } else if !matches!(l.referent(), BorrowedTy::Exact(_)) {
             return Err(bad(Malformed::Type, l.span));
         }
         let mut authority = l.authority;
@@ -622,7 +622,13 @@ pub(super) fn check_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
             for _ in &l.projection {
                 meter.visit()?;
             }
-            match d.projection(root, &l.projection)?.0 {
+            let selected = d.projection(root, &l.projection)?.0;
+            if l.region == LoanRegion::Local
+                && !matches!(selected, ValueTy::Owned(AggregateTy::Record(_)))
+            {
+                return Err(bad(Malformed::Type, l.span));
+            }
+            match selected {
                 ValueTy::Owned(AggregateTy::FixedArray(array)) => {
                     if l.referent() != BorrowedTy::ScalarSlice(array.element()) {
                         return Err(bad(Malformed::Type, l.span));
