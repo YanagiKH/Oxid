@@ -17,8 +17,8 @@ use crate::model::function_binding;
 use crate::model::function_visible;
 use crate::model::child_module;
 use crate::model::path_module;
-use crate::model::byte_array;
-use crate::model::is_byte_array;
+use crate::model::array_type;
+use crate::model::is_array;
 use crate::model::record;
 use crate::model::record_type;
 use crate::model::is_record;
@@ -42,13 +42,17 @@ pub fn ty(c: &mut Compiler, source_module: i32) -> i32 {
     if scalar != 0 { c.cursor = c.cursor + 1; return scalar; }
     if k == 20 { expect(&mut *c, 20); expect(&mut *c, 21); return 3; }
     if k == 51 {
-        expect(&mut *c, 51); expect(&mut *c, 16); expect(&mut *c, 25);
+        expect(&mut *c, 51);
+        let element = scalar_type(kind(&*c));
+        if element == 0 { fail(&mut *c); return 0; }
+        c.cursor = c.cursor + 1;
+        expect(&mut *c, 25);
         let length = token(&*c, c.cursor);
         expect(&mut *c, 2); expect(&mut *c, 52);
         if c.error != 0 { return 0; }
         if length.value < -1024i64 { c.error = 68; return 0; }
         let count = 0i64 - length.value;
-        return byte_array(count.to_i32_checked());
+        return array_type(element, count.to_i32_checked());
     }
     if k == 1 {
         let index = record(&*c, source_module, c.cursor);
@@ -222,7 +226,7 @@ fn collect_function(c: &mut Compiler, source_module: i32, public: bool) -> () {
     let name_token = token(&*c, name);
     if source_module == 0 && word(&*c.source, name_token.start, name_token.end, &entry_name) {
         c.main = len(&*c.functions) - 1;
-        if count != 0 || is_byte_array(result) || is_record(result) { fail(&mut *c); return; }
+        if count != 0 || is_array(result) || is_record(result) { fail(&mut *c); return; }
     }
     return;
 }

@@ -62,7 +62,7 @@ RUNTIME_EXPECTATIONS = {
                            "checked i64 to i32 conversion out of range"),
     "i64 byte conversion": (b"byte conversion out of range\n", "E0610",
                             "checked i64 to u8 conversion out of range"),
-    "byte index": (b"array index out of bounds\n", "E0606", "array index out of bounds"),
+    "array index": (b"array index out of bounds\n", "E0606", "array index out of bounds"),
     "u32 overflow": (b"integer overflow\n", "E0604", "checked u32 arithmetic overflow"),
     "u32 division by zero": (b"division by zero\n", "E0607", "checked u32 division by zero"),
     "i32 to u32": (b"u32 conversion out of range\n", "E0610",
@@ -142,7 +142,7 @@ def check_reference_behavior(case: dict, result) -> None:
         check_native_behavior(case, result)
     elif case["kind"] == "runtime":
         _, code, message = runtime_expectation(case)
-        stage = "oir-owned-run" if case["error"] == "byte index" else "oir-run"
+        stage = "oir-owned-run" if case["error"] == "array index" else "oir-run"
         diagnostic, summary = reference_runtime_records(result)
         require(type(diagnostic) is dict and set(diagnostic) == {
             "schema_version", "edition", "kind", "severity", "code", "stage", "message",
@@ -288,7 +288,34 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
         rows.append({**row, "build": receipt})
         require((result.returncode, result.stdout, result.stderr) == (0, b"42\n", b""),
                 "full record frame did not preserve the final field")
+    # Each full i64 array uses 1024 eight-byte cells, including the parameter.
+    # A fifth binding exceeds the function's 4096-cell budget even when no
+    # element of that binding would be used.
+    wide_frame = ("fn at_limit(value:[i64;1024])->i64{"
+                  "let first=value;let second=first;let third=second;")
+    source = evidence / "full-wide-array-frame.ox"
+    values = "0i64," * 1023 + "42i64"
+    entry = f"fn main()->i64{{return at_limit([{values}]);}}"
+    source.write_text(wide_frame + "return third[1023];}" + entry, encoding="ascii")
+    receipts = []
+    for profile in ("dev", "release"):
+        name = f"full-wide-array-frame-{profile}"
+        receipts.append(driver.build(compiler, source, clang, runtime, evidence / name,
+                                     profile, timeout, evidence / (name + "-build")))
+    source.rename(evidence / "full-wide-array-frame.retained")
+    for receipt in receipts:
+        command = [receipt["output"]]
+        result = run(command, evidence, timeout)
+        name = f'full-wide-array-frame-{receipt["profile"]}'
+        row = record(evidence, name, command, result)
+        rows.append({**row, "build": receipt})
+        require((result.returncode, result.stdout, result.stderr) == (0, b"42\n", b""),
+                "full i64 array frame did not preserve its last element")
     for name, code in (
+        ("wide-array-frame-limit", wide_frame + "let extra=third;return 0i64;}"
+         + "fn main()->i32{return 42;}"),
+        ("wide-array-length-limit", "fn unsupported(a:[i64;1025])->i32{return 0;}"
+         "fn main()->i32{return 42;}"),
         ("byte-array-frame-limit", byte_frames.replace("if n==0", "let extra=0;if n==0")
          + "fn main()->u8{return descend(0);}"),
         ("byte-literal-limit", 'fn main()->i32{let bytes=b"' + 'A' * 1025 + '";return 0;}'),

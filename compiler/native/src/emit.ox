@@ -3,9 +3,11 @@ use crate::model::Value;
 use crate::model::grown;
 use crate::model::Binding;
 use crate::model::Token;
-use crate::model::byte_array;
-use crate::model::is_byte_array;
-use crate::model::byte_count;
+use crate::model::array_type;
+use crate::model::is_array;
+use crate::model::array_count;
+use crate::model::array_element;
+use crate::model::array_bytes;
 use crate::model::code;
 use crate::model::is_record;
 use crate::model::record_index;
@@ -50,32 +52,38 @@ fn decimal(c: &mut Compiler, destination: i32, value: i64) -> () {
     append(&mut *c, destination, &digits[at..20]);
     return;
 }
-pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> () {
-    let literal_bytes_0 = b"i32";
-    let literal_bytes_1 = b"void";
-    let literal_bytes_2 = b"i1";
+fn write_scalar_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> () {
+    let int_type = b"i32";
+    let unit_result = b"void";
+    let bool_type = b"i1";
     let byte_type = b"i8";
     let long_type = b"i64";
-
-    if ty == 1 || ty == 6 || ty == 7 { append(&mut *c, destination, &literal_bytes_0); return; }
+    if ty == 1 || ty == 6 || ty == 7 { append(&mut *c, destination, &int_type); return; }
     if ty == 4 { append(&mut *c, destination, &byte_type); return; }
     if ty == 5 { append(&mut *c, destination, &long_type); return; }
+    if ty == 3 && result { append(&mut *c, destination, &unit_result); }
+    else { append(&mut *c, destination, &bool_type); }
+    return;
+}
+pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> () {
     if is_record(ty) {
         let record = b"%r";
         append(&mut *c, destination, &record);
         number(&mut *c, destination, record_index(ty));
         return;
     }
-    if is_byte_array(ty) {
+    if is_array(ty) {
         let open = b"[";
-        let end = b" x i8]";
+        let separator = b" x ";
+        let end = b"]";
         append(&mut *c, destination, &open);
-        number(&mut *c, destination, byte_count(ty));
+        number(&mut *c, destination, array_count(ty));
+        append(&mut *c, destination, &separator);
+        write_scalar_type(&mut *c, destination, array_element(ty), false);
         append(&mut *c, destination, &end);
         return;
     }
-    if ty == 3 && result { append(&mut *c, destination, &literal_bytes_1); }
-    else { append(&mut *c, destination, &literal_bytes_2); }
+    write_scalar_type(&mut *c, destination, ty, result);
     return;
 }
 pub fn operand(c: &mut Compiler, destination: i32, value: Value) -> () {
@@ -142,8 +150,8 @@ pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
     if ty == 3 { return -1; }
     let id = c.next_slot;
     let mut cells = 1;
-    if is_byte_array(ty) {
-        cells = (byte_count(ty) + 7) / 8;
+    if is_array(ty) {
+        cells = (array_bytes(ty) + 7) / 8;
         if cells == 0 { cells = 1; }
     }
     if is_record(ty) {
@@ -218,7 +226,7 @@ fn literal_constant(c: &mut Compiler, index: i32, row: Token) -> () {
     let end = b"\"\n";
     literal_name(&mut *c, 0, index);
     append(&mut *c, 0, &prefix);
-    write_type(&mut *c, 0, byte_array(row.decoded_length), false);
+    write_type(&mut *c, 0, array_type(4, row.decoded_length), false);
     append(&mut *c, 0, &data);
     let mut at = row.decoded_start;
     while at < row.decoded_start + row.decoded_length && c.error == 0 {
@@ -244,7 +252,7 @@ pub fn byte_literal(c: &mut Compiler, index: i32, length: i32) -> Value {
     let load_instruction = b" = load ";
     let pointer = b", ptr ";
     let end = b", align 1\n";
-    let ty = byte_array(length);
+    let ty = array_type(4, length);
     let id = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &load_instruction);
     write_type(&mut *c, 2, ty, false); append(&mut *c, 2, &pointer);
@@ -281,18 +289,7 @@ pub fn extract_field(c: &mut Compiler, aggregate: Value, field: i32, ty: i32) ->
     append(&mut *c, 2, &comma); number(&mut *c, 2, field); append(&mut *c, 2, &line);
     return Value { ty: ty, id: id };
 }
-pub fn byte_array_values(c: &mut Compiler, values: &Vec<Value>) -> Value {
-    let count = vector_len(&*values);
-    let ty = byte_array(count);
-    let mut array = Value { ty: ty, id: -1 };
-    let mut index = 0;
-    while index < count && c.error == 0 {
-        array = insert_field(&mut *c, array, values[index], index);
-        index = index + 1;
-    }
-    return array;
-}
-fn check_byte_index(c: &mut Compiler, index: Value, length: i32) -> () {
+fn check_array_index(c: &mut Compiler, index: Value, length: i32) -> () {
     let name = b"  %v";
     let compare = b" = icmp ult i32 ";
     let comma = b", ";
@@ -310,13 +307,13 @@ fn check_byte_index(c: &mut Compiler, index: Value, length: i32) -> () {
     label(&mut *c, valid);
     return;
 }
-fn byte_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
+fn array_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
     let name = b"  %v";
     let element = b" = getelementptr inbounds ";
     let slot_prefix = b", ptr %s";
     let ordinal = b", i32 0, i32 ";
     let line = b"\n";
-    check_byte_index(&mut *c, index, byte_count(binding.ty));
+    check_array_index(&mut *c, index, array_count(binding.ty));
     let pointer = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &element);
     write_type(&mut *c, 2, binding.ty, false); append(&mut *c, 2, &slot_prefix);
@@ -324,23 +321,29 @@ fn byte_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
     operand(&mut *c, 2, index); append(&mut *c, 2, &line);
     return pointer;
 }
-pub fn byte_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+pub fn array_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
     let name = b"  %v";
-    let load_instruction = b" = load i8, ptr %v";
-    let alignment = b", align 1\n";
-    let pointer = byte_address(&mut *c, binding, index);
+    let load_instruction = b" = load ";
+    let address = b", ptr %v";
+    let line = b"\n";
+    let element = array_element(binding.ty);
+    let pointer = array_address(&mut *c, binding, index);
     let id = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &load_instruction);
-    number(&mut *c, 2, pointer); append(&mut *c, 2, &alignment);
-    return Value { ty: 4, id: id };
+    write_scalar_type(&mut *c, 2, element, false);
+    append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &line);
+    return Value { ty: element, id: id };
 }
-pub fn byte_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
-    let store_instruction = b"  store i8 ";
+pub fn array_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
+    let store_instruction = b"  store ";
+    let space = b" ";
     let address = b", ptr %v";
-    let alignment = b", align 1\n";
-    let pointer = byte_address(&mut *c, binding, index);
-    append(&mut *c, 2, &store_instruction); operand(&mut *c, 2, value);
-    append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &alignment);
+    let line = b"\n";
+    let pointer = array_address(&mut *c, binding, index);
+    append(&mut *c, 2, &store_instruction);
+    write_scalar_type(&mut *c, 2, value.ty, false);
+    append(&mut *c, 2, &space); operand(&mut *c, 2, value);
+    append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &line);
     return;
 }
 pub fn negate_bool(c: &mut Compiler, value: Value) -> Value {
