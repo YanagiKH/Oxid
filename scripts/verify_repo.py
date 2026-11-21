@@ -238,6 +238,15 @@ TYPED_MANIFEST_PROJECTS = {
         "compiler/native/src/emit.ox",
         "compiler/native/src/delivery.ox",
     ),
+    "packages/core_types": (
+        "packages/core_types/src/lib.ox",
+        "packages/core_types/src/option.ox",
+        "packages/core_types/src/result.ox",
+    ),
+    "examples/typed-option-result": (
+        "examples/typed-option-result/src/main.ox",
+        "examples/typed-option-result/tests/outcomes.ox",
+    ),
 }
 # Library roots have no executable entry point; their dependent applications
 # exercise the public interface and their own manifest check covers unused code.
@@ -256,11 +265,12 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "apps/streaming-training",
     "packages/owned_vec",
     "packages/file_io",
+    "packages/core_types",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix", "examples/typed-vectors")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records", "examples/copy-record-vectors")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/owned-record-vectors",)
-TYPED_TESTED_MANIFEST_PROJECTS += ("examples/typed-owned-text",)
+TYPED_TESTED_MANIFEST_PROJECTS += ("examples/typed-owned-text", "examples/typed-option-result")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (

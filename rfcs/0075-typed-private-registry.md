@@ -1,13 +1,12 @@
-# Exact-version private library registries
+# Private library registries
 
 ## Supported workflow
 
 Linux typed projects can publish and consume immutable library releases from an
 explicit `file:///` registry. The workflow includes aliases, transitive
 dependencies, multiple versions, verified caching, project/workspace locks and
-portable source bundles. It remains experimental. Version-range resolution,
-HTTPS registries, search, yanking, mirrors, publisher authentication and registry
-features are outside this contract.
+portable source bundles. It remains experimental. HTTPS registries, search,
+mirrors, publisher authentication and registry features are outside this contract.
 
 `oxid registry init NEW_DIRECTORY` creates a registry and refuses an existing
 destination. `oxid publish --registry file:///DIRECTORY` publishes a library
@@ -17,7 +16,7 @@ Publication requires a matching complete author lock, explicit
 The default entry is `src/lib.ox`. Normal library and declared-test entries are
 checked before publication. No test body, hook, build script or user program runs.
 
-A consumer declares an exact dependency with three required fields:
+A consumer declares a dependency with three required fields:
 
 ```toml
 [dependencies]
@@ -27,12 +26,15 @@ math = { registry = "file:///srv/oxid", package = "math", version = "1.2.0" }
 Unknown, duplicate or mixed descriptor fields are refused. Package names use
 at most 64 lowercase ASCII letters, digits, `_` or `-`, starting with a letter.
 Versions have exactly three canonical unsigned 32-bit decimal components.
-Leading zeroes, ranges, prereleases and build metadata are unsupported.
+A dependency may use a compatible range such as `^1.2.0`. An existing lock
+pins its exact release until a compatible update is requested. Leading zeroes,
+prereleases and build metadata are unsupported.
 Aliases keep the existing package namespace rules. Quoted string dependencies
 retain their existing path or pinned-Git interpretation, including `"1.2.0"`.
 
 Published libraries may depend only on exact releases in the same registry.
-Publication rewrites those sources to `registry = "self"`. A consumer binds
+Publication records the author's locked dependency versions and rewrites those
+sources to `registry = "self"`. A consumer binds
 `self` to the independently admitted registry that supplied that release.
 An application manifest cannot use `self`; a transitive library cannot introduce
 another registry, local path or Git authority. Applications may mix existing
@@ -46,6 +48,12 @@ The release record has version 1, kind `typed-library-release-v1`, and binds the
 name, package version, typed edition, entry, manifest SHA-256, complete archive
 SHA-256 and archive byte count. A complete private staging directory is published
 without replacing an existing version.
+
+`oxid registry yank FILE_URI PACKAGE VERSION` excludes the release from new
+compatible range selections. `oxid registry unyank FILE_URI PACKAGE VERSION`
+restores its eligibility. Both commands preserve the release files. Existing
+locked builds and explicit exact-version dependencies continue to resolve it.
+Yank state uses separate empty marker files at `yanked/PACKAGE/VERSION`.
 
 The artifact uses a separate version 1 inventory kind,
 `typed-library-source-v1`, rooted at `source`. Its payload contains the exported

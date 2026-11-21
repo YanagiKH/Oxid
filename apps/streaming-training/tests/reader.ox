@@ -9,6 +9,7 @@ use crate::reader::Error;
 use crate::reader::open;
 use crate::reader::open_at;
 use crate::reader::next;
+use crate::reader::seek_row;
 use crate::reader::remaining;
 use crate::reader::position;
 use crate::reader::feature_count;
@@ -81,8 +82,41 @@ fn seek_defaults() -> bool {
     match end { Result::Ok(reader) => { return false; }, Result::Err(error) => { if failure_code(error) != 7 { return false; } }, }
     return true;
 }
+fn seek_and_read(reader: &mut crate::reader::Reader, start: i32, size: i32) -> bool {
+    let moved = seek_row(&mut *reader, start);
+    match moved { Result::Err(problem) => { return false; }, Result::Ok(done) => {}, }
+    if position(&*reader) != start { return false; }
+    let loaded = next(&mut *reader);
+    match loaded {
+        Result::Err(problem) => { return false; },
+        Result::Ok(batch) => {
+            if row_count(&batch.inputs) != size || row_count(&batch.targets) != size { return false; }
+            for row in 0..size {
+                if verify_row(&batch.inputs, &batch.targets, row, start + row) != 0 { return false; }
+            }
+            return position(&*reader) == start + size;
+        },
+    }
+}
+fn seek_existing_reader() -> bool {
+    let path = b"tests/data/reader.oxds";
+    let opened = open(&path, 2);
+    match opened {
+        Result::Err(problem) => { return false; },
+        Result::Ok(value) => {
+            let mut reader = value;
+            if !seek_and_read(&mut reader, 2, 2) || !seek_and_read(&mut reader, 1, 2) { return false; }
+            let invalid = seek_row(&mut reader, 5);
+            match invalid { Result::Ok(done) => { return false; }, Result::Err(error) => { if failure_code(error) != 7 { return false; } }, }
+            if position(&reader) != 3 || !seek_and_read(&mut reader, 4, 1) { return false; }
+            let ended = seek_row(&mut reader, 0);
+            match ended { Result::Ok(done) => { return false; }, Result::Err(error) => { return failure_code(error) == 6; }, }
+        },
+    }
+}
 fn main() -> i32 {
     if arg_count() == 1 && !seek_defaults() { return 109; }
+    if arg_count() == 1 && !seek_existing_reader() { return 110; }
     let mut expected_error = 0; let mut expected_rows = 5; let mut size = 2;
     if arg_count() != 1 { expected_error = argument(1); expected_rows = argument(2); size = argument(3); }
     if expected_error < 0 || expected_rows < 0 || size < 0 { return 90; }

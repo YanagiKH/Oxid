@@ -57,9 +57,88 @@ def verification_command(archive: Path, source_ref: str | None, commit: str | No
     return command
 
 
+def digest_for(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def verify_archive(archive: Path, source_ref: str | None, commit: str | None, bundle: Path | None,
+                   trusted_root: Path | None, expected_digest: str | None = None) -> str:
+    command = verification_command(archive, source_ref, commit, bundle, trusted_root)
+    digest = digest_for(archive)
+    if expected_digest is not None and digest != expected_digest:
+        raise ValueError(f"archive changed after checking the checksum: {archive.name}")
+    result = subprocess.run(command, check=False, timeout=300, capture_output=True, text=True)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="")
+    if result.returncode != 0:
+        raise ValueError(f"signature verification failed for {archive.name}")
+
+    # gh verifies the digest. Also bind the approved platform archive name.
+    records = json.loads(result.stdout)
+    matching = False
+    if isinstance(records, list):
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            verified = record.get("verificationResult")
+            statement = verified.get("statement") if isinstance(verified, dict) else None
+            if (not isinstance(statement, dict)
+                    or statement.get("_type") != "https://in-toto.io/Statement/v1"
+                    or statement.get("predicateType") != "https://slsa.dev/provenance/v1"):
+                continue
+            subjects = statement.get("subject")
+            if isinstance(subjects, list):
+                matching |= any(isinstance(subject, dict) and subject.get("name") == archive.name
+                                and isinstance(subject.get("digest"), dict)
+                                and subject["digest"].get("sha256") == digest for subject in subjects)
+    if not matching:
+        raise ValueError("verified provenance does not identify this archive name and SHA-256")
+    if digest_for(archive) != digest:
+        raise ValueError("archive changed during provenance verification")
+    return result.stdout
+
+
+def verify_distribution(directory: Path, source_ref: str | None, commit: str | None,
+                        trusted_root: Path | None) -> None:
+    if directory.is_symlink() or not directory.is_dir():
+        raise ValueError("release distribution must be an ordinary directory")
+    expected = {name + suffix for name in ASSETS for suffix in ("", ".sha256", ".sigstore.json")}
+    actual = {path.name for path in directory.iterdir()}
+    if actual != expected:
+        raise ValueError(f"invalid release distribution, missing {sorted(expected - actual)}, "
+                         f"unexpected {sorted(actual - expected)}")
+    for name in expected:
+        path = directory / name
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"release file must be a regular file: {name}")
+    inputs = {name: digest_for(directory / name) for name in expected}
+    checksums = {}
+    for name in sorted(ASSETS):
+        archive = directory / name
+        digest = inputs[name]
+        checksum = archive.with_name(name + ".sha256")
+        expected_line = f"{digest}  {name}\n".encode()
+        with checksum.open("rb") as stream:
+            original = stream.read(len(expected_line) + 2)
+        if original not in (expected_line, expected_line.replace(b"\n", b"\r\n")):
+            raise ValueError(f"invalid release checksum for {name}")
+        checksums[name] = digest
+    for name, digest in checksums.items():
+        verify_archive(directory / name, source_ref, commit, None, trusted_root, digest)
+    if {path.name for path in directory.iterdir()} != expected:
+        raise ValueError("release distribution changed during verification")
+    for name, digest in inputs.items():
+        path = directory / name
+        if path.is_symlink() or not path.is_file() or digest_for(path) != digest:
+            raise ValueError(f"release file changed during verification: {name}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("archive", type=Path)
+    parser.add_argument("archive", type=Path, nargs="?")
+    parser.add_argument("--distribution", type=Path,
+                        help="check the full set of downloaded release archives and sidecars")
     parser.add_argument("--source-ref", default=os.environ.get("GITHUB_REF"),
                         help="full tag/branch ref; defaults to GITHUB_REF in Actions")
     parser.add_argument("--commit", default=os.environ.get("GITHUB_SHA"),
@@ -69,40 +148,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trusted-root", type=Path,
                         help="independently obtained trusted root for offline verification")
     args = parser.parse_args(argv)
+    if (args.archive is None) == (args.distribution is None):
+        parser.error("choose one archive or --distribution DIRECTORY")
+    if args.distribution is not None and args.bundle is not None:
+        parser.error("--bundle applies to a single archive")
     try:
-        command = verification_command(args.archive, args.source_ref, args.commit,
-                                       args.bundle, args.trusted_root)
-        with args.archive.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        result = subprocess.run(command, check=False, timeout=300, capture_output=True, text=True)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr, end="")
-        if result.returncode != 0:
-            return 1
-        # Inspect only statements returned by the successful cryptographic
-        # verifier. With --bundle, gh checks the digest but permits renaming;
-        # release delivery must also bind the signed platform archive name.
-        records = json.loads(result.stdout)
-        matching = False
-        if isinstance(records, list):
-            for record in records:
-                if not isinstance(record, dict):
-                    continue
-                verified = record.get("verificationResult")
-                statement = verified.get("statement") if isinstance(verified, dict) else None
-                if not isinstance(statement, dict) or statement.get("_type") != "https://in-toto.io/Statement/v1" or statement.get("predicateType") != "https://slsa.dev/provenance/v1":
-                    continue
-                subjects = statement.get("subject")
-                if isinstance(subjects, list):
-                    matching |= any(isinstance(subject, dict) and subject.get("name") == args.archive.name
-                                    and isinstance(subject.get("digest"), dict)
-                                    and subject["digest"].get("sha256") == digest for subject in subjects)
-        if not matching:
-            raise ValueError("verified provenance does not identify this archive name and SHA-256")
-        with args.archive.open("rb") as stream:
-            if hashlib.file_digest(stream, "sha256").hexdigest() != digest:
-                raise ValueError("archive changed during provenance verification")
-        print(result.stdout, end="")
+        if args.distribution is not None:
+            verify_distribution(args.distribution, args.source_ref, args.commit, args.trusted_root)
+            print(f"Verified {len(ASSETS)} release archives.")
+        else:
+            receipt = verify_archive(args.archive, args.source_ref, args.commit, args.bundle, args.trusted_root)
+            print(receipt, end="")
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"release provenance verification failed: {error}", file=sys.stderr)
         return 1

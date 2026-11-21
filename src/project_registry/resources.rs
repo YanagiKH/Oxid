@@ -88,6 +88,7 @@ struct VersionSelectionRoles {
     lock_lookup: Option<&'static Pin>,
     selected_version: String,
     package_path: PathBuf,
+    yank_directory: PathBuf,
     entries: std::iter::Enumerate<fs::ReadDir>,
     next_entry: Option<(usize, io::Result<fs::DirEntry>)>,
     entry: fs::DirEntry,
@@ -96,7 +97,30 @@ struct VersionSelectionRoles {
     best: Option<([u32; 3], std::ffi::OsString)>,
     selected: ([u32; 3], std::ffi::OsString),
     file_type: io::Result<fs::FileType>,
+    version_name: Option<(&'static str, [u32; 3])>,
+    yank_check: Result<bool, String>,
     result: Result<String, String>,
+}
+
+#[repr(C)]
+struct YankUpdateRoles {
+    package: PathBuf,
+    release: PathBuf,
+    record_path: PathBuf,
+    record: Record,
+    record_input: Vec<u8>,
+    artifact: PathBuf,
+    directory: PathBuf,
+    marker: PathBuf,
+    marker_status: Result<bool, String>,
+    metadata: fs::Metadata,
+    file_options: fs::OpenOptions,
+    file: io::Result<fs::File>,
+    update: io::Result<()>,
+    message: Result<String, String>,
+}
+pub(super) fn yank_update_bytes() -> usize {
+    size_of::<YankUpdateRoles>()
 }
 pub(super) fn version_selection_bytes() -> usize {
     size_of::<VersionSelectionRoles>()
@@ -419,10 +443,15 @@ mod tests {
             traversal_return: Result<(), String>, counts: [usize;4], compare_buffer: [u8;8192], end_byte: [u8;1]);
         layout!(OriginAllocation; strong: std::sync::atomic::AtomicUsize, weak: std::sync::atomic::AtomicUsize, value: Origin);
         layout!(VersionSelectionRoles; requirement: CompatibleVersion, declared_path: String, lock_lookup: Option<&'static Pin>,
-            selected_version: String, package_path: PathBuf, entries: std::iter::Enumerate<fs::ReadDir>,
+            selected_version: String, package_path: PathBuf, yank_directory: PathBuf, entries: std::iter::Enumerate<fs::ReadDir>,
             next_entry: Option<(usize, io::Result<fs::DirEntry>)>, entry: fs::DirEntry, name: std::ffi::OsString,
             candidate: [u32;3], best: Option<([u32;3], std::ffi::OsString)>, selected: ([u32;3], std::ffi::OsString),
-            file_type: io::Result<fs::FileType>, result: Result<String,String>);
+            file_type: io::Result<fs::FileType>, version_name: Option<(&'static str, [u32;3])>,
+            yank_check: Result<bool, String>, result: Result<String,String>);
+        layout!(YankUpdateRoles; package: PathBuf, release: PathBuf, record_path: PathBuf, record: Record,
+            record_input: Vec<u8>, artifact: PathBuf, directory: PathBuf, marker: PathBuf, marker_status: Result<bool,String>,
+            metadata: fs::Metadata, file_options: fs::OpenOptions, file: io::Result<fs::File>,
+            update: io::Result<()>, message: Result<String,String>);
         layout!(ResolutionRoles; session: Session, dependency: Dependency, selected_source: String,
             selected_version: Cow<'static,str>, version_return: Result<Cow<'static,str>,String>, selected_id: String,
             release_path: PathBuf, cache_path: PathBuf, parent_path: PathBuf, record_path: PathBuf, artifact_path: PathBuf,

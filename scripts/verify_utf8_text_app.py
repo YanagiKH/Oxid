@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import resource
 import shutil
 import subprocess
 import sys
@@ -73,6 +74,24 @@ def cases():
 
 
 CASES = cases()
+
+
+def streaming_cases():
+    yield "empty", b"", 0, b""
+    for split in (1, 2, 3):
+        payload = b"x" * (4096 - split) + "🦀".encode() + b"\x00\r\n"
+        status, output = expected(payload)
+        yield f"split-scalar-{split}", payload, status, output
+    for name, payload in (
+            ("split-crlf", b"a" * 4095 + b"\r\nb\r"),
+            ("split-crlf-empty-write", b"a" * 4095 + b"\r\n"),
+            ("multibyte-after-cr", b"a" * 4094 + b"\r" + "雪".encode() + b"\n"),
+            ("multiple-reads", LONG_INPUT)):
+        status, output = expected(payload)
+        yield name, payload, status, output
+    yield "truncated-first-read", b"abc\xf0\x9f", 65, b"abc"
+    yield "invalid-after-valid-read", b"a" * 4096 + b"\xff", 65, b"a" * 4096
+    yield "invalid-split-scalar", b"a" * 4095 + b"\xed\xa0\x80", 65, b"a" * 4095
 
 
 def unicode_chunks():
@@ -190,6 +209,52 @@ class TextOracle(Oracle):
             indexes.append(index)
         indexes.append(self.partial_write(label, argv, cwd, overrides))
         return indexes
+
+    def streaming(self, label, argv, cwd, overrides=None):
+        indexes = []
+        for name, payload, status, output in streaming_cases():
+            _, index = self.command(label + "-" + name, argv, cwd, payload, status, output,
+                                    overrides=overrides)
+            indexes.append(index)
+        for name, options in (
+                ("directory-input", {"directory_stdin": True}),
+                ("full-output", {"payload": LONG_INPUT, "full_stdout": True})):
+            _, index = self.command(label + "-" + name, argv, cwd, status=74, stdout=b"",
+                                    overrides=overrides, **options)
+            indexes.append(index)
+        return indexes
+
+    def large_stream(self, binary, cwd):
+        limit = 32 * 1024 * 1024
+        sample = b"A" * 4095 + "\r\n🦀\0雪\r".encode()
+        normalized = expected(sample)[1]
+        repeats = 10000
+        source = self.output / "stream-input.bin"
+        capture = self.output / "artifacts" / (binary.name + "-stream-output.bin")
+        expected_hash = hashlib.sha256()
+        if not source.exists():
+            with source.open("xb") as stream:
+                for _ in range(repeats):
+                    stream.write(sample)
+        for _ in range(repeats):
+            expected_hash.update(normalized)
+        command = [str(binary), "--stream"]
+        with source.open("rb") as stdin, capture.open("xb") as stdout:
+            result = subprocess.run(
+                command, cwd=cwd, env=self.environment, stdin=stdin, stdout=stdout, stderr=subprocess.PIPE,
+                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_AS, (limit, limit)), timeout=120)
+        with source.open("rb") as stream:
+            input_hash = hashlib.file_digest(stream, "sha256").hexdigest()
+        with capture.open("rb") as stream:
+            output_hash = hashlib.file_digest(stream, "sha256").hexdigest()
+        require(result.returncode == 0 and not result.stderr, "large streaming conversion failed")
+        require(source.stat().st_size == len(sample) * repeats > limit
+                and capture.stat().st_size == len(normalized) * repeats
+                and output_hash == expected_hash.hexdigest(), "large streaming conversion produced incorrect bytes")
+        return {"command": command, "address_space_bytes": limit, "input": str(source),
+                "input_bytes": source.stat().st_size, "input_sha256": input_hash,
+                "output": str(capture), "output_bytes": capture.stat().st_size,
+                "output_sha256": output_hash}
 
     def partial_write(self, label, argv, cwd, overrides):
         folder = self.output / "commands" / f"{len(self.commands):04d}-{label}-partial-output"
@@ -379,6 +444,8 @@ def verify(args):
                     and rows[0].get("name") == "utf8" and rows[0].get("stdout") == rows[0].get("stderr") == "",
                     "API checks did not pass through oxid test")
             oracle.cases(prefix + "-reference", [retained, "run", "--frozen"], project / "app", oracle.no_tools())
+            oracle.streaming(prefix + "-reference-stream", [retained, "run", "--frozen", "--", "--stream"],
+                             project / "app", oracle.no_tools())
             require(not oracle.marker.exists(), "reference commands invoked native tools")
             source_hashes = tree_hashes(first_root)
             deployed = []
@@ -418,10 +485,13 @@ def verify(args):
                     empty = output / (prefix + "-" + profile + "-empty")
                     empty.mkdir()
                     indexes = oracle.cases(binary.name + "-deployed", [binary], empty, complete_unicode=True)
+                    stream_indexes = oracle.streaming(binary.name + "-deployed-stream", [binary, "--stream"], empty)
+                    large_stream = oracle.large_stream(binary, empty)
                     oracle.command(contract.name + "-deployed", [contract], empty, stdout=b"0\n")
                     require(not list(empty.iterdir()), "deployed program created files")
                     report["deployments"].append({"artifact": str(binary), "sha256": digest(binary), "profile": profile,
-                        "cases": indexes, "environment": {}, "removed_source_roots": [str(first_root), str(moved_root)],
+                        "cases": indexes, "stream_cases": stream_indexes, "large_stream": large_stream,
+                        "environment": {}, "removed_source_roots": [str(first_root), str(moved_root)],
                         "source_trees_removed": not first_root.exists() and not moved_root.exists(),
                         "all_unicode_scalar_values": 1112064})
             finally:

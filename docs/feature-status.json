@@ -2060,7 +2060,7 @@
         "src/lsp_cli/uri.rs"
       ],
       "evidence": [],
-      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion covers keywords, visible names, crate/module paths and visible monomorphic record fields with a 512-item response limit, including unsaved module and direct-dependency buffers. Field receivers require an explicit parameter type or a direct record constructor in a supported straight-line prefix; ambiguous, moved, shadowed and generic receivers provide no fields. Import-alias inference, methods, enum variants, built-in catalog completion, type/member navigation, rename and profiling remain unavailable. Namespace and syntax admission are required for navigation. Per-document, session, graph, symbol and protocol limits apply."
+      "limitations": "Existing local .ox files only. Manifests and locks use saved disk input; dependencies resolve offline. Completion covers keywords, visible names, crate/module paths and visible monomorphic record fields with a 512-item response limit, including unsaved module and direct-dependency buffers. Field receivers require an explicit parameter type or a direct record constructor in a supported straight-line prefix; ambiguous, moved, shadowed and generic receivers provide no fields. Import-alias inference, methods, enum variants, built-in catalog completion, member navigation, rename and profiling remain unavailable. Definition lookup covers visible record and enum names in annotations and record constructors. Namespace and syntax admission are required for navigation. Per-document, session, graph, symbol and protocol limits apply."
     },
     {
       "id": "disjoint-record-field-borrows",

@@ -110,7 +110,7 @@ GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility
 GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
 WINDOWS_LOCAL_PACKAGE_REPLAY = 'scripts/verify_windows_local_package_compatibility.py'
 CURRENT_TYPED_POLICY = ('scripts/verify_current_typed_compatibility.py',
-    (11396, '74ce209b8f17f911c5eef449e67a733db6d7df657e96e9b9b4286504c6f4d4fb'))
+    (11543, '2f6f0bd9e7bbdddcd02dc1773676eeed978bf53f37f82d077a7b769b63e1d6ed'))
 WINDOWS_LOCAL_PACKAGE_PARENT = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = '4ec7cbdee35774e6112421736c7c921f398e5d3b'
 GENERIC_OWNED_VECTOR_POLICY = (GENERIC_OWNED_VECTOR_REPLAY,
@@ -921,6 +921,26 @@ class CiTriggerPolicyTests(unittest.TestCase):
         self.assertNotRegex(verify, r'(?m)^    if:|continue-on-error:')
         python = (REPO / '.github/workflows/python-native.yml').read_text(encoding='utf-8')
         require_release_python_gate(self.release, python)
+
+    def test_current_native_hosts_install_a_release_archive(self):
+        name = 'Install and run a release archive on this host'
+        posix_run = '        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid'
+        windows_run = ('        run: |\n'
+                       '          python -B scripts/verify_release_install.py --binary target/release/oxid.exe\n'
+                       '          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }')
+        for job, build, run in (
+            ('native-projects', 'Run public native tests in both compiler profiles', posix_run),
+            ('linux-arm64-native', 'Verify native ARM64 builds and source-free execution', posix_run),
+            ('macos-native', 'Build both current compiler profiles', posix_run),
+            ('current-windows-native', 'Build both compiler profiles', windows_run),
+        ):
+            with self.subTest(job=job):
+                current = block(self.ci, job, 2)
+                pattern = rf'^      - name: {name}\n(.*?)(?=^      - |\Z)'
+                steps = list(re.finditer(pattern, current, re.M | re.S))
+                self.assertEqual(len(steps), 1)
+                self.assertEqual(steps[0][1].rstrip(), run)
+                self.assertLess(current.index(f'      - name: {build}'), steps[0].start())
 
     def test_release_checks_the_installed_archive_before_upload(self):
         package = block(self.release, 'package', 2)

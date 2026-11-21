@@ -3135,6 +3135,8 @@ fn help() {
     println!("  oxid package --extract ARCHIVE --output NEW_DIRECTORY");
     println!("  oxid vendor --frozen --output NEW_DIRECTORY  Copy a project for offline use (Linux)");
     println!("  oxid registry init NEW_DIRECTORY          Create a private file registry (Linux)");
+    println!("  oxid registry yank FILE_URI NAME VERSION Stop selecting a version for new ranges");
+    println!("  oxid registry unyank FILE_URI NAME VERSION Restore a version for new ranges");
     println!("  oxid publish --registry file:///DIRECTORY [--package MEMBER]");
     println!();
     println!("More project tools:");

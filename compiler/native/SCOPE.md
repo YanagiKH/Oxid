@@ -18,24 +18,56 @@ output or any bytes after the module footer. It never strips a printed `0` or
 other lines. LLVM/Clang and the scalar C I/O adapter are explicit dependencies;
 they do not parse or check Oxid source. Existing output paths are refused.
 
-Supported input uses ASCII identifiers/comments, i32/bool/unit, named functions
+Supported input uses ASCII identifiers, i32/i64/u8/u32/bool/char/unit, named functions
 with typed parameters/results, initialized let bindings, optional type
-annotations, mut/assignment, lexical blocks, calls, if/else, while, break,
+annotations, mut/assignment, lexical blocks, calls, if/else, while, for, break,
 continue, explicit returns and short-circuit boolean operators. Active names
 cannot shadow bindings or functions. Integer arithmetic is checked; division
-and remainder reject zero and MIN/-1 before the LLVM operation. A result-mode
-main has no arguments and prints its i32, bool or unit result, then exits 0.
+and remainder reject zero and signed MIN/-1 before the LLVM operation. Use
+decimal literals such as `255u8` and `9007199254740993i64`. Convert local
+bindings with `.to_i64()`, `.to_i32_checked()` or `.to_u8_checked()`.
+A result-mode `main` has no arguments and prints its scalar result, then exits 0.
+Use `for index in start..end { ... }` to iterate over matching integer bounds.
+The bounds evaluate once from left to right, and the end is excluded. The
+index is immutable and available inside the loop body.
+Use `'雪'` or `'\u{1f980}'` for a Unicode character. A `char` can be passed,
+returned, stored in a record or compared by Unicode scalar value. A `char`
+result prints UTF-8. Comments and byte string literals also accept UTF-8.
+Use `number.to_char_checked()` to reject invalid Unicode scalar values and
+`character.to_u32()` to return a character's number. Use a `u32` suffix for
+unsigned integers such as `4294967295u32`, and `.to_u32_checked()` or
+`.to_i64_checked()` for checked conversions between integer types.
+
+Use `b"..."` for fixed byte arrays such as `let data: [u8; 3] = b"abc";`.
+Literals support byte and Unicode escapes. Use `[1u8, 2u8]` to build an array
+from values and `b""` for an empty array. Call `data.len()` for the length
+and read a byte with `data[index]`. For a `mut` binding, use
+`data[index] = value` to replace a byte. Reads and writes check the index.
+
+Declare `#[derive(Copy)] struct Point { x: i32, y: i32 }` to group scalar
+fields. Construct it with `Point { y: 2, x: 40 }` and read a field with
+`point.x`. Use a `mut` binding to replace a field. Copies and function
+arguments hold independent values. These structs are private to their
+module and have 1–64 fields of type `i32`, `i64`, `u8`, `u32`, `bool` or `char`.
 
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
-all paths. Loop conditions are checked conservatively. Imports, user records
-and enums, references, generics, strings, arrays, I/O in compiled input and
-other integer types are unsupported. The compiler itself uses ByteBuf, File and
-Copy vectors.
+all paths. Loop conditions are checked conservatively. External package imports,
+owned structs, enums, references, generics, text strings, non-byte arrays,
+I/O in compiled input and other integer types are unsupported. The compiler
+itself uses ByteBuf, File and Copy vectors.
+
+Declare `mod math;` in the entry file to load `math.ox`. Inside `math.ox`,
+`pub mod stats;` loads `math/stats.ox` and exposes it outside `math`.
+Use `pub fn` to expose a function and call it with
+`crate::math::stats::function(...)`. Import it with
+`use crate::math::stats::function;` or rename it with `as name` for unqualified calls.
+Source files share the input and function limits. The compiler accepts up to
+128 source files including the entry file and up to 32 levels of modules.
 
 Input is limited to 65536 bytes, 32768 tokens, 128 functions, 16 parameters/function,
-4096 call sites and 4096 stack slots/function. Expression/block/comment nesting
+128 structs, 4096 call sites and 4096 stack slots/function. Expression/block/comment nesting
 is limited to 64 and LLVM output to 8 MiB. Each function also has checked budgets
 of 4096 active bindings, 131072 temporary values and 65536 labels.
 Compiler status 64 means usage, 65 rejected

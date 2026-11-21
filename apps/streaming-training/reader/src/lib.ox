@@ -135,34 +135,40 @@ pub fn open(path: &[u8], size: i32) -> Result<Reader>{
     }
 }
 
+pub fn seek_row(reader: &mut Reader, start_row: i32) -> Result<()> {
+    if reader.failed { return Result::<()>:: Err(Error::Poisoned); }
+    if reader.cursor == reader.rows { return Result::<()>:: Err(Error::End); }
+    if start_row < 0 || start_row >= reader.rows { return Result::<()>:: Err(Error::InvalidStartRow); }
+    if start_row == reader.cursor { return Result::Ok(()); }
+    let columns = reader.features + reader.targets;
+    let wide_columns = columns.to_i64_checked();
+    let wide_start = start_row.to_i64_checked();
+    let byte_offset = 24i64 + wide_start * wide_columns * 8i64;
+    let moved = seek_absolute(&mut *reader.file, byte_offset);
+    match moved {
+        FileStatus::Error(code) => { return reject::<()>(&mut *reader, Error::Io(code)); },
+        FileStatus::Ok => {
+            reader.offset = 0;
+            reader.available = 0;
+            reader.cursor = start_row;
+            return Result::Ok(());
+        }
+    }
+}
+
 pub fn open_at(path: &[u8], size: i32, start_row: i32) -> Result<Reader>{
     if size <= 0 { return Result::<Reader>:: Err(Error::InvalidBatchSize); }
     if start_row < 0 { return Result::<Reader>:: Err(Error::InvalidStartRow); }
-    // Keep ordinary sequential opening, including nonseekable inputs, intact.
     if start_row == 0 { return open(&*path, size); }
     let opened = open(&*path, size);
     match opened {
         Result::Err(error) => { return Result::<Reader>:: Err(error); },
         Result::Ok(value) => {
             let mut reader = value;
-            if start_row >= reader.rows { return reject::<Reader>(&mut reader, Error::InvalidStartRow); }
-            let columns = reader.features + reader.targets;
-            let wide_columns = columns.to_i64_checked();
-            let wide_start = start_row.to_i64_checked();
-            // Validated dimensions fit this signed 64-bit byte offset. The
-            // language's checked arithmetic also rejects any future overflow.
-            let byte_offset = 24i64 + wide_start * wide_columns * 8i64;
-            let moved = seek_absolute(&mut reader.file, byte_offset);
+            let moved = seek_row(&mut reader, start_row);
             match moved {
-                FileStatus::Error(code) => { return reject::<Reader>(&mut reader, Error::Io(code)); },
-                FileStatus::Ok => {
-                    // open() may have prefetched beyond the header. Only a
-                    // successful absolute seek replaces that buffered view.
-                    reader.offset = 0;
-                    reader.available = 0;
-                    reader.cursor = start_row;
-                    return Result::Ok(reader);
-                }
+                Result::Err(error) => { return Result::<Reader>:: Err(error); },
+                Result::Ok(done) => { return Result::Ok(reader); }
             }
         }
     }

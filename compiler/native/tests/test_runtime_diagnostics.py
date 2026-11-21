@@ -20,6 +20,20 @@ FAMILIES = (
     ("overflow", b"integer overflow\n", "E0604", "checked i32 arithmetic overflow"),
     ("division by zero", b"division by zero\n", "E0607", "checked i32 division by zero"),
 )
+BYTE_FAMILIES = {
+    "byte overflow": (b"integer overflow\n", "E0604", "checked u8 arithmetic overflow"),
+    "byte division by zero": (b"division by zero\n", "E0607", "checked u8 division by zero"),
+    "byte conversion": (b"byte conversion out of range\n", "E0610",
+                        "checked i32 to u8 conversion out of range"),
+}
+I64_FAMILIES = {
+    "i64 overflow": (b"integer overflow\n", "E0604", "checked i64 arithmetic overflow"),
+    "i64 division by zero": (b"division by zero\n", "E0607", "checked i64 division by zero"),
+    "i64 int conversion": (b"i32 conversion out of range\n", "E0610",
+                           "checked i64 to i32 conversion out of range"),
+    "i64 byte conversion": (b"byte conversion out of range\n", "E0610",
+                            "checked i64 to u8 conversion out of range"),
+}
 
 
 def case(family):
@@ -61,9 +75,10 @@ class RuntimeDiagnostics(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             verifier.check_reference_behavior(selected, value)
 
-    def test_all_nine_original_runtime_cases_use_their_own_native_and_reference_family(self):
-        runtime = [selected for selected in self.cases if selected["kind"] == "runtime" and selected["reference"]]
-        self.assertEqual(len(runtime), 9)
+    def test_i32_runtime_cases_use_their_checked_family(self):
+        families = {row[0] for row in FAMILIES}
+        runtime = [selected for selected in self.cases if selected.get("error") in families]
+        self.assertEqual(len(runtime), 12)
         for selected in runtime:
             for family, native, code, message in FAMILIES:
                 with self.subTest(case=selected["name"], family=family):
@@ -75,6 +90,26 @@ class RuntimeDiagnostics(unittest.TestCase):
                     else:
                         self.reject_native(selected, native_result)
                         self.reject_reference(selected, reference_result)
+
+    def test_byte_faults_preserve_type_specific_diagnostics(self):
+        runtime = [selected for selected in self.cases if selected.get("error") in BYTE_FAMILIES]
+        self.assertEqual(len(runtime), 9)
+        for selected in runtime:
+            with self.subTest(case=selected["name"]):
+                native, code, message = BYTE_FAMILIES[selected["error"]]
+                verifier.check_native_behavior(selected, result(stderr=native))
+                verifier.check_reference_behavior(selected, result(stdout=framed(records(code, message))))
+                self.reject_reference(selected, result(stdout=framed(records(code, message.replace("u8", "i32")))))
+
+    def test_i64_faults_preserve_type_specific_diagnostics(self):
+        runtime = [selected for selected in self.cases if selected.get("error") in I64_FAMILIES]
+        self.assertEqual(len(runtime), 12)
+        for selected in runtime:
+            with self.subTest(case=selected["name"]):
+                native, code, message = I64_FAMILIES[selected["error"]]
+                verifier.check_native_behavior(selected, result(stderr=native))
+                verifier.check_reference_behavior(selected, result(stdout=framed(records(code, message))))
+                self.reject_reference(selected, result(stdout=framed(records(code, message.replace("i64", "i32")))))
 
     def test_call_depth_limit_uses_only_the_native_error_channel(self):
         selected = next(case for case in self.cases if case["name"] == "call-frame-limit")
@@ -183,7 +218,7 @@ class RuntimeDiagnostics(unittest.TestCase):
         verifier.check_reference_behavior(case("overflow"), result(stdout=framed(valid_unicode)))
 
     def test_original_value_and_reject_reference_contracts_are_preserved(self):
-        self.assertEqual(len(self.cases), 46)
+        self.assertEqual(len(self.cases), 207)
         for selected in self.cases:
             if selected["kind"] == "value":
                 value = result(stdout=selected["stdout"].encode(), status=0)

@@ -88,6 +88,77 @@ class ReleaseProvenanceTests(unittest.TestCase):
         with patch.object(verifier.subprocess, "run", side_effect=verify):
             self.assertEqual(self.invoke(self.args), 1)
 
+    def distribution(self):
+        for name in verifier.ASSETS:
+            path = self.root / name
+            path.write_bytes(name.encode())
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            newline = "\r\n" if name.endswith(".zip") else "\n"
+            path.with_name(name + ".sha256").write_bytes(f"{digest}  {name}{newline}".encode())
+            path.with_name(name + ".sigstore.json").write_text("{}\n")
+        return ["--distribution", str(self.root), *self.args[1:]]
+
+    def verified_download(self, command, **kwargs):
+        archive = Path(command[3])
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        data = self.receipt(name=archive.name, digest=digest)
+        return subprocess.CompletedProcess([], 0, data, "")
+
+    def test_every_downloaded_platform_is_checked_against_the_tag_and_commit(self):
+        args = self.distribution()
+        with patch.object(verifier.subprocess, "run", side_effect=self.verified_download) as run:
+            with patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(self.invoke(args), 0)
+        seen = set()
+        for call in run.call_args_list:
+            command = call.args[0]
+            archive = Path(command[3])
+            seen.add(archive.name)
+            self.assertEqual(command[command.index("--source-ref") + 1], "refs/tags/v0.9.0")
+            self.assertEqual(command[command.index("--source-digest") + 1], "a" * 40)
+            self.assertEqual(Path(command[command.index("--bundle") + 1]),
+                             archive.with_name(archive.name + ".sigstore.json"))
+        self.assertEqual(run.call_count, len(verifier.ASSETS))
+        self.assertEqual(seen, verifier.ASSETS)
+
+    def test_incomplete_unexpected_or_mismatched_downloads_are_rejected_before_verification(self):
+        args = self.distribution()
+        original = self.bundle.read_bytes()
+        with patch.object(verifier.subprocess, "run") as run:
+            self.bundle.unlink()
+            self.assertEqual(self.invoke(args), 1)
+            self.bundle.write_bytes(original)
+            extra = self.root / "unrecognized.zip"
+            extra.touch()
+            self.assertEqual(self.invoke(args), 1)
+            extra.unlink()
+            self.archive.with_name(self.archive.name + ".sha256").write_text("0" * 64 + "\n")
+            self.assertEqual(self.invoke(args), 1)
+            run.assert_not_called()
+
+    def test_downloads_cannot_change_during_provenance_checks(self):
+        args = self.distribution()
+
+        def verify(command, **kwargs):
+            self.bundle.write_text("{\"changed\":true}\n")
+            return self.verified_download(command, **kwargs)
+
+        with patch.object(verifier.subprocess, "run", side_effect=verify):
+            self.assertEqual(self.invoke(args), 1)
+
+    def test_publication_requires_verification_after_download_and_before_upload(self):
+        workflow = Path(verifier.__file__).resolve().parents[1] / ".github/workflows/release.yml"
+        publish = workflow.read_text().split("\n  publish:\n", 1)[1]
+        check = (
+            "      - name: Verify downloaded release archives before publishing\n"
+            "        env:\n"
+            "          GH_TOKEN: ${{ github.token }}\n"
+            "        run: python -B scripts/verify_release_provenance.py --distribution dist\n"
+        )
+        self.assertEqual(publish.count(check), 1)
+        self.assertLess(publish.index("uses: actions/download-artifact@"), publish.index(check))
+        self.assertLess(publish.index(check), publish.index("uses: softprops/action-gh-release@"))
+
 
 if __name__ == "__main__":
     unittest.main()
