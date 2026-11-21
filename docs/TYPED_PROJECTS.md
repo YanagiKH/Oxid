@@ -200,6 +200,12 @@ Use `sleep_millis(100)` from `std::time` to pause the current thread for
 about 100 milliseconds. It returns true when the wait completes. Zero completes
 immediately. A negative duration or a failed wait returns false.
 
+## Drawing repeatable random numbers
+
+Add the [seeded random library](../packages/random/README.md) as a dependency
+and use `seeded(42u32)` to create a generator. Call `below(&mut generator, 100u32)`
+to draw a number from 0 to 99. Reuse the seed to repeat the same sequence.
+
 ## Reading and writing file buffers
 
 Add the [file I/O library](../packages/file_io/oxid.toml) as a local dependency
