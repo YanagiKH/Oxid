@@ -624,13 +624,15 @@ pub(super) fn check_with_queries<'facade, Q: ShapeDeclarationQueries<'facade>>(
             }
             let selected = d.projection(root, &l.projection)?.0;
             if l.region == LoanRegion::Local
-                && !matches!(selected, ValueTy::Owned(AggregateTy::Record(_)))
+                && !matches!(selected, ValueTy::Owned(field) if field.supports_local_field_borrow())
             {
                 return Err(bad(Malformed::Type, l.span));
             }
             match selected {
                 ValueTy::Owned(AggregateTy::FixedArray(array)) => {
-                    if l.referent() != BorrowedTy::ScalarSlice(array.element()) {
+                    if l.region != LoanRegion::Local
+                        && l.referent() != BorrowedTy::ScalarSlice(array.element())
+                    {
                         return Err(bad(Malformed::Type, l.span));
                     }
                     BorrowedTy::Exact(AggregateTy::FixedArray(array))

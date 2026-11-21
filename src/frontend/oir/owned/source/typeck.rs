@@ -4058,15 +4058,22 @@ fn check_body(
                     paid.as_deref_mut(),
                 )? {
                     let selected = projection.field;
-                    let ValueTy::Owned(field @ AggregateTy::Record(_)) =
+                    let ValueTy::Owned(field) =
                         program.records()[selected.record.0].fields[selected.index].ty
                     else {
                         return Err(error(
                             "E0300",
-                            "local field references require an owned record field",
+                            "local field references require a borrowable aggregate field",
                             borrow_span,
                         ));
                     };
+                    if !field.supports_local_field_borrow() {
+                        return Err(error(
+                            "E0300",
+                            "this field type cannot be borrowed into a local reference",
+                            borrow_span,
+                        ));
+                    }
                     actual = ParameterTy::Reference {
                         referent: BorrowedTy::Exact(field),
                         kind,
