@@ -22,8 +22,8 @@ The program returns 42. `let current = &counter;` grants shared access;
 itself is immutable. An optional annotation must match exactly, for example
 `let current: &mut Counter = &mut counter;`.
 
-The initializer borrows a complete named aggregate or a struct field of
-struct type. Use `let view = &mut value.field;` for a writable field borrow.
+Use `let view = &mut value.field;` to borrow a writable struct, fixed array,
+`ByteBuf`, `File`, or a vector of scalars or `Copy` records.
 Records, fixed arrays and existing owned resource types keep their ordinary
 field, indexing and helper operations. Borrow an existing reference with
 `&*current` or `&mut *current`, including when passing it to a function. A shared reference
@@ -41,7 +41,7 @@ The last use of a reference does not shorten its lifetime. Use an inner block
 of an `if`, loop or match arm when the owner must become available again.
 
 Reference values cannot yet be copied into another binding, stored in a record,
-returned from a function or reassigned. Local array-field, scalar, slice and
+returned from a function or reassigned. Local scalar, slice and
 temporary borrows remain unavailable. Enum values cannot be borrowed.
 Existing call-only field and slice
 borrows retain their own rules. General dereference expressions are unchanged.
