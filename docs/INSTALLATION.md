@@ -46,7 +46,22 @@ Keep the checksum beside the archive with the same filename plus `.sha256`. `OXI
 
 ## Verify release provenance
 
-For releases that provide `.sigstore.json` files, use a recent [GitHub CLI](https://cli.github.com/) to verify that the archive was signed by Oxid's release workflow. Download the archive and its signature bundle, then run the following with the selected release tag:
+For releases with `.sigstore.json` bundles, install a recent GitHub CLI and require a signature before installation. On Linux or macOS, set `tag` to the release tag and run the installer. [GitHub CLI](https://cli.github.com/)
+
+```sh
+OXID_VERSION="$tag" OXID_VERIFY_SIGNATURE=1 sh install-oxid.sh
+```
+
+On Windows, set `$tag` to the release tag and run the installer.
+
+```powershell
+$env:OXID_VERIFY_SIGNATURE = "1"
+.\install-oxid.ps1 -Version $tag
+```
+
+The installers verify the archive against the signature from Oxid's release workflow and the selected tag. To verify an offline archive, keep its `.sigstore.json` beside it and set `OXID_TRUSTED_ROOT` to a trusted root file obtained separately.
+
+To verify an archive manually, download the signature bundle and pass the selected release tag.
 
 ```sh
 gh attestation verify oxid-linux-aarch64.tar.gz \

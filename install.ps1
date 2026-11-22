@@ -40,9 +40,52 @@ function Move-OxidExecutable {
     }
 }
 
+function Assert-OxidSignature {
+    param(
+        [string]$GitHubCli, [string]$ArchivePath, [string]$Bundle,
+        [string]$Version, [string]$Digest
+    )
+    $repository = "YanagiKH/Oxid"
+    $arguments = @(
+        "attestation", "verify", $ArchivePath, "--hostname", "github.com", "--repo", $repository,
+        "--signer-workflow", "$repository/.github/workflows/release.yml",
+        "--source-ref", "refs/tags/$Version", "--cert-oidc-issuer", "https://token.actions.githubusercontent.com",
+        "--predicate-type", "https://slsa.dev/provenance/v1", "--deny-self-hosted-runners", "--bundle", $Bundle,
+        "--format", "json"
+    )
+    if ($env:OXID_TRUSTED_ROOT) {
+        $arguments += @("--custom-trusted-root", $env:OXID_TRUSTED_ROOT)
+    }
+    $verified = & $GitHubCli @arguments
+    if ($LASTEXITCODE -ne 0) { throw "Signature verification failed." }
+    $records = ($verified -join [Environment]::NewLine) | ConvertFrom-Json
+    $asset = [System.IO.Path]::GetFileName($ArchivePath)
+    foreach ($record in $records) {
+        foreach ($subject in $record.verificationResult.statement.subject) {
+            if ($subject.name -ceq $asset -and $subject.digest.sha256 -ceq $Digest) { return }
+        }
+    }
+    throw "Signature verification failed."
+}
+
 function Install-OxidRelease {
     param([string]$Version, [string]$InstallDir, [string]$Archive)
     if (-not $Version) { $Version = "latest" }
+    $signatureOption = $env:OXID_VERIFY_SIGNATURE
+    if ($signatureOption -and $signatureOption -cnotmatch '\A[01]\z') {
+        throw "OXID_VERIFY_SIGNATURE must be 0 or 1."
+    }
+    $verifySignature = $signatureOption -eq "1"
+    if ($verifySignature) {
+        if ($Version -cnotmatch '\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\z') {
+            throw "Signature verification requires a specific release tag."
+        }
+        $githubCli = Get-Command gh -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if (-not $githubCli) {
+            throw "Install a recent GitHub CLI to verify the signature."
+        }
+    }
     if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA "Oxid\bin" }
     $InstallDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InstallDir)
     $destination = Join-Path $InstallDir "oxid.exe"
@@ -82,6 +125,16 @@ function Install-OxidRelease {
         if ($expected -cnotmatch '\A[0-9a-fA-F]{64}\z') { throw "Invalid SHA-256 checksum." }
         $actual = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
         if ($expected -ine $actual) { throw "Checksum verification failed." }
+
+        if ($verifySignature) {
+            $bundle = "$archivePath.sigstore.json"
+            if ($Archive) {
+                [System.IO.File]::Copy("$localArchive.sigstore.json", $bundle, $false)
+            } else {
+                Invoke-WebRequest "$baseUrl/$asset.sigstore.json" -OutFile $bundle
+            }
+            Assert-OxidSignature $githubCli.Source $archivePath $bundle $Version ($actual.ToLowerInvariant())
+        }
 
         Add-Type -AssemblyName System.IO.Compression
         $archiveStream = $null
