@@ -876,6 +876,53 @@ fn type_definitions_follow_generic_annotations_and_type_parameters() {
     p.unchanged();
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn record_constructor_and_pattern_fields_navigate_to_their_visible_declarations() {
+    let p = Project::new();
+    let main = "mod shapes;use crate::shapes::Point as Dot;\nstruct Other{value:i32}\nfn main()->i32{let input=Dot{value:42};let Dot{value:answer}=input;return answer;}";
+    p.package("", "app", "", main);
+    let declared = "pub struct Point{pub value:i32}\npub struct Hidden{secret:i32}";
+    p.write("src/shapes.ox", declared);
+    let path = p.uri("src/main.ox");
+    let library = p.uri("src/shapes.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&path, main);
+    let unsaved = declared.replace("pub value", "/* 🦀 */ pub value");
+    c.open(&library, &unsaved);
+    c.clean(&path);
+    for (needle, declaration, width) in [
+        ("value:42", "value:i32", 5),
+        ("value:answer", "value:i32", 5),
+        ("Dot{value:answer", "Point{", 5),
+    ] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(main,needle)}),
+        );
+        let start = position_at(&unsaved, declaration);
+        let mut end = start.clone();
+        end["character"] = json!(start["character"].as_u64().unwrap() + width);
+        assert_eq!(
+            result["result"],
+            json!([{"uri":library,"range":{"start":start,"end":end}}]),
+            "{needle}: {result}"
+        );
+    }
+    let invalid =
+        "mod shapes;fn main()->i32{let hidden=crate::shapes::Hidden{secret:42};return 0;}";
+    c.change(&path, 2, json!([{"text":invalid}]));
+    let result = c.request(
+        "textDocument/definition",
+        json!({"textDocument":{"uri":path},"position":position_at(invalid,"secret:")}),
+    );
+    assert!(result.get("error").is_none(), "{result}");
+    assert_eq!(result["result"], Value::Null, "{result}");
+    c.finish();
+    p.unchanged();
+}
+
 #[test]
 fn variant_definitions_follow_generic_construction_and_match_patterns() {
     let p = Project::new();

@@ -124,6 +124,8 @@ enum ValueUse {
     Qualified(ast::PathId),
     VariantPattern(ast::PathId),
     GenericVariant(ast::ItemPath, Span),
+    RecordPattern(ast::ItemPath),
+    RecordField(ast::ItemPath, Span),
 }
 
 fn value_use(syntax: &ast::Program, offset: usize) -> Option<ValueUse> {
@@ -146,6 +148,14 @@ fn value_use(syntax: &ast::Program, offset: usize) -> Option<ValueUse> {
                 syntax.generic_application(application)?.path,
                 variant,
             )),
+            ast::ExprKind::StructLiteral { record, ref fields }
+                if contains(expression.span, offset) =>
+            {
+                fields.iter().find_map(|field| {
+                    contains(field.name, offset)
+                        .then_some(ValueUse::RecordField(record, field.name))
+                })
+            }
             _ => None,
         })
         .or_else(|| {
@@ -154,16 +164,22 @@ fn value_use(syntax: &ast::Program, offset: usize) -> Option<ValueUse> {
                 .iter()
                 .flat_map(|function| &function.blocks)
                 .flat_map(|block| &block.body)
-                .filter_map(|statement| match &statement.kind {
-                    ast::StmtKind::Match { arms, .. } if contains(statement.span, offset) => {
-                        Some(arms)
+                .filter(|statement| contains(statement.span, offset))
+                .find_map(|statement| match &statement.kind {
+                    ast::StmtKind::Match { arms, .. } => arms.iter().find_map(|arm| {
+                        let name = path_name(syntax, ast::ItemPath::Absolute(arm.variant))?;
+                        contains(name, offset).then_some(ValueUse::VariantPattern(arm.variant))
+                    }),
+                    ast::StmtKind::DestructureRecord { record, fields, .. } => {
+                        if path_name(syntax, *record).is_some_and(|name| contains(name, offset)) {
+                            return Some(ValueUse::RecordPattern(*record));
+                        }
+                        fields.iter().find_map(|field| {
+                            contains(field.field, offset)
+                                .then_some(ValueUse::RecordField(*record, field.field))
+                        })
                     }
                     _ => None,
-                })
-                .flatten()
-                .find_map(|arm| {
-                    let name = path_name(syntax, ast::ItemPath::Absolute(arm.variant))?;
-                    contains(name, offset).then_some(ValueUse::VariantPattern(arm.variant))
                 })
         })
 }
@@ -233,6 +249,12 @@ pub(in crate::frontend) fn definition(
         (_, Some(ValueUse::GenericVariant(path, name))) => index
             .generic_variant_template(module, path, name, &work)
             .and_then(|target| query.variant_declaration_name(target)),
+        (_, Some(ValueUse::RecordPattern(path))) => {
+            query.type_declaration_name(module, ItemPathRef { file, path })
+        }
+        (_, Some(ValueUse::RecordField(path, field))) => {
+            query.record_field_declaration_name(module, ItemPathRef { file, path }, field)
+        }
         (None, None) => return Ok(None),
     };
     match target {
