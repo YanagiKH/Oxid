@@ -39,6 +39,7 @@ pub(in crate::frontend) enum Item {
     WaitForTermination,
     MonotonicMillis,
     SleepMillis,
+    UnixMillis,
 }
 impl Item {
     pub const ALL: [Self; 28] = [
@@ -106,6 +107,7 @@ impl Item {
             Self::WaitForTermination => "wait_for_termination",
             Self::MonotonicMillis => "monotonic_millis",
             Self::SleepMillis => "sleep_millis",
+            Self::UnixMillis => "unix_millis",
         }
     }
     pub fn family(self) -> usize {
@@ -124,7 +126,7 @@ impl Item {
             | Self::SeekAbsolute => 3,
             Self::ArgStatus | Self::ArgCount | Self::ArgBytes => 4,
             Self::EnableTermination | Self::TerminationRequested | Self::WaitForTermination => 5,
-            Self::MonotonicMillis | Self::SleepMillis => 6,
+            Self::MonotonicMillis | Self::SleepMillis | Self::UnixMillis => 6,
             _ => 0,
         }
     }
@@ -165,6 +167,7 @@ impl Item {
             Self::WaitForTermination => Function::WaitForTermination,
             Self::MonotonicMillis => Function::MonotonicMillis,
             Self::SleepMillis => Function::SleepMillis,
+            Self::UnixMillis => Function::UnixMillis,
 
             _ => return None,
         })
@@ -265,6 +268,7 @@ pub(in crate::frontend) enum Function {
     WaitForTermination,
     MonotonicMillis,
     SleepMillis,
+    UnixMillis,
 }
 impl Function {
     pub fn process(self) -> Option<super::termination::Function> {
@@ -274,6 +278,7 @@ impl Function {
             Self::WaitForTermination => Some(super::termination::Function::Wait),
             Self::MonotonicMillis => Some(super::termination::Function::MonotonicMillis),
             Self::SleepMillis => Some(super::termination::Function::SleepMillis),
+            Self::UnixMillis => Some(super::termination::Function::UnixMillis),
             _ => None,
         }
     }
@@ -332,6 +337,7 @@ impl Function {
             Self::WaitForTermination => Item::WaitForTermination,
             Self::MonotonicMillis => Item::MonotonicMillis,
             Self::SleepMillis => Item::SleepMillis,
+            Self::UnixMillis => Item::UnixMillis,
         }
     }
     pub fn result_enum(self) -> Option<Enumeration> {
@@ -367,9 +373,8 @@ impl Function {
         };
         let scalar = |ty| ParameterTy::Value(ValueTy::Scalar(ty));
         let (parameters, count) = match self {
-            New | ArgCount | EnableTermination | TerminationRequested | MonotonicMillis => {
-                ([unit; 3], 0)
-            }
+            New | ArgCount | EnableTermination | TerminationRequested | MonotonicMillis
+            | UnixMillis => ([unit; 3], 0),
             WaitForTermination | SleepMillis => ([scalar(Ty::I32), unit, unit], 1),
             Take => ([exclusive, unit, unit], 1),
             Len | Capacity => ([shared, unit, unit], 1),
@@ -388,7 +393,7 @@ impl Function {
         let result = match self {
             New | Take => ValueTy::Owned(AggregateTy::ByteBuf),
             Len | Capacity | ArgCount => ValueTy::Scalar(Ty::I32),
-            MonotonicMillis => ValueTy::Scalar(Ty::I64),
+            MonotonicMillis | UnixMillis => ValueTy::Scalar(Ty::I64),
             Truncate => ValueTy::Scalar(Ty::Unit),
             EnableTermination | TerminationRequested | WaitForTermination | SleepMillis => {
                 ValueTy::Scalar(Ty::Bool)
@@ -454,6 +459,7 @@ impl Item {
             Self::WaitForTermination => PROCESS_ITEM_START + 2,
             Self::MonotonicMillis => PROCESS_ITEM_START + 3,
             Self::SleepMillis => PROCESS_ITEM_START + 4,
+            Self::UnixMillis => PROCESS_ITEM_START + 5,
             _ => self as usize,
         }
     }
@@ -539,6 +545,7 @@ impl Inventory {
                 | Item::WaitForTermination
                 | Item::MonotonicMillis
                 | Item::SleepMillis
+                | Item::UnixMillis
         ) {
             return false;
         }
@@ -625,6 +632,7 @@ impl Inventory {
                 | Item::WaitForTermination
                 | Item::MonotonicMillis
                 | Item::SleepMillis
+                | Item::UnixMillis
         ) {
             return self;
         }

@@ -892,7 +892,8 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         target_pointer_width = "64",
         target_endian = "little"
     ))]
-    let windows_file_or_time = plan.has_file_delivery() || plan.has_clock() || plan.has_sleep();
+    let windows_file_or_time =
+        plan.has_file_delivery() || plan.has_clock() || plan.has_unix_clock() || plan.has_sleep();
     #[cfg(all(
         target_os = "windows",
         target_env = "msvc",
@@ -1337,6 +1338,14 @@ fn runtime_storage_bytes<W: PlanWitness>(
         runtime_bytes,
         if plan.has_clock() {
             crate::program_termination::clock_bytes()
+        } else {
+            0
+        },
+    )?;
+    let runtime_bytes = add(
+        runtime_bytes,
+        if plan.has_unix_clock() {
+            crate::program_termination::unix_clock_bytes()
         } else {
             0
         },
@@ -3955,6 +3964,10 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
     }
     if plan.has_clock() {
         out.write_str("declare i64 @__oxid_monotonic_millis()\n")
+            .unwrap();
+    }
+    if plan.has_unix_clock() {
+        out.write_str("declare i64 @__oxid_unix_millis()\n")
             .unwrap();
     }
     if plan.has_sleep() {
