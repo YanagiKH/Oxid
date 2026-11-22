@@ -18,7 +18,7 @@ struct Row {
 }
 enum Selection<'a> {
     Module(ModuleId),
-    Enumeration(&'a Row),
+    Nominal(&'a Row),
 }
 
 pub(in crate::frontend) struct Namespace<'a, 's> {
@@ -218,48 +218,20 @@ impl<'a, 's> Namespace<'a, 's> {
             if query.segments().len() != 1 || query.is_import() {
                 return Err(bad(at));
             }
-            let mut local = None;
-            for row in &self.rows {
-                self.work.debit(1, first, "editor local enum lookup")?;
-                if row.module == requester
-                    && row.declaration.kind != DeclarationKind::Function
-                    && compare_bytes(map.text(row.declaration.name), name, self.work, first)?
-                        == Ordering::Equal
-                {
-                    local = Some(row);
-                    break;
-                }
-            }
-            let file = &self.sources.project().editor_files()[requester.0];
-            let selection = match file.imported_name(source, name, first, self.work)? {
-                ImportedName::Local => local,
-                ImportedName::Absolute(tokens) if local.is_none() => {
-                    let mut segments = tokens.iter().filter(|token| token.kind == Kind::Ident);
-                    if segments.next().map(|token| source.text_at(token.span)) != Some("crate") {
-                        return Err(bad(first));
-                    }
-                    match self.select(requester, segments.map(|token| token.span), true, first)? {
-                        Some(Selection::Enumeration(row)) => Some(row),
-                        _ => None,
-                    }
-                }
-                ImportedName::Absolute(_) | ImportedName::Unavailable => None,
-            };
+            let selection = self.local_type(requester, first, DeclarationKind::Enumeration)?;
             return match selection {
-                Some(row) if row.declaration.kind == DeclarationKind::Enumeration => {
-                    self.visit_variants(row, &mut add)
-                }
+                Some(row) => self.visit_variants(row, &mut add),
                 _ => Ok(()),
             };
         }
         let selected = match self.select(
             requester,
             query.segments()[1..].iter().copied(),
-            !query.is_import(),
+            (!query.is_import()).then_some(DeclarationKind::Enumeration),
             at,
         )? {
             Some(Selection::Module(module)) => module,
-            Some(Selection::Enumeration(row)) => return self.visit_variants(row, &mut add),
+            Some(Selection::Nominal(row)) => return self.visit_variants(row, &mut add),
             None => return Ok(()),
         };
         if query.segments().len() == 1 {
@@ -278,11 +250,55 @@ impl<'a, 's> Namespace<'a, 's> {
         Ok(())
     }
 
+    fn local_type(
+        &self,
+        requester: ModuleId,
+        name: Span,
+        kind: DeclarationKind,
+    ) -> Result<Option<&Row>, Box<Diagnostic>> {
+        let project = self.sources.project();
+        let map = project.sources();
+        let source = map.get(name.file);
+        let spelling = map.try_text(name).ok_or_else(|| bad(name))?;
+        let mut local = None;
+        for row in &self.rows {
+            self.work.debit(1, name, "editor local type lookup")?;
+            if row.module == requester
+                && row.declaration.kind != DeclarationKind::Function
+                && compare_bytes(map.text(row.declaration.name), spelling, self.work, name)?
+                    == Ordering::Equal
+            {
+                local = Some(row);
+                break;
+            }
+        }
+        let file = &project.editor_files()[requester.0];
+        match file.imported_name(source, spelling, name, self.work)? {
+            ImportedName::Local => Ok(local.filter(|row| row.declaration.kind == kind)),
+            ImportedName::Absolute(tokens) if local.is_none() => {
+                let mut segments = tokens.iter().filter(|token| token.kind == Kind::Ident);
+                if segments.next().map(|token| source.text_at(token.span)) != Some("crate") {
+                    return Err(bad(name));
+                }
+                match self.select(
+                    requester,
+                    segments.map(|token| token.span),
+                    Some(kind),
+                    name,
+                )? {
+                    Some(Selection::Nominal(row)) => Ok(Some(row)),
+                    _ => Ok(None),
+                }
+            }
+            ImportedName::Absolute(_) | ImportedName::Unavailable => Ok(None),
+        }
+    }
+
     fn select(
         &self,
         requester: ModuleId,
         segments: impl Iterator<Item = Span>,
-        allow_variants: bool,
+        endpoint: Option<DeclarationKind>,
         at: Span,
     ) -> Result<Option<Selection<'_>>, Box<Diagnostic>> {
         let map = self.sources.project().sources();
@@ -308,10 +324,9 @@ impl<'a, 's> Namespace<'a, 's> {
             let mut child = None;
             for row in &self.rows {
                 self.work.debit(1, segment, "editor prefix declaration")?;
-                let variant_path =
-                    allow_variants && last && row.declaration.kind == DeclarationKind::Enumeration;
+                let nominal = last && Some(row.declaration.kind) == endpoint;
                 if row.module != selected
-                    || (row.declaration.kind != DeclarationKind::Module && !variant_path)
+                    || (row.declaration.kind != DeclarationKind::Module && !nominal)
                 {
                     continue;
                 }
@@ -323,8 +338,8 @@ impl<'a, 's> Namespace<'a, 's> {
                 if !self.visible(row, requester)? {
                     return Ok(None);
                 }
-                if variant_path {
-                    return Ok(Some(Selection::Enumeration(row)));
+                if nominal {
+                    return Ok(Some(Selection::Nominal(row)));
                 }
                 for (ordinal, header) in self.sources.project().editor_modules().iter().enumerate()
                 {

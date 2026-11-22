@@ -41,8 +41,28 @@ struct RowLookupRoles<'a> {
     comparison: Result<Ordering, Box<Diagnostic>>,
     permission: Result<bool, Box<Diagnostic>>,
 }
+#[allow(dead_code)]
+struct ImportLookupRoles<'a> {
+    module: ModuleId,
+    name: Span,
+    kind: DeclarationKind,
+    source: &'a SourceFile,
+    file: &'a EditorFile,
+    spelling: &'a str,
+    imported: Result<ImportedName<'a>, Box<Diagnostic>>,
+    token_bounds: [usize; 2],
+    tokens: &'a [crate::frontend::lexer::Token],
+    token_iterator: std::slice::Iter<'a, crate::frontend::lexer::Token>,
+    filters: [usize; 2],
+    selected_position: Option<(usize, Span)>,
+    segment: Span,
+    remaining_kind: Option<DeclarationKind>,
+    selected_module: ModuleId,
+    selected_row: Option<&'a Row>,
+    selected: Result<Option<Selection<'a>>, Box<Diagnostic>>,
+}
 pub(in crate::frontend) fn lookup_control_bytes() -> usize {
-    size_of::<RowLookupRoles<'_>>()
+    size_of::<RowLookupRoles<'_>>() + size_of::<ImportLookupRoles<'_>>()
 }
 
 impl<'a, 's> Namespace<'a, 's> {
@@ -120,18 +140,12 @@ impl<'a, 's> Namespace<'a, 's> {
         };
         let mut current = names.next()?;
         if current.is_none() {
-            if file.has_member_import(source, source.text_at(first), self.work)? {
-                return Ok(None);
-            }
-            let Some(row) =
-                self.member_row(requester, first, DeclarationKind::Record, requester)?
-            else {
-                return Ok(None);
-            };
-            return Ok(Some(Record {
-                owner: self.sources,
-                row,
-            }));
+            return Ok(self
+                .local_type(requester, first, DeclarationKind::Record)?
+                .map(|row| Record {
+                    owner: self.sources,
+                    row,
+                }));
         }
         if source.text_at(first) != "crate" {
             return Err(bad(at));
@@ -305,7 +319,7 @@ mod tests {
         }
         assert_eq!(
             lookup_control_bytes(),
-            total.div_ceil(alignment) * alignment
+            total.div_ceil(alignment) * alignment + size_of::<ImportLookupRoles<'_>>()
         );
         assert_eq!(align_of::<RowLookupRoles<'_>>(), alignment);
     }
