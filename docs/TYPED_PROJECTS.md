@@ -442,6 +442,13 @@ Creation never fetches dependencies.
 Use `--sha256 HEX` with verify or extract to compare a separately supplied hash.
 [Package details](../rfcs/0038-typed-source-packages.md).
 
+To include test data or other files, list their paths relative to `oxid.toml`.
+
+```toml
+[package-files]
+"tests/data/example.bin" = true
+```
+
 For complete applications, try [Byte count](../apps/byte-count/README.md) or
 [Frame filter](../apps/frame-filter/README.md), which passes owned records,
 arrays and nested enum values between local packages.
