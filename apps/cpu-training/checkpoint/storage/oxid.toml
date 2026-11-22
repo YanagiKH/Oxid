@@ -1,0 +1,8 @@
+[project]
+name="checkpoint-storage"
+edition="typed-preview"
+kind="lib"
+entry="src/lib.ox"
+
+[dependencies]
+tensor="../../tensor"

@@ -140,6 +140,7 @@ MATRIX_MEMBERS = {member for members in MATRIX_PROJECTS.values() for member in m
 CPU_PROJECTS = {
     "apps/cpu-training": tuple("apps/cpu-training/" + name for name in (
         "checkpoint/src/lib.ox", "checkpoint/src/pipeline.ox", "checkpoint/src/training.ox",
+        "checkpoint/storage/src/lib.ox",
         "tensor/src/codec.ox", "tensor/src/data.ox", "tensor/src/data/checkpoint.ox",
         "tensor/src/data/sampler_checkpoint.ox", "tensor/src/data/session.ox", "tensor/src/graph.ox",
         "tensor/src/lib.ox", "tensor/src/model.ox", "tensor/src/model/checkpoint.ox",
@@ -151,7 +152,7 @@ CPU_PROJECTS = {
         "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/data.ox",
     )),
     "apps/streaming-training": tuple("apps/streaming-training/" + name for name in (
-        "src/main.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/reader.ox", "tests/seek.ox", "reader/src/lib.ox",
+        "src/main.ox", "src/checkpoint.ox", "src/options.ox", "src/report.ox", "src/training.ox", "tests/reader.ox", "tests/seek.ox", "reader/src/lib.ox",
     )),
 }
 
@@ -750,7 +751,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                                if name not in GENERIC_OWNED_VECTOR_PROJECTS and name not in CORE_TYPE_PROJECTS
                                and name not in LIBRARY_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT}),
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
-        self.assertEqual(len(CPU_MEMBERS), 33)
+        self.assertEqual(len(CPU_MEMBERS), 35)
         self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
         self.assertEqual([row for row in check_inventory if row[0] in CPU_PROJECTS], [("apps/cpu-training", True), ("apps/minibatch-training", True), ("apps/streaming-training", True)])
         self.assertFalse(any(name in CPU_MEMBERS for name, _ in check_inventory + run_inventory))

@@ -73,6 +73,7 @@ pub fn summary(value: &crate::training::Summary) -> i32 {
 fn help_usage() -> bool { let text = b"Train a model from dataset batches.\n\n  streaming-training <dataset> <epochs> <batch-size> [start-row] [--shuffle SEED]\n\n"; return write(&text); }
 fn help_rows() -> bool { let text = b"Epochs: 1 to 1000000. Each epoch reads the selected rows.\nThe optional zero-based start row defaults to 0; skipped rows are not validated.\n"; return write(&text); }
 fn help_shuffle() -> bool { let text = b"--shuffle SEED shuffles up to eight batches at a time. SEED is an unsigned 32-bit number.\n"; return write(&text); }
+fn help_checkpoint() -> bool { let text = b"Add --checkpoint PREFIX to save each epoch or --resume PREFIX to continue. Put this option last.\n"; return write(&text); }
 fn help_format() -> bool { let text = b"The dataset contains little-endian f64 input and target rows.\n"; return write(&text); }
-pub fn help() -> i32 { if !help_usage() || !help_rows() || !help_shuffle() || !help_format() { return 1; } return 0; }
-pub fn failure() -> i32 { let text = b"Training failed. Check the dataset format, dimensions, numeric values, memory and file permissions.\n"; write(&text); return 1; }
+pub fn help() -> i32 { if !help_usage() || !help_rows() || !help_shuffle() || !help_checkpoint() || !help_format() { return 1; } return 0; }
+pub fn failure() -> i32 { let text = b"Training failed. Check the dataset, checkpoint settings, memory and file permissions.\n"; write(&text); return 1; }

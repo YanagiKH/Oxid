@@ -16,7 +16,7 @@
 
 原生 CPU 訓練已加入 [三套件應用](../apps/cpu-training/README.md)：checked `f64` 矩陣、reverse-mode autograd、固定種子 MLP、SGD／Adam／AdamW 與雙檔 checkpoint resume。資料分批應用可載入成對矩陣，依種子洗牌並保留下一批的位置；獨立驗證比對數值差分、更新結果、收斂、損壞恢復與移除來源後部署。一般 tensor layout、大於記憶體的資料流程、較複雜模型及完整效能驗收仍待完成。
 
-[串流訓練](../apps/streaming-training/README.md) 可依序讀取資料批次，避免將完整資料集載入記憶體。可指定從哪一列開始，直接定位至該列；讀取器驗證尺寸、所選資料的有限數值與檔案結尾，跳過的資料列不會驗證；範例提供固定種子的 MLP／SGD 訓練，不包含串流資料的 shuffle、模型保存與中斷恢復。
+[串流訓練](../apps/streaming-training/README.md) 逐批讀取資料，支援指定起始列、固定種子的分組洗牌，並能在每輪存檔後繼續訓練。最新存檔損壞時可使用上一份完整存檔。
 
 ## v1.0 範圍
 

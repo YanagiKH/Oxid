@@ -191,6 +191,7 @@ TYPED_MANIFEST_PROJECTS = {
         'apps/cpu-training/checkpoint/src/lib.ox',
         'apps/cpu-training/checkpoint/src/pipeline.ox',
         'apps/cpu-training/checkpoint/src/training.ox',
+        'apps/cpu-training/checkpoint/storage/src/lib.ox',
         'apps/cpu-training/tensor/src/codec.ox',
         'apps/cpu-training/tensor/src/data.ox',
         'apps/cpu-training/tensor/src/data/checkpoint.ox',
@@ -219,6 +220,7 @@ TYPED_MANIFEST_PROJECTS = {
     ),
     "apps/streaming-training": (
         'apps/streaming-training/src/main.ox',
+        'apps/streaming-training/src/checkpoint.ox',
         'apps/streaming-training/src/options.ox',
         'apps/streaming-training/src/report.ox',
         'apps/streaming-training/src/training.ox',
