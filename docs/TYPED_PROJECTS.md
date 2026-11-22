@@ -202,6 +202,8 @@ For timestamps, import `unix_millis` from `std::time`. It returns an `i64`
 counting milliseconds since midnight UTC on January 1, 1970. The smallest
 `i64` value means the clock is unavailable.
 
+To write timestamped JSON events, use the logging package. [Structured logging](../packages/logging/README.md).
+
 Use `sleep_millis(100)` from `std::time` to pause the current thread for
 about 100 milliseconds. It returns true when the wait completes. Zero completes
 immediately. A negative duration or a failed wait returns false.

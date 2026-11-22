@@ -1,0 +1,10 @@
+[project]
+name = "logging"
+version = "0.1.0"
+kind = "lib"
+edition = "typed-preview"
+entry = "src/lib.ox"
+
+[dependencies]
+json = "../json"
+text = "../utf8_text"

@@ -257,6 +257,11 @@ TYPED_MANIFEST_PROJECTS = {
         "examples/typed-json/src/main.ox",
         "examples/typed-json/tests/validation.ox",
     ),
+    "packages/logging": ("packages/logging/src/lib.ox",),
+    "examples/typed-logging": (
+        "examples/typed-logging/src/main.ox",
+        "examples/typed-logging/tests/records.ox",
+    ),
     "packages/random": ("packages/random/src/lib.ox",),
     "examples/typed-random": (
         "examples/typed-random/src/main.ox",
@@ -290,13 +295,14 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "packages/json",
     "packages/random",
     "packages/utf8_stream",
+    "packages/logging",
 )
 TYPED_TESTED_MANIFEST_PROJECTS = ("apps/byte-count", "apps/frame-filter", "examples/typed-float-vector", "examples/typed-matrix", "examples/typed-vectors")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/copy-records", "examples/copy-record-vectors")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/owned-record-vectors",)
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/typed-owned-text", "examples/typed-option-result")
 TYPED_TESTED_MANIFEST_PROJECTS += ("examples/typed-int-map", "examples/typed-json")
-TYPED_TESTED_MANIFEST_PROJECTS += ("examples/typed-random", "examples/typed-utf8-stream")
+TYPED_TESTED_MANIFEST_PROJECTS += ("examples/typed-random", "examples/typed-utf8-stream", "examples/typed-logging")
 # Effectful roots are checked here, but run only by dedicated verifiers that
 # supply their input explicitly. Shared modules count only once below.
 TYPED_CHECK_ONLY_FILES = (
