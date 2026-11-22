@@ -1368,6 +1368,66 @@ fn load_test_fixtures(path: &Path) -> Result<HashSet<String>, String> {
     Ok(fixtures)
 }
 
+pub(crate) fn package_file_paths(
+    bytes: &[u8],
+    maximum: usize,
+) -> Result<std::collections::BTreeSet<String>, String> {
+    let text = std::str::from_utf8(bytes).map_err(|_| "package manifest is not UTF-8")?;
+    let mut files = std::collections::BTreeSet::new();
+    let mut continuation = ManifestValueContinuation::default();
+    let mut seen = false;
+    let mut in_files = false;
+    let mut at_root = true;
+    for raw in text.lines() {
+        if continuation.active() {
+            continuation.scan(raw);
+            continue;
+        }
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.starts_with('[') {
+            at_root = false;
+            let (array, names) = parse_manifest_section(line)?;
+            in_files = names[0] == "package-files";
+            if in_files {
+                if array || names.len() != 1 || seen {
+                    return Err("use one [package-files] table".into());
+                }
+                seen = true;
+            }
+            continue;
+        }
+        let equals = manifest_delimiter(line, '=');
+        if !in_files {
+            if let Some(equals) = equals {
+                let key = line[..equals].trim();
+                let first = manifest_delimiter(key, '.').unwrap_or(key.len());
+                if at_root && parse_manifest_key(key[..first].trim()).as_deref() == Ok("package-files") {
+                    return Err("use one [package-files] table".into());
+                }
+                continuation.scan(&line[equals + 1..]);
+            }
+            continue;
+        }
+        let entry = "package file entries require \"relative/file\" = true";
+        let equals = equals.ok_or(entry)?;
+        let key = line[..equals].trim();
+        let flag = line[equals + 1..].split('#').next().unwrap_or("").trim();
+        if !key.starts_with('"') || !key.ends_with('"') || flag != "true" {
+            return Err(entry.into());
+        }
+        let relative = parse_manifest_key(key)?;
+        if files.contains(&relative) {
+            return Err(format!("duplicate package file: {relative}"));
+        }
+        if files.len() >= maximum {
+            return Err("too many declared package files".into());
+        }
+        files.insert(relative);
+    }
+    Ok(files)
+}
+
 pub(crate) fn load_manifest(path: &Path) -> Result<ProjectManifest, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("cannot read manifest: {} ({})", path.display(), e))?;
     parse_manifest_text(&text, path, false)
