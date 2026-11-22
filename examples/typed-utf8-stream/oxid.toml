@@ -1,0 +1,14 @@
+[project]
+name = "typed-utf8-stream"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[dependencies]
+stream = "../../packages/utf8_stream"
+
+[build]
+entry-mode = "result"
+
+[tests]
+decode = "tests/decode.ox"

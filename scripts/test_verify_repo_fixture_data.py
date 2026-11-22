@@ -440,6 +440,11 @@ LIBRARY_PROJECTS = {
     "examples/typed-random": (
         "examples/typed-random/src/main.ox", "examples/typed-random/tests/stream.ox",
     ),
+    "packages/utf8_stream": ("packages/utf8_stream/src/lib.ox",),
+    "examples/typed-utf8-stream": (
+        "examples/typed-utf8-stream/src/main.ox",
+        "examples/typed-utf8-stream/tests/decode.ox",
+    ),
 }
 
 
@@ -458,8 +463,8 @@ def compiler_and_library_predecessor_report(text):
     if len(data) != 1 or len(report) != 1:
         raise AssertionError("expected one complete repository summary and DATA summary")
     changes = ((data[0], {"data": 11}),
-               (report[0], {"language": 17, "checks": 8, "members": 17, "projects": 8,
-                            "runs": 3, "entries": 3, "project_runs": 3, "project_tests": 3}))
+               (report[0], {"language": 20, "checks": 10, "members": 20, "projects": 10,
+                            "runs": 4, "entries": 4, "project_runs": 4, "project_tests": 4}))
     edits = []
     for match, deltas in changes:
         for name, delta in deltas.items():
@@ -533,7 +538,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         library_roots = {root / name for name in LIBRARY_PROJECTS}
         library_members = {root / name for members in LIBRARY_PROJECTS.values() for name in members}
         library_examples = [root / "examples/typed-int-map", root / "examples/typed-json",
-                            root / "examples/typed-random"]
+                            root / "examples/typed-random", root / "examples/typed-utf8-stream"]
         self.assertEqual({name: verify_repo.TYPED_MANIFEST_PROJECTS[name] for name in LIBRARY_PROJECTS},
                          LIBRARY_PROJECTS)
         self.assertTrue(library_members <= set(sources))
@@ -572,7 +577,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - GENERIC_OWNED_VECTOR_PROJECTS.keys()
                              - CORE_TYPE_PROJECTS.keys() - LIBRARY_PROJECTS.keys()
                              - {"compiler/native", FILE_IO_PROJECT}), 22)
-        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 13)
+        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 14)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-option-result"), 1)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-int-map"), 1)
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/int_map"), 1)
@@ -580,6 +585,8 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/json"), 1)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-random"), 1)
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/random"), 1)
+        self.assertIn("examples/typed-utf8-stream", verify_repo.TYPED_TESTED_MANIFEST_PROJECTS)
+        self.assertIn("packages/utf8_stream", verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
         predecessor_fixture_data = verify_repo.fixture_data_sources(root) - owned_vector_data - owned_text_data - compiler_data
         self.assertEqual(predecessor_fixture_data - copy_data, data_sources | byte_data | vector_data)
         self.assertEqual(len(data_sources | byte_data), 188 + 325)
@@ -1022,7 +1029,9 @@ class PublishedRegistrationTests(unittest.TestCase):
                                   ("packages/json", ("check",)),
                                   ("examples/typed-json", ("check", "run", "test")),
                                   ("packages/random", ("check",)),
-                                  ("examples/typed-random", ("check", "run", "test"))):
+                                  ("examples/typed-random", ("check", "run", "test")),
+                                  ("packages/utf8_stream", ("check",)),
+                                  ("examples/typed-utf8-stream", ("check", "run", "test"))):
             calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / project]
             self.assertEqual([call.args[0] for call in calls],
                              [[str(Path(sys.executable).resolve()), command] for command in expected])
