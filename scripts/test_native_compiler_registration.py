@@ -24,6 +24,10 @@ MEMBERS = (
     "compiler/native/src/delivery.ox",
 )
 REJECT_NAMES = {
+    "shift-bool-count",
+    "shift-character-value",
+    "shift-separated-angle",
+    "shift-comment-between-angles",
     "bitwise-bool",
     "bitwise-character",
     "bitwise-mixed-width",
@@ -208,12 +212,12 @@ class NativeCompilerRegistration(unittest.TestCase):
 
     def test_all_subject_cases_and_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 341)
+        self.assertEqual(len(cases), 359)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 138, "reject": 133, "runtime": 70})
+                         {"value": 147, "reject": 137, "runtime": 75})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})

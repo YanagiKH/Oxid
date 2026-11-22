@@ -47,9 +47,21 @@ fn precedence(op: i32) -> i32 {
     if op == 66 { return 5; }
     if op == 67 { return 6; }
     if op == 65 { return 7; }
-    if op == 29 || op == 30 { return 8; }
-    if op >= 31 && op <= 33 { return 9; }
+    if op == 69 || op == 70 { return 8; }
+    if op == 29 || op == 30 { return 9; }
+    if op >= 31 && op <= 33 { return 10; }
     return 0;
+}
+fn infix(c: &Compiler) -> i32 {
+    let current = token(&*c, c.cursor);
+    if current.kind == 37 || current.kind == 39 {
+        let next = token(&*c, c.cursor + 1);
+        if current.kind == next.kind && current.end == next.start {
+            if current.kind == 37 { return 69; }
+            return 70;
+        }
+    }
+    return current.kind;
 }
 fn bind(c: &mut Compiler, name: i32, ty: i32, writable: bool, slot: i32) -> () {
     let owner = c.functions[c.current];
@@ -510,24 +522,31 @@ pub fn expression(c: &mut Compiler, minimum: i32, depth: i32) -> Value {
     if depth > 64 { c.error = 68; return invalid(); }
     let mut left = prefix(&mut *c, depth);
     while c.error == 0 {
-        let op = kind(&*c);
+        let op = infix(&*c);
         let rank = precedence(op);
         if rank < minimum || rank == 0 { return left; }
         c.cursor = c.cursor + 1;
         if op == 41 || op == 42 {
             left = short_circuit(&mut *c, op, left, rank, depth);
-        } else {
-            let right = expression(&mut *c, rank + 1, depth + 1);
-            if left.ty != right.ty || left.ty == 3 || left.ty == 0
-                || is_array(left.ty) || is_record(left.ty) { fail(&mut *c); return invalid(); }
-            if left.ty == 6 && ((op >= 29 && op <= 33) || (op >= 65 && op <= 67)) {
-                fail(&mut *c); return invalid();
-            }
-            if op != 35 && op != 36 && !integer_type(left.ty) && left.ty != 6 {
-                fail(&mut *c); return invalid();
-            }
-            left = crate::emit::binary(&mut *c, op, left, right);
+            continue;
         }
+        let shifting = op == 69 || op == 70;
+        if shifting { c.cursor = c.cursor + 1; }
+        let right = expression(&mut *c, rank + 1, depth + 1);
+        if shifting {
+            if !integer_type(left.ty) || !integer_type(right.ty) { fail(&mut *c); return invalid(); }
+            left = crate::emit::shift(&mut *c, op, left, right);
+            continue;
+        }
+        if left.ty != right.ty || left.ty == 3 || left.ty == 0
+            || is_array(left.ty) || is_record(left.ty) { fail(&mut *c); return invalid(); }
+        if left.ty == 6 && ((op >= 29 && op <= 33) || (op >= 65 && op <= 67)) {
+            fail(&mut *c); return invalid();
+        }
+        if op != 35 && op != 36 && !integer_type(left.ty) && left.ty != 6 {
+            fail(&mut *c); return invalid();
+        }
+        left = crate::emit::binary(&mut *c, op, left, right);
     }
     return invalid();
 }
