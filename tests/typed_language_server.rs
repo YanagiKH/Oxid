@@ -2148,7 +2148,7 @@ fn record_field_completion_respects_module_visibility_and_did_close_restores_sav
 }
 
 #[test]
-fn record_field_completion_uses_direct_dependency_identity_and_closes_import_alias_inference() {
+fn record_field_completion_resolves_imports_in_the_direct_dependency() {
     let p = Project::new();
     let text = "struct Point{wrong:i32}fn inspect(point:&crate::library::Point)->i32{return point.;}fn main()->i32{return 0;}";
     p.package(
@@ -2197,11 +2197,20 @@ fn record_field_completion_uses_direct_dependency_identity_and_closes_import_ali
             completion_labels(&completion_at(&mut c, &path, text, "point.", 6)),
             ["correct"]
         );
-        let alias = "use crate::library::Point;fn inspect(point:&Point)->i32{return point.;}fn main()->i32{return 0;}";
-        c.change(&path, 2, json!([{"text":alias}]));
-        assert_eq!(
-            completion_at(&mut c, &path, alias, "point.", 6)["items"],
-            json!([])
+        for (version, imported) in [
+            (2, "use crate::library::Point;fn inspect(point:&Point)->i32{return point.;}fn main()->i32{return 0;}"),
+            (3, "use crate::library::Point as Remote;fn inspect(point:&Remote)->i32{return point.;}fn main()->i32{return 0;}"),
+        ] {
+            c.change(&path, version, json!([{"text":imported}]));
+            assert_eq!(
+                completion_labels(&completion_at(&mut c, &path, imported, "point.", 6)),
+                ["correct"]
+            );
+        }
+        let ambiguous = "use crate::library::Point;struct Point{wrong:i32}fn inspect(point:&Point)->i32{return point.;}fn main()->i32{return 0;}";
+        c.change(&path, 4, json!([{"text":ambiguous}]));
+        assert!(
+            completion_labels(&completion_at(&mut c, &path, ambiguous, "point.", 6)).is_empty()
         );
     }
     c.finish();

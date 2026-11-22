@@ -125,12 +125,8 @@ Type `point.` to complete fields of a record parameter (`Point`, `&Point`, or
 follow unsaved declarations and module visibility. Partial names replace the
 whole identifier, including when the cursor is in its middle.
 
-This first field-completion scope uses monomorphic records named locally or by
-an explicit `crate::...` path. It does not infer import aliases, generic records,
-call results or chained receivers. A preceding use of the receiver, duplicate
-binding or control flow suppresses suggestions instead of guessing whether the
-value remains available. See [record field completion](../rfcs/0072-record-field-completion.md)
-for the supported source forms.
+Field completion supports records without type parameters. Use a local name,
+an imported name or alias, or a full path such as `crate::model::Point`.
 
 Workspace checks include every member and declared test entry. Dependencies are
 resolved offline; prepare Git dependencies with ordinary project commands first.
