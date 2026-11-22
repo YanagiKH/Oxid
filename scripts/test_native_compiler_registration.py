@@ -97,6 +97,48 @@ REJECT_NAMES = {
     "array-move-during-index-read",
     "array-move-during-index-write",
     "array-move-in-loop",
+    "record-destructure-distinct-types",
+    "record-destructure-missing-field",
+    "record-destructure-duplicate-field",
+    "record-destructure-duplicate-binding",
+    "record-destructure-unknown-field",
+    "record-use-after-destructure",
+    "record-move-branch-join",
+    "record-field-write-after-rhs-move",
+    "copy-record-array-field",
+    "owned-record-array-field-replacement",
+    "enum-match-requires-binding",
+    "enum-wildcard-payload-rejected",
+    "enum-return-type-mismatch",
+    "enum-duplicate-variant",
+    "enum-nonexhaustive-match",
+    "enum-duplicate-arm",
+    "enum-nominal-arm-mismatch",
+    "enum-payload-type-mismatch",
+    "enum-arm-missing-payload",
+    "enum-move-before-second-match",
+    "enum-move-branch-join",
+    "enum-fallthrough-missing-return",
+    "enum-branch-binding-scope",
+    "slice-different-element-type",
+    "slice-read-after-move",
+    "slice-write-shared-reference",
+    "slice-move-during-call",
+    "slice-nested-move-during-call",
+    "slice-return-reference",
+    "slice-project-owner-moved-in-bound",
+    "slice-project-owner-moved-in-later-argument",
+    "slice-project-integer-bound-type",
+    "mutable-slice-immutable-owner",
+    "mutable-slice-upgrade-shared-view",
+    "mutable-slice-duplicate-exclusive-view",
+    "mutable-slice-shared-then-exclusive",
+    "mutable-slice-exclusive-then-nested-read",
+    "mutable-slice-exclusive-then-index-read",
+    "mutable-slice-exclusive-then-nested-move",
+    "mutable-slice-project-alias",
+    "mutable-slice-project-bound-move",
+    "mutable-slice-return-unsupported",
 }
 
 
@@ -161,12 +203,12 @@ class NativeCompilerRegistration(unittest.TestCase):
 
     def test_all_subject_cases_and_rejections_remain_active_data(self):
         cases, sources = data.load_cases(self.root)
-        self.assertEqual(len(cases), 229)
+        self.assertEqual(len(cases), 327)
         self.assertEqual(set(sources), {case["name"] for case in cases})
         self.assertEqual({case["name"] for case in cases if case["kind"] == "reject"}, REJECT_NAMES)
         self.assertEqual({kind: sum(case["kind"] == kind for case in cases)
                           for kind in ("value", "reject", "runtime")},
-                         {"value": 87, "reject": 86, "runtime": 56})
+                         {"value": 130, "reject": 128, "runtime": 69})
         self.assertEqual(len([case for case in cases if "file" in case]), 11)
         self.assertEqual(data.fixture_data_sources(self.root),
                          {self.root / row[0] for row in data.FIXTURE_INPUTS})

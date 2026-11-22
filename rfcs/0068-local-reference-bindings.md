@@ -22,24 +22,26 @@ The program returns 42. `let current = &counter;` grants shared access;
 itself is immutable. An optional annotation must match exactly, for example
 `let current: &mut Counter = &mut counter;`.
 
-The initializer borrows a complete named aggregate. Records, fixed arrays and
-existing owned resource types keep their ordinary field, indexing and helper
-operations. Borrow an existing reference explicitly with `&*current` or
-`&mut *current`, including when passing it to a function. A shared reference
+Use `let view = &mut value.field;` to borrow a writable struct, fixed array,
+`ByteBuf`, `File`, or a vector of scalars or `Copy` records.
+Records, fixed arrays and existing owned resource types keep their ordinary
+field, indexing and helper operations. Borrow an existing reference with
+`&*current` or `&mut *current`, including when passing it to a function. A shared reference
 cannot grant exclusive access.
 
 A local borrow lasts until the end of its declaring block. Normal completion,
 `return`, `break` and `continue` release references before ending the storage
 they protect. Inner reborrows end before their parents. Shared borrows may
-coexist; an exclusive borrow prevents overlapping access, including access
-through its parent. An owner cannot move, be replaced or be destroyed while
-borrowed. A reference cannot be used outside its scope.
+coexist, and disjoint fields may be borrowed independently. An exclusive
+borrow prevents overlapping access, including through its parent. An owner
+cannot move, be replaced or be destroyed while borrowed. A reference cannot
+be used outside its scope.
 
 The last use of a reference does not shorten its lifetime. Use an inner block
 of an `if`, loop or match arm when the owner must become available again.
 
 Reference values cannot yet be copied into another binding, stored in a record,
-returned from a function or reassigned. Local field, element, scalar, slice and
+returned from a function or reassigned. Local scalar, slice and
 temporary borrows remain unavailable. Enum values cannot be borrowed.
 Existing call-only field and slice
 borrows retain their own rules. General dereference expressions are unchanged.

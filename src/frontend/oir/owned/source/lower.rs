@@ -2558,6 +2558,13 @@ impl<'a, 'b> Walk<'a, 'b> {
                         return Err(invariant(s));
                     };
                     require(kind == granted, s)?;
+                    let projection = match self.view.statement_projection(block, index) {
+                        Some(projection) => {
+                            self.counts.projected_local_loans = true;
+                            self.projection_path(projection, borrow_span)?
+                        }
+                        None => Vec::new(),
+                    };
                     let loan = LoanId(self.counts.loans);
                     self.counts.loans = budget::add(self.counts.loans, 1)?;
                     self.counts.local_loan_depth_bound = self
@@ -2572,7 +2579,7 @@ impl<'a, 'b> Walk<'a, 'b> {
                             LoanDecl {
                                 region: LoanRegion::Local,
                                 authority,
-                                projection: Vec::new(),
+                                projection,
                                 kind,
                                 referent: BorrowedSlot::check(referent)?,
                                 span: borrow_span,

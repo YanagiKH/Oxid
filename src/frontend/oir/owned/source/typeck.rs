@@ -2384,6 +2384,38 @@ fn projection(
         .ok_or_else(|| error("E0500", "empty resolved field path", field_span))?;
     Ok(Projection { base, field, path })
 }
+
+fn local_borrow_projection(
+    program: &ResolvedOwnedProgram<'_>,
+    function: &Function,
+    binding: BindingId,
+    borrow_span: Span,
+    bindings: &[Option<ParameterTy>],
+    paid: Option<&mut BodyPaid<'_>>,
+) -> Result<Option<Projection>, Box<Diagnostic>> {
+    if !program.text(borrow_span).contains('.') {
+        return Ok(None);
+    }
+    let ast = program
+        .index()
+        .sources()
+        .ast(program.requester(function.id)?)?;
+    let start = ast
+        .tokens
+        .partition_point(projection_start(borrow_span.start));
+    let mut identifiers =
+        projection_identifiers(projection_window(&ast.tokens[start..], borrow_span.end));
+    let root = identifiers
+        .next()
+        .ok_or_else(|| error("E0500", "missing local reference root", borrow_span))?
+        .span;
+    let Some(first) = identifiers.next() else {
+        return Ok(None);
+    };
+    let mut field_span = first.span;
+    field_span.end = borrow_span.end;
+    projection(program, function, binding, root, field_span, bindings, paid).map(Some)
+}
 #[allow(clippy::too_many_arguments)] // Existing projection inputs plus the construction-local context.
 fn projected_array_access(
     program: &ResolvedOwnedProgram<'_>,
@@ -4013,7 +4045,41 @@ fn check_body(
                 borrow_span,
                 annotation,
             } => {
-                let actual = borrow_type(function, kind, place, borrow_span, &bindings)?;
+                let mut actual = borrow_type(function, kind, place, borrow_span, &bindings)?;
+                let root = match place {
+                    BorrowPlace::Owner(id) | BorrowPlace::Forwarded(id) => id,
+                };
+                if let Some(projection) = local_borrow_projection(
+                    program,
+                    function,
+                    root,
+                    borrow_span,
+                    &bindings,
+                    paid.as_deref_mut(),
+                )? {
+                    let selected = projection.field;
+                    let ValueTy::Owned(field) =
+                        program.records()[selected.record.0].fields[selected.index].ty
+                    else {
+                        return Err(error(
+                            "E0300",
+                            "local field references require a borrowable aggregate field",
+                            borrow_span,
+                        ));
+                    };
+                    if !field.supports_local_field_borrow() {
+                        return Err(error(
+                            "E0300",
+                            "this field type cannot be borrowed into a local reference",
+                            borrow_span,
+                        ));
+                    }
+                    actual = ParameterTy::Reference {
+                        referent: BorrowedTy::Exact(field),
+                        kind,
+                    };
+                    statement_projections[block.0][index] = Some(projection);
+                }
                 if let ParameterTy::Reference {
                     referent: BorrowedTy::ScalarSlice(_) | BorrowedTy::RecordSlice(_),
                     ..

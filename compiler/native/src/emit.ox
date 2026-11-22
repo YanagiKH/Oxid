@@ -2,12 +2,15 @@ use crate::model::Compiler;
 use crate::model::Value;
 use crate::model::grown;
 use crate::model::Binding;
+use crate::model::Record;
 use crate::model::Token;
 use crate::model::array_type;
 use crate::model::is_array;
 use crate::model::array_count;
 use crate::model::array_element;
 use crate::model::array_bytes;
+use crate::model::is_slice;
+use crate::model::slice_element;
 use crate::model::code;
 use crate::model::is_record;
 use crate::model::record_index;
@@ -66,6 +69,11 @@ fn write_scalar_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) 
     return;
 }
 pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> () {
+    if is_slice(ty) {
+        let view = b"{ ptr, i32 }";
+        append(&mut *c, destination, &view);
+        return;
+    }
     if is_record(ty) {
         let record = b"%r";
         append(&mut *c, destination, &record);
@@ -142,6 +150,37 @@ pub fn conditional(c: &mut Compiler, value: Value, yes: i32, no: i32) -> () {
     c.terminated = true;
     return;
 }
+fn field_cells(ty: i32) -> i32 {
+    if is_slice(ty) { return 2; }
+    if is_array(ty) {
+        let cells = (array_bytes(ty) + 7) / 8;
+        if cells > 0 { return cells; }
+    }
+    return 1;
+}
+fn product_cells(c: &Compiler, row: Record) -> i32 {
+    let mut cells = 0;
+    // A cell includes tail padding for a field aligned to at most 8 bytes.
+    for field in 0..row.field_count {
+        let descriptor = c.fields[row.first_field + field];
+        cells = cells + field_cells(descriptor.ty);
+    }
+    return cells;
+}
+fn nominal_cells(c: &Compiler, row: Record) -> i32 {
+    if !row.tagged { return product_cells(&*c, row); }
+    let mut cells = 1;
+    for variant in 0..row.field_count {
+        let payload = c.fields[row.first_field + variant];
+        if is_record(payload.ty) {
+            let product = c.records[record_index(payload.ty)];
+            cells = cells + product_cells(&*c, product);
+        } else {
+            cells = cells + field_cells(payload.ty);
+        }
+    }
+    return cells;
+}
 pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
     let literal_bytes_0 = b"  %s";
     let literal_bytes_1 = b" = alloca ";
@@ -149,14 +188,10 @@ pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
 
     if ty == 3 { return -1; }
     let id = c.next_slot;
-    let mut cells = 1;
-    if is_array(ty) {
-        cells = (array_bytes(ty) + 7) / 8;
-        if cells == 0 { cells = 1; }
-    }
+    let mut cells = field_cells(ty);
     if is_record(ty) {
         let row = c.records[record_index(ty)];
-        cells = row.field_count;
+        cells = nominal_cells(&*c, row);
     }
     if cells > 4096 - id { c.error = 68; return 0; }
     c.next_slot = id + cells;
@@ -262,7 +297,7 @@ pub fn byte_literal(c: &mut Compiler, index: i32, length: i32) -> Value {
 pub fn insert_field(c: &mut Compiler, aggregate: Value, value: Value, field: i32) -> Value {
     let name = b"  %v";
     let insert = b" = insertvalue ";
-    let first = b" undef";
+    let first = b" zeroinitializer";
     let space = b" ";
     let comma = b", ";
     let line = b"\n";
@@ -289,22 +324,26 @@ pub fn extract_field(c: &mut Compiler, aggregate: Value, field: i32, ty: i32) ->
     append(&mut *c, 2, &comma); number(&mut *c, 2, field); append(&mut *c, 2, &line);
     return Value { ty: ty, id: id };
 }
-fn check_array_index(c: &mut Compiler, index: Value, length: i32) -> () {
+fn require_index_bounds(c: &mut Compiler, within: Value) -> () {
+    let failure = b"  call void @__oxid_overflow(ptr @index_error, i64 26)\n  unreachable\n";
+    let valid = new_label(&mut *c);
+    let invalid = new_label(&mut *c);
+    conditional(&mut *c, within, valid, invalid);
+    label(&mut *c, invalid);
+    append(&mut *c, 2, &failure);
+    label(&mut *c, valid);
+    return;
+}
+fn check_index(c: &mut Compiler, index: Value, length: Value) -> () {
     let name = b"  %v";
     let compare = b" = icmp ult i32 ";
     let comma = b", ";
     let line = b"\n";
-    let failure = b"  call void @__oxid_overflow(ptr @index_error, i64 26)\n  unreachable\n";
     let id = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &compare);
     operand(&mut *c, 2, index); append(&mut *c, 2, &comma);
-    number(&mut *c, 2, length); append(&mut *c, 2, &line);
-    let valid = new_label(&mut *c);
-    let invalid = new_label(&mut *c);
-    conditional(&mut *c, Value { ty: 2, id: id }, valid, invalid);
-    label(&mut *c, invalid);
-    append(&mut *c, 2, &failure);
-    label(&mut *c, valid);
+    operand(&mut *c, 2, length); append(&mut *c, 2, &line);
+    require_index_bounds(&mut *c, Value { ty: 2, id: id });
     return;
 }
 fn array_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
@@ -313,7 +352,9 @@ fn array_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
     let slot_prefix = b", ptr %s";
     let ordinal = b", i32 0, i32 ";
     let line = b"\n";
-    check_array_index(&mut *c, index, array_count(binding.ty));
+    let count = array_count(binding.ty);
+    let length = constant(&mut *c, 1, count.to_i64());
+    check_index(&mut *c, index, length);
     let pointer = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &element);
     write_type(&mut *c, 2, binding.ty, false); append(&mut *c, 2, &slot_prefix);
@@ -321,29 +362,119 @@ fn array_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
     operand(&mut *c, 2, index); append(&mut *c, 2, &line);
     return pointer;
 }
-pub fn array_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+fn load_element(c: &mut Compiler, pointer: i32, element: i32) -> Value {
     let name = b"  %v";
     let load_instruction = b" = load ";
     let address = b", ptr %v";
     let line = b"\n";
-    let element = array_element(binding.ty);
-    let pointer = array_address(&mut *c, binding, index);
     let id = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &load_instruction);
     write_scalar_type(&mut *c, 2, element, false);
     append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &line);
     return Value { ty: element, id: id };
 }
-pub fn array_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
+pub fn array_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+    let pointer = array_address(&mut *c, binding, index);
+    return load_element(&mut *c, pointer, array_element(binding.ty));
+}
+fn slice_address(c: &mut Compiler, view: Value, index: Value) -> i32 {
+    let name = b"  %v";
+    let element = b" = getelementptr inbounds ";
+    let pointer_operand = b", ptr ";
+    let index_operand = b", i32 ";
+    let line = b"\n";
+    let base = extract_field(&mut *c, view, 0, 0);
+    let pointer = fresh(&mut *c);
+    let element_type = slice_element(view.ty);
+    append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &element);
+    write_scalar_type(&mut *c, 2, element_type, false);
+    append(&mut *c, 2, &pointer_operand); operand(&mut *c, 2, base);
+    append(&mut *c, 2, &index_operand); operand(&mut *c, 2, index);
+    append(&mut *c, 2, &line);
+    return pointer;
+}
+fn checked_slice_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
+    let view = load(&mut *c, binding.slot, binding.ty);
+    let length = extract_field(&mut *c, view, 1, 1);
+    check_index(&mut *c, index, length);
+    return slice_address(&mut *c, view, index);
+}
+pub fn slice_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
+    let pointer = checked_slice_address(&mut *c, binding, index);
+    return load_element(&mut *c, pointer, slice_element(binding.ty));
+}
+fn slice_value(c: &mut Compiler, ty: i32, length: Value, pointer: i32, stack_slot: bool) -> Value {
+    let name = b"  %v";
+    let start = b" = insertvalue { ptr, i32 } zeroinitializer, ptr ";
+    let local = b"%s";
+    let temporary = b"%v";
+    let end = b", 0\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &start);
+    if stack_slot { append(&mut *c, 2, &local); }
+    else { append(&mut *c, 2, &temporary); }
+    number(&mut *c, 2, pointer); append(&mut *c, 2, &end);
+    return insert_field(&mut *c, Value { ty: ty, id: id }, length, 1);
+}
+pub fn borrow_array(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
+    let count = array_count(binding.ty);
+    let length = constant(&mut *c, 1, count.to_i64());
+    return slice_value(&mut *c, ty, length, binding.slot, true);
+}
+pub fn project_slice(c: &mut Compiler, view: Value, start: Value, end: Value) -> Value {
+    let extent = extract_field(&mut *c, view, 1, 1);
+    // Both operands are i32. Unsigned comparisons also reject negative
+    // endpoints before forming the pointer or calculating the new length.
+    let start_bits = Value { ty: 7, id: start.id };
+    let end_bits = Value { ty: 7, id: end.id };
+    let extent_bits = Value { ty: 7, id: extent.id };
+    let ordered = binary(&mut *c, 38, start_bits, end_bits);
+    require_index_bounds(&mut *c, ordered);
+    let inside = binary(&mut *c, 38, end_bits, extent_bits);
+    require_index_bounds(&mut *c, inside);
+    let pointer = slice_address(&mut *c, view, start);
+    let length = binary(&mut *c, 30, end, start);
+    return slice_value(&mut *c, view.ty, length, pointer, false);
+}
+fn store_element(c: &mut Compiler, pointer: i32, value: Value) -> () {
     let store_instruction = b"  store ";
     let space = b" ";
     let address = b", ptr %v";
     let line = b"\n";
-    let pointer = array_address(&mut *c, binding, index);
     append(&mut *c, 2, &store_instruction);
     write_scalar_type(&mut *c, 2, value.ty, false);
     append(&mut *c, 2, &space); operand(&mut *c, 2, value);
     append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &line);
+    return;
+}
+pub fn array_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
+    let pointer = array_address(&mut *c, binding, index);
+    store_element(&mut *c, pointer, value);
+    return;
+}
+pub fn slice_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
+    let pointer = checked_slice_address(&mut *c, binding, index);
+    store_element(&mut *c, pointer, value);
+    return;
+}
+pub fn enum_switch(c: &mut Compiler, tag: Value, labels: &Vec<i32>, invalid: i32) -> () {
+    let head = b"  switch i32 ";
+    let target = b", label %b";
+    let start = b" [\n";
+    let entry = b"    i32 ";
+    let line = b"\n";
+    let end = b"  ]\n";
+    append(&mut *c, 2, &head);
+    operand(&mut *c, 2, tag);
+    append(&mut *c, 2, &target); number(&mut *c, 2, invalid);
+    append(&mut *c, 2, &start);
+    for index in 0..vector_len(&*labels) {
+        append(&mut *c, 2, &entry); number(&mut *c, 2, index);
+        append(&mut *c, 2, &target); number(&mut *c, 2, labels[index]);
+        append(&mut *c, 2, &line);
+    }
+    append(&mut *c, 2, &end);
+    c.terminated = true;
     return;
 }
 pub fn negate_bool(c: &mut Compiler, value: Value) -> Value {
@@ -757,8 +888,13 @@ fn record_preamble(c: &mut Compiler) -> () {
     let mut index = 0;
     while index < vector_len(&*c.records) && c.error == 0 {
         let row = c.records[index];
+        if nominal_cells(&*c, row) > 4096 { c.error = 68; return; }
         append(&mut *c, 0, &prefix); number(&mut *c, 0, index);
         append(&mut *c, 0, &declaration);
+        if row.tagged {
+            let tag = b"i32, ";
+            append(&mut *c, 0, &tag);
+        }
         let mut field = 0;
         while field < row.field_count {
             if field > 0 { append(&mut *c, 0, &comma); }

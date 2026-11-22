@@ -67,6 +67,13 @@ fn keyword(source: &[u8], start: i32, end: i32) -> i32 {
     if word(&*source, start, end, &in_word) { return 56; }
     if word(&*source, start, end, &char_word) { return 58; }
     if word(&*source, start, end, &unsigned_word) { return 60; }
+    return pattern_keyword(&*source, start, end);
+}
+fn pattern_keyword(source: &[u8], start: i32, end: i32) -> i32 {
+    let enum_word = b"enum";
+    let match_word = b"match";
+    if word(&*source, start, end, &enum_word) { return 62; }
+    if word(&*source, start, end, &match_word) { return 63; }
     return 1;
 }
 fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i64) -> () {
@@ -336,11 +343,13 @@ fn single_kind(b: i32) -> i32 {
     if b == 91 { return 51; }
     if b == 93 { return 52; }
     if b == 35 { return 53; }
+    if b == 38 { return 65; }
     return 0;
 }
 fn paired_kind(b: i32, next: i32) -> i32 {
     if b == 45 && next == 62 { return 27; }
     if b == 61 && next == 61 { return 35; }
+    if b == 61 && next == 62 { return 64; }
     if b == 33 && next == 61 { return 36; }
     if b == 60 && next == 61 { return 38; }
     if b == 62 && next == 61 { return 40; }

@@ -66,7 +66,7 @@ for source limits and path rules.
 |---|---|
 | `oxid check` | Check the project without running it. |
 | `oxid run` | Run its entry point. |
-| `oxid test` | Run tests declared in `oxid.toml`. |
+| `oxid test [--jobs N]` | Run tests declared in `oxid.toml`. |
 | `oxid build` | Build an executable under `.oxid/bin/` using project settings. |
 | `oxid build --profile release` | Build with native optimization enabled. |
 | `oxid fmt src/main.ox` | Print formatted source; add `--check` to check formatting. |
@@ -74,6 +74,8 @@ for source limits and path rules.
 | `oxid lsp --stdio` | Check open editor buffers and provide formatting. |
 | `oxid lock` | Record local dependency inputs in `oxid.lock`. |
 | `oxid doctor --native` | Check the native tools, SDK and project configuration. |
+
+Use `oxid test --jobs 4` to run up to four tests at a time. The runner reports results in the usual order. Omit `--jobs` to run tests one at a time.
 
 The commands find `oxid.toml` above the current directory. Build failures preserve
 the previous executable. `fmt` takes one file and writes its result to stdout.

@@ -516,6 +516,9 @@ impl Workspace {
     pub(super) fn execute(&self, options: &Options) -> Result<i32, String> {
         options.validate_lock_options()?;
         let selected = self.selected(options)?;
+        if options.command() == "test" {
+            options.test_parallelism()?;
+        }
         let build_options = match options.command() {
             "build" => validate_build_options(options)?,
             "check" | "run" | "test" | "lock" | "doc" => {
@@ -861,44 +864,25 @@ impl Workspace {
                     return Ok(status);
                 }
                 sessions.push(session);
-                tests.push((index, name));
+                tests.push(test_runner::TestRun {
+                    root: &member.root,
+                    member: Some(&member.path),
+                    name,
+                });
             }
         }
-        let executable = std::env::current_exe()
-            .map_err(|error| format!("cannot locate workspace test runner: {error}"))?;
-        let mut failed = 0;
-        for (index, name) in &tests {
-            let member = &self.members[*index];
-            let mut child = Command::new(&executable);
-            child
-                .current_dir(&member.root)
-                .args(["run", "--edition=typed-preview", "--entry-mode=process"])
-                .arg(format!("--project-test={name}"))
-                .stdin(Stdio::null());
-            if options.frozen {
-                child.arg("--frozen");
-            } else {
-                if locked || options.locked {
-                    child.arg("--locked");
-                }
-                if options.offline {
-                    child.arg("--offline");
-                }
-            }
-            let result = child
-                .output()
-                .map_err(|error| format!("cannot run workspace test {name}: {error}"))?;
+        let passed = test_runner::run(&tests, options, locked, |test, result| {
+            let member = test.member.expect("workspace test member");
+            let name = test.name;
             let passed = result.status.success();
-            failed += usize::from(!passed);
             if options.json() {
-                output(options, &format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"test-result\",\"member\":{},\"name\":{},\"success\":{passed},\"exit_status\":{},\"stdout\":{},\"stderr\":{}}}", json_string(&member.path), json_string(name), result.status.code().map_or("null".into(), |code| code.to_string()), json_string(&String::from_utf8_lossy(&result.stdout)), json_string(&String::from_utf8_lossy(&result.stderr))), "")?;
+                output(options, &format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"test-result\",\"member\":{},\"name\":{},\"success\":{passed},\"exit_status\":{},\"stdout\":{},\"stderr\":{}}}", json_string(member), json_string(name), result.status.code().map_or("null".into(), |code| code.to_string()), json_string(&String::from_utf8_lossy(&result.stdout)), json_string(&String::from_utf8_lossy(&result.stderr))), "")?;
             } else {
                 output(
                     options,
                     "",
                     &format!(
-                        "test {}::{name}: {} ({})",
-                        member.path,
+                        "test {member}::{name}: {} ({})",
                         if passed { "ok" } else { "FAILED" },
                         result.status
                     ),
@@ -909,7 +893,9 @@ impl Workspace {
                     .and_then(|()| stderr.write_all(&result.stderr))
                     .map_err(|error| format!("cannot report workspace test: {error}"))?;
             }
-        }
+            Ok(())
+        })?;
+        let failed = tests.len() - passed;
         summary(options, tests.len(), failed)?;
         Ok(i32::from(failed != 0))
     }

@@ -2,6 +2,8 @@ use crate::model::Compiler;
 use crate::model::Value;
 use crate::model::Token;
 use crate::model::Binding;
+use crate::model::Loan;
+use crate::model::Record;
 use crate::model::grown;
 use crate::model::token;
 use crate::model::kind;
@@ -15,8 +17,12 @@ use crate::model::path_module;
 use crate::model::is_array;
 use crate::model::array_count;
 use crate::model::array_element;
-use crate::model::array_element_type;
+use crate::model::is_value_scalar;
 use crate::model::array_type;
+use crate::model::is_slice;
+use crate::model::is_mutable_slice;
+use crate::model::slice_type;
+use crate::model::slice_element;
 use crate::model::record;
 use crate::model::record_type;
 use crate::model::record_index;
@@ -74,16 +80,87 @@ fn restore_availability(c: &mut Compiler, state: &Vec<bool>) -> () {
     }
     return;
 }
+fn intersect_availability(c: &mut Compiler, previous: &Vec<bool>) -> () {
+    for index in 0..len(&*previous) {
+        let binding = c.vars[index];
+        let available = binding.available && previous[index];
+        set_available(&mut *c, index, available);
+    }
+    return;
+}
+fn access_allowed(c: &Compiler, position: i32, exclusive: bool) -> bool {
+    for index in 0..len(&*c.loans) {
+        let loan = c.loans[index];
+        if loan.binding == position && (exclusive || loan.exclusive) { return false; }
+    }
+    return true;
+}
+fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
+    expect(&mut *c, 65);
+    let exclusive = kind(&*c) == 5;
+    if exclusive { expect(&mut *c, 5); }
+    if exclusive != is_mutable_slice(expected) { fail(&mut *c); return invalid(); }
+    let reborrow = kind(&*c) == 31;
+    if reborrow { expect(&mut *c, 31); }
+    let position = local(&*c, c.cursor);
+    expect(&mut *c, 1);
+    if position < 0 || c.error != 0 { fail(&mut *c); return invalid(); }
+    let binding = c.vars[position];
+    if reborrow {
+        if !is_slice(binding.ty) || slice_element(binding.ty) != slice_element(expected)
+            || (exclusive && !is_mutable_slice(binding.ty)) {
+            fail(&mut *c); return invalid();
+        }
+    } else {
+        if !is_array(binding.ty) || slice_type(array_element(binding.ty), exclusive) != expected
+            || (exclusive && !binding.writable) {
+            fail(&mut *c); return invalid();
+        }
+    }
+    let projected = kind(&*c) == 51;
+    let mut start = invalid();
+    let mut end = invalid();
+    if projected {
+        expect(&mut *c, 51);
+        start = expression(&mut *c, 1, depth + 1);
+        expect(&mut *c, 57);
+        end = expression(&mut *c, 1, depth + 1);
+        expect(&mut *c, 52);
+        if start.ty != 1 || end.ty != 1 { fail(&mut *c); return invalid(); }
+    }
+    let target = c.vars[position];
+    if c.error != 0 || !target.available || !access_allowed(&*c, position, exclusive) {
+        fail(&mut *c); return invalid();
+    }
+    if !grown(try_push(&mut *c.loans, Loan { binding: position, exclusive: exclusive })) {
+        c.error = 68; return invalid();
+    }
+    let mut view = invalid();
+    if reborrow {
+        let loaded = crate::emit::load(&mut *c, binding.slot, binding.ty);
+        view = Value { ty: expected, id: loaded.id };
+    } else {
+        view = crate::emit::borrow_array(&mut *c, binding, expected);
+    }
+    if projected { return crate::emit::project_slice(&mut *c, view, start, end); }
+    return view;
+}
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     if target < 0 { fail(&mut *c); return invalid(); }
     let f = c.functions[target];
     let mut args = new::<Value>();
+    let outer_loans = len(&*c.loans);
     expect(&mut *c, 20);
     let mut count = 0;
     while kind(&*c) != 21 && c.error == 0 {
         if count >= f.count { fail(&mut *c); return invalid(); }
-        let value = expression(&mut *c, 1, depth + 1);
         let expected = c.params[f.params + count];
+        let mut value = invalid();
+        if is_slice(expected.ty) {
+            value = slice_argument(&mut *c, expected.ty, depth);
+        } else {
+            value = expression(&mut *c, 1, depth + 1);
+        }
         if value.ty != expected.ty { fail(&mut *c); return invalid(); }
         if !grown(try_push(&mut args, value)) { c.error = 68; return invalid(); }
         count = count + 1;
@@ -91,6 +168,8 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     }
     expect(&mut *c, 21);
     if count != f.count { fail(&mut *c); return invalid(); }
+    // Nested calls keep the loans of their enclosing argument list.
+    truncate(&mut *c.loans, outer_loans);
     if c.call_sites >= 4096 { c.error = 68; return invalid(); }
     c.call_sites = c.call_sites + 1;
     return crate::emit::call(&mut *c, target, &args, f.result);
@@ -171,17 +250,42 @@ fn convert_binding(c: &mut Compiler, value: Value) -> Value {
     }
     return extended_conversion(&mut *c, value, method);
 }
-fn array_length(c: &mut Compiler, ty: i32) -> Value {
+fn region_length(c: &mut Compiler, binding: Binding) -> Value {
     let len_name = b"len";
     expect(&mut *c, 43);
     let method = token(&*c, c.cursor);
     expect(&mut *c, 1); expect(&mut *c, 20); expect(&mut *c, 21);
     if !word(&*c.source, method.start, method.end, &len_name) { fail(&mut *c); return invalid(); }
-    let length = array_count(ty);
+    if is_slice(binding.ty) {
+        let view = crate::emit::load(&mut *c, binding.slot, binding.ty);
+        return crate::emit::extract_field(&mut *c, view, 1, 1);
+    }
+    let length = array_count(binding.ty);
     return crate::emit::constant(&mut *c, 1, length.to_i64());
+}
+fn enum_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
+    if index < 0 { fail(&mut *c); return invalid(); }
+    let row = c.records[index];
+    if !row.tagged { fail(&mut *c); return invalid(); }
+    expect(&mut *c, 45);
+    let variant = record_field(&*c, row, c.cursor);
+    expect(&mut *c, 1);
+    if variant < 0 { fail(&mut *c); return invalid(); }
+    let field = c.fields[row.first_field + variant];
+    let tag = crate::emit::constant(&mut *c, 1, variant.to_i64());
+    let tagged = crate::emit::insert_field(
+        &mut *c, Value { ty: record_type(index), id: -1 }, tag, 0
+    );
+    if field.ty == 3 { return tagged; }
+    expect(&mut *c, 20);
+    let payload = expression(&mut *c, 1, depth + 1);
+    expect(&mut *c, 21);
+    if payload.ty != field.ty { fail(&mut *c); return invalid(); }
+    return crate::emit::insert_field(&mut *c, tagged, payload, variant + 1);
 }
 fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
     let row = c.records[index];
+    if row.tagged { fail(&mut *c); return invalid(); }
     let mut seen = new::<bool>();
     while len(&seen) < row.field_count {
         if !grown(try_push(&mut seen, false)) { c.error = 68; return invalid(); }
@@ -209,18 +313,32 @@ fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
 fn field_value(c: &mut Compiler, binding: Binding) -> Value {
     expect(&mut *c, 43);
     let row = c.records[record_index(binding.ty)];
+    if row.tagged { fail(&mut *c); return invalid(); }
     let field = record_field(&*c, row, c.cursor);
     expect(&mut *c, 1);
     if field < 0 { fail(&mut *c); return invalid(); }
     let descriptor = c.fields[row.first_field + field];
+    if is_array(descriptor.ty) { fail(&mut *c); return invalid(); }
     let aggregate = crate::emit::load(&mut *c, binding.slot, binding.ty);
     return crate::emit::extract_field(&mut *c, aggregate, field, descriptor.ty);
 }
 
+fn moves_on_read(c: &Compiler, ty: i32) -> bool {
+    if is_array(ty) { return true; }
+    if is_record(ty) {
+        let row = c.records[record_index(ty)];
+        return !row.copy;
+    }
+    return false;
+}
 fn named_value(c: &mut Compiler, depth: i32) -> Value {
     let name = c.cursor;
     c.cursor = c.cursor + 1;
     let owner = c.functions[c.current];
+    if kind(&*c) == 45 {
+        let index = record(&*c, owner.source_module, name);
+        return enum_literal(&mut *c, index, depth);
+    }
     if kind(&*c) == 20 {
         let target = function_binding(&*c, owner.source_module, name);
         return called(&mut *c, target, depth);
@@ -235,21 +353,27 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
     }
     if position < 0 { fail(&mut *c); return invalid(); }
     let binding = c.vars[position];
-    if !binding.available { fail(&mut *c); return invalid(); }
+    if !binding.available || !access_allowed(&*c, position, false) { fail(&mut *c); return invalid(); }
     if kind(&*c) == 51 {
-        if !is_array(binding.ty) { fail(&mut *c); return invalid(); }
+        if !is_array(binding.ty) && !is_slice(binding.ty) { fail(&mut *c); return invalid(); }
         expect(&mut *c, 51);
         let index = expression(&mut *c, 1, depth + 1);
         expect(&mut *c, 52);
         let target = c.vars[position];
         if index.ty != 1 || !target.available { fail(&mut *c); return invalid(); }
+        if is_slice(binding.ty) { return crate::emit::slice_index(&mut *c, binding, index); }
         return crate::emit::array_index(&mut *c, binding, index);
     }
-    if is_array(binding.ty) && kind(&*c) == 43 { return array_length(&mut *c, binding.ty); }
+    if (is_array(binding.ty) || is_slice(binding.ty)) && kind(&*c) == 43 {
+        return region_length(&mut *c, binding);
+    }
+    if is_slice(binding.ty) { fail(&mut *c); return invalid(); }
     if is_record(binding.ty) && kind(&*c) == 43 { return field_value(&mut *c, binding); }
-    if is_array(binding.ty) {
+    if moves_on_read(&*c, binding.ty) {
         // An outer binding must remain available for the next loop iteration.
-        if position < c.loop_move_floor { fail(&mut *c); return invalid(); }
+        if position < c.loop_move_floor || !access_allowed(&*c, position, true) {
+            fail(&mut *c); return invalid();
+        }
         set_available(&mut *c, position, false);
     }
     let value = crate::emit::load(&mut *c, binding.slot, binding.ty);
@@ -264,7 +388,7 @@ fn array_literal(c: &mut Compiler, depth: i32) -> Value {
         if len(&values) >= 1024 { c.error = 68; return invalid(); }
         let value = expression(&mut *c, 1, depth + 1);
         if element == 0 { element = value.ty; }
-        if !array_element_type(element) || value.ty != element { fail(&mut *c); return invalid(); }
+        if !is_value_scalar(element) || value.ty != element { fail(&mut *c); return invalid(); }
         if !grown(try_push(&mut values, value)) { c.error = 68; return invalid(); }
         if kind(&*c) != 52 { expect(&mut *c, 26); }
     }
@@ -395,8 +519,50 @@ pub fn expression(c: &mut Compiler, minimum: i32, depth: i32) -> Value {
     }
     return invalid();
 }
+fn destructure(c: &mut Compiler) -> () {
+    let owner = c.functions[c.current];
+    let index = record(&*c, owner.source_module, c.cursor);
+    if index < 0 { fail(&mut *c); return; }
+    let row = c.records[index];
+    if row.tagged { fail(&mut *c); return; }
+    expect(&mut *c, 1);
+    expect(&mut *c, 22);
+    let mut destinations = new::<i32>();
+    while len(&destinations) < row.field_count {
+        if !grown(try_push(&mut destinations, -1)) { c.error = 68; return; }
+    }
+    let mut count = 0;
+    while kind(&*c) != 23 && c.error == 0 {
+        let field_name = c.cursor;
+        let field = record_field(&*c, row, field_name);
+        expect(&mut *c, 1);
+        if field < 0 || destinations[field] >= 0 { fail(&mut *c); return; }
+        expect(&mut *c, 24);
+        let name = c.cursor;
+        expect(&mut *c, 1);
+        destinations[field] = name;
+        count = count + 1;
+        if kind(&*c) != 23 { expect(&mut *c, 26); }
+    }
+    expect(&mut *c, 23);
+    expect(&mut *c, 28);
+    if count != row.field_count { fail(&mut *c); return; }
+    let aggregate = expression(&mut *c, 1, 0);
+    expect(&mut *c, 25);
+    if c.error != 0 || aggregate.ty != record_type(index) { fail(&mut *c); return; }
+    for field in 0..row.field_count {
+        let descriptor = c.fields[row.first_field + field];
+        let value = crate::emit::extract_field(&mut *c, aggregate, field, descriptor.ty);
+        let slot = crate::emit::slot(&mut *c, value.ty);
+        bind(&mut *c, destinations[field], value.ty, false, slot);
+        crate::emit::store(&mut *c, slot, value);
+    }
+    return;
+}
 fn declared(c: &mut Compiler) -> () {
     expect(&mut *c, 4);
+    let next = token(&*c, c.cursor + 1);
+    if kind(&*c) == 1 && next.kind == 22 { destructure(&mut *c); return; }
     let mut writable = false;
     if kind(&*c) == 5 { writable = true; c.cursor = c.cursor + 1; }
     let name = c.cursor;
@@ -436,14 +602,18 @@ fn assign_field(c: &mut Compiler) -> () {
     let binding = c.vars[position];
     if !binding.writable || !is_record(binding.ty) { fail(&mut *c); return; }
     let row = c.records[record_index(binding.ty)];
+    if row.tagged { fail(&mut *c); return; }
     c.cursor = c.cursor + 2;
     let field = record_field(&*c, row, c.cursor);
     expect(&mut *c, 1); expect(&mut *c, 28);
     if field < 0 { fail(&mut *c); return; }
     let descriptor = c.fields[row.first_field + field];
+    if is_array(descriptor.ty) { fail(&mut *c); return; }
     let value = expression(&mut *c, 1, 0);
     if value.ty != descriptor.ty { fail(&mut *c); return; }
     expect(&mut *c, 25);
+    let target = c.vars[position];
+    if !target.available { fail(&mut *c); return; }
     let aggregate = crate::emit::load(&mut *c, binding.slot, binding.ty);
     let updated = crate::emit::insert_field(&mut *c, aggregate, value, field);
     crate::emit::store(&mut *c, binding.slot, updated);
@@ -467,12 +637,18 @@ fn index_assignment(c: &mut Compiler, end: i32) -> () {
     let position = local(&*c, c.cursor);
     if position < 0 { fail(&mut *c); return; }
     let binding = c.vars[position];
-    if !binding.writable || !is_array(binding.ty) { fail(&mut *c); return; }
+    let view = is_mutable_slice(binding.ty);
+    let mut element = 0;
+    if view { element = slice_element(binding.ty); }
+    else {
+        if !binding.writable || !is_array(binding.ty) { fail(&mut *c); return; }
+        element = array_element(binding.ty);
+    }
     let begin = c.cursor + 2;
     // Like other Oxid array assignments, evaluate the right side before the index.
     c.cursor = end + 2;
     let value = expression(&mut *c, 1, 0);
-    if value.ty != array_element(binding.ty) { fail(&mut *c); return; }
+    if value.ty != element { fail(&mut *c); return; }
     expect(&mut *c, 25);
     if c.error != 0 { return; }
     let continuation = c.cursor;
@@ -481,8 +657,9 @@ fn index_assignment(c: &mut Compiler, end: i32) -> () {
     if index.ty != 1 || c.cursor != end { fail(&mut *c); return; }
     c.cursor = continuation;
     let target = c.vars[position];
-    if !target.available { fail(&mut *c); return; }
-    crate::emit::array_store(&mut *c, binding, index, value);
+    if !target.available || !access_allowed(&*c, position, true) { fail(&mut *c); return; }
+    if view { crate::emit::slice_store(&mut *c, binding, index, value); }
+    else { crate::emit::array_store(&mut *c, binding, index, value); }
     return;
 }
 fn if_statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> () {
@@ -509,18 +686,100 @@ fn if_statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -
         else { block(&mut *c, break_to, continue_to, depth + 1); }
     }
     let right_falls = c.live;
-    if left_falls {
-        let mut index = 0;
-        while index < len(&left) && c.error == 0 {
-            let binding = c.vars[index];
-            let available = left[index] && (!right_falls || binding.available);
-            set_available(&mut *c, index, available);
-            index = index + 1;
-        }
+    if left_falls && c.error == 0 {
+        if right_falls { intersect_availability(&mut *c, &left); }
+        else { restore_availability(&mut *c, &left); }
     }
     crate::emit::branch(&mut *c, merge);
     crate::emit::label(&mut *c, merge);
     c.live = left_falls || right_falls;
+    return;
+}
+fn match_variant(c: &mut Compiler, row: Record, type_index: i32) -> i32 {
+    let owner = c.functions[c.current];
+    let arm_type = record(&*c, owner.source_module, c.cursor);
+    expect(&mut *c, 1);
+    expect(&mut *c, 45);
+    let variant = record_field(&*c, row, c.cursor);
+    expect(&mut *c, 1);
+    if arm_type != type_index || variant < 0 { fail(&mut *c); return -1; }
+    return variant;
+}
+fn match_payload(c: &mut Compiler, aggregate: Value, variant: i32, ty: i32) -> () {
+    if ty == 3 { return; }
+    expect(&mut *c, 20);
+    let binding = c.cursor;
+    expect(&mut *c, 1);
+    expect(&mut *c, 21);
+    if c.error != 0 { return; }
+    let name = token(&*c, binding);
+    let discard = b"_";
+    if word(&*c.source, name.start, name.end, &discard) { fail(&mut *c); return; }
+    let payload = crate::emit::extract_field(&mut *c, aggregate, variant + 1, ty);
+    let slot = crate::emit::slot(&mut *c, ty);
+    bind(&mut *c, binding, ty, false, slot);
+    crate::emit::store(&mut *c, slot, payload);
+    return;
+}
+fn match_statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> () {
+    let unreachable = b"  unreachable\n";
+    expect(&mut *c, 63);
+    let following = token(&*c, c.cursor + 1);
+    if kind(&*c) != 1 || following.kind != 22 || local(&*c, c.cursor) < 0 { fail(&mut *c); return; }
+    let was_live = c.live;
+    let aggregate = named_value(&mut *c, 0);
+    if !is_record(aggregate.ty) { fail(&mut *c); return; }
+    let type_index = record_index(aggregate.ty);
+    let row = c.records[type_index];
+    if !row.tagged { fail(&mut *c); return; }
+    expect(&mut *c, 22);
+
+    let mut labels = new::<i32>();
+    let mut seen = new::<bool>();
+    for variant in 0..row.field_count {
+        let label = crate::emit::new_label(&mut *c);
+        if !grown(try_push(&mut labels, label)) || !grown(try_push(&mut seen, false)) {
+            c.error = 68; return;
+        }
+    }
+    let tag = crate::emit::extract_field(&mut *c, aggregate, 0, 1);
+    let bad_tag = crate::emit::new_label(&mut *c);
+    let merge = crate::emit::new_label(&mut *c);
+    crate::emit::enum_switch(&mut *c, tag, &labels, bad_tag);
+
+    let incoming = availability(&mut *c);
+    let locals = len(&incoming);
+    let mut outgoing = new::<bool>();
+    let mut falls_through = false;
+    let mut count = 0;
+    while kind(&*c) != 23 && c.error == 0 {
+        let variant = match_variant(&mut *c, row, type_index);
+        if variant < 0 || seen[variant] { fail(&mut *c); return; }
+        seen[variant] = true;
+        count = count + 1;
+        restore_availability(&mut *c, &incoming);
+        crate::emit::label(&mut *c, labels[variant]);
+        c.live = was_live;
+        let payload = c.fields[row.first_field + variant];
+        match_payload(&mut *c, aggregate, variant, payload.ty);
+        expect(&mut *c, 64);
+        block(&mut *c, break_to, continue_to, depth + 1);
+        truncate(&mut *c.vars, locals);
+        if c.live && c.error == 0 {
+            if falls_through { intersect_availability(&mut *c, &outgoing); }
+            outgoing = availability(&mut *c);
+            falls_through = true;
+        }
+        crate::emit::branch(&mut *c, merge);
+        if kind(&*c) != 23 { expect(&mut *c, 26); }
+    }
+    expect(&mut *c, 23);
+    if count != row.field_count { fail(&mut *c); return; }
+    crate::emit::label(&mut *c, bad_tag);
+    crate::emit::append(&mut *c, 2, &unreachable);
+    crate::emit::label(&mut *c, merge);
+    if falls_through { restore_availability(&mut *c, &outgoing); }
+    c.live = falls_through;
     return;
 }
 fn while_statement(c: &mut Compiler, depth: i32) -> () {
@@ -593,6 +852,7 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
     let k = kind(&*c);
     if k == 4 { declared(&mut *c); return; }
     if k == 7 { if_statement(&mut *c, break_to, continue_to, depth); return; }
+    if k == 63 { match_statement(&mut *c, break_to, continue_to, depth); return; }
     if k == 9 { while_statement(&mut *c, depth); return; }
     if k == 55 { for_statement(&mut *c, depth); return; }
     if k == 22 { block(&mut *c, break_to, continue_to, depth + 1); return; }

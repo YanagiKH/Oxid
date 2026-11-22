@@ -194,6 +194,20 @@ pub(in crate::frontend) enum AggregateTy {
     OwnedEnumVector(EnumId),
 }
 
+impl AggregateTy {
+    pub(super) fn supports_local_field_borrow(self) -> bool {
+        matches!(
+            self,
+            Self::Record(_)
+                | Self::FixedArray(_)
+                | Self::ByteBuf
+                | Self::File
+                | Self::Vector(_)
+                | Self::RecordVector(_)
+        )
+    }
+}
+
 fn check_vector_element(element: hir::Ty) -> Result<(), DeclarationError> {
     if crate::frontend::builtin_catalog::vector::scalar_admitted(element) {
         Ok(())
