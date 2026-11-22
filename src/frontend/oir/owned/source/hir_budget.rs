@@ -720,7 +720,7 @@ impl HirPlan {
             total,
         })
     }
-    /// A distinct authenticated suffix; the old20+1 guard above stays closed.
+    /// A distinct suffix with the authenticated time and signal inventory.
     fn calculate_with_process(
         c: HirCounts,
         at: Span,
@@ -2087,20 +2087,20 @@ mod process_suffix_tests {
                 );
             }
         }
-        assert_eq!(experimental::Function::ALL.len(), 20);
+        assert_eq!(experimental::Function::ALL.len(), 21);
         assert!(
             HirPlan::calculate_with_vectors(
                 HirCounts {
                     functions: 1,
-                    signatures: 22,
+                    signatures: 23,
                     ..Default::default()
                 },
                 at,
-                21,
+                22,
                 0
             )
             .is_err(),
-            "the historical count-only entry still rejects its twenty-first row"
+            "the count-only entry still rejects a row outside the file and buffer catalog"
         );
     }
 }

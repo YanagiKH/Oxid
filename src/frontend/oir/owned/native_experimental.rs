@@ -29,7 +29,7 @@ struct FileOpenFrame {
     heap: *mut (),
     bytes: *const u8,
     length: i32,
-    create: i32,
+    mode: i32,
     result: *mut (),
     path: [u8; 4096],
     #[cfg(all(
@@ -72,6 +72,7 @@ struct FileAttemptFrame {
     result: *mut (),
     return_cost: u64,
     result_size: usize,
+    opening: i32,
     node: *mut (),
     work: u64,
     status: i32,
@@ -733,9 +734,11 @@ fn file_operation<W: PlanWitness>(
         Function::FileWriteSome => 3,
         Function::SyncAll => 4,
         Function::Close => 5,
+        Function::OpenAppend => 6,
         _ => unreachable!("closed file primitive"),
     };
-    let file = if code < 2 {
+    let opening = code < 2 || code == 6;
+    let file = if opening {
         "null".to_owned()
     } else {
         base_pointer(
@@ -745,8 +748,8 @@ fn file_operation<W: PlanWitness>(
             AccessBase::Parameter(ReferenceParamId(0)),
         )
     };
-    let (bytes, length) = if code < 4 {
-        let parameter = ReferenceParamId(usize::from(code >= 2));
+    let (bytes, length) = if opening || code < 4 {
+        let parameter = ReferenceParamId(usize::from(!opening));
         (
             base_pointer(
                 out,

@@ -909,6 +909,7 @@ jobs:
         run: |
           set -euo pipefail
           OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test file_open_append -- --include-ignored --test-threads=1
           OXID_TEST_CC="$OXID_LLVM_BIN/clang" python3 -B scripts/test_termination_runtime.py
       - name: Verify Mach-O execution and deployment
         run: |
@@ -1143,6 +1144,8 @@ jobs:
         run: |
           $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN
           cargo test --locked --test windows_file_io -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --test file_open_append -- --include-ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Windows native clocks and timers
         run: |
@@ -1397,6 +1400,7 @@ jobs:
         run: |
           set -euo pipefail
           OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test file_open_append -- --include-ignored --test-threads=1
           OXID_TEST_CC="$OXID_LLVM_BIN/clang" python3 -B scripts/test_termination_runtime.py
       - name: Verify native CPU training, gradients and checkpoint recovery
         run: |
@@ -1657,6 +1661,7 @@ jobs:
         run: |
           set -euo pipefail
           OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
+          OXID_TEST_LLVM_BIN="$OXID_LLVM_BIN" cargo test --locked --test file_open_append -- --include-ignored --test-threads=1
           OXID_TEST_CC="$OXID_LLVM_BIN/clang" python3 -B scripts/test_termination_runtime.py
       - name: Verify native ARM64 builds and source-free execution
         env:
