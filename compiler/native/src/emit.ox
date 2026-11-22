@@ -607,7 +607,29 @@ pub fn checked_character(c: &mut Compiler, value: Value) -> Value {
     return Value { ty: 6, id: id };
 }
 
+fn bitwise(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
+    let prefix = b"  %v";
+    let assign = b" = ";
+    let and_instruction = b"and ";
+    let or_instruction = b"or ";
+    let xor_instruction = b"xor ";
+    let space = b" ";
+    let comma = b", ";
+    let line = b"\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &assign);
+    if op == 65 { append(&mut *c, 2, &and_instruction); }
+    if op == 66 { append(&mut *c, 2, &or_instruction); }
+    if op == 67 { append(&mut *c, 2, &xor_instruction); }
+    write_type(&mut *c, 2, left.ty, false);
+    append(&mut *c, 2, &space); operand(&mut *c, 2, left);
+    append(&mut *c, 2, &comma); operand(&mut *c, 2, right);
+    append(&mut *c, 2, &line);
+    return Value { ty: left.ty, id: id };
+}
+
 pub fn binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
+    if op >= 65 && op <= 67 { return bitwise(&mut *c, op, left, right); }
     if left.ty == 4 { return byte_binary(&mut *c, op, left, right); }
     if left.ty == 7 {
         let a = widen(&mut *c, left, 5);

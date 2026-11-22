@@ -26,6 +26,7 @@ cannot shadow bindings or functions. Integer arithmetic is checked; division
 and remainder reject zero and signed MIN/-1 before the LLVM operation. Use
 decimal literals such as `255u8` and `9007199254740993i64`. Convert local
 bindings with `.to_i64()`, `.to_i32_checked()` or `.to_u8_checked()`.
+Use `&`, `^` and `|` on two integers of the same type, and `~` to flip all bits.
 A result-mode `main` has no arguments and prints its scalar result, then exits 0.
 Use `for index in start..end { ... }` to iterate over matching integer bounds.
 The bounds evaluate once from left to right, and the end is excluded. The

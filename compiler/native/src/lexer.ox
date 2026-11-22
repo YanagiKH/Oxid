@@ -344,6 +344,9 @@ fn single_kind(b: i32) -> i32 {
     if b == 93 { return 52; }
     if b == 35 { return 53; }
     if b == 38 { return 65; }
+    if b == 124 { return 66; }
+    if b == 94 { return 67; }
+    if b == 126 { return 68; }
     return 0;
 }
 fn paired_kind(b: i32, next: i32) -> i32 {
