@@ -440,6 +440,9 @@ For complete applications, try [Byte count](../apps/byte-count/README.md) or
 arrays and nested enum values between local packages.
 Try [UTF-8 normalize](../apps/utf8-normalize/README.md) to validate and transform
 text using a shared [owned UTF-8 library](../packages/utf8_text/README.md).
+
+Use a streaming decoder when a character can span two file or network reads.
+[Streaming UTF-8](../packages/utf8_stream/README.md).
 See the [language reference](../spec/typed-preview.md) for supported syntax.
 
 ## Range loops
