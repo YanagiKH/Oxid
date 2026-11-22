@@ -51,6 +51,14 @@ fn main() -> i32 {
     return 42;
 }
 "#;
+const CLOCK_RESULT_SOURCE: &str = r#"
+use std::time::monotonic_millis;
+fn main() -> i32 {
+    let start = monotonic_millis();
+    if start < 0i64 || monotonic_millis() < start { return 1; }
+    return 42;
+}
+"#;
 const SLEEP_SOURCE: &str = r#"
 use std::time::sleep_millis;
 use std::time::monotonic_millis;
@@ -137,10 +145,30 @@ impl Fixture {
         fixture
     }
     fn project() -> Self {
+        Self::with_entry(SOURCE, "process", "hosted")
+    }
+    fn result_project(source: &str) -> Self {
+        Self::with_entry(source, "result", "bounded")
+    }
+    fn with_entry(source: &str, entry_mode: &str, policy: &str) -> Self {
         let fixture = Self::fresh("source");
         fs::create_dir(fixture.0.join("src")).unwrap();
-        fs::write(fixture.0.join("src/main.ox"), SOURCE).unwrap();
-        fs::write(fixture.0.join("oxid.toml"), "[project]\nname=\"worker\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n[build]\nentry-mode=\"process\"\n[execution]\npolicy=\"hosted\"\n").unwrap();
+        fs::write(fixture.0.join("src/main.ox"), source).unwrap();
+        fs::write(
+            fixture.0.join("oxid.toml"),
+            format!(
+                r#"[project]
+name = "worker"
+edition = "typed-preview"
+entry = "src/main.ox"
+[build]
+entry-mode = "{entry_mode}"
+[execution]
+policy = "{policy}"
+"#
+            ),
+        )
+        .unwrap();
         fixture
     }
     fn command(&self, arguments: &[&str]) -> Command {
@@ -213,15 +241,11 @@ fn measure_child_delay(command: &mut Command) {
 
 #[test]
 fn typed_monotonic_clock_measures_elapsed_time() {
-    let fixture = Fixture::project();
-    if CLOCK_SUPPORTED {
-        fs::write(fixture.0.join("src/main.ox"), CLOCK_SOURCE).unwrap();
+    if SUPPORTED {
+        let fixture = Fixture::with_entry(CLOCK_SOURCE, "process", "hosted");
         measure_child_delay(&mut fixture.command(&["run"]));
     }
-    fs::write(
-        fixture.0.join("src/main.ox"),
-        "use std::time::monotonic_millis;fn main()->i32{let t=monotonic_millis();if t<0i64{return 1;}return 42;}",
-    ).unwrap();
+    let fixture = Fixture::result_project(CLOCK_RESULT_SOURCE);
     let output = fixture
         .command(&["run", "src/main.ox", "--edition=typed-preview"])
         .output()
@@ -242,8 +266,11 @@ fn native_monotonic_clock_measures_elapsed_time_after_source_free_relocation() {
     }
     let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
     for profile in ["dev", "release"] {
-        let fixture = Fixture::project();
-        fs::write(fixture.0.join("src/main.ox"), CLOCK_SOURCE).unwrap();
+        let fixture = if SUPPORTED {
+            Fixture::with_entry(CLOCK_SOURCE, "process", "hosted")
+        } else {
+            Fixture::result_project(CLOCK_RESULT_SOURCE)
+        };
         let built = fixture
             .command(&["build", "--profile", profile])
             .env("OXID_LLVM_BIN", &llvm)
@@ -263,21 +290,20 @@ fn native_monotonic_clock_measures_elapsed_time_after_source_free_relocation() {
             .env("PATH", deployment.0.join("missing-tools"))
             .env("OXID_LLVM_BIN", deployment.0.join("missing-tools"))
             .env("OXID_PATH", deployment.0.join("missing-source"));
-        measure_child_delay(&mut command);
+        if SUPPORTED {
+            measure_child_delay(&mut command);
+        } else {
+            assert_result(&command.output().unwrap(), 42);
+        }
     }
 }
 
 #[test]
 fn typed_sleep_validates_durations_and_pauses_the_thread() {
-    let fixture = Fixture::project();
-    fs::write(fixture.0.join("src/main.ox"), SLEEP_SOURCE).unwrap();
+    let fixture = Fixture::result_project(SLEEP_SOURCE);
     let started = Instant::now();
     let output = fixture.command(&["run"]).output().unwrap();
-    assert_eq!(
-        output.status.code(),
-        Some(if CLOCK_SUPPORTED { 42 } else { 82 }),
-        "{output:?}"
-    );
+    assert_result(&output, if CLOCK_SUPPORTED { 42 } else { 82 });
     if CLOCK_SUPPORTED {
         assert!(started.elapsed() >= Duration::from_millis(100));
     }
@@ -302,8 +328,7 @@ fn native_sleep_pauses_after_source_free_relocation() {
     }
     let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
     for profile in ["dev", "release"] {
-        let fixture = Fixture::project();
-        fs::write(fixture.0.join("src/main.ox"), SLEEP_SOURCE).unwrap();
+        let fixture = Fixture::result_project(SLEEP_SOURCE);
         let built = fixture
             .command(&["build", "--profile", profile])
             .env("OXID_LLVM_BIN", &llvm)
@@ -323,10 +348,16 @@ fn native_sleep_pauses_after_source_free_relocation() {
             .env("OXID_PATH", deployment.0.join("missing-source"))
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(42), "{profile}: {output:?}");
+        assert_result(&output, 42);
         assert!(started.elapsed() >= Duration::from_millis(100), "{profile}");
     }
 }
+fn assert_result(output: &std::process::Output, value: i32) {
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, format!("{value}\n").as_bytes(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 #[cfg(target_os = "linux")]
 fn holds_file(pid: u32, path: &Path) -> bool {
     fs::read_dir(format!("/proc/{pid}/fd"))

@@ -199,6 +199,8 @@ to the system date and time do not affect the readings.
 Use `sleep_millis(100)` from `std::time` to pause the current thread for
 about 100 milliseconds. It returns true when the wait completes. Zero completes
 immediately. A negative duration or a failed wait returns false.
+On Windows, use the default result entry and bounded execution policy to
+build native programs that use these functions.
 
 ## Drawing repeatable random numbers
 
