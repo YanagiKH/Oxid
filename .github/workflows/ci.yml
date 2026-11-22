@@ -1453,6 +1453,19 @@ jobs:
           cargo test --release --locked --test native_library actual_same_library -- --ignored --nocapture
       - name: Install and run a release archive on this host
         run: python3 -B scripts/verify_release_install.py --binary target/release/oxid
+      - name: Verify offline upgrade and rollback from Oxid 0.8.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous="$RUNNER_TEMP/previous-oxid/oxid-linux-x86_64.tar.gz"
+          mkdir -p "$(dirname "$previous")"
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+            --connect-timeout 20 --max-time 90 --retry 2 --output "$previous" \
+            https://github.com/YanagiKH/Oxid/releases/download/v0.8.0/oxid-linux-x86_64.tar.gz
+          printf '%s  %s\n' ed7b85d9a924e59cc20eddd6e6f1bd3021eeae8bd2a41db2042ede60da906773 \
+            "$(basename "$previous")" > "$previous.sha256"
+          python3 -B scripts/verify_release_install.py --binary target/release/oxid \
+            --previous-archive "$previous" --previous-version 0.8.0
       - name: Verify source-free file copies larger than the process memory limit
         run: |
           python3 -B scripts/verify_native_files.py target/debug/oxid target/release/oxid \

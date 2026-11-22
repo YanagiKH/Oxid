@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Install a release archive locally and run a new Oxid project."""
+"""Verify an offline installation and optionally upgrade and roll back."""
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import platform
@@ -30,8 +31,43 @@ def clean_environment() -> dict[str, str]:
     return {name: value for name, value in os.environ.items() if not name.upper().startswith("OXID_")}
 
 
-def verify(archive: Path) -> None:
+def digest(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def check_version(oxid: str, version: str, work: Path, env: dict[str, str]) -> None:
+    reported = run([oxid, "--version"], work, env)
+    if reported.stdout.splitlines() != [f"Oxid {version}".encode()] or reported.stderr:
+        raise ValueError(f"expected Oxid {version}, found {reported.stdout!r} {reported.stderr!r}")
+
+
+def check_typed_project(oxid: str, work: Path, env: dict[str, str]) -> None:
+    run([oxid, "new", "hello", "--edition=typed-preview"], work, env)
+    project = work / "hello"
+    (project / "src/main.ox").write_text("fn main() -> i32 { return 6 * 7; }\n", encoding="utf-8")
+    run([oxid, "check"], project, env)
+    run([oxid, "test"], project, env)
+    executed = run([oxid, "run", "--entry-mode=result"], project, env)
+    if executed.stdout != b"42\n" or executed.stderr:
+        raise ValueError(f"unexpected program output {executed.stdout!r} {executed.stderr!r}")
+
+
+def check_legacy_project(oxid: str, project: Path, expected: dict[Path, str],
+                         env: dict[str, str]) -> None:
+    run([oxid, "check", "src/main.ox"], project, env)
+    execution = run([oxid, "run", "src/main.ox"], project, env)
+    if execution.stdout != b"42\n" or execution.stderr:
+        raise ValueError(f"existing project output changed: {execution.stdout!r} {execution.stderr!r}")
+    for path, value in expected.items():
+        if digest(path) != value:
+            raise ValueError(f"existing file changed: {path.name}")
+
+
+def verify(archive: Path, previous: tuple[Path, str] | None = None) -> None:
     version = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
+    if previous and previous[1] == version:
+        raise ValueError("upgrade verification requires a previous release with a different version")
     env = clean_environment()
     windows = sys.platform == "win32"
     if windows:
@@ -41,24 +77,67 @@ def verify(archive: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="oxid-release-install-") as directory:
         work = Path(directory)
         install_dir = work / "installed"
-        run(installer, work, dict(env, OXID_ARCHIVE=str(archive), OXID_INSTALL_DIR=str(install_dir)))
-        oxid = str(install_dir / ("oxid.exe" if windows else "oxid"))
-        reported = run([oxid, "--version"], work, env)
-        if reported.stdout.splitlines() != [f"Oxid {version}".encode()] or reported.stderr:
-            raise ValueError(f"expected Oxid {version}, found {reported.stdout!r} {reported.stderr!r}")
+        executable = install_dir / ("oxid.exe" if windows else "oxid")
+        oxid = str(executable)
 
-        run([oxid, "new", "hello", "--edition=typed-preview"], work, env)
-        project = work / "hello"
-        (project / "src/main.ox").write_text("fn main() -> i32 { return 6 * 7; }\n", encoding="utf-8")
-        run([oxid, "check"], project, env)
-        run([oxid, "test"], project, env)
-        executed = run([oxid, "run", "--entry-mode=result"], project, env)
-        if executed.stdout != b"42\n" or executed.stderr:
-            raise ValueError(f"unexpected program output {executed.stdout!r} {executed.stderr!r}")
+        def install_environment(source: Path) -> dict[str, str]:
+            return dict(env, OXID_ARCHIVE=str(source), OXID_INSTALL_DIR=str(install_dir))
+
+        if previous:
+            previous_archive, previous_version = previous
+            run(installer, work, install_environment(previous_archive))
+            check_version(oxid, previous_version, work, env)
+            old_binary = digest(executable)
+
+            run([oxid, "new", "existing"], work, env)
+            project = work / "existing"
+            entry = project / "src/main.ox"
+            entry.write_text("fn main() { print(6 * 7); }\n", encoding="utf-8")
+            data = project / "local-data.bin"
+            data.write_bytes(b"saved data\x00\xff")
+            user_file = install_dir / "local-config.toml"
+            user_file.write_text('profile = "personal"\n', encoding="utf-8")
+            expected = {path: digest(path) for path in (entry, project / "oxid.toml", data, user_file)}
+            check_legacy_project(oxid, project, expected, env)
+
+            corrupt = work / "corrupt" / archive.name
+            corrupt.parent.mkdir()
+            shutil.copyfile(archive, corrupt)
+            with corrupt.open("r+b") as stream:
+                first = stream.read(1)
+                if not first:
+                    raise ValueError("cannot verify failure recovery with an empty archive")
+                stream.seek(0)
+                stream.write(bytes([first[0] ^ 1]))
+            shutil.copyfile(Path(str(archive) + ".sha256"), Path(str(corrupt) + ".sha256"))
+            refused = subprocess.run(installer, cwd=work, env=install_environment(corrupt),
+                                     capture_output=True, timeout=90)
+            if refused.returncode == 0 or b"Checksum verification failed." not in (
+                refused.stdout + refused.stderr
+            ):
+                raise ValueError("installer did not reject the corrupted upgrade checksum")
+            if digest(executable) != old_binary:
+                raise ValueError("failed upgrade changed the installed compiler")
+            check_legacy_project(oxid, project, expected, env)
+
+        run(installer, work, install_environment(archive))
+        check_version(oxid, version, work, env)
+        check_typed_project(oxid, work, env)
+        if previous:
+            check_legacy_project(oxid, project, expected, env)
+            run(installer, work, install_environment(previous_archive))
+            check_version(oxid, previous_version, work, env)
+            if digest(executable) != old_binary:
+                raise ValueError("rollback did not restore the previous compiler")
+            check_legacy_project(oxid, project, expected, env)
+
     print(f"Installed and ran Oxid {version} from {archive.name}")
+    if previous:
+        print(f"Verified {previous[1]} to {version}, rejected a corrupted upgrade, and rolled back "
+              "without changes to the existing project or its saved data.")
 
 
-def verify_binary(binary: Path) -> None:
+def verify_binary(binary: Path, previous: tuple[Path, str] | None = None) -> None:
     system = {"linux": "linux", "darwin": "macos", "win32": "windows"}.get(sys.platform)
     machine = platform.machine().lower()
     arch = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
@@ -78,21 +157,27 @@ def verify_binary(binary: Path) -> None:
                 shutil.copy2(ROOT / relative, destination)
         run([str(binary), "bootstrap"], work, env)
         run([sys.executable, "-B", str(ROOT / "scripts/package_release.py"), str(binary), asset], work, env)
-        verify(work / "dist" / asset)
+        verify(work / "dist" / asset, previous)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path, nargs="?", help="local release archive with its .sha256 file")
     parser.add_argument("--binary", type=Path, help="build and install an archive from this compiler")
+    parser.add_argument("--previous-archive", type=Path, help="older archive with its .sha256 file")
+    parser.add_argument("--previous-version", help="version reported by the older compiler")
     args = parser.parse_args()
     if (args.archive is None) == (args.binary is None):
         parser.error("provide either an archive or --binary")
+    if (args.previous_archive is None) != (args.previous_version is None):
+        parser.error("provide both --previous-archive and --previous-version")
     try:
+        previous = ((args.previous_archive.resolve(strict=True), args.previous_version)
+                    if args.previous_archive is not None else None)
         if args.binary is None:
-            verify(args.archive.resolve(strict=True))
+            verify(args.archive.resolve(strict=True), previous)
         else:
-            verify_binary(args.binary.resolve(strict=True))
+            verify_binary(args.binary.resolve(strict=True), previous)
     except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
         print(f"Release installation failed: {error}", file=sys.stderr)
         return 1

@@ -942,6 +942,18 @@ class CiTriggerPolicyTests(unittest.TestCase):
                 self.assertEqual(steps[0][1].rstrip(), run)
                 self.assertLess(current.index(f'      - name: {build}'), steps[0].start())
 
+    def test_native_upgrade_uses_the_pinned_published_archive(self):
+        linux = block(self.ci, 'native-projects', 2)
+        name = '      - name: Verify offline upgrade and rollback from Oxid 0.8.0'
+        selected = linux.split(name, 1)[1].split('      - name:', 1)[0]
+        self.assertIn('set -euo pipefail', selected)
+        self.assertIn('https://github.com/YanagiKH/Oxid/releases/download/v0.8.0/oxid-linux-x86_64.tar.gz', selected)
+        self.assertIn('ed7b85d9a924e59cc20eddd6e6f1bd3021eeae8bd2a41db2042ede60da906773',
+                      selected)
+        self.assertIn('scripts/verify_release_install.py --binary target/release/oxid', selected)
+        self.assertIn('--previous-archive "$previous" --previous-version 0.8.0', selected)
+        self.assertNotRegex(selected, r'continue-on-error:|(?m:^\s*if:)')
+
     def test_release_checks_the_installed_archive_before_upload(self):
         package = block(self.release, 'package', 2)
         step = (
