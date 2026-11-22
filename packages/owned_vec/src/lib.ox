@@ -67,3 +67,31 @@ pub fn pop<T>(values: &mut Vec<T>) -> PopResult<T> {
     }
     return PopResult::<T>::Value(pop_last(&mut *values));
 }
+
+pub fn try_append<T>(destination: &mut Vec<T>, source: &mut Vec<T>, buffer: &mut Vec<T>) -> GrowStatus {
+    let count = len(&*source);
+    if count == 0 { return GrowStatus::Ok; }
+    let scratch = try_reserve(&mut *buffer, count);
+    match scratch {
+        GrowStatus::Ok => {},
+        GrowStatus::CapacityOverflow => { return GrowStatus::CapacityOverflow; },
+        GrowStatus::AllocationFailed => { return GrowStatus::AllocationFailed; },
+        GrowStatus::MemoryLimit => { return GrowStatus::MemoryLimit; },
+    }
+    let space = try_reserve(&mut *destination, count);
+    match space {
+        GrowStatus::Ok => {},
+        GrowStatus::CapacityOverflow => { return GrowStatus::CapacityOverflow; },
+        GrowStatus::AllocationFailed => { return GrowStatus::AllocationFailed; },
+        GrowStatus::MemoryLimit => { return GrowStatus::MemoryLimit; },
+    }
+    for index in 0..count {
+        let value = pop_last(&mut *source);
+        push_reserved(&mut *buffer, value);
+    }
+    for index in 0..count {
+        let value = pop_last(&mut *buffer);
+        push_reserved(&mut *destination, value);
+    }
+    return GrowStatus::Ok;
+}

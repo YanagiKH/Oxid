@@ -10,12 +10,60 @@ use crate::owned_vec::PushFailure;
 use crate::owned_vec::PushResult;
 use crate::owned_vec::PopResult;
 use crate::owned_vec::try_push;
+use crate::owned_vec::try_append;
 use crate::owned_vec::pop;
+use alloc::vec::Vec;
 
 struct Message { bytes: ByteBuf }
 enum Token { Empty, Data(ByteBuf), Wide(i128) }
 
+fn push_message(messages: &mut Vec<Message>, value: u8) -> bool {
+    let mut bytes = bytes_new();
+    bytes_push(&mut bytes, value);
+    let pushed = try_push(&mut *messages, Message { bytes: bytes });
+    match pushed {
+        PushResult::Pushed => { return true; },
+        PushResult::Failed(failure) => { return false; },
+    }
+}
+
+fn first_byte(bytes: &[u8]) -> i32 {
+    if bytes.len() != 1 { return -2; }
+    let value = bytes[0];
+    return value.to_i32();
+}
+
+fn message_value(messages: &mut Vec<Message>) -> i32 {
+    let selected = pop(&mut *messages);
+    match selected {
+        PopResult::Empty => { return -1; },
+        PopResult::Value(message) => {
+            let Message { bytes } = message;
+            return first_byte(&bytes);
+        },
+    }
+}
+
+fn append_messages() -> bool {
+    let mut destination = new::<Message>();
+    let mut pending = new::<Message>();
+    let mut buffer = new::<Message>();
+    if !push_message(&mut destination, 10u8) || !push_message(&mut pending, 20u8)
+        || !push_message(&mut pending, 30u8) || !push_message(&mut buffer, 40u8) { return false; }
+    let appended = try_append(&mut destination, &mut pending, &mut buffer);
+    match appended {
+        GrowStatus::Ok => {},
+        GrowStatus::CapacityOverflow => { return false; },
+        GrowStatus::AllocationFailed => { return false; },
+        GrowStatus::MemoryLimit => { return false; },
+    }
+    return len(&pending) == 0 && len(&buffer) == 1 && message_value(&mut buffer) == 40
+        && message_value(&mut destination) == 30 && message_value(&mut destination) == 20
+        && message_value(&mut destination) == 10 && len(&destination) == 0;
+}
+
 fn main() -> i32 {
+    if !append_messages() { return -15; }
     let mut messages = new::<Message>();
     let initially_empty = pop(&mut messages);
     match initially_empty {
