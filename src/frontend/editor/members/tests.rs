@@ -58,7 +58,7 @@ fn member_exact_scratch_and_one_less_refuse_before_the_corresponding_reserve() {
         let fixed = resources::tests::independently_modeled_fixed_bytes();
         // Existing namespace: 5 complete 2112B carriers, merge Vec24,
         // unchanged PathQuery872, two Row40/order4/merge4 entries.
-        let namespace = 5 * 2112 + 24 + 872 + 2 * (40 + 4 + 4);
+        let namespace = 5 * 2112 + 24 + 880 + 2 * (56 + 4 + 4);
         assert_eq!(size_of::<FieldName>(), 32);
         assert_eq!(size_of::<EditorCompletionItem>(), 48);
         let fields = 2 * 32;
