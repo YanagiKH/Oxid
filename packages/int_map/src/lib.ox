@@ -7,7 +7,7 @@ use alloc::vec::truncate;
 use crate::types::option::Option;
 
 #[derive(Copy)]
-struct Entry<T: Copy> { key: i32, value: T }
+pub struct Entry<T: Copy> { pub key: i32, pub value: T }
 
 pub struct IntMap<T: Copy> { entries: Vec<Entry<T>> }
 
@@ -19,7 +19,7 @@ pub fn len<T: Copy>(map: &IntMap<T>) -> i32 {
     return vector_len(&*map.entries);
 }
 
-fn lower_bound<T: Copy>(entries: &Vec<Entry<T>>, key: i32) -> i32 {
+fn entry_bound<T: Copy>(entries: &Vec<Entry<T>>, key: i32) -> i32 {
     let mut low = 0;
     let mut high = vector_len(&*entries);
     while low < high {
@@ -31,8 +31,18 @@ fn lower_bound<T: Copy>(entries: &Vec<Entry<T>>, key: i32) -> i32 {
     return low;
 }
 
+pub fn lower_bound<T: Copy>(map: &IntMap<T>, key: i32) -> i32 {
+    return entry_bound(&*map.entries, key);
+}
+
+pub fn entry_at<T: Copy>(map: &IntMap<T>, index: i32) -> Option<Entry<T>> {
+    if index < 0 || index >= len(&*map) { return Option::<Entry<T>>::None; }
+    let entries = &*map.entries;
+    return Option::<Entry<T>>::Some(entries[index]);
+}
+
 fn find<T: Copy>(entries: &Vec<Entry<T>>, key: i32) -> Option<T> {
-    let position = lower_bound(&*entries, key);
+    let position = entry_bound(&*entries, key);
     if position < vector_len(&*entries) {
         let Entry { key: stored_key, value: stored } = entries[position];
         if stored_key == key { return Option::<T>::Some(stored); }
@@ -45,7 +55,7 @@ pub fn get<T: Copy>(map: &IntMap<T>, key: i32) -> Option<T> {
 }
 
 fn insert_entry<T: Copy>(entries: &mut Vec<Entry<T>>, key: i32, value: T) -> GrowStatus {
-    let position = lower_bound(&*entries, key);
+    let position = entry_bound(&*entries, key);
     let length = vector_len(&*entries);
     let new_entry = Entry::<T> { key: key, value: value };
     if position < length {
@@ -76,7 +86,7 @@ pub fn try_insert<T: Copy>(map: &mut IntMap<T>, key: i32, value: T) -> GrowStatu
 }
 
 fn remove_entry<T: Copy>(entries: &mut Vec<Entry<T>>, key: i32) -> Option<T> {
-    let position = lower_bound(&*entries, key);
+    let position = entry_bound(&*entries, key);
     let length = vector_len(&*entries);
     if position == length { return Option::<T>::None; }
     let Entry { key: removed_key, value: removed } = entries[position];
