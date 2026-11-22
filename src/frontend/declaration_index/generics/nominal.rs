@@ -740,12 +740,6 @@ impl Nominals {
                 ),
                 None => None,
             };
-            if matches!(value, Some(Value::Vector(element)) if element.owned()) {
-                return Err(error(
-                    "owned record vectors cannot be enum payloads",
-                    variant.span,
-                ));
-            }
             storage.push(&mut variants, value, allocator, work, variant.span)?;
         }
         self.enumerations[id].variants = variants;

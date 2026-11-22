@@ -1663,8 +1663,12 @@ fn resolve_index_impl(
                     Some(ValueTy::Owned(AggregateTy::Vector(_) | AggregateTy::RecordVector(_))) => {
                         NominalId::Vector
                     }
-                    Some(ValueTy::Owned(AggregateTy::Record(id))) => NominalId::Record(id),
-                    Some(ValueTy::Owned(AggregateTy::Enum(id))) => NominalId::Enum(id),
+                    Some(ValueTy::Owned(
+                        AggregateTy::Record(id) | AggregateTy::OwnedRecordVector(id),
+                    )) => NominalId::Record(id),
+                    Some(ValueTy::Owned(
+                        AggregateTy::Enum(id) | AggregateTy::OwnedEnumVector(id),
+                    )) => NominalId::Enum(id),
                     Some(ValueTy::Owned(AggregateTy::FixedArray(_))) => continue,
                     _ => return Err(vec![*invalid_signature_identity(variant.diagnostic_span())]),
                 };

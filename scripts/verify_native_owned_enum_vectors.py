@@ -18,6 +18,7 @@ import test_native_owned_enum_vectors as contracts
 
 CLI_NATIVE_TESTS = (
     "native_builtin_enum_vectors_keep_final_ids_after_source_free_relocation",
+    "native_enum_vector_payloads_drop_after_source_free_relocation",
     "native_enum_vector_record_fields_and_memory_limit_recover_after_source_free_relocation",
     "native_owned_enum_token_queue_runs_after_source_free_relocation",
 )
@@ -35,9 +36,10 @@ def run_cli_cases(repo, output, profile, cargo, environment):
     contracts.require(catalog.returncode == 0, "cannot list the complete native CLI integration test catalog")
     command += ["--", "--ignored"]
     listing = contracts.retained_command(directory, "list", command + ["--list", "--color", "never"], environment, 1800, repo)
-    expected = ("\n".join(name + ": test" for name in CLI_NATIVE_TESTS) + "\n\n3 tests, 0 benchmarks\n").encode()
+    names = "\n".join(name + ": test" for name in CLI_NATIVE_TESTS)
+    expected = f"{names}\n\n{len(CLI_NATIVE_TESTS)} tests, 0 benchmarks\n".encode()
     contracts.require(listing.returncode == 0 and listing.stdout == expected,
-                      "native CLI acceptance must list exactly its three real ignored cases")
+                      "native CLI acceptance differs from the required test list")
     result = contracts.retained_command(directory, "run",
         command + ["--test-threads=1", "--nocapture", "--color", "never"], environment, 1800, repo)
     contracts.require(result.returncode == 0, "native CLI acceptance failed")

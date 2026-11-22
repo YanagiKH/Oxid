@@ -503,9 +503,14 @@ is nonempty before popping. Truncation releases resources in the removed values.
 Built-in status enums use the same operations. The vector itself always moves
 when passed by value.
 
-Enum vectors do not support indexing, element references, slices, nested owned
-vectors, recursive element layouts or custom destructors. `#[derive(Copy)]` on
-enums remains unsupported.
+An enum variant can hold a vector, for example
+`enum Batch { Empty, Records(Vec<Message>) }`. Construct
+`Batch::Records(messages)` to move the vector in. Match
+`Batch::Records(records)` to move it back out.
+
+Enum vectors do not support indexing, element references, slices, elements
+that contain another owned vector, recursive element layouts or custom
+destructors. `#[derive(Copy)]` on enums remains unsupported.
 
 Give reusable data types their own type parameters:
 
