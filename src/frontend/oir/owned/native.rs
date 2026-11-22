@@ -892,7 +892,15 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         target_pointer_width = "64",
         target_endian = "little"
     ))]
-    let emitter_transient = if plan.has_file_delivery() {
+    let windows_file_or_time = plan.has_file_delivery() || plan.has_clock() || plan.has_sleep();
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    let emitter_transient = if windows_file_or_time {
         add(emitter_transient, windows_file::control_bytes())?
     } else {
         emitter_transient
@@ -925,8 +933,11 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         target_pointer_width = "64",
         target_endian = "little"
     ))]
-    if plan.has_file_delivery() && !windows_file::allowed(witness, id) {
-        return Err(reject("Windows native File programs support only File byte I/O, byte arrays/slices and their standard status enums", None));
+    if windows_file_or_time && !windows_file::allowed(witness, id) {
+        return Err(reject(
+            "Windows native std::time programs support bool, i32, i64 and unit. File byte I/O also supports u8, byte arrays and slices, and standard File status enums.",
+            None,
+        ));
     }
     let selected = R::build(&plan, id)?;
     let (transfer_cells, transfer_visits) = transfer_inventory_selected(&plan, selected)?;
