@@ -365,28 +365,6 @@ impl EditorFile {
         }
         Ok(PathNames { reader })
     }
-    pub(in crate::frontend) fn has_member_import(
-        &self,
-        source: &SourceFile,
-        name: &str,
-        work: &WorkMeter,
-    ) -> Answer<bool> {
-        if !self.belongs_to(source) {
-            return Err(invalid());
-        }
-        for import in &self.imports {
-            let spelling = source.text_at(*import);
-            work.debit(
-                (spelling.len().min(name.len()) + 1) as u64,
-                *import,
-                "editor member import",
-            )?;
-            if spelling == name {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
     pub(in crate::frontend) fn member_fields<'a>(
         &'a self,
         source: &'a SourceFile,

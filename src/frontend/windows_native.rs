@@ -29,16 +29,15 @@ pub(super) fn preflight(
     Ok(())
 }
 
-/// The checked owned source may enter the separate native File denial lane.
-/// This is not permission to emit a resource: its verified native consumer
-/// authenticates every type/operation after admitting the scan's carriers.
+/// The native consumer verifies the complete type and operation inventory
+/// for checked programs using File or time operations.
 pub(super) fn preflight_checked(
     project: &ProjectSources,
     checked: &super::oir::CheckedSourceProgram<'_>,
     process: bool,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<(), Box<Diagnostic>> {
-    if NativeBuildSettings::windows_msvc_host() && checked.windows_file_candidate() {
+    if NativeBuildSettings::windows_msvc_host() && checked.windows_file_or_time_candidate() {
         let execution = settings.map_or(ExecutionPolicy::Bounded, |settings| settings.execution());
         if process || execution.hosted() || settings.is_some_and(|settings| settings.debug_info()) {
             return Err(reject());
@@ -55,7 +54,7 @@ pub(super) fn preflight_checked(
     }
 }
 
-/// Additional borrowed routing roles, paid only by the Windows File consumer.
+/// Additional borrowed routing roles, paid only by the Windows File and time consumer.
 /// No source owner, parser arena, witness or retained permit is copied.
 #[allow(dead_code)]
 #[cfg(any(
@@ -77,7 +76,8 @@ struct FileRoutingCarriers {
     ),
     candidate_arguments: [&'static super::oir::CheckedSourceProgram<'static>; 2],
     selected_body: &'static (),
-    candidate_returns: [bool; 2],
+    candidate_inventory: super::builtin_catalog::termination::Inventory,
+    candidate_returns: [bool; 5],
     execution: ExecutionPolicy,
     scope_arguments: (&'static ProjectSources, bool),
     scope_iterator: std::slice::Iter<'static, super::project::ModuleHeader>,
@@ -125,10 +125,10 @@ pub(super) fn test_preflight(
     Ok(())
 }
 
-fn outside_project_scope(project: &ProjectSources, file_candidate: bool) -> bool {
+fn outside_project_scope(project: &ProjectSources, file_or_time_candidate: bool) -> bool {
     project.modules().iter().any(|header| {
         project.try_file_ast(header.file).is_none_or(|program| {
-            if file_candidate {
+            if file_or_time_candidate {
                 !program.generic_headers().is_empty()
             } else {
                 outside_scalar_scope(program, project.sources().get(header.file))
@@ -157,7 +157,7 @@ fn outside_scalar_scope(program: &Program, source: &SourceFile) -> bool {
 fn reject() -> Box<Diagnostic> {
     Diagnostic::new(
         "E0700", "native-admission",
-        "Windows native builds require bounded bool/i32/unit result entry; File byte I/O is supported, while generics, other owned types, process I/O and debug information are unavailable",
+        "Windows native builds require bounded bool/i32/unit result entry. File byte I/O and std::time are supported. Generics, other owned types, process I/O and debug information are unavailable",
         None,
     )
 }
@@ -181,6 +181,7 @@ mod tests {
                 wrapper_arguments,
                 candidate_arguments,
                 selected_body,
+                candidate_inventory,
                 candidate_returns,
                 execution,
                 scope_arguments,
@@ -197,6 +198,7 @@ mod tests {
                 wrapper_arguments,
                 candidate_arguments,
                 selected_body,
+                candidate_inventory,
                 candidate_returns,
                 execution,
                 scope_arguments,

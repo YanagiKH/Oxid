@@ -110,7 +110,7 @@ GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility
 GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
 WINDOWS_LOCAL_PACKAGE_REPLAY = 'scripts/verify_windows_local_package_compatibility.py'
 CURRENT_TYPED_POLICY = ('scripts/verify_current_typed_compatibility.py',
-    (11544, '6961805ff49c9cfdb7c02afb3e2ce85f44093fc862d4f19fac8970c24291eae9'))
+    (11577, '9842d90925f4f3c947b9173e030c97b880c0c8e6bab75885da17901f71177f73'))
 WINDOWS_LOCAL_PACKAGE_PARENT = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = '4ec7cbdee35774e6112421736c7c921f398e5d3b'
 GENERIC_OWNED_VECTOR_POLICY = (GENERIC_OWNED_VECTOR_REPLAY,
@@ -941,6 +941,18 @@ class CiTriggerPolicyTests(unittest.TestCase):
                 self.assertEqual(len(steps), 1)
                 self.assertEqual(steps[0][1].rstrip(), run)
                 self.assertLess(current.index(f'      - name: {build}'), steps[0].start())
+
+    def test_native_upgrade_uses_the_pinned_published_archive(self):
+        linux = block(self.ci, 'native-projects', 2)
+        name = '      - name: Verify offline upgrade and rollback from Oxid 0.8.0'
+        selected = linux.split(name, 1)[1].split('      - name:', 1)[0]
+        self.assertIn('set -euo pipefail', selected)
+        self.assertIn('https://github.com/YanagiKH/Oxid/releases/download/v0.8.0/oxid-linux-x86_64.tar.gz', selected)
+        self.assertIn('ed7b85d9a924e59cc20eddd6e6f1bd3021eeae8bd2a41db2042ede60da906773',
+                      selected)
+        self.assertIn('scripts/verify_release_install.py --binary target/release/oxid', selected)
+        self.assertIn('--previous-archive "$previous" --previous-version 0.8.0', selected)
+        self.assertNotRegex(selected, r'continue-on-error:|(?m:^\s*if:)')
 
     def test_release_checks_the_installed_archive_before_upload(self):
         package = block(self.release, 'package', 2)

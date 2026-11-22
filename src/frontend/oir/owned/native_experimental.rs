@@ -29,7 +29,7 @@ struct FileOpenFrame {
     heap: *mut (),
     bytes: *const u8,
     length: i32,
-    create: i32,
+    mode: i32,
     result: *mut (),
     path: [u8; 4096],
     #[cfg(all(
@@ -72,6 +72,7 @@ struct FileAttemptFrame {
     result: *mut (),
     return_cost: u64,
     result_size: usize,
+    opening: i32,
     node: *mut (),
     work: u64,
     status: i32,
@@ -325,6 +326,15 @@ pub(super) fn operation<W: PlanWitness>(
         );
         use crate::frontend::builtin_catalog::termination::Function as Process;
         match process {
+            Process::MonotonicMillis | Process::UnixMillis => {
+                let runtime_function = if process == Process::MonotonicMillis {
+                    "__oxid_monotonic_millis"
+                } else {
+                    "__oxid_unix_millis"
+                };
+                writeln!(out, "  %{name}_clock = call i64 @{runtime_function}()\n  store i64 %{name}_clock, ptr %s{}, align 8", local.0).unwrap();
+                return;
+            }
             Process::Enable => writeln!(
                 out,
                 "  %{name}_process_status = call i32 @__oxid_enable_termination_notifications()"
@@ -335,9 +345,18 @@ pub(super) fn operation<W: PlanWitness>(
                 "  %{name}_process_status = call i32 @__oxid_termination_requested()"
             )
             .unwrap(),
-            Process::Wait => {
+            Process::Wait | Process::SleepMillis => {
+                let runtime_function = if process == Process::Wait {
+                    "__oxid_wait_for_termination"
+                } else {
+                    "__oxid_sleep_millis"
+                };
                 writeln!(out, "  %{name}_timeout = load i32, ptr %s0, align 4").unwrap();
-                writeln!(out, "  %{name}_process_status = call i32 @__oxid_wait_for_termination(i32 %{name}_timeout)").unwrap();
+                writeln!(
+                    out,
+                    "  %{name}_process_status = call i32 @{runtime_function}(i32 %{name}_timeout)"
+                )
+                .unwrap();
             }
         }
         writeln!(out, "  %{name}_process_value = icmp ne i32 %{name}_process_status, 0\n  store i1 %{name}_process_value, ptr %s{}, align 1", local.0).unwrap();
@@ -715,9 +734,11 @@ fn file_operation<W: PlanWitness>(
         Function::FileWriteSome => 3,
         Function::SyncAll => 4,
         Function::Close => 5,
+        Function::OpenAppend => 6,
         _ => unreachable!("closed file primitive"),
     };
-    let file = if code < 2 {
+    let opening = code < 2 || code == 6;
+    let file = if opening {
         "null".to_owned()
     } else {
         base_pointer(
@@ -727,8 +748,8 @@ fn file_operation<W: PlanWitness>(
             AccessBase::Parameter(ReferenceParamId(0)),
         )
     };
-    let (bytes, length) = if code < 4 {
-        let parameter = ReferenceParamId(usize::from(code >= 2));
+    let (bytes, length) = if opening || code < 4 {
+        let parameter = ReferenceParamId(usize::from(!opening));
         (
             base_pointer(
                 out,

@@ -1,11 +1,13 @@
 //! Denial over an already verified witness, never a source spelling or producer.
 use super::*;
-use crate::frontend::builtin_catalog::{experimental, BuiltinSet};
+use crate::frontend::builtin_catalog::{experimental, termination, BuiltinSet};
 
 #[allow(dead_code)]
 struct ControlCarriers {
     witness: &'static RawOwnedProgram,
     witness_argument: &'static (),
+    time_inventory: termination::Inventory,
+    time_and_file_checks: [bool; 6],
     entry_argument: hir::DefId,
     entry_function: Option<&'static RawOwnedFunction>,
     function_iterator: std::slice::Iter<'static, RawOwnedFunction>,
@@ -27,7 +29,8 @@ struct ControlCarriers {
     enumeration_argument: &'static [Option<EnumId>; 4],
     enum_identity: EnumId,
     enum_comparisons: [Option<EnumId>; 4],
-    operation_iterator: std::array::IntoIter<experimental::Function, 20>,
+    operation_iterator:
+        std::array::IntoIter<experimental::Function, { experimental::Function::ALL.len() }>,
     operation: experimental::Function,
     operation_identity: Option<hir::DefId>,
     aggregate_argument: AggregateTy,
@@ -60,6 +63,10 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
     {
         return false;
     }
+    let time = raw.builtins.process();
+    if time.has_signals() {
+        return false;
+    }
     let mut has_file = false;
     for operation in experimental::Function::ALL {
         if witness.experimental_function(operation).is_some() {
@@ -69,7 +76,7 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
             has_file = true;
         }
     }
-    if !has_file {
+    if !has_file && (time.is_empty() || !raw.enums.is_empty()) {
         return false;
     }
     let mut enumerations = [None; 4];
@@ -98,14 +105,17 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
         }
     }
     for function in witness.functions() {
+        if !has_file && (!function.owners.is_empty() || !function.references.is_empty()) {
+            return false;
+        }
         if !match function.result {
-            ValueTy::Scalar(ty) => scalar(ty),
-            ValueTy::Owned(ty) => aggregate(ty, &enumerations),
+            ValueTy::Scalar(ty) => scalar(ty, has_file),
+            ValueTy::Owned(ty) => has_file && aggregate(ty, &enumerations),
         } {
             return false;
         }
         for local in &function.locals {
-            if !scalar(local.ty) {
+            if !scalar(local.ty, has_file) {
                 return false;
             }
         }
@@ -140,11 +150,11 @@ fn canonical_enum(id: EnumId, allowed: &[Option<EnumId>; 4]) -> bool {
         || Some(id) == allowed[2]
         || Some(id) == allowed[3]
 }
-fn scalar(ty: hir::Ty) -> bool {
+fn scalar(ty: hir::Ty, has_file: bool) -> bool {
     matches!(
         ty,
-        hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit | hir::Ty::U8 | hir::Ty::I64
-    )
+        hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit | hir::Ty::I64
+    ) || (has_file && ty == hir::Ty::U8)
 }
 
 #[cfg(test)]
@@ -179,6 +189,29 @@ mod tests {
         assert!(!allowed(&wide_entry.witness, wide_entry.entry));
     }
 
+    #[test]
+    fn native_time_admits_verified_scalar_operations_only() {
+        let api = "use std::time::monotonic_millis;use std::time::sleep_millis;";
+        let main = "fn main()->i32{let start=monotonic_millis();if sleep_millis(10)&&monotonic_millis()>=start{return 42;}return 0;}";
+        let accepted = checked_enum_project(&format!("{api}{main}"));
+        assert!(allowed(&accepted.witness, accepted.entry));
+        for declaration in [
+            "struct Other{value:i32}",
+            "enum Other{Value}",
+            "fn other(value:f64)->f64{return value;}",
+            "fn other(value:u8)->u8{return value;}",
+            "fn other(bytes:&[u8])->u8{return bytes[0];}",
+            "use std::process::termination_requested;fn other()->bool{return termination_requested();}",
+        ] {
+            let rejected = checked_enum_project(&format!("{api}{declaration}{main}"));
+            assert!(!allowed(&rejected.witness, rejected.entry), "{declaration}");
+        }
+        let wide_entry = checked_enum_project(&format!(
+            "{api}fn main()->i64{{return monotonic_millis();}}"
+        ));
+        assert!(!allowed(&wide_entry.witness, wide_entry.entry));
+    }
+
     #[cfg(all(
         target_os = "windows",
         target_env = "msvc",
@@ -192,6 +225,8 @@ mod tests {
             let ControlCarriers {
                 witness,
                 witness_argument,
+                time_inventory,
+                time_and_file_checks,
                 entry_argument,
                 entry_function,
                 function_iterator,
@@ -227,6 +262,8 @@ mod tests {
             let _ = (
                 witness,
                 witness_argument,
+                time_inventory,
+                time_and_file_checks,
                 entry_argument,
                 entry_function,
                 function_iterator,

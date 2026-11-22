@@ -88,6 +88,57 @@ impl Drop for Project {
 #[path = "../src/frontend/oir/owned/source/owned_record_element_cases.rs"]
 mod local_element_cases;
 
+const VECTOR_FIELDS: &str = r#"
+use alloc::vec::GrowStatus;
+struct Packet { n: i32, payload: ByteBuf }
+enum Choice { Number(i32), Bytes(ByteBuf) }
+struct Vectors { left: Vec<Packet>, right: Vec<Choice> }
+struct App { prefix: i64, vectors: Vectors, suffix: i32 }
+
+fn grew(status: GrowStatus) -> bool {
+    match status {
+        GrowStatus::Ok => { return true; },
+        GrowStatus::CapacityOverflow => { return false; },
+        GrowStatus::AllocationFailed => { return false; },
+        GrowStatus::MemoryLimit => { return false; },
+    }
+}
+
+fn value(choice: Choice) -> i32 {
+    match choice {
+        Choice::Number(n) => { return n; },
+        Choice::Bytes(bytes) => { return bytes_len(&bytes); },
+    }
+}
+
+fn main() -> i32 {
+    let records = new::<Packet>();
+    let enums = new::<Choice>();
+    let vectors = Vectors { left: records, right: enums };
+    let mut app = App { prefix: 2i64, vectors: vectors, suffix: 3 };
+    let left = &mut app.vectors.left;
+    let right = &mut app.vectors.right;
+    if !grew(try_reserve(&mut *left, 2)) || !grew(try_reserve(&mut *right, 1)) { return -1; }
+    push_reserved(&mut *left, Packet { n: 13, payload: bytes_new() });
+    push_reserved(&mut *right, Choice::Number(21));
+    if true {
+        let current = &mut *left[0];
+        current.n = current.n + 2;
+        let buffer = &mut *current.payload;
+        if !grew(bytes_push(&mut *buffer, 9u8)) { return -2; }
+        if !grew(try_reserve(&mut *right, 128)) { return -3; }
+        push_reserved(&mut *right, Choice::Bytes(bytes_new()));
+        app.suffix = app.suffix + 1;
+    }
+    let empty = pop_last(&mut *right);
+    if value(empty) != 0 || len(&*left) != 1 || len(&*right) != 1 { return -4; }
+    let packet = pop_last(&mut *left);
+    let choice = pop_last(&mut *right);
+    let prefix = app.prefix;
+    return prefix.to_i32_checked() + app.suffix + packet.n + bytes_len(&packet.payload) + value(choice) - 1;
+}
+"#;
+
 #[test]
 fn local_owning_record_elements_support_lexical_reborrows_and_real_child_mutation() {
     for body in [
@@ -98,6 +149,7 @@ fn local_owning_record_elements_support_lexical_reborrows_and_real_child_mutatio
         local_element_cases::GENERIC_RECORD,
         local_element_cases::EMPTY_RECORD,
         local_element_cases::EMPTY_END_SLICES,
+        VECTOR_FIELDS,
     ] {
         for policy in ["bounded", "hosted"] {
             let project = Project::new(&format!("{}{body}", local_element_cases::IMPORTS), policy);
@@ -108,6 +160,57 @@ fn local_owning_record_elements_support_lexical_reborrows_and_real_child_mutatio
             assert_eq!(ran.stdout, b"42\n");
             assert!(ran.stderr.is_empty(), "{ran:?}");
         }
+    }
+}
+
+#[test]
+fn owning_vector_field_loans_reject_conflicting_access() {
+    for (original, conflict) in [
+        (
+            "let right = &mut app.vectors.right;",
+            "let right = &mut app.vectors.right; let overlap = &app.vectors.left;",
+        ),
+        (
+            "current.n = current.n + 2;",
+            "try_reserve(&mut *left, 256); current.n = current.n + 2;",
+        ),
+    ] {
+        let body = VECTOR_FIELDS.replace(original, conflict);
+        let source = format!("{}{body}", local_element_cases::IMPORTS);
+        let project = Project::new(&source, "hosted");
+        let checked = project.invoke(&["check"]);
+        assert!(!checked.status.success(), "{conflict}");
+        assert!(
+            String::from_utf8_lossy(&checked.stderr).contains("E0311"),
+            "{checked:?}"
+        );
+    }
+}
+
+#[test]
+fn vector_field_storage_requires_finite_move_only_elements() {
+    for (source, diagnostic) in [
+        (
+            "struct Value{number:i32}struct Bucket{items:Vec<Value>}fn main()->i32{let buckets=new::<Bucket>();return 0;}",
+            "owned vector elements cannot contain owned vectors",
+        ),
+        (
+            "struct Cycle{children:Vec<Cycle>}fn main()->i32{let children=new::<Cycle>();return 0;}",
+            "recursive record layout has no finite size",
+        ),
+        (
+            "struct Value{number:i32}#[derive(Copy)]struct Bucket{items:Vec<Value>}fn main()->i32{let items=new::<Value>();let bucket=Bucket{items:items};return 0;}",
+            "require checked Copy",
+        ),
+    ] {
+        let imports = "use alloc::vec::Vec;use alloc::vec::new;";
+        let project = Project::new(&format!("{imports}{source}"), "hosted");
+        let checked = project.invoke(&["check"]);
+        assert!(!checked.status.success(), "{source}");
+        assert!(
+            String::from_utf8_lossy(&checked.stderr).contains(diagnostic),
+            "{checked:?}"
+        );
     }
 }
 #[cfg(all(
@@ -180,6 +283,7 @@ fn native_local_owning_record_element_binaries_preserve_children_without_sources
         local_element_cases::EMPTY_RECORD,
         local_element_cases::EMPTY_END_SLICES,
         local_element_cases::FILE,
+        VECTOR_FIELDS,
     ] {
         for policy in ["bounded", "hosted"] {
             for profile in ["dev", "release"] {

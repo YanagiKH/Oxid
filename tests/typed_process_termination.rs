@@ -1,17 +1,19 @@
 //! Typed termination is observed through real child handshakes and file handles.
 use std::{
     fs,
+    io::{Read, Write},
     path::PathBuf,
-    process::{Command, Stdio},
-    sync::atomic::{AtomicUsize, Ordering},
+    process::{Child, Command, Stdio},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 #[cfg(unix)]
 use std::{
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader},
     path::Path,
-    process::Child,
-    sync::mpsc,
-    time::{Duration, Instant},
 };
 const SUPPORTED: bool = cfg!(all(
     any(target_os = "linux", target_os = "macos"),
@@ -20,6 +22,64 @@ const SUPPORTED: bool = cfg!(all(
     any(target_arch = "x86_64", target_arch = "aarch64")
 ));
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+const CLOCK_SUPPORTED: bool = SUPPORTED || cfg!(all(windows, target_arch = "x86_64"));
+const CLOCK_SOURCE: &str = r#"
+use std::time::monotonic_millis as clock;
+use std::io::read_some;
+use std::io::ReadSomeStatus;
+use std::io::write_some;
+use std::io::WriteSomeStatus;
+
+fn main() -> i32 {
+    let start = clock();
+    if start < 0i64 { return 81; }
+    let ready = b"R";
+    let written = write_some(&ready);
+    match written {
+        WriteSomeStatus::Written(count) => { if count != 1 { return 82; } },
+        WriteSomeStatus::Error(code) => { return 82; },
+    }
+    let mut input = b".";
+    let read = read_some(&mut input);
+    match read {
+        ReadSomeStatus::Data(count) => { if count != 1 { return 83; } },
+        ReadSomeStatus::Eof => { return 83; },
+        ReadSomeStatus::Error(code) => { return 83; },
+    }
+    let end = clock();
+    if end < start || end - start < 55i64 || input[0] != 71u8 { return 84; }
+    return 42;
+}
+"#;
+const CLOCK_RESULT_SOURCE: &str = r#"
+use std::time::monotonic_millis;
+fn main() -> i32 {
+    let start = monotonic_millis();
+    if start < 0i64 || monotonic_millis() < start { return 1; }
+    return 42;
+}
+"#;
+const UNIX_SOURCE: &str = r#"
+use std::time::unix_millis;
+fn main() -> i32 {
+    let timestamp = unix_millis();
+    if timestamp == -9223372036854775808i64 { return -1; }
+    let residue = timestamp % 1000000i64;
+    return residue.to_i32_checked();
+}
+"#;
+const SLEEP_SOURCE: &str = r#"
+use std::time::sleep_millis;
+use std::time::monotonic_millis;
+fn main() -> i32 {
+    if sleep_millis(-1) || !sleep_millis(0) { return 81; }
+    let start = monotonic_millis();
+    if !sleep_millis(120) { return 82; }
+    let end = monotonic_millis();
+    if start < 0i64 || end < start || end - start < 100i64 { return 83; }
+    return 42;
+}
+"#;
 const SOURCE: &str = r#"
 use std::process::enable_termination_notifications;
 use std::process::termination_requested;
@@ -94,10 +154,30 @@ impl Fixture {
         fixture
     }
     fn project() -> Self {
+        Self::with_entry(SOURCE, "process", "hosted")
+    }
+    fn result_project(source: &str) -> Self {
+        Self::with_entry(source, "result", "bounded")
+    }
+    fn with_entry(source: &str, entry_mode: &str, policy: &str) -> Self {
         let fixture = Self::fresh("source");
         fs::create_dir(fixture.0.join("src")).unwrap();
-        fs::write(fixture.0.join("src/main.ox"), SOURCE).unwrap();
-        fs::write(fixture.0.join("oxid.toml"), "[project]\nname=\"worker\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n[build]\nentry-mode=\"process\"\n[execution]\npolicy=\"hosted\"\n").unwrap();
+        fs::write(fixture.0.join("src/main.ox"), source).unwrap();
+        fs::write(
+            fixture.0.join("oxid.toml"),
+            format!(
+                r#"[project]
+name = "worker"
+edition = "typed-preview"
+entry = "src/main.ox"
+[build]
+entry-mode = "{entry_mode}"
+[execution]
+policy = "{policy}"
+"#
+            ),
+        )
+        .unwrap();
         fixture
     }
     fn command(&self, arguments: &[&str]) -> Command {
@@ -118,9 +198,7 @@ impl Drop for Fixture {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-#[cfg(unix)]
 struct ChildGuard(Option<Child>);
-#[cfg(unix)]
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if let Some(child) = &mut self.0 {
@@ -129,6 +207,232 @@ impl Drop for ChildGuard {
         }
     }
 }
+
+fn measure_child_delay(command: &mut Command) {
+    let mut child = ChildGuard(Some(command.stdin(Stdio::piped()).spawn().unwrap()));
+    let process = child.0.as_mut().unwrap();
+    let mut stdout = process.stdout.take().unwrap();
+    let (send, receive) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut ready = [0];
+        let result = stdout.read_exact(&mut ready).map(|()| ready);
+        let _ = send.send(result);
+    });
+    assert_eq!(
+        receive
+            .recv_timeout(Duration::from_secs(30))
+            .unwrap()
+            .unwrap(),
+        *b"R"
+    );
+    reader.join().unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    process.stdin.take().unwrap().write_all(b"G").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = process.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "clock program did not finish");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let mut stderr = String::new();
+    process
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert_eq!(status.code(), Some(42), "{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    drop(child.0.take());
+}
+
+#[test]
+fn typed_monotonic_clock_measures_elapsed_time() {
+    if SUPPORTED {
+        let fixture = Fixture::with_entry(CLOCK_SOURCE, "process", "hosted");
+        measure_child_delay(&mut fixture.command(&["run"]));
+    }
+    let fixture = Fixture::result_project(CLOCK_RESULT_SOURCE);
+    let output = fixture
+        .command(&["run", "src/main.ox", "--edition=typed-preview"])
+        .output()
+        .unwrap();
+    let value = if CLOCK_SUPPORTED { 42 } else { 1 };
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("{value}\n")
+    );
+}
+
+#[test]
+#[ignore = "requires LLVM 19.1.7 and a supported native target"]
+fn native_monotonic_clock_measures_elapsed_time_after_source_free_relocation() {
+    if !CLOCK_SUPPORTED {
+        return;
+    }
+    let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
+    for profile in ["dev", "release"] {
+        let fixture = if SUPPORTED {
+            Fixture::with_entry(CLOCK_SOURCE, "process", "hosted")
+        } else {
+            Fixture::result_project(CLOCK_RESULT_SOURCE)
+        };
+        let built = fixture
+            .command(&["build", "--profile", profile])
+            .env("OXID_LLVM_BIN", &llvm)
+            .output()
+            .unwrap();
+        assert!(built.status.success(), "{profile}: {built:?}");
+        let deployment = Fixture::fresh("clock-deployment");
+        let artifact = format!("worker{}", std::env::consts::EXE_SUFFIX);
+        let executable = deployment.0.join(&artifact);
+        fs::copy(fixture.0.join(".oxid/bin").join(&artifact), &executable).unwrap();
+        fs::remove_dir_all(&fixture.0).unwrap();
+        let mut command = Command::new(executable);
+        command
+            .current_dir(&deployment.0)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env("PATH", deployment.0.join("missing-tools"))
+            .env("OXID_LLVM_BIN", deployment.0.join("missing-tools"))
+            .env("OXID_PATH", deployment.0.join("missing-source"));
+        if SUPPORTED {
+            measure_child_delay(&mut command);
+        } else {
+            assert_result(&command.output().unwrap(), 42);
+        }
+    }
+}
+
+#[test]
+fn typed_sleep_validates_durations_and_pauses_the_thread() {
+    let fixture = Fixture::result_project(SLEEP_SOURCE);
+    let started = Instant::now();
+    let output = fixture.command(&["run"]).output().unwrap();
+    assert_result(&output, if CLOCK_SUPPORTED { 42 } else { 82 });
+    if CLOCK_SUPPORTED {
+        assert!(started.elapsed() >= Duration::from_millis(100));
+    }
+    fs::write(
+        fixture.0.join("src/main.ox"),
+        "use std::time::sleep_millis;fn main()->i32{if sleep_millis(-1)||!sleep_millis(0){return 81;}return 42;}",
+    )
+    .unwrap();
+    let output = fixture
+        .command(&["run", "src/main.ox", "--edition=typed-preview"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, b"42\n");
+}
+
+#[test]
+#[ignore = "requires LLVM 19.1.7 and a supported native target"]
+fn native_sleep_pauses_after_source_free_relocation() {
+    if !CLOCK_SUPPORTED {
+        return;
+    }
+    let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
+    for profile in ["dev", "release"] {
+        let fixture = Fixture::result_project(SLEEP_SOURCE);
+        let built = fixture
+            .command(&["build", "--profile", profile])
+            .env("OXID_LLVM_BIN", &llvm)
+            .output()
+            .unwrap();
+        assert!(built.status.success(), "{profile}: {built:?}");
+        let deployment = Fixture::fresh("sleep-deployment");
+        let artifact = format!("worker{}", std::env::consts::EXE_SUFFIX);
+        let executable = deployment.0.join(&artifact);
+        fs::copy(fixture.0.join(".oxid/bin").join(&artifact), &executable).unwrap();
+        fs::remove_dir_all(&fixture.0).unwrap();
+        let started = Instant::now();
+        let output = Command::new(executable)
+            .current_dir(&deployment.0)
+            .env("PATH", deployment.0.join("missing-tools"))
+            .env("OXID_LLVM_BIN", deployment.0.join("missing-tools"))
+            .env("OXID_PATH", deployment.0.join("missing-source"))
+            .output()
+            .unwrap();
+        assert_result(&output, 42);
+        assert!(started.elapsed() >= Duration::from_millis(100), "{profile}");
+    }
+}
+#[test]
+fn typed_unix_clock_matches_the_host_wall_clock() {
+    let fixture = Fixture::result_project(UNIX_SOURCE);
+    let before = SystemTime::now();
+    let output = fixture.command(&["run"]).output().unwrap();
+    if CLOCK_SUPPORTED {
+        assert_unix_sample(&output, before);
+    } else {
+        assert_result(&output, -1);
+    }
+}
+
+#[test]
+#[ignore = "requires LLVM 19.1.7 and a supported native target"]
+fn native_unix_clock_matches_the_host_after_source_free_relocation() {
+    if !CLOCK_SUPPORTED {
+        return;
+    }
+    let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
+    for profile in ["dev", "release"] {
+        let fixture = Fixture::result_project(UNIX_SOURCE);
+        let built = fixture
+            .command(&["build", "--profile", profile])
+            .env("OXID_LLVM_BIN", &llvm)
+            .output()
+            .unwrap();
+        assert!(built.status.success(), "{profile}: {built:?}");
+        let deployment = Fixture::fresh("unix-clock-deployment");
+        let artifact = format!("worker{}", std::env::consts::EXE_SUFFIX);
+        let executable = deployment.0.join(&artifact);
+        fs::copy(fixture.0.join(".oxid/bin").join(&artifact), &executable).unwrap();
+        fs::remove_dir_all(&fixture.0).unwrap();
+        let before = SystemTime::now();
+        let output = Command::new(executable)
+            .current_dir(&deployment.0)
+            .env("PATH", deployment.0.join("missing-tools"))
+            .env("OXID_PATH", deployment.0.join("missing-source"))
+            .output()
+            .unwrap();
+        assert_unix_sample(&output, before);
+    }
+}
+
+fn assert_unix_sample(output: &std::process::Output, before: SystemTime) {
+    let after = SystemTime::now();
+    assert!(
+        output.status.success() && output.stderr.is_empty(),
+        "{output:?}"
+    );
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    let sample = stdout.strip_suffix('\n').unwrap().parse::<i128>().unwrap();
+    let modulo = 1_000_000;
+    assert!((0..modulo).contains(&sample), "{sample}");
+    let millis = |time: SystemTime| {
+        i128::try_from(time.duration_since(UNIX_EPOCH).unwrap().as_millis()).unwrap()
+    };
+    let before = millis(before);
+    let after = millis(after);
+    let earliest = before.min(after) - 1000;
+    let latest = before.max(after) + 1000;
+    assert!(
+        (sample - earliest).rem_euclid(modulo) <= latest - earliest,
+        "clock residue {sample} is outside the host readings {before}..{after}"
+    );
+}
+
+fn assert_result(output: &std::process::Output, value: i32) {
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, format!("{value}\n").as_bytes(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 #[cfg(target_os = "linux")]
 fn holds_file(pid: u32, path: &Path) -> bool {
     fs::read_dir(format!("/proc/{pid}/fd"))
@@ -206,6 +510,29 @@ fn typed_process_notifications_return_and_drop_resources_after_sigint_and_sigter
         let fixture = Fixture::waiting_project();
         exercise(&mut fixture.command(&["run"]), &fixture.0, signal, true);
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn typed_sleep_finishes_the_requested_interval_after_notification() {
+    if !SUPPORTED {
+        return;
+    }
+    let fixture = Fixture::project();
+    let source = format!(
+        "use std::time::sleep_millis;use std::time::monotonic_millis;use std::process::wait_for_termination;\n{SOURCE}"
+    );
+    let source = source.replace(
+        "while !termination_requested(){}",
+        "let before=monotonic_millis();if !sleep_millis(400){return 85;}let after=monotonic_millis();if before<0i64||after<before||after-before<395i64||!termination_requested()||!wait_for_termination(0){return 86;}",
+    );
+    fs::write(fixture.0.join("src/main.ox"), source).unwrap();
+    exercise(
+        &mut fixture.command(&["run"]),
+        &fixture.0,
+        libc::SIGTERM,
+        true,
+    );
 }
 
 #[test]

@@ -313,8 +313,35 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
             .into_iter()
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }
-    pub(super) fn has_termination(&self) -> bool {
+    pub(super) fn has_process_delivery(&self) -> bool {
         !self.witness.raw_program().builtins.process().is_empty()
+    }
+    pub(super) fn has_termination(&self) -> bool {
+        self.witness.raw_program().builtins.process().has_signals()
+    }
+    pub(super) fn has_clock(&self) -> bool {
+        use crate::frontend::builtin_catalog::termination::Function;
+        self.witness
+            .raw_program()
+            .builtins
+            .process()
+            .contains(Function::MonotonicMillis)
+    }
+    pub(super) fn has_unix_clock(&self) -> bool {
+        use crate::frontend::builtin_catalog::termination::Function;
+        self.witness
+            .raw_program()
+            .builtins
+            .process()
+            .contains(Function::UnixMillis)
+    }
+    pub(super) fn has_sleep(&self) -> bool {
+        use crate::frontend::builtin_catalog::termination::Function;
+        self.witness
+            .raw_program()
+            .builtins
+            .process()
+            .contains(Function::SleepMillis)
     }
     pub(super) fn has_termination_wait(&self) -> bool {
         use crate::frontend::builtin_catalog::experimental::Function;
@@ -325,29 +352,22 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
                 .is_some()
     }
     pub(super) fn process_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
-        if !self.has_termination() {
+        if !self.has_process_delivery() {
             return None;
         }
-        use crate::frontend::builtin_catalog::experimental::Function;
-        (self
-            .witness
-            .experimental_function(Function::EnableTermination)
-            == Some(function)
-            || self
-                .witness
-                .experimental_function(Function::TerminationRequested)
-                == Some(function)
-            || self
-                .witness
-                .experimental_function(Function::WaitForTermination)
-                == Some(function))
-        .then(|| {
-            let term = self.witness.functions()[function.0].blocks[0]
-                .terminator
-                .as_ref()
-                .expect("sealed process return");
-            self.terminator_cost(function, &term.kind)
-        })
+        use crate::frontend::builtin_catalog::termination::Function;
+        Function::ALL
+            .into_iter()
+            .any(|operation| {
+                self.witness.experimental_function(operation.operation()) == Some(function)
+            })
+            .then(|| {
+                let term = self.witness.functions()[function.0].blocks[0]
+                    .terminator
+                    .as_ref()
+                    .expect("sealed process return");
+                self.terminator_cost(function, &term.kind)
+            })
     }
     pub(super) fn has_file_delivery(&self) -> bool {
         self.witness.has_file_delivery()

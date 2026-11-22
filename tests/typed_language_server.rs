@@ -1489,6 +1489,97 @@ fn qualified_completion_supports_empty_endpoints_eof_and_whole_word_utf16_edits(
 }
 
 #[test]
+fn enum_variant_completion_uses_unsaved_names_and_utf16_word_replacements() {
+    let p = Project::new();
+    let disk = "enum State{Saved,Waiting}fn main()->i32{return 0;}";
+    p.write("main.ox", disk);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    let text = "enum State<T>{Ready(T),Waiting}\r\nfn main()->i32{let c='🦀';let value=State::Re_suffix;return 0;}";
+    c.open(&path, text);
+    let result = completion_at(&mut c, &path, text, "Re_suffix", 2);
+    assert_eq!(completion_labels(&result), ["Ready"]);
+    let item = &result["items"][0];
+    assert_eq!(item["kind"], 20);
+    assert_eq!(item["detail"], "variant");
+    let start = position_at(text, "Re_suffix");
+    let end = json!({"line":start["line"],"character":start["character"].as_u64().unwrap()+9});
+    assert_eq!(item["textEdit"]["range"], json!({"start":start,"end":end}));
+    let updated = text.replace("Ready(T)", "Done(T)").replace("Re_suffix", "");
+    c.change(&path, 2, json!([{"text":updated}]));
+    let result = completion_at(&mut c, &path, &updated, "State::", 7);
+    assert_eq!(completion_labels(&result), ["Done", "Waiting"]);
+    c.finish();
+    assert_eq!(fs::read_to_string(p.0.join("main.ox")).unwrap(), disk);
+    p.unchanged();
+}
+
+#[test]
+fn enum_variant_completion_respects_visibility_and_import_positions() {
+    let p = Project::new();
+    let disk = "mod response;fn main()->i32{return 0;}";
+    p.package("", "variant_completion", "", disk);
+    let response = "pub enum Public{Ready,Waiting}enum Private{Hidden}pub struct Record{value:i32}";
+    p.write("src/response.ox", response);
+    let path = p.uri("src/main.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    let text = "mod response;fn main()->i32{let value=crate::response::Public::;return 0;}";
+    c.open(&path, text);
+    let qualifier = "crate::response::Public::";
+    let result = completion_at(&mut c, &path, text, qualifier, qualifier.len() as u64);
+    assert_eq!(completion_labels(&result), ["Ready", "Waiting"]);
+    for (version, import, name) in [
+        (2, "use crate::response::Public;", "Public::"),
+        (3, "use crate::response::Public as State;", "State::"),
+    ] {
+        let text = format!("mod response;{import}fn main()->i32{{let value={name};return 0;}}");
+        c.change(&path, version, json!([{"text":text}]));
+        let result = completion_at(&mut c, &path, &text, name, name.len() as u64);
+        assert_eq!(completion_labels(&result), ["Ready", "Waiting"]);
+    }
+    for (version, text, qualifier) in [
+        (
+            4,
+            "mod response;fn main()->i32{let value=crate::response::Private::;return 0;}",
+            "crate::response::Private::",
+        ),
+        (
+            5,
+            "mod response;fn main()->i32{let value=crate::response::Record::;return 0;}",
+            "crate::response::Record::",
+        ),
+        (
+            6,
+            "mod response;use crate::response::Public::;fn main()->i32{return 0;}",
+            "crate::response::Public::",
+        ),
+        (
+            7,
+            "mod response;use crate::response::Private as State;fn main()->i32{let value=State::;return 0;}",
+            "State::",
+        ),
+        (
+            8,
+            "mod response;use crate::response::Public as State;enum State{Other}fn main()->i32{let value=State::;return 0;}",
+            "State::",
+        ),
+    ] {
+        c.change(&path, version, json!([{"text":text}]));
+        let result = completion_at(&mut c, &path, text, qualifier, qualifier.len() as u64);
+        assert!(completion_labels(&result).is_empty());
+    }
+    c.finish();
+    assert_eq!(fs::read_to_string(p.0.join("src/main.ox")).unwrap(), disk);
+    assert_eq!(
+        fs::read_to_string(p.0.join("src/response.ox")).unwrap(),
+        response
+    );
+    p.unchanged();
+}
+
+#[test]
 fn qualified_completion_handles_import_holes_and_never_guesses_literal_or_member_paths() {
     let p = Project::new();
     let disk = "fn main()->i32{return 0;}";
@@ -2057,7 +2148,7 @@ fn record_field_completion_respects_module_visibility_and_did_close_restores_sav
 }
 
 #[test]
-fn record_field_completion_uses_direct_dependency_identity_and_closes_import_alias_inference() {
+fn record_field_completion_resolves_imports_in_the_direct_dependency() {
     let p = Project::new();
     let text = "struct Point{wrong:i32}fn inspect(point:&crate::library::Point)->i32{return point.;}fn main()->i32{return 0;}";
     p.package(
@@ -2106,11 +2197,20 @@ fn record_field_completion_uses_direct_dependency_identity_and_closes_import_ali
             completion_labels(&completion_at(&mut c, &path, text, "point.", 6)),
             ["correct"]
         );
-        let alias = "use crate::library::Point;fn inspect(point:&Point)->i32{return point.;}fn main()->i32{return 0;}";
-        c.change(&path, 2, json!([{"text":alias}]));
-        assert_eq!(
-            completion_at(&mut c, &path, alias, "point.", 6)["items"],
-            json!([])
+        for (version, imported) in [
+            (2, "use crate::library::Point;fn inspect(point:&Point)->i32{return point.;}fn main()->i32{return 0;}"),
+            (3, "use crate::library::Point as Remote;fn inspect(point:&Remote)->i32{return point.;}fn main()->i32{return 0;}"),
+        ] {
+            c.change(&path, version, json!([{"text":imported}]));
+            assert_eq!(
+                completion_labels(&completion_at(&mut c, &path, imported, "point.", 6)),
+                ["correct"]
+            );
+        }
+        let ambiguous = "use crate::library::Point;struct Point{wrong:i32}fn inspect(point:&Point)->i32{return point.;}fn main()->i32{return 0;}";
+        c.change(&path, 4, json!([{"text":ambiguous}]));
+        assert!(
+            completion_labels(&completion_at(&mut c, &path, ambiguous, "point.", 6)).is_empty()
         );
     }
     c.finish();

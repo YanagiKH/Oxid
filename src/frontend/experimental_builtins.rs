@@ -37,9 +37,13 @@ pub(in crate::frontend) enum Item {
     EnableTermination,
     TerminationRequested,
     WaitForTermination,
+    MonotonicMillis,
+    SleepMillis,
+    UnixMillis,
+    OpenAppend,
 }
 impl Item {
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 29] = [
         Self::ByteBuf,
         Self::GrowStatus,
         Self::ReadSomeStatus,
@@ -68,6 +72,7 @@ impl Item {
         Self::ArgCount,
         Self::ArgBytes,
         Self::SeekAbsolute,
+        Self::OpenAppend,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -99,9 +104,13 @@ impl Item {
             Self::ArgCount => "arg_count",
             Self::ArgBytes => "arg_bytes",
             Self::SeekAbsolute => "seek_absolute",
+            Self::OpenAppend => "open_append",
             Self::EnableTermination => "enable_termination_notifications",
             Self::TerminationRequested => "termination_requested",
             Self::WaitForTermination => "wait_for_termination",
+            Self::MonotonicMillis => "monotonic_millis",
+            Self::SleepMillis => "sleep_millis",
+            Self::UnixMillis => "unix_millis",
         }
     }
     pub fn family(self) -> usize {
@@ -117,9 +126,11 @@ impl Item {
             | Self::FileWriteSome
             | Self::SyncAll
             | Self::Close
-            | Self::SeekAbsolute => 3,
+            | Self::SeekAbsolute
+            | Self::OpenAppend => 3,
             Self::ArgStatus | Self::ArgCount | Self::ArgBytes => 4,
             Self::EnableTermination | Self::TerminationRequested | Self::WaitForTermination => 5,
+            Self::MonotonicMillis | Self::SleepMillis | Self::UnixMillis => 6,
             _ => 0,
         }
     }
@@ -129,6 +140,7 @@ impl Item {
             3 => ["std", "fs", self.name()],
             4 => ["std", "env", self.name()],
             5 => ["std", "process", self.name()],
+            6 => ["std", "time", self.name()],
             _ => ["std", "io", self.name()],
         }
     }
@@ -154,9 +166,13 @@ impl Item {
             Self::ArgCount => Function::ArgCount,
             Self::ArgBytes => Function::ArgBytes,
             Self::SeekAbsolute => Function::SeekAbsolute,
+            Self::OpenAppend => Function::OpenAppend,
             Self::EnableTermination => Function::EnableTermination,
             Self::TerminationRequested => Function::TerminationRequested,
             Self::WaitForTermination => Function::WaitForTermination,
+            Self::MonotonicMillis => Function::MonotonicMillis,
+            Self::SleepMillis => Function::SleepMillis,
+            Self::UnixMillis => Function::UnixMillis,
 
             _ => return None,
         })
@@ -255,6 +271,10 @@ pub(in crate::frontend) enum Function {
     EnableTermination,
     TerminationRequested,
     WaitForTermination,
+    MonotonicMillis,
+    SleepMillis,
+    UnixMillis,
+    OpenAppend,
 }
 impl Function {
     pub fn process(self) -> Option<super::termination::Function> {
@@ -262,6 +282,9 @@ impl Function {
             Self::EnableTermination => Some(super::termination::Function::Enable),
             Self::TerminationRequested => Some(super::termination::Function::Requested),
             Self::WaitForTermination => Some(super::termination::Function::Wait),
+            Self::MonotonicMillis => Some(super::termination::Function::MonotonicMillis),
+            Self::SleepMillis => Some(super::termination::Function::SleepMillis),
+            Self::UnixMillis => Some(super::termination::Function::UnixMillis),
             _ => None,
         }
     }
@@ -271,7 +294,7 @@ impl Function {
     pub fn is_arguments(self) -> bool {
         self.item().family() == 4
     }
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::New,
         Self::Len,
         Self::Capacity,
@@ -292,6 +315,7 @@ impl Function {
         Self::ArgCount,
         Self::ArgBytes,
         Self::SeekAbsolute,
+        Self::OpenAppend,
     ];
     pub fn item(self) -> Item {
         match self {
@@ -315,9 +339,13 @@ impl Function {
             Self::ArgCount => Item::ArgCount,
             Self::ArgBytes => Item::ArgBytes,
             Self::SeekAbsolute => Item::SeekAbsolute,
+            Self::OpenAppend => Item::OpenAppend,
             Self::EnableTermination => Item::EnableTermination,
             Self::TerminationRequested => Item::TerminationRequested,
             Self::WaitForTermination => Item::WaitForTermination,
+            Self::MonotonicMillis => Item::MonotonicMillis,
+            Self::SleepMillis => Item::SleepMillis,
+            Self::UnixMillis => Item::UnixMillis,
         }
     }
     pub fn result_enum(self) -> Option<Enumeration> {
@@ -325,7 +353,7 @@ impl Function {
             Self::Reserve | Self::Push | Self::Extend | Self::Resize => Some(Enumeration::Grow),
             Self::ReadSome | Self::FileReadSome => Some(Enumeration::Read),
             Self::WriteSome | Self::FileWriteSome => Some(Enumeration::Write),
-            Self::OpenRead | Self::Create => Some(Enumeration::Open),
+            Self::OpenRead | Self::Create | Self::OpenAppend => Some(Enumeration::Open),
             Self::SyncAll | Self::Close | Self::SeekAbsolute => Some(Enumeration::File),
             Self::ArgBytes => Some(Enumeration::Arguments),
             _ => None,
@@ -353,8 +381,9 @@ impl Function {
         };
         let scalar = |ty| ParameterTy::Value(ValueTy::Scalar(ty));
         let (parameters, count) = match self {
-            New | ArgCount | EnableTermination | TerminationRequested => ([unit; 3], 0),
-            WaitForTermination => ([scalar(Ty::I32), unit, unit], 1),
+            New | ArgCount | EnableTermination | TerminationRequested | MonotonicMillis
+            | UnixMillis => ([unit; 3], 0),
+            WaitForTermination | SleepMillis => ([scalar(Ty::I32), unit, unit], 1),
             Take => ([exclusive, unit, unit], 1),
             Len | Capacity => ([shared, unit, unit], 1),
             Reserve | Truncate => ([exclusive, scalar(Ty::I32), unit], 2),
@@ -362,7 +391,9 @@ impl Function {
             Extend => ([exclusive, bytes(BorrowKind::Shared), unit], 2),
             Resize => ([exclusive, scalar(Ty::I32), scalar(Ty::U8)], 3),
             ReadSome => ([bytes(BorrowKind::Exclusive), unit, unit], 1),
-            WriteSome | OpenRead | Create => ([bytes(BorrowKind::Shared), unit, unit], 1),
+            WriteSome | OpenRead | Create | OpenAppend => {
+                ([bytes(BorrowKind::Shared), unit, unit], 1)
+            }
             FileReadSome => ([file, bytes(BorrowKind::Exclusive), unit], 2),
             FileWriteSome => ([file, bytes(BorrowKind::Shared), unit], 2),
             SyncAll | Close => ([file, unit, unit], 1),
@@ -372,8 +403,9 @@ impl Function {
         let result = match self {
             New | Take => ValueTy::Owned(AggregateTy::ByteBuf),
             Len | Capacity | ArgCount => ValueTy::Scalar(Ty::I32),
+            MonotonicMillis | UnixMillis => ValueTy::Scalar(Ty::I64),
             Truncate => ValueTy::Scalar(Ty::Unit),
-            EnableTermination | TerminationRequested | WaitForTermination => {
+            EnableTermination | TerminationRequested | WaitForTermination | SleepMillis => {
                 ValueTy::Scalar(Ty::Bool)
             }
             _ => ValueTy::Owned(AggregateTy::Enum(enumeration(
@@ -428,13 +460,18 @@ const VECTOR_ITEM_START: usize = 27;
 const SEEK_ITEM_BIT: usize = 37;
 const OWNED_VECTOR_ITEM_START: usize = 38;
 const PROCESS_ITEM_START: usize = 40;
+const FILE_APPEND_ITEM_BIT: usize = 46;
 impl Item {
     const fn inventory_bit(self) -> usize {
         match self {
             Self::SeekAbsolute => SEEK_ITEM_BIT,
+            Self::OpenAppend => FILE_APPEND_ITEM_BIT,
             Self::EnableTermination => PROCESS_ITEM_START,
             Self::TerminationRequested => PROCESS_ITEM_START + 1,
             Self::WaitForTermination => PROCESS_ITEM_START + 2,
+            Self::MonotonicMillis => PROCESS_ITEM_START + 3,
+            Self::SleepMillis => PROCESS_ITEM_START + 4,
+            Self::UnixMillis => PROCESS_ITEM_START + 5,
             _ => self as usize,
         }
     }
@@ -503,7 +540,11 @@ impl Inventory {
                 OWNED_VECTOR_ITEM_START + super::owned_vector::Item::ALL.len()
                     <= PROCESS_ITEM_START
             );
-            assert!(PROCESS_ITEM_START + super::termination::Function::ALL.len() <= 60);
+            assert!(
+                PROCESS_ITEM_START + super::termination::Function::ALL.len()
+                    <= FILE_APPEND_ITEM_BIT
+            );
+            assert!(FILE_APPEND_ITEM_BIT < 60);
         }
         debug_assert!(legacy < 9);
         ((self.bits() << 4) | u64::from(legacy)).to_le_bytes()
@@ -515,7 +556,12 @@ impl Inventory {
     pub fn contains(self, item: Item) -> bool {
         if matches!(
             item,
-            Item::EnableTermination | Item::TerminationRequested | Item::WaitForTermination
+            Item::EnableTermination
+                | Item::TerminationRequested
+                | Item::WaitForTermination
+                | Item::MonotonicMillis
+                | Item::SleepMillis
+                | Item::UnixMillis
         ) {
             return false;
         }
@@ -597,7 +643,12 @@ impl Inventory {
     pub fn admit(self, item: Item) -> Self {
         if matches!(
             item,
-            Item::EnableTermination | Item::TerminationRequested | Item::WaitForTermination
+            Item::EnableTermination
+                | Item::TerminationRequested
+                | Item::WaitForTermination
+                | Item::MonotonicMillis
+                | Item::SleepMillis
+                | Item::UnixMillis
         ) {
             return self;
         }
@@ -680,9 +731,9 @@ struct CompilerCarriers {
     template_caller_selected: Option<super::vector::Operation>,
     signatures: [Signature; 4],
     signature_results: [Result<Signature, Box<crate::frontend::diagnostic::Diagnostic>>; 4],
-    item_iterations: [std::array::IntoIter<Item, 28>; 4],
+    item_iterations: [std::array::IntoIter<Item, { Item::ALL.len() }>; 4],
     enumeration_iterations: [std::array::IntoIter<Enumeration, 6>; 4],
-    function_iterations: [std::array::IntoIter<Function, 20>; 4],
+    function_iterations: [std::array::IntoIter<Function, { Function::ALL.len() }>; 4],
     path_iterations: [std::iter::Zip<
         std::array::IntoIter<&'static str, 3>,
         std::slice::Iter<'static, crate::frontend::source::Span>,
@@ -862,7 +913,7 @@ mod tests {
         let all = Item::ALL
             .into_iter()
             .fold(Inventory::default(), Inventory::admit);
-        assert_eq!((all.enums(), all.functions()), (6, 20));
+        assert_eq!((all.enums(), all.functions()), (6, 21));
         for (index, item) in Function::ALL.into_iter().enumerate() {
             assert_eq!(all.function_rank(item), Some(index));
         }

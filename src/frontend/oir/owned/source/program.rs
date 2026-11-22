@@ -352,8 +352,9 @@ fn lower_array_consumer<'s>(
 }
 
 impl SourceProgram {
-    pub(in crate::frontend::oir) fn has_file_delivery(&self) -> bool {
-        self.witness.has_file_delivery()
+    pub(in crate::frontend::oir) fn windows_file_or_time_candidate(&self) -> bool {
+        let time = self.witness.raw_program().builtins.process();
+        self.witness.has_file_delivery() || (!time.is_empty() && !time.has_signals())
     }
 
     /// Tests may vary presentation paths while retaining the ordinary owned
@@ -566,8 +567,10 @@ macro_rules! source_program_methods {
                 &self,
                 sources: &SourceMap,
             ) -> Result<(), Box<Diagnostic>> {
-                if !self.witness.raw_program().builtins.process().is_empty() {
-                    for operation in crate::frontend::builtin_catalog::termination::Function::ALL {
+                if self.witness.raw_program().builtins.process().has_signals() {
+                    for operation in
+                        crate::frontend::builtin_catalog::termination::Function::SIGNALS
+                    {
                         #[cfg(test)]
                         super::super::termination_queries::source_catalog_row();
                         if let Some(id) = self.witness.experimental_function(operation.operation())

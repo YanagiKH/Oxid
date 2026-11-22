@@ -182,6 +182,108 @@ fn main() -> i32 {
 }
 "#;
 
+const VECTOR_PAYLOADS: &str = r#"
+struct Packet { number: i32, bytes: ByteBuf }
+enum Item { Number(i32), Bytes(ByteBuf) }
+enum Batch { Empty, Records(Vec<Packet>), Items(Vec<Item>) }
+
+fn make_records() -> Batch {
+    let mut records = new::<Packet>();
+    if !grew(try_reserve(&mut records, 16)) { return Batch::Empty; }
+    let mut bytes = bytes_new();
+    bytes_push(&mut bytes, 7u8);
+    bytes_push(&mut bytes, 8u8);
+    if bytes_len(&bytes) != 2 { return Batch::Empty; }
+    push_reserved(&mut records, Packet { number: 35, bytes: bytes });
+    return Batch::Records(records);
+}
+
+fn make_items() -> Batch {
+    let mut items = new::<Item>();
+    if !grew(try_reserve(&mut items, 16)) { return Batch::Empty; }
+    let mut bytes = bytes_new();
+    bytes_push(&mut bytes, 9u8);
+    if bytes_len(&bytes) != 1 { return Batch::Empty; }
+    push_reserved(&mut items, Item::Bytes(bytes));
+    push_reserved(&mut items, Item::Number(4));
+    return Batch::Items(items);
+}
+
+fn consume(batch: Batch) -> i32 {
+    match batch {
+        Batch::Empty => { return -1; },
+        Batch::Records(values) => {
+            let mut packets = values;
+            if len(&packets) != 1 { return -2; }
+            let packet = pop_last(&mut packets);
+            let Packet { number, bytes } = packet;
+            return number + bytes_len(&bytes);
+        },
+        Batch::Items(values) => {
+            let mut elements = values;
+            if len(&elements) != 2 { return -3; }
+            let item = pop_last(&mut elements);
+            match item {
+                Item::Number(number) => { return number; },
+                Item::Bytes(bytes) => { return -4; },
+            }
+        },
+    }
+}
+
+fn discard_batches() -> bool {
+    let records = make_records();
+    let items = make_items();
+    match records {
+        Batch::Records(values) => {
+            match items {
+                Batch::Items(other) => { return len(&values) == 1 && len(&other) == 2; },
+                Batch::Empty => { return false; },
+                Batch::Records(other) => { return false; },
+            }
+        },
+        Batch::Empty => { return false; },
+        Batch::Items(values) => { return false; },
+    }
+}
+
+fn main() -> i32 {
+    let mut iteration = 0;
+    while iteration < 64 {
+        if !discard_batches() { return -5; }
+        let uninspected = make_records();
+        iteration = iteration + 1;
+    }
+    let records = make_records();
+    let items = make_items();
+    return consume(records) + consume(items) + 1;
+}
+"#;
+
+fn vector_payload_project(policy: &str) -> Project {
+    let project = Project::new(VECTOR_PAYLOADS, policy);
+    if policy == "hosted" {
+        let manifest = project.0.join("oxid.toml");
+        let contents = fs::read_to_string(&manifest).unwrap();
+        fs::write(manifest, contents + "heap-limit = 4096\n").unwrap();
+    }
+    project
+}
+
+#[test]
+fn vectors_move_through_enum_variants_and_release_unconsumed_elements() {
+    for policy in ["bounded", "hosted"] {
+        let project = vector_payload_project(policy);
+        let checked = project.invoke(&["check"]);
+        assert!(checked.status.success(), "{checked:?}");
+        let ran = project.invoke(&["run"]);
+        assert!(ran.status.success(), "{ran:?}");
+        assert_eq!(ran.stdout, b"42\n");
+        assert!(ran.stderr.is_empty(), "{ran:?}");
+        project.no_artifacts();
+    }
+}
+
 #[test]
 fn user_enum_vectors_support_all_eight_operations_and_mixed_scalar_record_roots() {
     for policy in ["bounded", "hosted"] {
@@ -265,9 +367,12 @@ fn enum_vectors_preserve_move_loan_and_closed_element_operation_refusals() {
         ("enum E{N(i32)}fn main()->i32{let mut values=new::<E>();let selected=values[0];return 0;}", "E0205"),
         ("enum E{N(i32)}fn inspect(values:&[E])->(){return;}fn main()->i32{return 0;}", "E0205"),
         ("enum E{N(i32)}fn main()->i32{let values=new::<Vec<E>>();return 0;}", "E0205"),
-        ("struct R{value:i32}struct H{values:Vec<R>}fn main()->i32{return 0;}", "E0205"),
+        ("struct R{value:i32}struct H{values:Vec<R>}fn main()->i32{let values=new::<H>();return 0;}", "E0300"),
         ("enum E{N(i32)}struct H{values:Vec<E>}fn main()->i32{let values=new::<H>();return 0;}", "E0300"),
         ("enum E{N(i32)}struct H{values:Vec<E>}enum Outer{Value(H)}fn main()->i32{let values=new::<Outer>();return 0;}", "E0300"),
+        ("struct R{value:i32}enum H{Values(Vec<R>)}fn main()->i32{let values=new::<H>();return 0;}", "E0300"),
+        ("enum E{Number(i32)}enum H{Values(Vec<E>)}fn main()->i32{let values=new::<H>();return 0;}", "E0300"),
+        ("struct R{value:i32}enum H{Values(Vec<R>)}fn main()->i32{let values=new::<R>();let holder=H::Values(values);let moved=holder;let again=holder;return 0;}", "E0310"),
         ("enum E{Value(H)}struct H{values:Vec<E>}fn main()->i32{return 0;}", "E0205"),
         ("#[derive(Copy)]enum E{N(i32)}fn main()->i32{return 0;}", "E0202"),
         ("fn main()->i32{let values=new::<ByteBuf>();return 0;}", "E0205"),
@@ -422,6 +527,34 @@ fn native_enum_vector_record_fields_and_memory_limit_recover_after_source_free_r
             fs::remove_dir_all(project.0.join(".oxid")).unwrap();
             let ran = output(Command::new(&relocated).current_dir(&project.0));
             assert!(ran.status.success(), "{ran:?}");
+            assert_eq!(ran.stdout, b"42\n");
+            assert!(ran.stderr.is_empty(), "{ran:?}");
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires LLVM 19.1.7 on a supported Linux or macOS host"]
+fn native_enum_vector_payloads_drop_after_source_free_relocation() {
+    for policy in ["bounded", "hosted"] {
+        for profile in ["dev", "release"] {
+            let project = vector_payload_project(policy);
+            let built = project.invoke(&["build", "--profile", profile]);
+            assert!(built.status.success(), "{policy} {profile}: {built:?}");
+            let binary = project.0.join(".oxid/bin/owned-enum-vector-contracts");
+            let relocated = project.0.join("native");
+            fs::copy(binary, &relocated).unwrap();
+            fs::remove_file(project.0.join("main.ox")).unwrap();
+            fs::remove_file(project.0.join("oxid.toml")).unwrap();
+            fs::remove_dir_all(project.0.join(".oxid")).unwrap();
+            let ran = output(
+                Command::new(&relocated)
+                    .current_dir(&project.0)
+                    .env("PATH", project.0.join("missing-tools"))
+                    .env("OXID_LLVM_BIN", project.0.join("missing-tools"))
+                    .env("OXID_PATH", project.0.join("missing-source")),
+            );
+            assert!(ran.status.success(), "{policy} {profile}: {ran:?}");
             assert_eq!(ran.stdout, b"42\n");
             assert!(ran.stderr.is_empty(), "{ran:?}");
         }

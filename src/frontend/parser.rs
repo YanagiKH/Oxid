@@ -784,12 +784,14 @@ impl Parser<'_> {
             if !experimental
                 && !vector
                 && !(segments.len() == 3
-                    && self.source.text_at(segments[0]) == "std"
-                    && self.source.text_at(segments[1]) == "process"
-                    && super::builtin_catalog::termination::Function::named(
-                        self.source.text_at(segments[2]),
-                    )
-                    .is_some())
+                    && super::builtin_catalog::termination::Function::ALL
+                        .into_iter()
+                        .any(|item| {
+                            item.path()
+                                .into_iter()
+                                .zip(segments)
+                                .all(|(name, span)| self.source.text_at(*span) == name)
+                        }))
                 && (segments.len() != 3
                     || self.source.text_at(segments[0]) != "std"
                     || self.source.text_at(segments[1]) != "io"

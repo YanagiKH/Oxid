@@ -35,7 +35,7 @@ INPUTS = {
     "scripts/owned_record_vector_acceptance/index_read.ox": (
         178, "d4588d3a2a57394ebc7cf1bbdbff3d1cf81a6b11e5c6e2b9522a99ccb22393f7"),
     "scripts/owned_record_vector_acceptance/nested_vector.ox": (
-        152, "57d358f03987e8191c6f3d8f664c6367bdc88255107b4defcc45b8635e1132be"),
+        211, "abdfc2173421273153d18d126237dd56617f464bda8e603c3a7c20e45eae2821"),
     "scripts/owned_record_vector_acceptance/package_main.ox": (
         651, "db347c29a81d6cfc1070d8b5098e8796d814f93ce21cdde676759e8cce6604c5"),
     "scripts/owned_record_vector_acceptance/package_model.ox": (

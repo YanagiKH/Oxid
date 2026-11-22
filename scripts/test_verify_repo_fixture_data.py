@@ -436,6 +436,19 @@ LIBRARY_PROJECTS = {
     "examples/typed-json": (
         "examples/typed-json/src/main.ox", "examples/typed-json/tests/validation.ox",
     ),
+    "packages/logging": ("packages/logging/src/lib.ox",),
+    "examples/typed-logging": (
+        "examples/typed-logging/src/main.ox", "examples/typed-logging/tests/records.ox",
+    ),
+    "packages/random": ("packages/random/src/lib.ox",),
+    "examples/typed-random": (
+        "examples/typed-random/src/main.ox", "examples/typed-random/tests/stream.ox",
+    ),
+    "packages/utf8_stream": ("packages/utf8_stream/src/lib.ox",),
+    "examples/typed-utf8-stream": (
+        "examples/typed-utf8-stream/src/main.ox",
+        "examples/typed-utf8-stream/tests/decode.ox",
+    ),
 }
 
 
@@ -454,8 +467,8 @@ def compiler_and_library_predecessor_report(text):
     if len(data) != 1 or len(report) != 1:
         raise AssertionError("expected one complete repository summary and DATA summary")
     changes = ((data[0], {"data": 11}),
-               (report[0], {"language": 14, "checks": 6, "members": 14, "projects": 6,
-                            "runs": 2, "entries": 2, "project_runs": 2, "project_tests": 2}))
+               (report[0], {"language": 23, "checks": 12, "members": 23, "projects": 12,
+                            "runs": 5, "entries": 5, "project_runs": 5, "project_tests": 5}))
     edits = []
     for match, deltas in changes:
         for name, delta in deltas.items():
@@ -528,7 +541,9 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertFalse(core_members & verify_repo.fixture_data_sources(root))
         library_roots = {root / name for name in LIBRARY_PROJECTS}
         library_members = {root / name for members in LIBRARY_PROJECTS.values() for name in members}
-        library_examples = [root / "examples/typed-int-map", root / "examples/typed-json"]
+        library_examples = [root / "examples/typed-int-map", root / "examples/typed-json",
+                            root / "examples/typed-logging", root / "examples/typed-random",
+                            root / "examples/typed-utf8-stream"]
         self.assertEqual({name: verify_repo.TYPED_MANIFEST_PROJECTS[name] for name in LIBRARY_PROJECTS},
                          LIBRARY_PROJECTS)
         self.assertTrue(library_members <= set(sources))
@@ -567,12 +582,18 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - GENERIC_OWNED_VECTOR_PROJECTS.keys()
                              - CORE_TYPE_PROJECTS.keys() - LIBRARY_PROJECTS.keys()
                              - {"compiler/native", FILE_IO_PROJECT}), 22)
-        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 12)
+        self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 15)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-option-result"), 1)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-int-map"), 1)
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/int_map"), 1)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-json"), 1)
         self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/json"), 1)
+        self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-random"), 1)
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count("packages/random"), 1)
+        self.assertIn("examples/typed-utf8-stream", verify_repo.TYPED_TESTED_MANIFEST_PROJECTS)
+        self.assertIn("packages/utf8_stream", verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
+        self.assertIn("examples/typed-logging", verify_repo.TYPED_TESTED_MANIFEST_PROJECTS)
+        self.assertIn("packages/logging", verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS)
         predecessor_fixture_data = verify_repo.fixture_data_sources(root) - owned_vector_data - owned_text_data - compiler_data
         self.assertEqual(predecessor_fixture_data - copy_data, data_sources | byte_data | vector_data)
         self.assertEqual(len(data_sources | byte_data), 188 + 325)
@@ -1013,7 +1034,13 @@ class PublishedRegistrationTests(unittest.TestCase):
                                   ("packages/int_map", ("check",)),
                                   ("examples/typed-int-map", ("check", "run", "test")),
                                   ("packages/json", ("check",)),
-                                  ("examples/typed-json", ("check", "run", "test"))):
+                                  ("examples/typed-json", ("check", "run", "test")),
+                                  ("packages/random", ("check",)),
+                                  ("examples/typed-random", ("check", "run", "test")),
+                                  ("packages/utf8_stream", ("check",)),
+                                  ("examples/typed-utf8-stream", ("check", "run", "test")),
+                                  ("packages/logging", ("check",)),
+                                  ("examples/typed-logging", ("check", "run", "test"))):
             calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == verify_repo.ROOT / project]
             self.assertEqual([call.args[0] for call in calls],
                              [[str(Path(sys.executable).resolve()), command] for command in expected])

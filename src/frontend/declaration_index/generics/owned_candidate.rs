@@ -1768,33 +1768,34 @@ mod tests {
             let project = fixture.project();
             assert_refused(candidate(&project, MAX_STORAGE, &WorkMeter::default(), &mut Allocator::default()).unwrap_err());
         }
-        // An owning function parameter may now defer its element until a call
-        // supplies an independently checked concrete root. Merely checking an
-        // unused affine definition must not mint an executable vector key.
-        let source = format!(
-            "{IMPORTS}fn unbounded<T>(values:Vec<T>)->(){{return;}}fn main()->i32{{return 0;}}"
-        );
-        let fixture = Fixture::new(&source);
-        let project = fixture.project();
-        let index = candidate(
-            &project,
-            MAX_STORAGE,
-            &WorkMeter::default(),
-            &mut Allocator::default(),
-        )
-        .unwrap();
-        assert!(index.owned_vector_source_needed());
-        assert!(index.owned_vector_functions().is_empty());
-        assert!(index.vector_functions().is_empty());
-        assert_eq!(index.source_function_count(), 1);
-        index
-            .validate_owned_vector_candidate(&WorkMeter::default(), &mut Allocator::default())
+        // Declaring an owning parameter, field or payload does not mint an
+        // executable vector key without a concrete operation.
+        for declaration in [
+            "fn unbounded<T>(values:Vec<T>)->(){return;}",
+            "struct Holder{values:Vec<Entry>}",
+            "enum Holder{Values(Vec<Entry>)}",
+        ] {
+            let source = format!("{IMPORTS}{declaration}fn main()->i32{{return 0;}}");
+            let fixture = Fixture::new(&source);
+            let project = fixture.project();
+            let index = candidate(
+                &project,
+                MAX_STORAGE,
+                &WorkMeter::default(),
+                &mut Allocator::default(),
+            )
             .unwrap();
+            assert!(index.owned_vector_source_needed());
+            assert!(index.owned_vector_functions().is_empty());
+            assert!(index.vector_functions().is_empty());
+            assert_eq!(index.source_function_count(), 1);
+            index
+                .validate_owned_vector_candidate(&WorkMeter::default(), &mut Allocator::default())
+                .unwrap();
+        }
 
         for declaration in [
             "fn unbounded<T>(values:Vec<T>)->(){let moved=values;let duplicate=values;return;}",
-            "struct Holder{values:Vec<Entry>}",
-            "enum Holder{Values(Vec<Entry>)}",
             "fn borrowed(values:&[Entry])->(){return;}",
             "fn invalid_moves<Marker>()->(){let mut values=new::<Entry>();let first=values;let second=values;return;}",
             "fn invalid_loans<Marker>()->(){let mut values=new::<Entry>();push_reserved(&mut values,pop_last(&mut values));return;}",
@@ -1810,6 +1811,41 @@ mod tests {
                     &mut Allocator::default(),
                 )
                 .unwrap_err(),
+            );
+        }
+    }
+
+    #[test]
+    fn owned_vector_enum_payloads_require_visible_elements_and_finite_layouts() {
+        for (declaration, diagnostic) in [
+            (
+                "pub enum Holder{Values(Vec<Entry>)}",
+                "public declaration exposes a private type argument",
+            ),
+            (
+                "enum Item{Value(i32)}pub enum Holder{Values(Vec<Item>)}",
+                "public declaration exposes a private type argument",
+            ),
+            (
+                "enum Tree{Branches(Vec<Tree>)}",
+                "recursive enum layout has no finite size",
+            ),
+        ] {
+            let fixture = Fixture::new(&format!(
+                "{IMPORTS}{declaration}fn main()->i32{{return 0;}}"
+            ));
+            let errors = candidate(
+                &fixture.project(),
+                MAX_STORAGE,
+                &WorkMeter::default(),
+                &mut Allocator::default(),
+            )
+            .unwrap_err();
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.code == "E0300" && error.message == diagnostic),
+                "{declaration}: {errors:?}"
             );
         }
     }

@@ -117,18 +117,16 @@ They follow unsaved text and replace the name around the cursor.
 Type `crate::` or `crate::helper::` for visible module names, functions and types.
 This also works with unsaved declarations, partial names and unfinished `use`
 declarations, including an existing `as alias`.
+Type `State::` for a local or imported enum to list its variants. You can also
+use its full path, such as `crate::response::State::`.
 
 Type `point.` to complete fields of a record parameter (`Point`, `&Point`, or
 `&mut Point`), or a local initialized directly with `Point { ... }`. Field names
 follow unsaved declarations and module visibility. Partial names replace the
 whole identifier, including when the cursor is in its middle.
 
-This first field-completion scope uses monomorphic records named locally or by
-an explicit `crate::...` path. It does not infer import aliases, generic records,
-call results or chained receivers. A preceding use of the receiver, duplicate
-binding or control flow suppresses suggestions instead of guessing whether the
-value remains available. See [record field completion](../rfcs/0072-record-field-completion.md)
-for the supported source forms.
+Field completion supports records without type parameters. Use a local name,
+an imported name or alias, or a full path such as `crate::model::Point`.
 
 Workspace checks include every member and declared test entry. Dependencies are
 resolved offline; prepare Git dependencies with ordinary project commands first.
@@ -188,7 +186,36 @@ ready. Pass a timeout in milliseconds. It returns true after a notification and
 false when the wait expires. A zero timeout polls immediately. Negative timeouts
 and calls before enabling notifications return false immediately.
 
+## Measuring elapsed time
+
+Import `monotonic_millis` from `std::time`. Save a reading before your work
+and subtract it from a later reading to get elapsed milliseconds as an `i64`.
+Check both readings for `-1`, which means the clock is unavailable. It works
+on Linux and macOS with x86-64 or ARM64, and on Windows with x86-64. Changes
+to the system date and time do not affect the readings.
+
+For timestamps, import `unix_millis` from `std::time`. It returns an `i64`
+counting milliseconds since midnight UTC on January 1, 1970. The smallest
+`i64` value means the clock is unavailable.
+
+To write timestamped JSON events, use the logging package. [Structured logging](../packages/logging/README.md).
+
+Use `sleep_millis(100)` from `std::time` to pause the current thread for
+about 100 milliseconds. It returns true when the wait completes. Zero completes
+immediately. A negative duration or a failed wait returns false.
+On Windows, use the default result entry and bounded execution policy to
+build native programs that use these functions.
+
+## Drawing repeatable random numbers
+
+Add the [seeded random library](../packages/random/README.md) as a dependency
+and use `seeded(42u32)` to create a generator. Call `below(&mut generator, 100u32)`
+to draw a number from 0 to 99. Reuse the seed to repeat the same sequence.
+
 ## Reading and writing file buffers
+
+Use `open_append(&path)` from `std::fs` to add bytes at the end of a file.
+It creates the file when needed and preserves existing contents.
 
 Add the [file I/O library](../packages/file_io/oxid.toml) as a local dependency
 and import `read_exact` and `write_all` through its dependency name. `read_exact`
@@ -420,6 +447,9 @@ For complete applications, try [Byte count](../apps/byte-count/README.md) or
 arrays and nested enum values between local packages.
 Try [UTF-8 normalize](../apps/utf8-normalize/README.md) to validate and transform
 text using a shared [owned UTF-8 library](../packages/utf8_text/README.md).
+
+Use a streaming decoder when a character can span two file or network reads.
+[Streaming UTF-8](../packages/utf8_stream/README.md).
 See the [language reference](../spec/typed-preview.md) for supported syntax.
 
 ## Range loops
@@ -483,9 +513,14 @@ is nonempty before popping. Truncation releases resources in the removed values.
 Built-in status enums use the same operations. The vector itself always moves
 when passed by value.
 
-Enum vectors do not support indexing, element references, slices, nested owned
-vectors, recursive element layouts or custom destructors. `#[derive(Copy)]` on
-enums remains unsupported.
+An enum variant can hold a vector, for example
+`enum Batch { Empty, Records(Vec<Message>) }`. Construct
+`Batch::Records(messages)` to move the vector in. Match
+`Batch::Records(records)` to move it back out.
+
+Enum vectors do not support indexing, element references, slices, elements
+that contain another owned vector, recursive element layouts or custom
+destructors. `#[derive(Copy)]` on enums remains unsupported.
 
 Give reusable data types their own type parameters:
 
@@ -521,8 +556,8 @@ its fields have the same layout. An owned enum payload transfers ownership to
 its match binding. Reading a generic scalar field requires `T: Copy`; record
 fields otherwise keep the existing move rules. Different record fields may be
 [borrowed together](../rfcs/0067-disjoint-field-borrows.md), including nested
-fields and fields that own buffers. The whole record cannot move while a field
-is borrowed. Whole values can also have [local reference bindings](../rfcs/0068-local-reference-bindings.md)
+fields and fields that own buffers or vectors. A record can move once its field
+references have ended. Whole values can also have [local reference bindings](../rfcs/0068-local-reference-bindings.md)
 such as `let current = &mut value;`. A local reference lasts until its declaring
 block ends; `return`, `break` and `continue` also end the scopes they leave.
 Forward it to a helper with `&*current` or `&mut *current`. References cannot

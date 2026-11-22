@@ -644,14 +644,6 @@ impl Nominals {
                     field.ty.span,
                 ));
             }
-            if matches!(value, Value::Vector(element) if element.owned()
-                && !matches!(element, Element::OwnedEnumApplication(_) | Element::OwnedBuiltinEnum(_)))
-            {
-                return Err(error(
-                    "owned record vectors cannot be stored in record declarations",
-                    field.ty.span,
-                ));
-            }
             storage.push(&mut fields, value, allocator, work, field.span)?;
         }
         self.records[id].fields = fields;
@@ -748,12 +740,6 @@ impl Nominals {
                 ),
                 None => None,
             };
-            if matches!(value, Some(Value::Vector(element)) if element.owned()) {
-                return Err(error(
-                    "owned record vectors cannot be enum payloads",
-                    variant.span,
-                ));
-            }
             storage.push(&mut variants, value, allocator, work, variant.span)?;
         }
         self.enumerations[id].variants = variants;

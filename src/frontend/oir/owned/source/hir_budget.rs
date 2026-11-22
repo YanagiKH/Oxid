@@ -720,7 +720,7 @@ impl HirPlan {
             total,
         })
     }
-    /// A distinct authenticated suffix; the old20+1 guard above stays closed.
+    /// A distinct suffix with the authenticated time and signal inventory.
     fn calculate_with_process(
         c: HirCounts,
         at: Span,
@@ -729,7 +729,7 @@ impl HirPlan {
         inventory: crate::frontend::builtin_catalog::BuiltinSet,
     ) -> Result<Self, Box<Diagnostic>> {
         let process = inventory.process();
-        if process.is_empty() || process.count() > 2 {
+        if process.is_empty() {
             return Err(invalid(at));
         }
         if experimental_functions != inventory.experimental().functions()
@@ -2019,12 +2019,18 @@ mod process_suffix_tests {
             start: 0,
             end: 0,
         };
+        let all = termination::Function::ALL
+            .into_iter()
+            .fold(BuiltinSet::None, |set, item| {
+                set.admit(BuiltinItem::Process(item))
+            });
         for process in [
             BuiltinSet::None.admit(BuiltinItem::Process(termination::Function::Enable)),
             BuiltinSet::None.admit(BuiltinItem::Process(termination::Function::Requested)),
             BuiltinSet::None
                 .admit(BuiltinItem::Process(termination::Function::Enable))
                 .admit(BuiltinItem::Process(termination::Function::Requested)),
+            all,
         ] {
             for with_old_functions in [false, true] {
                 let mut inventory = process;
@@ -2081,20 +2087,20 @@ mod process_suffix_tests {
                 );
             }
         }
-        assert_eq!(experimental::Function::ALL.len(), 20);
+        assert_eq!(experimental::Function::ALL.len(), 21);
         assert!(
             HirPlan::calculate_with_vectors(
                 HirCounts {
                     functions: 1,
-                    signatures: 22,
+                    signatures: 23,
                     ..Default::default()
                 },
                 at,
-                21,
+                22,
                 0
             )
             .is_err(),
-            "the historical count-only entry still rejects its twenty-first row"
+            "the count-only entry still rejects a row outside the file and buffer catalog"
         );
     }
 }

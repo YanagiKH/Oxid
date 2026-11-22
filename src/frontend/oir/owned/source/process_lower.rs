@@ -8,7 +8,7 @@ use crate::frontend::{
 use std::mem::size_of;
 
 pub(super) fn counts(operation: termination::Function) -> super::super::budget::FunctionCounts {
-    let parameters = usize::from(operation == termination::Function::Wait);
+    let parameters = usize::from(operation.takes_millis());
     super::super::budget::FunctionCounts {
         locals: 1 + parameters,
         parameters,
@@ -37,7 +37,7 @@ pub(super) fn function(
     let result = LocalId(counts.parameters);
     let mut parameters = exact(counts.parameters)?;
     let mut locals = exact(counts.locals)?;
-    if operation == termination::Function::Wait {
+    if operation.takes_millis() {
         budget::append(
             &mut parameters,
             ParameterBinding::Scalar(LocalId(0)),
@@ -58,7 +58,7 @@ pub(super) fn function(
     budget::append(
         &mut locals,
         LocalDecl {
-            ty: hir::Ty::Bool,
+            ty: operation.result_ty(),
             kind: LocalKind::Temporary,
             span,
         },
@@ -101,7 +101,7 @@ pub(super) fn function(
     Ok(RawOwnedFunction {
         id,
         span,
-        result: ValueTy::Scalar(hir::Ty::Bool),
+        result: ValueTy::Scalar(operation.result_ty()),
         parameters,
         locals,
         places: Vec::new(),

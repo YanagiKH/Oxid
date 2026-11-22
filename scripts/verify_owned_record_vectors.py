@@ -69,7 +69,7 @@ CASES = (
     # Candidate collection failure preserves the original ordinary route error.
     Case("copy-operation", "copy_operation.ox", None, diagnostics=(("resolve", "E0205"),)),
     Case("index-read", "index_read.ox", None, diagnostics=(("generics", "E0300"),)),
-    Case("nested-vector", "nested_vector.ox", None, diagnostics=(("generics", "E0300"),)),
+    Case("nested-vector", "nested_vector.ox", None, diagnostics=(("type", "E0300"),)),
 )
 
 

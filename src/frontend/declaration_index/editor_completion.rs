@@ -1,9 +1,10 @@
 //! Read-only source-name namespace. No executable index is constructed here.
 use super::*;
 use crate::frontend::{
+    lexer::Kind,
     parser::{
         self,
-        editor_query::{Declaration, DeclarationKind, PathQuery},
+        editor_query::{Declaration, DeclarationKind, ImportedName, PathQuery},
     },
     project::editor_sources::QuerySources,
 };
@@ -15,6 +16,11 @@ struct Row {
     module: ModuleId,
     declaration: Declaration,
 }
+enum Selection<'a> {
+    Module(ModuleId),
+    Nominal(&'a Row),
+}
+
 pub(in crate::frontend) struct Namespace<'a, 's> {
     sources: &'a QuerySources<'s>,
     rows: Vec<Row>,
@@ -202,17 +208,104 @@ impl<'a, 's> Namespace<'a, 's> {
         {
             return Err(bad(at));
         }
-        if map.try_text(query.segments()[0]) != Some("crate") {
+        let source = map.get(at.file);
+        if !query.belongs_to(source) {
             return Err(bad(at));
         }
-        if !query.belongs_to(map.get(at.file)) {
-            return Err(bad(at));
+        let first = query.segments()[0];
+        let name = map.try_text(first).ok_or_else(|| bad(at))?;
+        if name != "crate" {
+            if query.segments().len() != 1 || query.is_import() {
+                return Err(bad(at));
+            }
+            let selection = self.local_type(requester, first, DeclarationKind::Enumeration)?;
+            return match selection {
+                Some(row) => self.visit_variants(row, &mut add),
+                _ => Ok(()),
+            };
         }
+        let selected = match self.select(
+            requester,
+            query.segments()[1..].iter().copied(),
+            (!query.is_import()).then_some(DeclarationKind::Enumeration),
+            at,
+        )? {
+            Some(Selection::Module(module)) => module,
+            Some(Selection::Nominal(row)) => return self.visit_variants(row, &mut add),
+            None => return Ok(()),
+        };
+        if query.segments().len() == 1 {
+            for edge in self.sources.dependencies(requester) {
+                self.work.debit(1, at, "editor dependency candidate")?;
+                add(&edge.alias, DeclarationKind::Module)?;
+            }
+        }
+        for &ordinal in &self.order {
+            let row = &self.rows[ordinal as usize];
+            self.work.debit(1, at, "editor qualified candidate")?;
+            if row.module == selected && self.visible(row, requester)? {
+                add(map.text(row.declaration.name), row.declaration.kind)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn local_type(
+        &self,
+        requester: ModuleId,
+        name: Span,
+        kind: DeclarationKind,
+    ) -> Result<Option<&Row>, Box<Diagnostic>> {
+        let project = self.sources.project();
+        let map = project.sources();
+        let source = map.get(name.file);
+        let spelling = map.try_text(name).ok_or_else(|| bad(name))?;
+        let mut local = None;
+        for row in &self.rows {
+            self.work.debit(1, name, "editor local type lookup")?;
+            if row.module == requester
+                && row.declaration.kind != DeclarationKind::Function
+                && compare_bytes(map.text(row.declaration.name), spelling, self.work, name)?
+                    == Ordering::Equal
+            {
+                local = Some(row);
+                break;
+            }
+        }
+        let file = &project.editor_files()[requester.0];
+        match file.imported_name(source, spelling, name, self.work)? {
+            ImportedName::Local => Ok(local.filter(|row| row.declaration.kind == kind)),
+            ImportedName::Absolute(tokens) if local.is_none() => {
+                let mut segments = tokens.iter().filter(|token| token.kind == Kind::Ident);
+                if segments.next().map(|token| source.text_at(token.span)) != Some("crate") {
+                    return Err(bad(name));
+                }
+                match self.select(
+                    requester,
+                    segments.map(|token| token.span),
+                    Some(kind),
+                    name,
+                )? {
+                    Some(Selection::Nominal(row)) => Ok(Some(row)),
+                    _ => Ok(None),
+                }
+            }
+            ImportedName::Absolute(_) | ImportedName::Unavailable => Ok(None),
+        }
+    }
+
+    fn select(
+        &self,
+        requester: ModuleId,
+        segments: impl Iterator<Item = Span>,
+        endpoint: Option<DeclarationKind>,
+        at: Span,
+    ) -> Result<Option<Selection<'_>>, Box<Diagnostic>> {
+        let map = self.sources.project().sources();
         let mut selected = self.sources.root(requester).ok_or_else(|| bad(at))?;
-        for (position, &segment) in query.segments()[1..query.segments().len()]
-            .iter()
-            .enumerate()
-        {
+        let mut segments = segments.enumerate().peekable();
+        while let Some((position, segment)) = segments.next() {
+            let last = segments.peek().is_none();
             self.work.debit(1, segment, "editor qualified prefix")?;
             let name = map.try_text(segment).ok_or_else(|| bad(at))?;
             if position == 0 {
@@ -231,7 +324,10 @@ impl<'a, 's> Namespace<'a, 's> {
             let mut child = None;
             for row in &self.rows {
                 self.work.debit(1, segment, "editor prefix declaration")?;
-                if row.module != selected || row.declaration.kind != DeclarationKind::Module {
+                let nominal = last && Some(row.declaration.kind) == endpoint;
+                if row.module != selected
+                    || (row.declaration.kind != DeclarationKind::Module && !nominal)
+                {
                     continue;
                 }
                 if compare_bytes(map.text(row.declaration.name), name, self.work, segment)?
@@ -240,7 +336,10 @@ impl<'a, 's> Namespace<'a, 's> {
                     continue;
                 }
                 if !self.visible(row, requester)? {
-                    return Ok(());
+                    return Ok(None);
+                }
+                if nominal {
+                    return Ok(Some(Selection::Nominal(row)));
                 }
                 for (ordinal, header) in self.sources.project().editor_modules().iter().enumerate()
                 {
@@ -253,22 +352,32 @@ impl<'a, 's> Namespace<'a, 's> {
                 break;
             }
             let Some(child) = child else {
-                return Ok(());
+                return Ok(None);
             };
             selected = ModuleId(child);
         }
-        if query.segments().len() == 1 {
-            for edge in self.sources.dependencies(requester) {
-                self.work.debit(1, at, "editor dependency candidate")?;
-                add(&edge.alias, DeclarationKind::Module)?;
-            }
+        Ok(Some(Selection::Module(selected)))
+    }
+
+    fn visit_variants<'v>(
+        &'v self,
+        row: &Row,
+        add: &mut impl FnMut(&'v str, DeclarationKind) -> Result<(), Box<Diagnostic>>,
+    ) -> Result<(), Box<Diagnostic>> {
+        let project = self.sources.project();
+        let declaration = row.declaration;
+        let source = project.sources().get(declaration.name.file);
+        let file = &project.editor_files()[row.module.0];
+        if !file.belongs_to(source) {
+            return Err(bad(declaration.name));
         }
-        for &ordinal in &self.order {
-            let row = &self.rows[ordinal as usize];
-            self.work.debit(1, at, "editor qualified candidate")?;
-            if row.module == selected && self.visible(row, requester)? {
-                add(map.text(row.declaration.name), row.declaration.kind)?;
-            }
+        for &variant in file
+            .variants(declaration)
+            .ok_or_else(|| bad(declaration.name))?
+        {
+            self.work
+                .debit(1, variant, "editor enum variant candidate")?;
+            add(source.text_at(variant), DeclarationKind::Variant)?;
         }
         Ok(())
     }
@@ -337,10 +446,10 @@ mod tests {
             assert_eq!(size_of::<&QuerySources<'_>>(), 8);
             assert_eq!(size_of::<&WorkMeter>(), 8);
             assert_eq!(size_of::<[usize; 256]>(), 2048);
-            assert_eq!(size_of::<Row>(), 40); // module word + 32B declaration
-            assert_eq!(size_of::<Declaration>(), 32); // Span24 + kind1 + bool1 + pad6
+            assert_eq!(size_of::<Row>(), 56); // module word + 48-byte declaration
+            assert_eq!(size_of::<Declaration>(), 48); // span, two range bounds, kind and visibility
             assert_eq!(size_of::<Namespace<'_, '_>>(), 2112); // two Vec24 + two refs8 +256 words
-            assert_eq!(size_of::<PathQuery>(), 872); //34 Span24 + Span24 +four8B facts
+            assert_eq!(size_of::<PathQuery>(), 880); // spans, four words and import context
             assert_eq!(size_of::<NamespaceBuildResult<'_, '_>>(), 2112);
             assert_eq!(size_of::<NamespaceCompletionResult<'_, '_>>(), 2112);
             assert_eq!(align_of::<Declaration>(), 8);
@@ -364,10 +473,10 @@ mod tests {
                     // Construction, two real raw return envelopes, one mapped
                     // return, one selected namespace; a merge Vec; one selected
                     // cursor query; and two actual rows/order/merge cells.
-                    let fixed = 5 * 2112 + 24 + 872;
-                    let exact = fixed + 2 * (40 + 4 + 4);
-                    assert_eq!(fixed, 11456);
-                    assert_eq!(exact, 11552);
+                    let fixed = 5 * 2112 + 24 + 880;
+                    let exact = fixed + 2 * (56 + 4 + 4);
+                    assert_eq!(fixed, 11464);
+                    assert_eq!(exact, 11592);
                     for (limit, pass) in [(exact - 1, false), (exact, true)] {
                         let work = WorkMeter::default();
                         let mut allocator = Allocator::default();

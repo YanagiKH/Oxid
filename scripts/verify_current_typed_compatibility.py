@@ -15,10 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "bd51ed2d9d48a1b406ffcce0802adc073c0f1a81"
-REVIEWED_PARENTS = ("8a1980c7d714fbdc7f38edcd13c9fb6d3e90ad23",)
-REVIEWED_TREE = "4f0e4d5bd69adc4e9168d6a44d2b77530a4e218a"
+REVIEWED_SOURCE = "0e6dd3e27cbe1275bb9554773d68b70fe52976c4"
+REVIEWED_PARENTS = ("71b20ee9264ffc9486e8886ca34b8df2674ab01c",)
+REVIEWED_TREE = "18816d9f50e15cd50d8c144c027871339095c49e"
 PUBLIC_TESTS = {
+    "tests/file_open_append.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
     "tests/typed_owned_record_element_loans.rs", "tests/typed_registry_ranges.rs",
     "tests/windows_file_io.rs", "tests/windows_file_runtime.c",
@@ -69,11 +70,11 @@ def reviewed_delta(repo):
             "wrong reviewed integrated typed source")
     raw = git(repo, "diff", "--name-status", "--no-renames", "-z", PREDECESSOR, REVIEWED_SOURCE)
     words = raw.decode("utf-8").split("\0")
-    require(words[-1] == "" and len(words) == 255, "invalid reviewed compiler delta")
+    require(words[-1] == "" and len(words) == 273, "invalid reviewed compiler delta")
     rows = list(zip(words[:-1:2], words[1:-1:2]))
     added = {name for status, name in rows if status == "A"}
     modified = {name for status, name in rows if status == "M"}
-    require(len(added) == 26 and len(modified) == 101 and not added & modified,
+    require(len(added) == 27 and len(modified) == 109 and not added & modified,
             "wrong reviewed compiler delta membership")
     require(PUBLIC_TESTS <= added and PUBLIC_TEST_UPDATES <= modified
             and all(name.startswith(("src/", "native/"))
@@ -185,7 +186,7 @@ def run(args):
             retained = json.loads(body)
             require(retained.get("status") == ("prepared" if args.prepare_only else "passed")
                     and retained.get("semantic_pass") is (not args.prepare_only)
-                    and retained.get("current_input_members") == 629
+                    and retained.get("current_input_members") == 630
                     and retained.get("historical_results_apply_to_current") is False
                     and context.get("output") == delegated.output, "incomplete retained compiler results")
             if not args.prepare_only:

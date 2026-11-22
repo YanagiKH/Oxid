@@ -68,17 +68,17 @@ class EnumVectorNativeEvidenceControls(unittest.TestCase):
             with self.subTest(catalog=changed), self.assertRaises(ValueError):
                 contracts.rust_test_catalog(changed)
 
-    def test_three_native_cases_derive_filtered_ordinary_tests_from_the_full_catalog(self):
+    def test_native_cases_derive_filtered_ordinary_tests_from_the_full_catalog(self):
         names = ("ordinary_a", *verify.CLI_NATIVE_TESTS, "ordinary_b")
-        catalog = ("\n".join(name + ": test" for name in names) + "\n\n5 tests, 0 benchmarks\n").encode()
+        catalog = ("\n".join(name + ": test" for name in names) + "\n\n6 tests, 0 benchmarks\n").encode()
         selected = ("\n".join(name + ": test" for name in verify.CLI_NATIVE_TESTS)
-                    + "\n\n3 tests, 0 benchmarks\n").encode()
-        execution = ("\nrunning 3 tests\n"
+                    + "\n\n4 tests, 0 benchmarks\n").encode()
+        execution = ("\nrunning 4 tests\n"
                      + "".join("test " + name + " ... ok\n" for name in verify.CLI_NATIVE_TESTS)
-                     + "\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; "
+                     + "\ntest result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; "
                        "2 filtered out; finished in 0.00s\n\n").encode()
         selection = contracts.validate_selected_rust_tests(catalog, selected, execution, verify.CLI_NATIVE_TESTS)
-        self.assertEqual(selection["catalog_test_count"], 5)
+        self.assertEqual(selection["catalog_test_count"], 6)
         self.assertEqual(selection["expected_filtered_out"], 2)
         for wrong in (0, 1, 3):
             with self.subTest(filtered=wrong), self.assertRaises(ValueError):
@@ -160,6 +160,7 @@ class EnumVectorNativeEvidenceControls(unittest.TestCase):
         self.assertIn('name: current-owned-enum-vector-native\n', body)
         self.assertEqual(verify.CLI_NATIVE_TESTS, (
             "native_builtin_enum_vectors_keep_final_ids_after_source_free_relocation",
+            "native_enum_vector_payloads_drop_after_source_free_relocation",
             "native_enum_vector_record_fields_and_memory_limit_recover_after_source_free_relocation",
             "native_owned_enum_token_queue_runs_after_source_free_relocation"))
 

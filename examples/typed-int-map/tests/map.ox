@@ -2,6 +2,9 @@ use alloc::vec::GrowStatus;
 use crate::maps::new;
 use crate::maps::len;
 use crate::maps::get;
+use crate::maps::entry_at;
+use crate::maps::lower_bound;
+use crate::maps::Entry;
 use crate::maps::try_insert;
 use crate::maps::remove;
 use crate::types::option::Option;
@@ -81,10 +84,52 @@ fn failed_growth() -> i32 {
     return 0;
 }
 
+fn is_missing(entry: Option<Entry<i32>>) -> bool {
+    match entry {
+        Option::None => { return true; },
+        Option::Some(value) => { return false; },
+    }
+}
+
+fn range_order() -> i32 {
+    let mut map = new::<i32>();
+    if lower_bound(&map, 0) != 0 || !is_missing(entry_at(&map, 0)) { return 40; }
+    if !ok(try_insert(&mut map, 42, 22)) { return 41; }
+    if !ok(try_insert(&mut map, -8, 999)) { return 42; }
+    if !ok(try_insert(&mut map, 7, 20)) { return 43; }
+    if !ok(try_insert(&mut map, 2147483647, 999)) { return 44; }
+    let first = lower_bound(&map, 0);
+    let last = lower_bound(&map, 43);
+    if first != 1 || last != 3 || lower_bound(&map, 2147483647) != 3 { return 45; }
+    let mut sum = 0;
+    for index in first..last {
+        let entry = entry_at(&map, index);
+        match entry {
+            Option::Some(value) => {
+                if index == 1 && value.key != 7 { return 46; }
+                if index == 2 && value.key != 42 { return 47; }
+                sum = sum + value.value;
+            },
+            Option::None => { return 48; },
+        }
+    }
+    if sum != 42 || !is_missing(entry_at(&map, -1)) || !is_missing(entry_at(&map, 4)) { return 49; }
+    let removed = unwrap_or(remove(&mut map, 7), 0);
+    if removed != 20 || lower_bound(&map, 42) != 1 { return 50; }
+    let remaining = entry_at(&map, 1);
+    match remaining {
+        Option::Some(value) => { if value.key == 42 && value.value == 22 { return 0; } },
+        Option::None => {},
+    }
+    return 51;
+}
+
 fn main() -> i32 {
     let checked = replacements_and_removals();
     if checked != 0 { return checked; }
     let copied = value_copies();
     if copied != 0 { return copied; }
+    let ranged = range_order();
+    if ranged != 0 { return ranged; }
     return failed_growth();
 }
