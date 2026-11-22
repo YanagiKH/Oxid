@@ -1777,6 +1777,56 @@ impl<'i, 's> QuerySession<'i, 's> {
         Ok(matches!(original.flags & KIND_MASK, RECORD | ENUM).then_some(original.name.span()))
     }
 
+    pub(in crate::frontend) fn record_field_declaration_name(
+        &mut self,
+        requester: ModuleId,
+        path: ItemPathRef,
+        field: Span,
+    ) -> Result<Option<Span>, Box<Diagnostic>> {
+        let Some(handle) = self.select(requester, path, true)? else {
+            return Ok(None);
+        };
+        let DeclarationProjection::SourceOriginal(original) = self.tables.project_handle(handle)?
+        else {
+            return Ok(None);
+        };
+        let original = self.tables.original(original)?;
+        if original.flags & KIND_MASK != RECORD {
+            return Ok(None);
+        }
+        let record = self
+            .tables
+            .records
+            .get(original.target as usize)
+            .ok_or_else(|| bad(field))?;
+        let start = record.field_start as usize;
+        let end = start
+            .checked_add(record.field_len as usize)
+            .ok_or_else(|| bad(field))?;
+        let fields = self
+            .tables
+            .fields
+            .get(start..end)
+            .ok_or_else(|| bad(field))?;
+        let spelling = self.tables.sources.text(field)?;
+        for member in fields {
+            let name = member.name.span();
+            let candidate = self.tables.sources.text(name)?;
+            self.work.debit(
+                (spelling.len().min(candidate.len()) + 1) as u64,
+                field,
+                "editor record field lookup",
+            )?;
+            if candidate == spelling {
+                return Ok(self
+                    .tables
+                    .permission(member.domain, requester, self.work, field)?
+                    .then_some(name));
+            }
+        }
+        Ok(None)
+    }
+
     pub(in crate::frontend) fn function_declaration_name(
         &self,
         function: DefId,
