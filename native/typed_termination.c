@@ -1,4 +1,4 @@
-/* Included for process notifications or monotonic time.
+/* Included for process notifications and clocks.
  * _POSIX_C_SOURCE must be selected before the first runtime system header. */
 #include <stdint.h>
 
@@ -147,6 +147,36 @@ int64_t __oxid_monotonic_millis(void) {
 }
 #else
 int64_t __oxid_monotonic_millis(void) { return -1; }
+#endif
+#endif
+
+#ifdef OXID_UNIX_MILLIS
+#if (defined(__linux__) || defined(__APPLE__)) && \
+    (defined(__x86_64__) || defined(__aarch64__)) && UINTPTR_MAX == UINT64_MAX && \
+    defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#include <time.h>
+
+_Static_assert(sizeof(struct timespec) == 2 * sizeof(int64_t), "realtime clock timespec layout");
+
+int64_t __oxid_unix_millis(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0 ||
+        now.tv_nsec < 0 || now.tv_nsec >= 1000000000) return INT64_MIN;
+    const __int128 millis = (__int128)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+    if (millis < INT64_MIN || millis > INT64_MAX) return INT64_MIN;
+    return (int64_t)millis;
+}
+#elif defined(_WIN64) && (defined(_M_X64) || defined(__x86_64__))
+#include <windows.h>
+
+int64_t __oxid_unix_millis(void) {
+    FILETIME time;
+    GetSystemTimeAsFileTime(&time);
+    const uint64_t ticks = ((uint64_t)time.dwHighDateTime << 32) | time.dwLowDateTime;
+    return (int64_t)(ticks / 10000) - INT64_C(11644473600000);
+}
+#else
+int64_t __oxid_unix_millis(void) { return INT64_MIN; }
 #endif
 #endif
 

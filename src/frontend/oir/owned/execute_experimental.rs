@@ -416,6 +416,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             | Function::TerminationRequested
             | Function::WaitForTermination
             | Function::MonotonicMillis
+            | Function::UnixMillis
             | Function::SleepMillis => {
                 return Err(bad("process operation requires prepared delivery", span));
             }

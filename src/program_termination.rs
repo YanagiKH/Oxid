@@ -556,6 +556,109 @@ pub(crate) const fn clock_bytes() -> usize {
     std::mem::size_of::<ClockCarriers>()
 }
 
+#[cfg(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(crate) fn unix_millis() -> i64 {
+    let mut sample = std::mem::MaybeUninit::<libc::timespec>::uninit();
+    // SAFETY: a successful realtime read initializes the writable timespec.
+    let sample = unsafe {
+        if libc::clock_gettime(libc::CLOCK_REALTIME, sample.as_mut_ptr()) != 0 {
+            return i64::MIN;
+        }
+        sample.assume_init()
+    };
+    epoch_millis(sample.tv_sec, sample.tv_nsec)
+}
+
+#[cfg(any(
+    test,
+    all(
+        any(target_os = "linux", target_os = "macos"),
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
+))]
+fn epoch_millis(seconds: i64, nanos: i64) -> i64 {
+    if !(0..1_000_000_000).contains(&nanos) {
+        return i64::MIN;
+    }
+    let millis = i128::from(seconds) * 1000 + i128::from(nanos / 1_000_000);
+    i64::try_from(millis).unwrap_or(i64::MIN)
+}
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+pub(crate) fn unix_millis() -> i64 {
+    #[repr(C)]
+    struct FileTime {
+        low: u32,
+        high: u32,
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetSystemTimeAsFileTime(time: *mut FileTime);
+    }
+    let mut time = std::mem::MaybeUninit::<FileTime>::uninit();
+    // SAFETY: the Windows API writes both 32-bit words of the FILETIME.
+    let time = unsafe {
+        GetSystemTimeAsFileTime(time.as_mut_ptr());
+        time.assume_init()
+    };
+    let ticks = (u64::from(time.high) << 32) | u64::from(time.low);
+    (ticks / 10_000) as i64 - 11_644_473_600_000
+}
+
+#[cfg(not(any(
+    all(windows, target_arch = "x86_64"),
+    all(
+        any(target_os = "linux", target_os = "macos"),
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
+)))]
+pub(crate) fn unix_millis() -> i64 {
+    i64::MIN
+}
+
+#[allow(dead_code)]
+struct UnixClockCarriers {
+    sample: [i64; 2],
+    sample_pointer: *mut [i64; 2],
+    file_time: [u32; 2],
+    status: i32,
+    realtime_ticks: u64,
+    ms_since_epoch: i128,
+    signed_conversion: Result<i64, std::num::TryFromIntError>,
+    returned: i64,
+}
+
+pub(crate) const fn unix_clock_bytes() -> usize {
+    std::mem::size_of::<UnixClockCarriers>()
+}
+
+#[cfg(test)]
+#[test]
+fn unix_time_rounds_toward_the_start_of_a_millisecond() {
+    for (seconds, nanos, expected) in [
+        (-1, 999_999_999, -1),
+        (0, 999_999, 0),
+        (0, 1_000_000, 1),
+        (-9_223_372_036_854_776, 193_000_000, i64::MIN + 1),
+        (9_223_372_036_854_775, 807_999_999, i64::MAX),
+        (9_223_372_036_854_775, 808_000_000, i64::MIN),
+        (-9_223_372_036_854_776, 191_999_999, i64::MIN),
+        (1, -1, i64::MIN),
+        (1, 1_000_000_000, i64::MIN),
+    ] {
+        assert_eq!(epoch_millis(seconds, nanos), expected);
+    }
+}
+
 pub(crate) fn sleep_millis(milliseconds: i32) -> bool {
     if milliseconds <= 0 {
         return milliseconds == 0;
