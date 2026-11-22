@@ -35,7 +35,7 @@
         "General hosted execution without demonstration fuel limits, verified optimization and realistic multi-module clean/incremental builds."
       ],
       "remaining": [
-        "Native project compilation implements Linux and macOS x86_64/ARM64 using LLVM 19.1.7 at O0/O2 with optional hosted execution. Actual macOS host qualification, Windows native builds, macOS debugging, aggregate-value debugging, larger compiler/storage limits and full-scale build acceptance remain incomplete."
+        "Native execution tests pass on Linux and macOS x86_64/ARM64 and Windows x86_64 for the programs covered by CI. Full native library support, wider platform coverage for debugging, larger compiler and storage limits, and full-scale build acceptance remain incomplete."
       ]
     },
     {
@@ -47,7 +47,7 @@
         "A concurrent HTTPS/database service with load, timeout, cancellation, restart, connection exhaustion and graceful-shutdown acceptance results."
       ],
       "remaining": [
-        "Legacy file/process/network helpers and sequential lazy tasks do not provide the required typed-native runtime."
+        "Typed native programs support binary files, process control and time. Threads, asynchronous I/O, cancellation and the concurrent HTTPS and database acceptance project remain incomplete."
       ]
     },
     {
@@ -120,7 +120,7 @@
         "Installation, update, rollback and offline deployment are exercised; two release candidates pass technical acceptance, with affected checks rerun after core changes."
       ],
       "remaining": [
-        "The five-host archive workflow includes source-signature verification and the Unix installer supports offline archives and failure preservation; actual signed release artifacts, five-platform native delivery, complete cross-version upgrades/rollback and two qualified v1 release candidates remain unverified."
+        "Linux x86_64 CI checks offline upgrades from the published v0.8.0 archive, rejects a damaged archive, and verifies rollback. Signed release artifacts, upgrade and rollback tests for the remaining platforms, and two qualified v1 release candidates remain unverified."
       ]
     }
   ]
