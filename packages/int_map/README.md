@@ -9,6 +9,11 @@ or replace a value. An allocation failure leaves all entries intact. Use
 `get(&map, key)` to copy a value out, `remove(&mut map, key)` to remove it,
 and `len(&map)` to count entries. Both `get` and `remove` return `Option<T>`.
 
+Use `entry_at(&map, index)` to read a key and value in ascending key order.
+It returns `None` for an index outside the map. To scan keys in a range, call
+`lower_bound(&map, key)` for each endpoint. It returns the first index whose
+key is at least the given key, or the length of the map if none exists.
+
 Run the [example](../../examples/typed-int-map) from the repository root.
 
 ```sh
