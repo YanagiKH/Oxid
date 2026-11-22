@@ -327,6 +327,14 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
             .process()
             .contains(Function::MonotonicMillis)
     }
+    pub(super) fn has_unix_clock(&self) -> bool {
+        use crate::frontend::builtin_catalog::termination::Function;
+        self.witness
+            .raw_program()
+            .builtins
+            .process()
+            .contains(Function::UnixMillis)
+    }
     pub(super) fn has_sleep(&self) -> bool {
         use crate::frontend::builtin_catalog::termination::Function;
         self.witness

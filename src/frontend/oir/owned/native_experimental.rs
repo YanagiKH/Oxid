@@ -325,8 +325,13 @@ pub(super) fn operation<W: PlanWitness>(
         );
         use crate::frontend::builtin_catalog::termination::Function as Process;
         match process {
-            Process::MonotonicMillis => {
-                writeln!(out, "  %{name}_clock = call i64 @__oxid_monotonic_millis()\n  store i64 %{name}_clock, ptr %s{}, align 8", local.0).unwrap();
+            Process::MonotonicMillis | Process::UnixMillis => {
+                let runtime_function = if process == Process::MonotonicMillis {
+                    "__oxid_monotonic_millis"
+                } else {
+                    "__oxid_unix_millis"
+                };
+                writeln!(out, "  %{name}_clock = call i64 @{runtime_function}()\n  store i64 %{name}_clock, ptr %s{}, align 8", local.0).unwrap();
                 return;
             }
             Process::Enable => writeln!(

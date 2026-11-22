@@ -133,6 +133,8 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 V::from_wide(crate::program_termination::monotonic_millis())
                     .expect("sealed i64 clock storage")
             }
+            Function::UnixMillis => V::from_wide(crate::program_termination::unix_millis())
+                .expect("sealed i64 clock storage"),
             Function::WaitForTermination | Function::SleepMillis => {
                 let Scalar::I32(timeout_ms) = self.experimental_scalar(frame, 0, span)? else {
                     return Err(bad("process timeout type", span));

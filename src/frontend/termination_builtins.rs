@@ -9,15 +9,17 @@ pub(in crate::frontend) enum Function {
     Wait,
     MonotonicMillis,
     SleepMillis,
+    UnixMillis,
 }
 impl Function {
     pub const SIGNALS: [Self; 3] = [Self::Enable, Self::Requested, Self::Wait];
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Enable,
         Self::Requested,
         Self::Wait,
         Self::MonotonicMillis,
         Self::SleepMillis,
+        Self::UnixMillis,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -26,11 +28,12 @@ impl Function {
             Self::Wait => "wait_for_termination",
             Self::MonotonicMillis => "monotonic_millis",
             Self::SleepMillis => "sleep_millis",
+            Self::UnixMillis => "unix_millis",
         }
     }
     pub fn path(self) -> [&'static str; 3] {
         let module = match self {
-            Self::MonotonicMillis | Self::SleepMillis => "time",
+            Self::MonotonicMillis | Self::SleepMillis | Self::UnixMillis => "time",
             _ => "process",
         };
         ["std", module, self.name()]
@@ -40,7 +43,7 @@ impl Function {
     }
     pub fn result_ty(self) -> Ty {
         match self {
-            Self::MonotonicMillis => Ty::I64,
+            Self::MonotonicMillis | Self::UnixMillis => Ty::I64,
             _ => Ty::Bool,
         }
     }
@@ -51,6 +54,7 @@ impl Function {
             Self::Wait => experimental::Function::WaitForTermination,
             Self::MonotonicMillis => experimental::Function::MonotonicMillis,
             Self::SleepMillis => experimental::Function::SleepMillis,
+            Self::UnixMillis => experimental::Function::UnixMillis,
         }
     }
     pub fn signature(self) -> experimental::Signature {

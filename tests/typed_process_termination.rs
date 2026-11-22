@@ -8,7 +8,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         mpsc,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 #[cfg(unix)]
 use std::{
@@ -57,6 +57,15 @@ fn main() -> i32 {
     let start = monotonic_millis();
     if start < 0i64 || monotonic_millis() < start { return 1; }
     return 42;
+}
+"#;
+const UNIX_SOURCE: &str = r#"
+use std::time::unix_millis;
+fn main() -> i32 {
+    let timestamp = unix_millis();
+    if timestamp == -9223372036854775808i64 { return -1; }
+    let residue = timestamp % 1000000i64;
+    return residue.to_i32_checked();
 }
 "#;
 const SLEEP_SOURCE: &str = r#"
@@ -352,6 +361,72 @@ fn native_sleep_pauses_after_source_free_relocation() {
         assert!(started.elapsed() >= Duration::from_millis(100), "{profile}");
     }
 }
+#[test]
+fn typed_unix_clock_matches_the_host_wall_clock() {
+    let fixture = Fixture::result_project(UNIX_SOURCE);
+    let before = SystemTime::now();
+    let output = fixture.command(&["run"]).output().unwrap();
+    if CLOCK_SUPPORTED {
+        assert_unix_sample(&output, before);
+    } else {
+        assert_result(&output, -1);
+    }
+}
+
+#[test]
+#[ignore = "requires LLVM 19.1.7 and a supported native target"]
+fn native_unix_clock_matches_the_host_after_source_free_relocation() {
+    if !CLOCK_SUPPORTED {
+        return;
+    }
+    let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
+    for profile in ["dev", "release"] {
+        let fixture = Fixture::result_project(UNIX_SOURCE);
+        let built = fixture
+            .command(&["build", "--profile", profile])
+            .env("OXID_LLVM_BIN", &llvm)
+            .output()
+            .unwrap();
+        assert!(built.status.success(), "{profile}: {built:?}");
+        let deployment = Fixture::fresh("unix-clock-deployment");
+        let artifact = format!("worker{}", std::env::consts::EXE_SUFFIX);
+        let executable = deployment.0.join(&artifact);
+        fs::copy(fixture.0.join(".oxid/bin").join(&artifact), &executable).unwrap();
+        fs::remove_dir_all(&fixture.0).unwrap();
+        let before = SystemTime::now();
+        let output = Command::new(executable)
+            .current_dir(&deployment.0)
+            .env("PATH", deployment.0.join("missing-tools"))
+            .env("OXID_PATH", deployment.0.join("missing-source"))
+            .output()
+            .unwrap();
+        assert_unix_sample(&output, before);
+    }
+}
+
+fn assert_unix_sample(output: &std::process::Output, before: SystemTime) {
+    let after = SystemTime::now();
+    assert!(
+        output.status.success() && output.stderr.is_empty(),
+        "{output:?}"
+    );
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    let sample = stdout.strip_suffix('\n').unwrap().parse::<i128>().unwrap();
+    let modulo = 1_000_000;
+    assert!((0..modulo).contains(&sample), "{sample}");
+    let millis = |time: SystemTime| {
+        i128::try_from(time.duration_since(UNIX_EPOCH).unwrap().as_millis()).unwrap()
+    };
+    let before = millis(before);
+    let after = millis(after);
+    let earliest = before.min(after) - 1000;
+    let latest = before.max(after) + 1000;
+    assert!(
+        (sample - earliest).rem_euclid(modulo) <= latest - earliest,
+        "clock residue {sample} is outside the host readings {before}..{after}"
+    );
+}
+
 fn assert_result(output: &std::process::Output, value: i32) {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(output.stdout, format!("{value}\n").as_bytes(), "{output:?}");
