@@ -1,8 +1,10 @@
 use alloc::bytes::ByteBuf;
 use alloc::bytes::GrowStatus;
+use alloc::bytes::len;
 use alloc::bytes::new;
 use alloc::bytes::try_resize;
 use alloc::bytes::truncate;
+use alloc::bytes::try_extend;
 use std::env::arg_count;
 use std::env::arg_bytes;
 use std::env::ArgStatus;
@@ -14,7 +16,10 @@ pub struct Options {
     pub size: i32,
     pub start_row: i32,
     pub shuffle: bool,
-    pub seed: u32
+    pub seed: u32,
+    pub checkpoint_mode: i32,
+    pub first: ByteBuf,
+    pub second: ByteBuf,
 }
 fn argument(index: i32) -> TensorResult<ByteBuf>{
     let mut bytes = new(); let grown = try_resize(&mut bytes, 4095, 0u8);
@@ -54,14 +59,67 @@ fn shuffle_seed(index: i32) -> i64 {
     return -1i64;
 }
 
+fn checkpoint_flag(index: i32) -> i32 {
+    let flag = argument(index);
+    match flag {
+        TensorResult::Ok(bytes) => {
+            let save = b"--checkpoint";
+            let resume = b"--resume";
+            if same(&bytes, &save) { return 1; }
+            if same(&bytes, &resume) { return 2; }
+        },
+        TensorResult::Err(error) => {},
+    }
+    return 0;
+}
+
+fn extend(path: &mut ByteBuf, text: &[u8]) -> TensorResult<()> {
+    let grown = try_extend(&mut *path, &*text);
+    match grown {
+        GrowStatus::Ok => { return TensorResult::Ok(()); },
+        GrowStatus::CapacityOverflow => { return TensorResult::<()>::Err(Error::SizeOverflow); },
+        GrowStatus::MemoryLimit => { return TensorResult::<()>::Err(Error::MemoryLimit); },
+        GrowStatus::AllocationFailed => { return TensorResult::<()>::Err(Error::AllocationFailed); },
+    }
+}
+
+fn checkpoint_paths(options: Options, index: i32) -> TensorResult<Options> {
+    let prefix_arg = argument(index);
+    match prefix_arg {
+        TensorResult::Ok(prefix) => {
+            let size = len(&prefix);
+            if size == 0 || size > 4093 { return TensorResult::<Options>::Err(Error::Bounds); }
+            let mut configured = options;
+            let first_suffix = b".a";
+            let second_suffix = b".b";
+            let first = extend(&mut configured.first, &prefix);
+            match first { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<Options>::Err(error); }, }
+            let first_end = extend(&mut configured.first, &first_suffix);
+            match first_end { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<Options>::Err(error); }, }
+            let second = extend(&mut configured.second, &prefix);
+            match second { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<Options>::Err(error); }, }
+            let second_end = extend(&mut configured.second, &second_suffix);
+            match second_end { TensorResult::Ok(done) => {}, TensorResult::Err(error) => { return TensorResult::<Options>::Err(error); }, }
+            return TensorResult::Ok(configured);
+        },
+        TensorResult::Err(error) => { return TensorResult::<Options>::Err(error); },
+    }
+}
+
 pub fn parse() -> TensorResult<Options>{
     let argc = arg_count();
-    if argc < 4 || argc > 7 { return TensorResult::<Options>:: Err(Error::Bounds); }
-    let shuffle = argc >= 6;
+    if argc < 4 || argc > 9 { return TensorResult::<Options>:: Err(Error::Bounds); }
     let mut positional = argc;
+    let mut mode = 0;
+    if argc >= 6 {
+        mode = checkpoint_flag(argc - 2);
+        if mode != 0 { positional = positional - 2; }
+    }
+    if positional > 7 { return TensorResult::<Options>::Err(Error::Bounds); }
+    let shuffle = positional >= 6;
     let mut seed = 0u32;
     if shuffle {
-        positional = argc - 2;
+        positional = positional - 2;
         let parsed_seed = shuffle_seed(positional);
         if parsed_seed < 0i64 { return TensorResult::<Options>:: Err(Error::Bounds); }
         seed = parsed_seed.to_u32_checked();
@@ -78,10 +136,13 @@ pub fn parse() -> TensorResult<Options>{
     let copied = argument(1);
     match copied {
         TensorResult::Ok(path) => {
-            return TensorResult::Ok(Options {
+            let options = Options {
                 path: path, epochs: epochs.to_i32_checked(), size: size.to_i32_checked(),
-                start_row: start_row.to_i32_checked(), shuffle: shuffle, seed: seed
-            });
+                start_row: start_row.to_i32_checked(), shuffle: shuffle, seed: seed,
+                checkpoint_mode: mode, first: new(), second: new(),
+            };
+            if mode != 0 { return checkpoint_paths(options, argc - 1); }
+            return TensorResult::Ok(options);
         },
         TensorResult::Err(error) => { return TensorResult::<Options>:: Err(error); },
     }

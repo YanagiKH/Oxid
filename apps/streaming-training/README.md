@@ -27,7 +27,7 @@ oxid run -- data/sample.oxds 30 4 3
 
 These commands train on rows 3 through 7 of the eight-row sample. The default is row 0. Every epoch and both loss measurements use the selected suffix; reported row and batch counts describe that suffix. A starting row must be smaller than the dataset's row count. The file must support seeking when the start is greater than zero.
 
-Skipping rows does not restore model weights or optimizer state: each command initializes a new model. It validates the header, selected rows and exact file ending. **Skipped rows are not validated**, even if their bytes were prefetched while reading the header. A corrupt skipped value will therefore not reject an otherwise valid selected suffix.
+The reader validates the header, selected rows and exact file ending. Skipped rows are outside that validation, even when prefetched while reading the header.
 
 ## Your dataset
 
@@ -69,7 +69,16 @@ Each epoch reads selected rows in file order. Pass a seed to shuffle them for tr
 
 The seed is an integer from 0 to 4,294,967,295. The trainer reads up to eight batches at a time and shuffles rows within that group. Memory use depends on the batch size and row width. Use the same seed, dataset and batch size to repeat the row order. If you pass a starting row, put it before `--shuffle`.
 
-Keep the dataset unchanged during training. For checkpointing and recovery with an in-memory dataset, see [minibatch training](../minibatch-training/README.md).
+## Resume training
+
+Add `--checkpoint` with a new filename prefix to save the initial model and each completed epoch. Use `--resume` with the same prefix, dataset, batch size, starting row and shuffle settings. The epoch argument on resume specifies how many additional epochs to run.
+
+```sh
+.oxid/bin/streaming-training training.oxds 10 4 --shuffle 42 --checkpoint run
+.oxid/bin/streaming-training training.oxds 20 4 --shuffle 42 --resume run
+```
+
+Keep both `run.a` and `run.b`. They alternate between saves. If the newest file is incomplete or corrupt, training resumes from the latest valid file. Each save includes the model, completed epoch count, shuffle state and a checksum of the selected rows. Use one trainer per prefix and keep the dataset unchanged. The summary reports cumulative epochs and batches, with initial loss measured at the start of that invocation.
 
 ## Use the reader in Oxid
 

@@ -41,7 +41,11 @@ pub fn get64(bytes: &[u8], start: i32) -> u64 {
 }
 
 pub fn checksum(bytes: &[u8], length: i32) -> u32 {
-    let mut crc = 4294967295u32;
+    return checksum_update(&*bytes, length, 4294967295u32) ^ 4294967295u32;
+}
+
+pub fn checksum_update(bytes: &[u8], length: i32, initial: u32) -> u32 {
+    let mut crc = initial;
     for index in 0..length {
         let part = bytes[index];
         crc = crc ^ part.to_u32_checked();
@@ -50,5 +54,5 @@ pub fn checksum(bytes: &[u8], length: i32) -> u32 {
             else { crc = crc >> 1; }
         }
     }
-    return crc ^ 4294967295u32;
+    return crc;
 }

@@ -5,3 +5,4 @@ kind="lib"
 entry="src/lib.ox"
 [dependencies]
 tensor="../tensor"
+storage="storage"

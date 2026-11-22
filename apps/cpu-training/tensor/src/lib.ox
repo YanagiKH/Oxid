@@ -1,4 +1,4 @@
-mod codec;
+pub mod codec;
 pub mod graph;
 pub mod model;
 pub mod optimizer;

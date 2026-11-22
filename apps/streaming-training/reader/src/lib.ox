@@ -17,7 +17,7 @@ use crate::tensor::data::Batch;
 
 pub enum Error { Tensor(TensorError), Io(i32), InvalidHeader, Truncated, TrailingData, InvalidBatchSize, Poisoned, End, InvalidStartRow }
 pub enum Result<T> { Ok(T), Err(Error) }
-pub struct Reader { file: File, scratch: ByteBuf, offset: i32, available: i32, rows: i32, features: i32, targets: i32, size: i32, cursor: i32, failed: bool }
+pub struct Reader { file: File, scratch: ByteBuf, offset: i32, available: i32, rows: i32, features: i32, targets: i32, size: i32, cursor: i32, failed: bool, checking: bool, checksum: u32 }
 
 fn allocate(size: i32) -> TensorResult<ByteBuf>{
     let mut bytes = new();
@@ -41,6 +41,10 @@ fn read_value(reader: &mut Reader) -> Result<f64>{
     let mut bits = 0u64;
     for offset in 0..8 { let byte = bytes[offset]; bits = bits | (byte.to_u64_checked() << (offset * 8)); }
     if ((bits >> 52) & 2047u64) == 2047u64 { return Result::<f64>:: Err(Error::Tensor(TensorError::NonFinite)); }
+    if reader.checking {
+        let previous = reader.checksum;
+        reader.checksum = crate::tensor::codec::checksum_update(&bytes, 8, previous);
+    }
     return Result::Ok(f64::from_bits(bits));
 }
 fn read_row(reader: &mut Reader, target: &mut Tensor, row: i32, columns: i32) -> Result<()>{
@@ -109,7 +113,7 @@ pub fn open(path: &[u8], size: i32) -> Result<Reader>{
             let opened = open_read(&*path);
             match opened {
                 OpenResult::Opened(file) => {
-                    let mut reader = Reader { file: file, scratch: buffer, offset: 0, available: 0, rows: 0, features: 0, targets: 0, size: size, cursor: 0, failed: false };
+                    let mut reader = Reader { file: file, scratch: buffer, offset: 0, available: 0, rows: 0, features: 0, targets: 0, size: size, cursor: 0, failed: false, checking: false, checksum: 4294967295u32 };
                     let mut header = [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
                     let read = read_exact(&mut reader, &mut header);
                     match read { Result::Ok(done) => {}, Result::Err(error) => { return reject::<Reader>(&mut reader, error); } }
@@ -179,6 +183,12 @@ pub fn feature_count(reader: &Reader) -> i32 { return reader.features; }
 pub fn target_count(reader: &Reader) -> i32 { return reader.targets; }
 pub fn position(reader: &Reader) -> i32 { return reader.cursor; }
 pub fn remaining(reader: &Reader) -> i32 { return reader.rows - reader.cursor; }
+pub fn begin_checksum(reader: &mut Reader) -> () {
+    reader.checking = true;
+    reader.checksum = 4294967295u32;
+    return;
+}
+pub fn checksum(reader: &Reader) -> u32 { return reader.checksum ^ 4294967295u32; }
 
 fn finish(reader: &mut Reader) -> Result<()>{
     if reader.offset < reader.available { return Result::<()>:: Err(Error::TrailingData); }
