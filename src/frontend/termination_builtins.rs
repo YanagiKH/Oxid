@@ -134,7 +134,7 @@ pub(in crate::frontend) const fn shared_selector_bytes() -> usize {
 }
 
 // Separately prepaid new-family iteration, lookup, signature, count, and return
-// roles. Historical ALL28/ALL20 declarations and carrier definitions stay intact.
+// roles. The separate file and buffer catalog keeps its own storage.
 #[allow(dead_code)]
 struct CompilerCarriers {
     catalog_inventory: [super::BuiltinSet; 4],
@@ -194,8 +194,8 @@ mod tests {
     }
     #[test]
     fn process_items_are_a_separate_authority() {
-        assert_eq!(experimental::Item::ALL.len(), 28);
-        assert_eq!(experimental::Function::ALL.len(), 20);
+        assert_eq!(experimental::Item::ALL.len(), 29);
+        assert_eq!(experimental::Function::ALL.len(), 21);
         let empty = BuiltinSet::None;
         for item in Function::ALL {
             let selected = empty.admit(BuiltinItem::Process(item));

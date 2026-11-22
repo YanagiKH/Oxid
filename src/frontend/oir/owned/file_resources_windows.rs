@@ -1,11 +1,12 @@
 //! Windows MSVC x64 CRT descriptors; no OS handle enters a language carrier.
+use super::FileOpenMode;
 use std::mem::{size_of, MaybeUninit};
 
 // These roles are separate from the unchanged POSIX helper bank. Each File
 // delivery pays the complete bank before a path or OS operation is attempted.
 #[allow(dead_code)]
 struct ControlCarriers {
-    open_arguments: (&'static [u8], bool),
+    open_arguments: (&'static [u8], FileOpenMode),
     wide_path: MaybeUninit<[u16; super::PATH_BYTES]>,
     conversion_arguments: (u32, u32, *const i8, i32, *mut u16, i32),
     conversion: i32,
@@ -67,7 +68,7 @@ fn errno() -> i32 {
     // SAFETY: MSVC's CRT returns this thread's non-null live errno slot.
     unsafe { *_errno() }
 }
-pub(super) fn open(path: &[u8], create: bool) -> Result<i32, i32> {
+pub(super) fn open(path: &[u8], mode: FileOpenMode) -> Result<i32, i32> {
     if path.is_empty() {
         return Err(2);
     }
@@ -96,7 +97,12 @@ pub(super) fn open(path: &[u8], create: bool) -> Result<i32, i32> {
             .add(converted as usize)
             .write(0);
     }
-    let flags = 0x8000 | 0x0080 | if create { 0x0001 | 0x0100 | 0x0200 } else { 0 };
+    let access = match mode {
+        FileOpenMode::Read => 0,
+        FileOpenMode::Create => 0x0001 | 0x0100 | 0x0200,
+        FileOpenMode::Append => 0x0001 | 0x0100 | 0x0008,
+    };
+    let flags = 0x8000 | 0x0080 | access;
     // _O_BINARY | _O_NOINHERIT; create uses _S_IREAD | _S_IWRITE.
     let fd = unsafe { _wopen(wide.as_ptr().cast(), flags, 0x0180i32) };
     if fd < 0 {

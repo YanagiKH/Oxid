@@ -218,6 +218,9 @@ to draw a number from 0 to 99. Reuse the seed to repeat the same sequence.
 
 ## Reading and writing file buffers
 
+Use `open_append(&path)` from `std::fs` to add bytes at the end of a file.
+It creates the file when needed and preserves existing contents.
+
 Add the [file I/O library](../packages/file_io/oxid.toml) as a local dependency
 and import `read_exact` and `write_all` through its dependency name. `read_exact`
 fills a mutable byte slice or reports how many bytes it read before EOF.
