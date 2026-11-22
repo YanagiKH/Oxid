@@ -1,8 +1,9 @@
-//! Source-package collection admits one complete lock owner and copies only
-//! bytes already retained by manifest, lock and compiler source owners.
+//! Source-package collection retains the locked source graph and explicitly
+//! declared files within each package.
 use super::*;
 use std::{
     collections::{BTreeMap, BTreeSet},
+    io::Read,
     sync::Arc,
 };
 
@@ -343,6 +344,57 @@ struct Roster {
     source_bytes_left: usize,
 }
 impl Roster {
+    fn collect_files(
+        &mut self,
+        reader: &Reader,
+        root: &Path,
+        snapshot: &runtime::ManifestSnapshot,
+    ) -> Result<(), String> {
+        let manifest = root.join("oxid.toml");
+        let bytes = reader.retained_manifest(&manifest, snapshot)?;
+        let files = runtime::package_file_paths(bytes, PAYLOAD_FILES)
+            .map_err(|error| format!("{}: {error}", manifest.display()))?;
+        for relative in files {
+            let path = reader.source(root, &relative)?;
+            if self.files.contains_key(&path) {
+                continue;
+            }
+            if self.files.len() >= PAYLOAD_FILES {
+                return Err("source package exceeds the 2047-file limit".into());
+            }
+            let limit = PAYLOAD_BYTES - self.bytes;
+            let describe = |error: String| {
+                format!(
+                    "cannot package {}: {}",
+                    path.display(),
+                    error.replace("registry input", "package file")
+                )
+            };
+            let (mut file, identity) =
+                crate::project_registry::open_regular(&path, limit).map_err(describe)?;
+            let length =
+                usize::try_from(identity.len()).map_err(|error| describe(error.to_string()))?;
+            let mut bytes = Vec::new();
+            bytes
+                .try_reserve_exact(length)
+                .map_err(|error| describe(error.to_string()))?;
+            bytes.resize(length, 0);
+            file.read_exact(&mut bytes)
+                .map_err(|error| describe(error.to_string()))?;
+            if file
+                .read(&mut [0])
+                .map_err(|error| describe(error.to_string()))?
+                != 0
+            {
+                return Err(describe("package file grew during reading".into()));
+            }
+            crate::project_registry::recheck(&path, &file, &identity).map_err(describe)?;
+            self.files.insert(path, bytes);
+            self.bytes += length;
+        }
+        Ok(())
+    }
+
     fn replace(&mut self, path: &Path, previous: &[u8], bytes: Vec<u8>) -> Result<(), String> {
         if self.files.get(path).map(Vec::as_slice) != Some(previous) {
             return Err("exported source package input differs from its retained owner".into());
@@ -746,6 +798,12 @@ pub(crate) fn package_source_plan(
             roster.collect(&session, &graph)?;
         }
     }
+    for (root, &(slot, index)) in &packages {
+        roster.collect_files(&reader, root, &graphs[slot].manifests[index])?;
+    }
+    if !packages.contains_key(&owner) {
+        roster.collect_files(&reader, &owner, &owner_snapshot)?;
+    }
     // The original lock is verified above. Change only the exported manifest
     // dependency values and matching digests; user files stay untouched.
     let mut updates = HashMap::new();
@@ -1022,6 +1080,55 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn collector_retains_only_declared_data_files_from_the_project_and_dependencies() {
+        let fixture = Fixture::new();
+        for project in ["app", "lib"] {
+            let name = format!("{project}/oxid.toml");
+            let mut manifest = fs::read_to_string(fixture.0.join(&name)).unwrap();
+            manifest.push_str("\n[package-files]\n\"data/fixture.bin\" = true # test input\n");
+            fixture.write(&name, &manifest);
+            fixture.write(&format!("{project}/data/private.txt"), "unlisted");
+            fs::write(
+                fixture.0.join(project).join("data/fixture.bin"),
+                [0, 0xff, 13, 10],
+            )
+            .unwrap();
+        }
+        fs::remove_file(fixture.0.join("app/oxid.lock")).unwrap();
+        fixture.lock("app");
+        let plan = fixture.plan().unwrap();
+        for project in ["app", "lib"] {
+            let member = format!("source/{project}/data/fixture.bin");
+            assert!(plan
+                .files
+                .iter()
+                .any(|(path, bytes)| path == &member && bytes == &[0, 0xff, 13, 10]));
+            assert!(plan
+                .input_paths
+                .contains(&fixture.0.join(project).join("data/fixture.bin")));
+        }
+        assert!(!plan
+            .files
+            .iter()
+            .any(|(path, _)| path.ends_with("private.txt")));
+
+        let path = fixture.0.join("app/data/fixture.bin");
+        fs::remove_file(&path).unwrap();
+        assert!(fixture.plan().err().unwrap().contains("data/fixture.bin"));
+        fs::File::create(&path)
+            .unwrap()
+            .set_len(PAYLOAD_BYTES as u64 + 1)
+            .unwrap();
+        assert!(fixture.plan().err().unwrap().contains("byte allowance"));
+        #[cfg(unix)]
+        {
+            fs::remove_file(&path).unwrap();
+            std::os::unix::fs::symlink(fixture.0.join("lib/data/fixture.bin"), path).unwrap();
+            assert!(fixture.plan().err().unwrap().contains("symbolic links"));
         }
     }
 
