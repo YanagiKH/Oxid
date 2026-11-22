@@ -194,6 +194,7 @@ pub(in crate::frontend) fn complete_qualified(
                 DeclarationKind::Function => (3, "function"),
                 DeclarationKind::Record => (22, "record"),
                 DeclarationKind::Enumeration => (13, "enumeration"),
+                DeclarationKind::Variant => (20, "variant"),
                 DeclarationKind::Module => (9, "module"),
             };
             work.debit(

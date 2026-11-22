@@ -117,6 +117,8 @@ They follow unsaved text and replace the name around the cursor.
 Type `crate::` or `crate::helper::` for visible module names, functions and types.
 This also works with unsaved declarations, partial names and unfinished `use`
 declarations, including an existing `as alias`.
+Type `State::` for a local or imported enum to list its variants. You can also
+use its full path, such as `crate::response::State::`.
 
 Type `point.` to complete fields of a record parameter (`Point`, `&Point`, or
 `&mut Point`), or a local initialized directly with `Point { ... }`. Field names
