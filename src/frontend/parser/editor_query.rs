@@ -10,6 +10,7 @@ pub(in crate::frontend) enum DeclarationKind {
     Function,
     Record,
     Enumeration,
+    Variant,
     Module,
 }
 #[derive(Clone, Copy, Debug)]
@@ -17,6 +18,7 @@ pub(in crate::frontend) struct Declaration {
     pub name: Span,
     pub public: bool,
     pub kind: DeclarationKind,
+    variant_range: [usize; 2],
 }
 #[derive(Debug)]
 pub(in crate::frontend) struct EditorFile {
@@ -26,13 +28,27 @@ pub(in crate::frontend) struct EditorFile {
     tokens: Vec<Token>,
     modules: Vec<ModuleDecl>,
     declarations: Vec<Declaration>,
-    imports: Vec<Span>,
+    variants: Vec<Span>,
+    imports: Vec<ImportBinding>,
     regions: Vec<QueryRegion>,
 }
+#[derive(Debug)]
+struct ImportBinding {
+    alias: Span,
+    path: Option<Span>,
+}
+
+pub(in crate::frontend) enum ImportedName<'a> {
+    Local,
+    Absolute(&'a [Token]),
+    Unavailable,
+}
+
 #[derive(Debug)]
 struct QueryRegion {
     span: Span,
     alias_keyword: Option<NonZeroUsize>,
+    import: bool,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::frontend) struct PathQuery {
@@ -42,6 +58,7 @@ pub(in crate::frontend) struct PathQuery {
     prefix_len: usize,
     replacement: Span,
     cursor: usize,
+    import: bool,
 }
 
 fn alias_hole(parser: &Parser<'_>) -> bool {
@@ -65,6 +82,9 @@ impl PathQuery {
     pub(in crate::frontend) fn cursor(&self) -> usize {
         self.cursor
     }
+    pub(in crate::frontend) fn is_import(&self) -> bool {
+        self.import
+    }
     pub(in crate::frontend) fn belongs_to(&self, source: &SourceFile) -> bool {
         self.identity == source.identity()
             && self.bytes == source.text().len()
@@ -84,11 +104,68 @@ impl EditorFile {
     pub(in crate::frontend) fn declarations(&self) -> &[Declaration] {
         &self.declarations
     }
+    pub(in crate::frontend) fn variants(&self, declaration: Declaration) -> Option<&[Span]> {
+        if declaration.kind != DeclarationKind::Enumeration || declaration.name.file != self.file {
+            return None;
+        }
+        let [start, end] = declaration.variant_range;
+        self.variants.get(start..end)
+    }
     pub(in crate::frontend) fn binding_names(&self) -> impl Iterator<Item = Span> + '_ {
         self.declarations
             .iter()
             .map(|item| item.name)
-            .chain(self.imports.iter().copied())
+            .chain(self.imports.iter().map(|import| import.alias))
+    }
+    pub(in crate::frontend) fn imported_name(
+        &self,
+        source: &SourceFile,
+        name: &str,
+        at: Span,
+        work: &crate::frontend::declaration_index::WorkMeter,
+    ) -> Result<ImportedName<'_>, Box<Diagnostic>> {
+        if !self.belongs_to(source) {
+            return Err(Diagnostic::new(
+                "E0500",
+                "editor",
+                "invalid editor import source",
+                Some(at),
+            ));
+        }
+        let mut selected = None;
+        for import in &self.imports {
+            let alias = source.text_at(import.alias);
+            work.debit(
+                (alias.len().min(name.len()) + 1) as u64,
+                at,
+                "editor import name",
+            )?;
+            if alias == name {
+                if selected.is_some() {
+                    return Ok(ImportedName::Unavailable);
+                }
+                selected = Some(import);
+            }
+        }
+        let Some(import) = selected else {
+            return Ok(ImportedName::Local);
+        };
+        let Some(path) = import.path else {
+            return Ok(ImportedName::Unavailable);
+        };
+        let search_steps = usize::BITS - self.tokens.len().leading_zeros();
+        work.debit(u64::from(2 * search_steps), at, "editor import path range")?;
+        let start = self
+            .tokens
+            .partition_point(|token| token.span.start < path.start);
+        let end = self
+            .tokens
+            .partition_point(|token| token.span.end <= path.end);
+        let tokens = self.tokens.get(start..end).ok_or_else(|| {
+            Diagnostic::new("E0500", "editor", "invalid editor import path", Some(at))
+        })?;
+        work.debit(tokens.len() as u64, at, "editor import path tokens")?;
+        Ok(ImportedName::Absolute(tokens))
     }
     pub(in crate::frontend) fn parse(
         source: &SourceFile,
@@ -122,6 +199,7 @@ impl EditorFile {
         parser.skip();
         let mut modules = Vec::new();
         let mut declarations = Vec::new();
+        let mut variants = Vec::new();
         let mut imports = Vec::new();
         let mut regions = Vec::new();
         let parsed = (|| -> Result<(), Box<Diagnostic>> {
@@ -146,6 +224,7 @@ impl EditorFile {
                         name: module.name,
                         public: module.public.is_some(),
                         kind: DeclarationKind::Module,
+                        variant_range: [0; 2],
                     });
                     modules.push(module);
                     continue;
@@ -164,11 +243,14 @@ impl EditorFile {
                             "editor import names",
                             import.alias,
                         )?;
-                        imports.push(import.alias);
+                        imports.push(ImportBinding {
+                            alias: import.alias,
+                            path: None,
+                        });
                     } else {
                         parser.bump();
                         let mut count = 1usize;
-                        parser.expect(Kind::Ident, "expected crate path")?;
+                        let first_segment = parser.expect(Kind::Ident, "expected crate path")?.span;
                         let mut endpoint: Option<Span>;
                         loop {
                             parser.expect(Kind::Colon, "absolute item path requires `::`")?;
@@ -197,6 +279,7 @@ impl EditorFile {
                                 break;
                             }
                         }
+                        let path = endpoint.map(|last| source.span(first_segment.start, last.end));
                         let alias_keyword = if parser.peek().kind == Kind::Ident
                             && source.text_at(parser.peek().span) == "as"
                         {
@@ -229,7 +312,7 @@ impl EditorFile {
                                 "editor import names",
                                 alias,
                             )?;
-                            imports.push(alias);
+                            imports.push(ImportBinding { alias, path });
                         }
                         parser.candidate_reserve(
                             &mut regions,
@@ -240,12 +323,14 @@ impl EditorFile {
                         regions.push(QueryRegion {
                             span: source.span(start.end, end.start),
                             alias_keyword,
+                            import: true,
                         });
                     }
                     continue;
                 }
                 let copy = parser.copy_attribute()?;
                 let public = parser.take(Kind::Pub).is_some();
+                let variant_start = variants.len();
                 let (name, kind) = if parser.peek().kind == Kind::Struct {
                     let item = parser.record(None, copy)?;
                     (item.name, DeclarationKind::Record)
@@ -254,6 +339,15 @@ impl EditorFile {
                         return Err(parser.error("Copy derivation requires a record declaration"));
                     }
                     let item = parser.enumeration(None)?;
+                    for variant in item.variants {
+                        parser.candidate_reserve(
+                            &mut variants,
+                            MAX_NODES,
+                            "editor enum variants",
+                            variant.name,
+                        )?;
+                        variants.push(variant.name);
+                    }
                     (item.name, DeclarationKind::Enumeration)
                 } else {
                     if copy.is_some() {
@@ -301,6 +395,7 @@ impl EditorFile {
                     regions.push(QueryRegion {
                         span: source.span(opening.end, end.start),
                         alias_keyword: None,
+                        import: false,
                     });
                     (name, DeclarationKind::Function)
                 };
@@ -310,7 +405,12 @@ impl EditorFile {
                     "editor declarations",
                     name,
                 )?;
-                declarations.push(Declaration { name, public, kind });
+                declarations.push(Declaration {
+                    name,
+                    public,
+                    kind,
+                    variant_range: [variant_start, variants.len()],
+                });
             }
             Ok(())
         })();
@@ -325,6 +425,7 @@ impl EditorFile {
                 tokens: parser.tokens,
                 modules,
                 declarations,
+                variants,
                 imports,
                 regions,
             },
@@ -366,11 +467,15 @@ impl EditorFile {
                 }
             }
         }
-        let alias_keyword = self
+        let Some(region) = self
             .regions
             .iter()
             .find(|region| region.span.start <= cursor && cursor <= region.span.end)
-            .and_then(|region| region.alias_keyword)
+        else {
+            return Ok(None);
+        };
+        let alias_keyword = region
+            .alias_keyword
             .and_then(|index| self.tokens.get(index.get()))
             .map(|token| token.span);
         if alias_keyword.is_some_and(|span| span.start < cursor && cursor <= span.end) {
@@ -386,11 +491,16 @@ impl EditorFile {
                     && alias_keyword != Some(token.span)
             })
             .map_or(source.span(cursor, cursor), |token| token.span);
-        let mut before = self.tokens.iter().rev().filter(|token| {
-            token.kind != Kind::Trivia
-                && token.kind != Kind::Eof
-                && token.span.end <= replacement.start
-        });
+        let mut before = self
+            .tokens
+            .iter()
+            .rev()
+            .filter(|token| {
+                token.kind != Kind::Trivia
+                    && token.kind != Kind::Eof
+                    && token.span.end <= replacement.start
+            })
+            .peekable();
         let mut segments = [source.span(0, 0); MAX_PATH_SEGMENTS];
         let mut length = 0usize;
         loop {
@@ -419,7 +529,9 @@ impl EditorFile {
             }
             segments[length] = name.span;
             length += 1;
-            if source.text_at(name.span) == "crate" {
+            if source.text_at(name.span) == "crate"
+                || before.peek().is_none_or(|token| token.kind != Kind::Colon)
+            {
                 break;
             }
         }
@@ -430,9 +542,10 @@ impl EditorFile {
         {
             return Ok(None);
         }
-        if !self.regions.iter().any(|region| {
-            region.span.start <= segments[0].start && replacement.end <= region.span.end
-        }) {
+        if segments[0].start < region.span.start
+            || replacement.end > region.span.end
+            || (source.text_at(segments[0]) != "crate" && (length != 1 || region.import))
+        {
             return Ok(None);
         }
         Ok(Some(PathQuery {
@@ -442,6 +555,7 @@ impl EditorFile {
             prefix_len: length,
             replacement,
             cursor,
+            import: region.import,
         }))
     }
 }
@@ -545,6 +659,20 @@ mod tests {
                 .collect::<Vec<_>>(),
             expected
         );
+        let enumeration = query
+            .declarations()
+            .iter()
+            .find(|item| item.kind == DeclarationKind::Enumeration)
+            .copied()
+            .unwrap();
+        assert_eq!(
+            query.variants(enumeration).unwrap(),
+            ordinary.enums[0]
+                .variants
+                .iter()
+                .map(|variant| variant.name)
+                .collect::<Vec<_>>()
+        );
         let text = "fn outer()->i32{fn phantom()->i32{return 0;}mod nonexistent;/*fn comment()*/return crate::;}fn later()->i32{return 1;}";
         let (map, query) = parsed(text);
         assert_eq!(
@@ -561,10 +689,10 @@ mod tests {
     fn editor_query_alias_holes_keep_contextual_as_identifiers_and_actual_token_identity() {
         #[cfg(target_pointer_width = "64")]
         {
-            assert_eq!(std::mem::size_of::<QueryRegion>(), 32); // Span24 + optional token8
+            assert_eq!(std::mem::size_of::<QueryRegion>(), 40); // span, optional alias token and import flag
             assert_eq!(std::mem::align_of::<QueryRegion>(), 8);
             assert_eq!(std::mem::size_of::<Option<NonZeroUsize>>(), 8);
-            assert_eq!(std::mem::size_of::<EditorFile>(), 144); // five Vec24 + three words8
+            assert_eq!(std::mem::size_of::<EditorFile>(), 168); // six vectors and three words
         }
         for (import, needle, offset, expected, prefixes) in [
             ("use crate::as;", "crate::as", 8, "as", vec!["crate"]),

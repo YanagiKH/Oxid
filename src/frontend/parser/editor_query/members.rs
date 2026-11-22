@@ -375,10 +375,10 @@ impl EditorFile {
             return Err(invalid());
         }
         for import in &self.imports {
-            let spelling = source.text_at(*import);
+            let spelling = source.text_at(import.alias);
             work.debit(
                 (spelling.len().min(name.len()) + 1) as u64,
-                *import,
+                import.alias,
                 "editor member import",
             )?;
             if spelling == name {
