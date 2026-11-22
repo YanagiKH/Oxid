@@ -19,3 +19,7 @@ checkpoint_files = "../cpu-training/checkpoint/storage"
 
 [tests]
 reader = "tests/reader.ox"
+
+[package-files]
+"data/sample.oxds" = true
+"tests/data/reader.oxds" = true
