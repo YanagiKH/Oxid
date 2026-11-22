@@ -67,6 +67,7 @@ struct ControlCarriers {
     file_status_return: std::result::Result<std::result::Result<(), i32>, byte_buffer::Failure>,
     mapped_file_status_return: Result<std::result::Result<(), i32>>,
     selected_open_value: byte_buffer::OpenValue,
+    open_mode: byte_buffer::FileOpenMode,
     selected_byte_attempt: std::result::Result<usize, i32>,
     selected_file_status: std::result::Result<(), i32>,
     byte_region: Result<ByteRegion>,
@@ -267,7 +268,14 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 .ok_or(RunFailure::Fuel(span))?;
         }
         let value = match operation {
-            Function::OpenRead | Function::Create => {
+            Function::OpenRead | Function::Create | Function::OpenAppend => {
+                use byte_buffer::FileOpenMode;
+                let mode = match operation {
+                    Function::OpenRead => FileOpenMode::Read,
+                    Function::Create => FileOpenMode::Create,
+                    Function::OpenAppend => FileOpenMode::Append,
+                    _ => unreachable!("sealed file open operation"),
+                };
                 let region = self.byte_region(
                     frame,
                     AccessBase::Parameter(ReferenceParamId(0)),
@@ -295,8 +303,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                         // SAFETY: the admitted shared path loan pins this
                         // disjoint activation or outer vector allocation.
                         let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
-                        self.heap
-                            .file_open(bytes, operation == Function::Create, &mut fuel)
+                        self.heap.file_open_mode(bytes, mode, &mut fuel)
                     }
                     ByteRegion::Cell(address) => {
                         let place = BufferPlace::Cell(address);
@@ -306,8 +313,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                         // SAFETY: opening/registering a distinct File cannot
                         // invalidate the pinned outer vector path bytes.
                         let bytes = unsafe { std::slice::from_raw_parts(pointer, length) };
-                        self.heap
-                            .file_open(bytes, operation == Function::Create, &mut fuel)
+                        self.heap.file_open_mode(bytes, mode, &mut fuel)
                     }
                     ByteRegion::Buffer { value, start, end } => {
                         let bytes = self
@@ -331,11 +337,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                         } else {
                             let length = bytes.len();
                             copied[..length].copy_from_slice(bytes);
-                            self.heap.file_open(
-                                &copied[..length],
-                                operation == Function::Create,
-                                &mut fuel,
-                            )
+                            self.heap.file_open_mode(&copied[..length], mode, &mut fuel)
                         }
                     }
                     ByteRegion::Vector { value, start, end } => {
@@ -360,11 +362,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                         } else {
                             let length = bytes.len();
                             copied[..length].copy_from_slice(bytes);
-                            self.heap.file_open(
-                                &copied[..length],
-                                operation == Function::Create,
-                                &mut fuel,
-                            )
+                            self.heap.file_open_mode(&copied[..length], mode, &mut fuel)
                         }
                     }
                 }

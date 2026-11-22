@@ -15,7 +15,8 @@
 _Static_assert(sizeof(int) == 4 && sizeof(wchar_t) == 2 && sizeof(void *) == 8,
     "File runtime requires the MSVC x64 CRT ABI");
 _Static_assert(_O_BINARY == 0x8000 && _O_NOINHERIT == 0x0080 && _O_WRONLY == 1
-    && _O_CREAT == 0x0100 && _O_TRUNC == 0x0200 && (_S_IREAD | _S_IWRITE) == 0x0180,
+    && _O_CREAT == 0x0100 && _O_TRUNC == 0x0200 && _O_APPEND == 0x0008
+    && (_S_IREAD | _S_IWRITE) == 0x0180,
     "CRT flags must match the independent Rust adapter");
 _Static_assert(EINVAL == 22 && ENOENT == 2 && EBADF == 9 && ENAMETOOLONG == 38,
     "CRT errors must match the independent Rust adapter");
@@ -82,7 +83,7 @@ static int overlaps(const void *left, size_t left_size, const void *right, size_
     return a <= b ? b - a < left_size : a - b < right_size;
 }
 static int32_t open_file(oxid_byte_heap *heap, const uint8_t *bytes, int32_t length,
-    int create, oxid_file_open_result *result) {
+    int mode, oxid_file_open_result *result) {
     result->tag = 1;
     if (length >= 4096) { result->value.error = ENAMETOOLONG; return 0; }
     if (length && memchr(bytes, 0, (size_t)length)) { result->value.error = EINVAL; return 0; }
@@ -123,13 +124,19 @@ static int32_t open_file(oxid_byte_heap *heap, const uint8_t *bytes, int32_t len
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif
-        fd = _wopen(wide, _O_BINARY | _O_NOINHERIT | (create ? _O_WRONLY | _O_CREAT | _O_TRUNC : _O_RDONLY), _S_IREAD | _S_IWRITE);
+        int access = _O_RDONLY;
+        if (mode == 1) access = _O_WRONLY | _O_CREAT | _O_TRUNC;
+        if (mode == 6) access = _O_WRONLY | _O_CREAT | _O_APPEND;
+        fd = _wopen(wide, _O_BINARY | _O_NOINHERIT | access, _S_IREAD | _S_IWRITE);
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif
     }
 #else
-    int flags = O_CLOEXEC | O_NOCTTY | (create ? O_WRONLY | O_CREAT | O_TRUNC : O_RDONLY);
+    int access = O_RDONLY;
+    if (mode == 1) access = O_WRONLY | O_CREAT | O_TRUNC;
+    if (mode == 6) access = O_WRONLY | O_CREAT | O_APPEND;
+    int flags = O_CLOEXEC | O_NOCTTY | access;
     int fd = open(path, flags, 0600);
 #endif
     if (fd < 0) {
@@ -144,28 +151,29 @@ static int32_t open_file(oxid_byte_heap *heap, const uint8_t *bytes, int32_t len
 }
 
 /* Operation 0=open_read, 1=create, 2=read_some, 3=write_some, 4=sync_all,
- * 5=close. All are private to the independently checked canonical emitter. */
+ * 5=close, 6=open_append. All are private to the independently checked canonical emitter. */
 int32_t __oxid_file_delivery(int32_t operation, oxid_file *file, uint8_t *bytes,
     int32_t length, uint64_t *fuel, void *result, uint64_t return_cost) {
-    if (operation < 0 || operation > 5 || !fuel || !result) return OXID_BUFFER_DESCRIPTOR;
+    if (operation < 0 || operation > 6 || !fuel || !result) return OXID_BUFFER_DESCRIPTOR;
     if (length < 0) return OXID_BUFFER_BOUNDS;
     if (length && !bytes) return OXID_BUFFER_DESCRIPTOR;
-    size_t result_size = operation < 2 ? sizeof(oxid_file_open_result) : sizeof(oxid_binary_result);
+    int opening = operation < 2 || operation == 6;
+    size_t result_size = opening ? sizeof(oxid_file_open_result) : sizeof(oxid_binary_result);
     if (overlaps(bytes, (size_t)length, result, result_size) ||
-        (operation >= 2 && (overlaps(file, sizeof(*file), result, result_size) ||
+        (!opening && (overlaps(file, sizeof(*file), result, result_size) ||
             overlaps(file, sizeof(*file), bytes, (size_t)length)))) return OXID_BUFFER_DESCRIPTOR;
     oxid_allocation *node = NULL;
-    if (operation >= 2) {
+    if (!opening) {
         int32_t status = locate_file(&execution_heap, file, &node);
         if (status) return status;
     }
-    uint64_t work = operation < 2 ? (length >= 4096 ? 0 : (uint64_t)length * 3 + 1)
+    uint64_t work = opening ? (length >= 4096 ? 0 : (uint64_t)length * 3 + 1)
         : operation < 4 ? (uint64_t)length : 0;
     if (*fuel < work || *fuel - work < return_cost) return OXID_BUFFER_FUEL;
     *fuel -= work + return_cost;
     /* No fallible admission, allocation or loan check after the OS attempt. */
-    if (operation < 2) {
-        return open_file(&execution_heap, bytes, length, operation == 1, result);
+    if (opening) {
+        return open_file(&execution_heap, bytes, length, operation, result);
     } else {
         oxid_binary_result *status = result;
         status->tag = 0; status->value = 0;

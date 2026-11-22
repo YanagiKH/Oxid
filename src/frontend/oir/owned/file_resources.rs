@@ -43,6 +43,13 @@ impl FileDescriptor {
         bytes
     }
 }
+#[derive(Clone, Copy)]
+pub(in crate::frontend::oir::owned) enum FileOpenMode {
+    Read,
+    Create,
+    Append,
+}
+
 pub(in crate::frontend::oir::owned) enum OpenValue {
     Opened(FileDescriptor),
     Error(i32),
@@ -57,6 +64,7 @@ struct HelperCarriers {
     heap_argument: *mut Heap,
     descriptor_arguments: [&'static FileDescriptor; 3],
     byte_argument: &'static [u8],
+    open_mode: FileOpenMode,
     fuel_argument: &'static mut usize,
     decoded_descriptor: FileDescriptor,
     descriptor_return: Result<FileDescriptor>,
@@ -183,10 +191,25 @@ impl Heap {
         self.locate_file(&value)?;
         Ok(value)
     }
+    #[cfg(test)]
     pub(in crate::frontend::oir::owned) fn file_open(
         &mut self,
         path: &[u8],
         create: bool,
+        fuel: &mut usize,
+    ) -> Result<OpenValue> {
+        let mode = if create {
+            FileOpenMode::Create
+        } else {
+            FileOpenMode::Read
+        };
+        self.file_open_mode(path, mode, fuel)
+    }
+
+    pub(in crate::frontend::oir::owned) fn file_open_mode(
+        &mut self,
+        path: &[u8],
+        mode: FileOpenMode,
         fuel: &mut usize,
     ) -> Result<OpenValue> {
         if path.len() >= PATH_BYTES {
@@ -238,7 +261,7 @@ impl Heap {
             )
         )))]
         {
-            let _ = create;
+            let _ = mode;
             return Ok(OpenValue::Error(38));
         }
         #[cfg(any(
@@ -331,10 +354,10 @@ impl Heap {
             )))]
             let flags = libc::O_CLOEXEC
                 | libc::O_NOCTTY
-                | if create {
-                    libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC
-                } else {
-                    libc::O_RDONLY
+                | match mode {
+                    FileOpenMode::Read => libc::O_RDONLY,
+                    FileOpenMode::Create => libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+                    FileOpenMode::Append => libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND,
                 };
             #[cfg(not(all(
                 target_os = "windows",
@@ -364,7 +387,7 @@ impl Heap {
                 target_pointer_width = "64",
                 target_endian = "little"
             ))]
-            let fd = match windows::open(path, create) {
+            let fd = match windows::open(path, mode) {
                 Ok(fd) => fd,
                 Err(error) => {
                     self.unlink(node);

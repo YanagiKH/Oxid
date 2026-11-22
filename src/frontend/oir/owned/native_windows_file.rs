@@ -29,7 +29,8 @@ struct ControlCarriers {
     enumeration_argument: &'static [Option<EnumId>; 4],
     enum_identity: EnumId,
     enum_comparisons: [Option<EnumId>; 4],
-    operation_iterator: std::array::IntoIter<experimental::Function, 20>,
+    operation_iterator:
+        std::array::IntoIter<experimental::Function, { experimental::Function::ALL.len() }>,
     operation: experimental::Function,
     operation_identity: Option<hir::DefId>,
     aggregate_argument: AggregateTy,
