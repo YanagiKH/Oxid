@@ -429,7 +429,7 @@ mod compact_inventory_tests {
                 assert!(accumulated.experimental().contains(item));
             }
             assert_eq!(accumulated.experimental().enums(), 6);
-            assert_eq!(accumulated.experimental().functions(), 21);
+            assert_eq!(accumulated.experimental().functions(), 22);
         }
     }
 }
