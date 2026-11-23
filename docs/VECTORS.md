@@ -126,6 +126,8 @@ or `PopResult::Value(value)`, so an empty collection needs no trap.
 
 Generic functions can borrow `&Vec<T>` or `&mut Vec<T>`, move a `Vec<T>`
 parameter, or return a `Vec<T>`. A moved vector becomes unavailable to its caller.
+Use `new::<T>()` to create an empty vector inside a generic function. Calls to
+that function supply a supported element type.
 The package's `transfer` moves a vector, `detach` transfers its storage while
 leaving the original empty, and `discard` releases it and any remaining elements.
 These ownership helpers also accept existing scalar and Copy-record vectors.
@@ -138,9 +140,7 @@ oxid run
 oxid build --profile release
 ```
 
-`oxid run` prints `42`. Generic owned-vector helpers still require concrete
-supported element types at each call. Unconstrained `T` cannot construct
-`new::<T>()`, grant an element slice, or make a nested owned-vector type valid.
+`oxid run` prints `42`. Element slices require `T: Copy`.
 
 ## Add, resize and move values
 
