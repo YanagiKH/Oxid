@@ -86,10 +86,13 @@ fn source_owned_parameter_results_use_finite_roots_and_exact_owner_cleanup() {
                     )
                 });
             assert_eq!(result, Ok(Scalar::I32(42)));
-            // One independent byte buffer and three concrete vector roots.
-            assert_eq!(observed.before_cleanup.allocations, 4);
-            assert_eq!(observed.before_cleanup.releases, 4);
+            // The append example adds four message buffers and three vector
+            // allocation roots to the original buffer and three vector roots.
+            let allocations = 4 + (4 + 3);
+            assert_eq!(observed.before_cleanup.allocations, allocations);
+            assert_eq!(observed.before_cleanup.releases, allocations);
             assert_eq!(observed.before_cleanup.live_allocations, 0);
+            assert_eq!(observed.before_cleanup.live_bytes, 0);
             assert_eq!(observed.before_cleanup, observed.after_cleanup);
         }
     });
