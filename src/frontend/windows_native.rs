@@ -10,14 +10,13 @@ use super::{
 
 pub(super) fn preflight(
     project: &ProjectSources,
-    process: bool,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<(), Box<Diagnostic>> {
     if !NativeBuildSettings::windows_msvc_host() {
         return Ok(());
     }
     let execution = settings.map_or(ExecutionPolicy::Bounded, |settings| settings.execution());
-    if process || execution.hosted() || settings.is_some_and(|settings| settings.debug_info()) {
+    if execution.hosted() || settings.is_some_and(|settings| settings.debug_info()) {
         return Err(reject());
     }
     // All modules and unused declarations participate. These bounded parser
@@ -50,7 +49,7 @@ pub(super) fn preflight_checked(
         }
         Ok(())
     } else {
-        preflight(project, process, settings)
+        preflight(project, settings)
     }
 }
 
@@ -157,7 +156,7 @@ fn outside_scalar_scope(program: &Program, source: &SourceFile) -> bool {
 fn reject() -> Box<Diagnostic> {
     Diagnostic::new(
         "E0700", "native-admission",
-        "Windows native builds require bounded bool/i32/unit result entry. File byte I/O and std::time are supported. Generics, other owned types, process I/O and debug information are unavailable",
+        "Windows native builds support bounded bool/i32/unit functions with result or process entry. File byte I/O and std::time require result entry. Generics, other owned types, process I/O and debug information are unavailable",
         None,
     )
 }

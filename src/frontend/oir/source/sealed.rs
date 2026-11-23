@@ -972,13 +972,16 @@ impl CheckedSourceProgram<'_> {
     }
 
     fn require_process_host(&self) -> Result<(), Box<Diagnostic>> {
-        if super::super::process::supported_host() {
+        if super::super::process::supported_host()
+            || (crate::frontend::build_config::NativeBuildSettings::windows_msvc_host()
+                && matches!(self.body, CheckedBody::Scalar(_)))
+        {
             Ok(())
         } else {
             Err(Diagnostic::new(
                 "E0608",
                 "oir-run",
-                "process execution requires Linux x86_64",
+                "process execution supports Linux and macOS on x86_64 or ARM64, and scalar programs on Windows MSVC x64",
                 None,
             ))
         }
