@@ -402,7 +402,7 @@ fn field_value(c: &mut Compiler, binding: Binding, position: i32) -> Value {
     expect(&mut *c, 1);
     if field < 0 || !access_allowed(&*c, position, field, false) { fail(&mut *c); return invalid(); }
     let descriptor = c.fields[row.first_field + field];
-    if is_array(descriptor.ty) { fail(&mut *c); return invalid(); }
+    if !is_value_scalar(descriptor.ty) { fail(&mut *c); return invalid(); }
     return crate::emit::load_record_field(&mut *c, binding, field, descriptor.ty);
 }
 
@@ -721,7 +721,7 @@ fn assign_field(c: &mut Compiler) -> () {
     expect(&mut *c, 1); expect(&mut *c, 28);
     if field < 0 { fail(&mut *c); return; }
     let descriptor = c.fields[row.first_field + field];
-    if is_array(descriptor.ty) { fail(&mut *c); return; }
+    if !is_value_scalar(descriptor.ty) { fail(&mut *c); return; }
     let value = expression(&mut *c, 1, 0);
     if value.ty != descriptor.ty { fail(&mut *c); return; }
     expect(&mut *c, 25);

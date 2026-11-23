@@ -40,7 +40,8 @@ pub struct Value { pub ty: i32, pub id: i32 }
 #[derive(Copy)]
 pub struct Record {
     pub name: i32, pub source_module: i32, pub first_field: i32, pub field_count: i32,
-    pub start: i32, pub end: i32, pub copy: bool, pub tagged: bool, pub public: bool
+    pub start: i32, pub end: i32, pub cells: i32, pub depth: i32,
+    pub copy: bool, pub tagged: bool, pub public: bool
 }
 #[derive(Copy)]
 pub struct Field { pub name: i32, pub ty: i32, pub public: bool }
@@ -188,6 +189,19 @@ pub fn referent_record(ty: i32) -> i32 {
 pub fn record_value_type(ty: i32) -> i32 {
     if is_record_reference(ty) { return referent_record(ty); }
     return ty;
+}
+
+pub fn value_cells(c: &Compiler, ty: i32) -> i32 {
+    if is_record(ty) {
+        let row = c.records[record_index(ty)];
+        return row.cells;
+    }
+    if is_slice(ty) { return 2; }
+    if is_array(ty) {
+        let cells = (array_bytes(ty) + 7) / 8;
+        if cells > 0 { return cells; }
+    }
+    return 1;
 }
 
 pub fn record(c: &Compiler, source_module: i32, name: i32) -> i32 {

@@ -642,6 +642,55 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "fn main()->i32{let row=crate::rows::open();return first(&row.values);}",
             "rows.ox": "pub struct Row{values:[i32;1]}pub fn open()->Row{return Row{values:[42]};}",
         }),
+        ("owned-struct-composition", 0, True, {
+            "main.ox": "mod rows;use crate::rows::Batch;"
+                       "fn consume(batch:Batch)->i32 {let Batch{pad:extra,row:item}=batch;"
+                       "return crate::rows::amount(item)+extra;}"
+                       "fn main()->i32{return consume(crate::rows::open());}",
+            "rows.ox": "pub struct Row{count:i32,chunk:[u8;2]}"
+                       "pub struct Batch{pub pad:i32,pub row:Row}"
+                       "pub fn open()->Batch{return Batch{pad:2,row:Row{count:40,chunk:[1u8,2u8]}};}"
+                       "pub fn amount(row:Row)->i32{return row.count;}",
+        }),
+        ("copy-struct-composition", 0, True, {
+            "main.ox": "#[derive(Copy)]struct Row{number:i32}"
+                       "#[derive(Copy)]struct Batch{row:Row}"
+                       "fn read(batch:Batch)->i32{let Batch{row:item}=batch;return item.number;}"
+                       "fn main()->i32{let item=Batch{row:Row{number:21}};return read(item)+read(item);}",
+        }),
+        ("composed-struct-enum-payload", 0, True, {
+            "main.ox": "struct Inner{number:i32}struct Outer{inner:Inner}"
+                       "enum Message{Empty,Data(Outer)}fn main()->i32{"
+                       "let message=Message::Data(Outer{inner:Inner{number:42}});"
+                       "match message{Message::Empty=>{return 0;},Message::Data(data)=>{"
+                       "let Outer{inner:item}=data;return item.number;},}}",
+        }),
+        ("copy-struct-cannot-contain-owned-struct", 65, True, {
+            "main.ox": "struct Inner{number:i32}#[derive(Copy)]struct Outer{inner:Inner}"
+                       "fn main()->i32{return 42;}",
+        }),
+        ("composed-struct-opaque-field", 0, True, {
+            "main.ox": "mod rows;use crate::rows::Public;"
+                       "fn main()->i32{let Public{detail:item}=crate::rows::open();return 42;}",
+            "rows.ox": "struct Internal{number:i32}pub struct Public{pub detail:Internal}"
+                       "pub fn open()->Public{return Public{detail:Internal{number:42}};}",
+        }),
+        ("composed-struct-private-inner-field", 65, True, {
+            "main.ox": "mod rows;use crate::rows::Public;"
+                       "fn main()->i32{let Public{detail:item}=crate::rows::open();return item.number;}",
+            "rows.ox": "struct Internal{number:i32}pub struct Public{pub detail:Internal}"
+                       "pub fn open()->Public{return Public{detail:Internal{number:42}};}",
+        }),
+        ("composed-struct-depth-limit", 68, False, {
+            "main.ox": "struct Part0{number:i32}"
+                       + "".join(f"struct Part{n}{{inner:Part{n-1}}}" for n in range(1, 9))
+                       + "fn main()->i32{return 42;}",
+        }),
+        ("composed-struct-extent-limit", 68, False, {
+            "main.ox": "struct Chunk{data:[i64;1024]}"
+                       "struct Pair{first:Chunk,second:Chunk}"
+                       "struct Batch{a:Pair,b:Pair,c:Pair}fn main()->i32{return 42;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
