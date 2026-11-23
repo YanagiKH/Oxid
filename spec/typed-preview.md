@@ -1188,9 +1188,10 @@ statement      := "let" "mut"? name (":" value_type)? "=" expression ";"
                 | expression ";"
                 | "return" expression? ";"
                 | "break" ";" | "continue" ";"
-                | "if" expression block ("else" block)?
+                | if_statement
                 | "while" expression block
                 | "match" name "{" match_arm ("," match_arm)* ","? "}"
+if_statement   := "if" expression block ("else" (block | if_statement))?
 expression     := logical_or
 logical_or     := logical_and ("||" logical_and)*
 logical_and    := comparison ("&&" comparison)*
@@ -1271,8 +1272,9 @@ zero-argument main returning bool/i32/unit.
   after a return or an if with two returning arms are rejected
 - An if condition must be bool. Both arms are checked even for literal conditions.
   A missing else leaves a reachable empty false path. Empty arms are legal. An if
-  is a statement with no value or trailing semicolon; else requires braces, so
-  else-if, if-expressions and naked block statements are unavailable
+  is a statement with no value or trailing semicolon. Typed projects can chain
+  conditions with `else if`. Each condition must be bool, and only the first
+  matching arm runs. An optional final `else` handles the remaining case
 - Expression statements may discard any supported type
 
 Example:

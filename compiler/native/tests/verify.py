@@ -430,6 +430,12 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
     evidence = output / "modules"
     evidence.mkdir()
     cases = (
+        ("else-if-chain", 0, True, {
+            "main.ox": "mod score;fn main()->i32{return crate::score::value(2);}",
+            "score.ox": "fn skipped()->bool{let zero=0;return 1/zero==0;}"
+                        "pub fn value(n:i32)->i32{if n==1{return 0;}else if n==2{return 42;}"
+                        "else if skipped(){return 1;}else{return 2;}}",
+        }),
         ("sibling-modules", 0, True, {
             "main.ox": "mod a;fn base()->i32{return 40;}mod b;"
                        "fn main()->i32{return crate::a::value()+crate::b::value();}",
