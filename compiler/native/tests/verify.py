@@ -536,6 +536,47 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             "main.ox": "mod data;fn main()->i32{let value=Row{value:42};return value.value;}",
             "data.ox": "#[derive(Copy)]struct Row{value:i32}",
         }),
+        ("public-copy-records", 0, True, {
+            "main.ox": "mod data;fn get(value:crate::data::Row)->i32{return value.number;}"
+                       "fn main()->i32{let mut row:crate::data::Row=crate::data::Row{number:1};"
+                       "row.number=2;let other=crate::data::open();return get(row)+other.number;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{pub number:i32}"
+                       "pub fn open()->Row{return Row{number:40};}",
+        }),
+        ("public-owned-record", 0, True, {
+            "main.ox": "mod data;fn identity(row:crate::data::Row)->crate::data::Row{return row;}"
+                       "fn main()->i32{let row=identity(crate::data::open());return row.number;}",
+            "data.ox": "pub struct Row{pub number:i32,bytes:[u8;2]}"
+                       "pub fn open()->Row{return Row{number:42,bytes:[1u8,2u8]};}",
+        }),
+        ("aliased-record-import", 0, True, {
+            "main.ox": "use crate::data::Row as Entry;mod data;"
+                       "fn id(row:Entry)->Entry{return row;}"
+                       "fn main()->i32{let Entry{number:answer}=id(Entry{number:42});return answer;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{pub number:i32}",
+        }),
+        ("private-record-import", 65, True, {
+            "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
+            "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
+        }),
+        ("private-qualified-record-type", 65, True, {
+            "main.ox": "mod data;fn read(value:crate::data::Row)->i32{return 0;}fn main()->i32{return 42;}",
+            "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
+        }),
+        ("private-record-field-read", 65, True, {
+            "main.ox": "mod data;fn main()->i32{let row=crate::data::open();return row.hidden;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{hidden:i32}"
+                       "pub fn open()->Row{return Row{hidden:42};}",
+        }),
+        ("private-record-field-write", 65, True, {
+            "main.ox": "mod data;fn main()->i32{let mut row=crate::data::open();row.hidden=2;return 42;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{hidden:i32}"
+                       "pub fn open()->Row{return Row{hidden:42};}",
+        }),
+        ("private-record-field-construction", 65, True, {
+            "main.ox": "mod data;fn main()->i32{let row=crate::data::Row{hidden:42};return 42;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{hidden:i32}",
+        }),
         ("utf8-module-source", 0, True, {
             "main.ox": "mod data;fn main()->i32{return crate::data::value();}",
             "data.ox": "// 雪\npub fn value()->i32{if '雪'<'🦀'{return 42;}return 0;}",
