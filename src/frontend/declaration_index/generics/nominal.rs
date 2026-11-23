@@ -54,7 +54,7 @@ struct RecordVectorKeyControls {
 
 impl Nominals {
     /// Only the outer value of a function signature may defer a Vec element.
-    /// Field layouts, type arguments, locals and constructors still use syntax.
+    /// Field layouts, type arguments and explicit local types still use syntax.
     /// The opaque identity is checked abstractly and must be substituted before
     /// any concrete parameter, result, layout or executable key is produced.
     #[allow(clippy::too_many_arguments)]
@@ -130,7 +130,7 @@ impl Nominals {
                     )?
                     .value(argument.span)?;
                 Ok(Type::Value(Value::Vector(
-                    index.candidate_borrowed_element(value, self, work, argument.span)?,
+                    index.candidate_deferred_element(value, self, work, argument.span)?,
                 )))
             })();
             storage.leave_vector(syntax.span)?;
@@ -380,7 +380,7 @@ impl Nominals {
                         TypeSyntaxKind::AppliedReference { .. }
                             if index.owned_vector_builder().is_some() =>
                         {
-                            index.candidate_borrowed_element(value, self, work, argument.span)?
+                            index.candidate_deferred_element(value, self, work, argument.span)?
                         }
                         _ => index.candidate_element(value, self, argument.span)?,
                     });
