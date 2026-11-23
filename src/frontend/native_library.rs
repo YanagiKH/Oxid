@@ -92,7 +92,7 @@ pub(super) fn limits(
 
 pub(super) fn require_host() -> Result<(), Box<Diagnostic>> {
     if cfg!(all(
-        target_os = "linux",
+        any(target_os = "linux", target_os = "macos"),
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")
@@ -102,7 +102,7 @@ pub(super) fn require_host() -> Result<(), Box<Diagnostic>> {
         Err(Diagnostic::new(
             "E0700",
             "native-library",
-            "scalar native libraries currently require Linux x86_64 or ARM64",
+            "scalar native libraries currently require Linux or macOS on x86_64 or ARM64",
             None,
         ))
     }
