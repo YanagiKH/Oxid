@@ -925,13 +925,14 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_native_hosts_install_a_release_archive(self):
         name = 'Install and run a release archive on this host'
         posix_run = '        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid'
+        posix_upgrade = posix_run + ' --published-previous 0.8.0'
         windows_run = ('        run: |\n'
-                       '          python -B scripts/verify_release_install.py --binary target/release/oxid.exe\n'
+                       '          python -B scripts/verify_release_install.py --binary target/release/oxid.exe --published-previous 0.8.0\n'
                        '          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }')
         for job, build, run in (
-            ('native-projects', 'Run public native tests in both compiler profiles', posix_run),
+            ('native-projects', 'Run public native tests in both compiler profiles', posix_upgrade),
             ('linux-arm64-native', 'Verify native ARM64 builds and source-free execution', posix_run),
-            ('macos-native', 'Build both current compiler profiles', posix_run),
+            ('macos-native', 'Build both current compiler profiles', posix_upgrade),
             ('current-windows-native', 'Build both compiler profiles', windows_run),
         ):
             with self.subTest(job=job):
@@ -942,17 +943,18 @@ class CiTriggerPolicyTests(unittest.TestCase):
                 self.assertEqual(steps[0][1].rstrip(), run)
                 self.assertLess(current.index(f'      - name: {build}'), steps[0].start())
 
-    def test_native_upgrade_uses_the_pinned_published_archive(self):
-        linux = block(self.ci, 'native-projects', 2)
-        name = '      - name: Verify offline upgrade and rollback from Oxid 0.8.0'
-        selected = linux.split(name, 1)[1].split('      - name:', 1)[0]
-        self.assertIn('set -euo pipefail', selected)
-        self.assertIn('https://github.com/YanagiKH/Oxid/releases/download/v0.8.0/oxid-linux-x86_64.tar.gz', selected)
-        self.assertIn('ed7b85d9a924e59cc20eddd6e6f1bd3021eeae8bd2a41db2042ede60da906773',
-                      selected)
-        self.assertIn('scripts/verify_release_install.py --binary target/release/oxid', selected)
-        self.assertIn('--previous-archive "$previous" --previous-version 0.8.0', selected)
-        self.assertNotRegex(selected, r'continue-on-error:|(?m:^\s*if:)')
+    def test_native_upgrade_uses_the_published_archive_digests(self):
+        module = ast.parse((REPO / 'scripts/verify_release_install.py').read_text(encoding='utf-8'))
+        pins = next(ast.literal_eval(node.value) for node in module.body
+                    if isinstance(node, ast.Assign) and any(
+                        isinstance(target, ast.Name) and target.id == 'PUBLISHED_ARCHIVES'
+                        for target in node.targets))
+        self.assertEqual(pins['0.8.0'], {
+            'oxid-linux-x86_64.tar.gz': 'ed7b85d9a924e59cc20eddd6e6f1bd3021eeae8bd2a41db2042ede60da906773',
+            'oxid-macos-aarch64.tar.gz': '0072aa3c941da266371d51fd633165166378bb6ec50b34b8b0842ffa91a1c881',
+            'oxid-macos-x86_64.tar.gz': '9da4e0c07bedc485149ab9a5643562ce57ebe9760e14f40e51ee39ef5d5bfdb3',
+            'oxid-windows-x86_64.zip': '4772e3524d10ffeec62df841074149b3b844ae60c410204e5cfabf0ce88e2cf9',
+        })
 
     def test_release_checks_the_installed_archive_before_upload(self):
         package = block(self.release, 'package', 2)
