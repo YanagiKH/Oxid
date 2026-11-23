@@ -32,6 +32,7 @@ use crate::model::record_index;
 use crate::model::record_reference;
 use crate::model::is_record_reference;
 use crate::model::record_value_type;
+use crate::model::value_cells;
 use alloc::vec::len;
 use alloc::vec::try_push;
 
@@ -130,7 +131,7 @@ fn collect_record(c: &mut Compiler, source_module: i32) -> () {
         fail(&mut *c); return;
     }
     let mut row = Record { name: name, source_module: source_module,
-        first_field: len(&*c.fields), field_count: 0, start: start, end: 0,
+        first_field: len(&*c.fields), field_count: 0, start: start, end: 0, cells: 0, depth: 1,
         copy: copy_record, tagged: false, public: public };
     while kind(&*c) != 23 && c.error == 0 {
         if row.field_count >= 64 { c.error = 68; return; }
@@ -139,15 +140,24 @@ fn collect_record(c: &mut Compiler, source_module: i32) -> () {
         let field_name = c.cursor;
         expect(&mut *c, 1); expect(&mut *c, 24);
         let field_type = ty(&mut *c, source_module);
-        let allowed = is_value_scalar(field_type) || (!copy_record && is_array(field_type));
+        let mut allowed = is_value_scalar(field_type) || (!copy_record && is_array(field_type));
+        if is_record(field_type) {
+            let component = c.records[record_index(field_type)];
+            allowed = !component.tagged && (!copy_record || component.copy)
+                && (!row.public || !field_public || component.public);
+            if component.depth >= row.depth { row.depth = component.depth + 1; }
+        }
         if !allowed || record_field(&*c, row, field_name) >= 0 { fail(&mut *c); return; }
         let field = Field { name: field_name, ty: field_type, public: field_public };
         if !grown(try_push(&mut *c.fields, field)) { c.error = 68; return; }
         row.field_count = row.field_count + 1;
+        // Round each field up to an eight-byte cell so the sum includes padding.
+        row.cells = row.cells + value_cells(&*c, field_type);
         if kind(&*c) != 23 { expect(&mut *c, 26); }
     }
     expect(&mut *c, 23);
     if row.field_count == 0 { fail(&mut *c); return; }
+    if row.depth > 8 { c.error = 68; return; }
     row.end = c.cursor;
     if c.error == 0 && !grown(try_push(&mut *c.records, row)) { c.error = 68; }
     return;
@@ -164,7 +174,7 @@ fn collect_enum(c: &mut Compiler, source_module: i32) -> () {
         fail(&mut *c); return;
     }
     let mut row = Record { name: name, source_module: source_module,
-        first_field: len(&*c.fields), field_count: 0, start: start, end: 0,
+        first_field: len(&*c.fields), field_count: 0, start: start, end: 0, cells: 1, depth: 1,
         copy: false, tagged: true, public: false };
     while kind(&*c) != 23 && c.error == 0 {
         if row.field_count >= 64 { c.error = 68; return; }
@@ -185,6 +195,7 @@ fn collect_enum(c: &mut Compiler, source_module: i32) -> () {
         if c.error != 0 { return; }
         if !grown(try_push(&mut *c.fields, Field { name: variant, ty: payload, public: true })) { c.error = 68; return; }
         row.field_count = row.field_count + 1;
+        row.cells = row.cells + value_cells(&*c, payload);
         if kind(&*c) != 23 { expect(&mut *c, 26); }
     }
     expect(&mut *c, 23);

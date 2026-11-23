@@ -90,6 +90,11 @@ arrays in an owned value. Passing or assigning the value moves it. Use
 `let Row { id: row_id, bytes: data } = row;` to take all its fields. To replace
 an array field, assign a new value to the whole mutable struct.
 
+Struct fields can use earlier declared struct types. For example, use
+`struct Batch { item: Row }`, then `let Batch { item: row } = batch;` to take
+the nested value. Construction accepts up to eight levels of struct nesting.
+All nested fields of a `Copy` struct must also be `Copy`.
+
 Use `row: &Row` to read scalar fields during a call. Use `row: &mut Row` to
 change those fields. Pass `&row` or `&mut row` from the owner, or pass `&*row`
 and `&mut *row` from a borrowed parameter. The same struct can fill multiple
@@ -119,7 +124,7 @@ Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-nested structs and enums, other reference forms, generics, text strings, nested arrays,
+nested enums, other reference forms, generics, text strings, nested arrays,
 I/O in compiled input and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 

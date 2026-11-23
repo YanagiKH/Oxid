@@ -2,17 +2,16 @@ use crate::model::Compiler;
 use crate::model::Value;
 use crate::model::grown;
 use crate::model::Binding;
-use crate::model::Record;
 use crate::model::Token;
 use crate::model::array_type;
 use crate::model::is_array;
 use crate::model::array_count;
 use crate::model::array_element;
-use crate::model::array_bytes;
 use crate::model::is_slice;
 use crate::model::slice_element;
 use crate::model::is_record_reference;
 use crate::model::record_value_type;
+use crate::model::value_cells;
 use crate::model::code;
 use crate::model::is_record;
 use crate::model::record_index;
@@ -157,37 +156,6 @@ pub fn conditional(c: &mut Compiler, value: Value, yes: i32, no: i32) -> () {
     c.terminated = true;
     return;
 }
-fn field_cells(ty: i32) -> i32 {
-    if is_slice(ty) { return 2; }
-    if is_array(ty) {
-        let cells = (array_bytes(ty) + 7) / 8;
-        if cells > 0 { return cells; }
-    }
-    return 1;
-}
-fn product_cells(c: &Compiler, row: Record) -> i32 {
-    let mut cells = 0;
-    // A cell includes tail padding for a field aligned to at most 8 bytes.
-    for field in 0..row.field_count {
-        let descriptor = c.fields[row.first_field + field];
-        cells = cells + field_cells(descriptor.ty);
-    }
-    return cells;
-}
-fn nominal_cells(c: &Compiler, row: Record) -> i32 {
-    if !row.tagged { return product_cells(&*c, row); }
-    let mut cells = 1;
-    for variant in 0..row.field_count {
-        let payload = c.fields[row.first_field + variant];
-        if is_record(payload.ty) {
-            let product = c.records[record_index(payload.ty)];
-            cells = cells + product_cells(&*c, product);
-        } else {
-            cells = cells + field_cells(payload.ty);
-        }
-    }
-    return cells;
-}
 pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
     let literal_bytes_0 = b"  %s";
     let literal_bytes_1 = b" = alloca ";
@@ -195,11 +163,7 @@ pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
 
     if ty == 3 { return -1; }
     let id = c.next_slot;
-    let mut cells = field_cells(ty);
-    if is_record(ty) {
-        let row = c.records[record_index(ty)];
-        cells = nominal_cells(&*c, row);
-    }
+    let cells = value_cells(&*c, ty);
     if cells > 4096 - id { c.error = 68; return 0; }
     c.next_slot = id + cells;
     append(&mut *c, 1, &literal_bytes_0); number(&mut *c, 1, id);
@@ -1012,7 +976,7 @@ fn record_preamble(c: &mut Compiler) -> () {
     let mut index = 0;
     while index < vector_len(&*c.records) && c.error == 0 {
         let row = c.records[index];
-        if nominal_cells(&*c, row) > 4096 { c.error = 68; return; }
+        if row.cells > 4096 { c.error = 68; return; }
         append(&mut *c, 0, &prefix); number(&mut *c, 0, index);
         append(&mut *c, 0, &declaration);
         if row.tagged {
