@@ -670,15 +670,20 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "fn main()->i32{return 42;}",
         }),
         ("composed-struct-opaque-field", 0, True, {
-            "main.ox": "mod rows;use crate::rows::Public;"
-                       "fn main()->i32{let Public{detail:item}=crate::rows::open();return 42;}",
+            "main.ox": "mod rows;fn main()->i32{return crate::rows::read(crate::rows::open());}",
+            "rows.ox": "struct Internal{number:i32}pub struct Public{detail:Internal}"
+                       "pub fn open()->Public{return Public{detail:Internal{number:42}};}"
+                       "pub fn read(row:Public)->i32{let Public{detail:item}=row;return item.number;}",
+        }),
+        ("composed-struct-private-type-exposure", 65, True, {
+            "main.ox": "mod rows;fn main()->i32{let row=crate::rows::open();return 42;}",
             "rows.ox": "struct Internal{number:i32}pub struct Public{pub detail:Internal}"
                        "pub fn open()->Public{return Public{detail:Internal{number:42}};}",
         }),
         ("composed-struct-private-inner-field", 65, True, {
             "main.ox": "mod rows;use crate::rows::Public;"
                        "fn main()->i32{let Public{detail:item}=crate::rows::open();return item.number;}",
-            "rows.ox": "struct Internal{number:i32}pub struct Public{pub detail:Internal}"
+            "rows.ox": "pub struct Internal{number:i32}pub struct Public{pub detail:Internal}"
                        "pub fn open()->Public{return Public{detail:Internal{number:42}};}",
         }),
         ("composed-struct-depth-limit", 68, False, {

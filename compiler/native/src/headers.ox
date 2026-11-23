@@ -143,7 +143,8 @@ fn collect_record(c: &mut Compiler, source_module: i32) -> () {
         let mut allowed = is_value_scalar(field_type) || (!copy_record && is_array(field_type));
         if is_record(field_type) {
             let component = c.records[record_index(field_type)];
-            allowed = !component.tagged && (!copy_record || component.copy);
+            allowed = !component.tagged && (!copy_record || component.copy)
+                && (!row.public || !field_public || component.public);
             if component.depth >= row.depth { row.depth = component.depth + 1; }
         }
         if !allowed || record_field(&*c, row, field_name) >= 0 { fail(&mut *c); return; }
