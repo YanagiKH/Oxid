@@ -473,8 +473,7 @@ pub fn field_address(c: &mut Compiler, record: i32, base: i32, local_slot: bool,
     return pointer;
 }
 
-pub fn borrow_array_field(c: &mut Compiler, binding: Binding, field: i32, array: i32, ty: i32) -> Value {
-    let pointer = record_field_address(&mut *c, binding, field);
+pub fn borrow_array_field(c: &mut Compiler, pointer: i32, array: i32, ty: i32) -> Value {
     let count = array_count(array);
     let length = constant(&mut *c, 1, count.to_i64());
     return slice_value(&mut *c, ty, length, pointer, false);

@@ -34,7 +34,7 @@ pub struct Binding {
     pub name: i32, pub ty: i32, pub slot: i32, pub writable: bool, pub available: bool
 }
 #[derive(Copy)]
-pub struct Loan { pub binding: i32, pub field: i32, pub exclusive: bool }
+pub struct Loan { pub binding: i32, pub path: i64, pub depth: i32, pub exclusive: bool }
 #[derive(Copy)]
 pub struct Value { pub ty: i32, pub id: i32 }
 #[derive(Copy)]
@@ -46,7 +46,7 @@ pub struct Record {
 #[derive(Copy)]
 pub struct Field { pub name: i32, pub ty: i32, pub public: bool }
 #[derive(Copy)]
-pub struct FieldPath { pub field: i32, pub ty: i32, pub pointer: i32 }
+pub struct FieldPath { pub code: i64, pub depth: i32, pub ty: i32, pub pointer: i32 }
 
 pub struct Compiler {
     pub source: ByteBuf, pub source_path: ByteBuf, pub literals: ByteBuf, pub sources: Vec<SourceModule>, pub imports: Vec<Import>,

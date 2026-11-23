@@ -110,6 +110,10 @@ Pass a fixed array field as a slice with `&row.bytes` or a range with
 `&*row.bytes` or `&mut *row.bytes`. Separate fields can be borrowed mutably
 in the same call.
 
+Borrow a nested struct with `&row.section.item` or `&mut row.section.item`.
+Separate nested fields can be borrowed mutably together. A borrow of an
+entire struct overlaps any borrow of its fields.
+
 Declare `enum Value { Empty, Count(i64) }` and construct `Value::Count(42i64)`.
 A variant can carry one scalar, fixed array or struct declared above the enum.
 Match a binding and give one arm for each variant.

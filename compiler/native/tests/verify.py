@@ -752,6 +752,41 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "fn main()->i32{let mut row=Row{part:Part{number:42}};"
                        "row.part.number=take(row);return 42;}",
         }),
+        ("disjoint-nested-record-borrows", 0, True, {
+            "main.ox": "struct Item{value:i32}struct Pair{left:Item,right:Item}struct Row{pair:Pair}"
+                       "fn change(left:&mut Item,right:&mut Item)->i32{"
+                       "left.value=left.value+10;right.value=right.value+20;return left.value+right.value;}"
+                       "fn relay(row:&mut Row)->i32{return change(&mut *row.pair.left,&mut *row.pair.right);}"
+                       "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:5},right:Item{value:7}}};"
+                       "return relay(&mut row);}",
+        }),
+        ("disjoint-nested-array-projections", 0, True, {
+            "main.ox": "struct Samples{values:[i32;3],other:[i32;2]}struct Data{samples:Samples}"
+                       "fn mutate(values:&mut [i32],other:&mut [i32])->i32{"
+                       "values[0]=values[0]+1;other[0]=other[0]+2;return values[0]+other[0];}"
+                       "fn relay(data:&mut Data)->i32{return mutate(&mut *data.samples.values[1..2],"
+                       "&mut *data.samples.other[0..1]);}"
+                       "fn main()->i32{let mut data=Data{samples:Samples{values:[0,19,0],other:[20,0]}};"
+                       "return relay(&mut data);}",
+        }),
+        ("nested-record-loan-overlaps-parent", 65, True, {
+            "main.ox": "struct Item{value:i32}struct Pair{left:Item,right:Item}struct Row{pair:Pair}"
+                       "fn evaluate(whole:&Pair,part:&mut Item)->i32{return whole.left.value+part.value;}"
+                       "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:21},right:Item{value:21}}};"
+                       "return evaluate(&row.pair,&mut row.pair.left);}",
+        }),
+        ("nested-record-loan-overlaps-later-parent", 65, True, {
+            "main.ox": "struct Item{value:i32}struct Pair{left:Item,right:Item}struct Row{pair:Pair}"
+                       "fn evaluate(part:&mut Item,whole:&Pair)->i32{return part.value+whole.left.value;}"
+                       "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:21},right:Item{value:21}}};"
+                       "return evaluate(&mut row.pair.left,&row.pair);}",
+        }),
+        ("nested-loan-overlaps-later-field-read", 65, True, {
+            "main.ox": "struct Item{value:i32}struct Pair{left:Item,right:Item}struct Row{pair:Pair}"
+                       "fn evaluate(part:&mut Item,old:i32)->i32{return part.value+old;}"
+                       "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:21},right:Item{value:21}}};"
+                       "return evaluate(&mut row.pair.left,row.pair.left.value);}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
