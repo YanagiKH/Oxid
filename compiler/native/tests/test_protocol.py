@@ -22,6 +22,12 @@ class Protocol(unittest.TestCase):
     def test_exact_complete_success(self):
         self.assertEqual(build_driver.module_from_result(self.result()), MODULE)
 
+    def test_module_target_must_match_the_requested_target(self):
+        arm = build_driver.module_prefix(build_driver.ARM64_TARGET) + MODULE[len(build_driver.PREFIX):]
+        self.assertEqual(build_driver.module_from_result(self.result(stdout=arm), build_driver.ARM64_TARGET), arm)
+        with self.assertRaisesRegex(build_driver.BuildError, "target mismatch"):
+            build_driver.module_from_result(self.result(stdout=arm), build_driver.DEFAULT_TARGET)
+
     def test_no_return_value_banner_or_diagnostic_is_stripped(self):
         for data in (MODULE + b"0\n", b"0\n" + MODULE, b"diagnostic\n" + MODULE,
                      MODULE + b"diagnostic\n", MODULE[:-1], build_driver.PREFIX,
@@ -54,7 +60,9 @@ class Protocol(unittest.TestCase):
         source.write_text("fn main()->i32{return 42;}")
         runtime = root / "runtime.c"
         runtime.write_text("/* protocol-only fixture; never used for semantic acceptance */\n")
-        compiler = self.script(root, "compiler", "import sys\nsys.stdout.buffer.write(" + repr(MODULE) + ")\n")
+        target = build_driver.host_target()
+        module = build_driver.module_prefix(target) + MODULE[len(build_driver.PREFIX):]
+        compiler = self.script(root, "compiler", "import sys\nsys.stdout.buffer.write(" + repr(module) + ")\n")
         clang = self.script(root, "clang", "raise SystemExit(19)\n")
         return compiler, source, clang, runtime
 

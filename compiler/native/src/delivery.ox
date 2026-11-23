@@ -28,9 +28,25 @@ pub enum Input { Loaded(Compiler), Failed(i32) }
 enum FileInput { Loaded(ByteBuf), Failed(i32) }
 
 pub fn load() -> Input {
-    if arg_count() != 2 { return Input::Failed(64); }
+    let argc = arg_count();
+    if argc != 2 && argc != 3 { return Input::Failed(64); }
     let mut path = new();
     if !grown(try_resize(&mut path, 4096, 0u8)) { return Input::Failed(68); }
+    let mut arm64 = false;
+    if argc == 3 {
+        let arm = b"--target=aarch64-unknown-linux-gnu";
+        let intel = b"--target=x86_64-unknown-linux-gnu";
+        let target = arg_bytes(2, &mut path);
+        match target {
+            ArgStatus::Copied(size) => {
+                arm64 = word(&path, 0, size, &arm);
+                if !arm64 && !word(&path, 0, size, &intel) { return Input::Failed(64); }
+            },
+            ArgStatus::TooSmall(required) => { return Input::Failed(64); },
+            ArgStatus::Missing => { return Input::Failed(64); },
+            ArgStatus::TooLong => { return Input::Failed(64); },
+        }
+    }
     let status = arg_bytes(1, &mut path);
     match status {
         ArgStatus::Copied(copied_size) => { truncate(&mut path, copied_size); },
@@ -40,7 +56,7 @@ pub fn load() -> Input {
     }
     let input = load_file(&path, 65536);
     match input {
-        FileInput::Loaded(bytes) => { return Input::Loaded(new_compiler(bytes, path)); },
+        FileInput::Loaded(bytes) => { return Input::Loaded(new_compiler(bytes, path, arm64)); },
         FileInput::Failed(status_code) => { return Input::Failed(status_code); },
     }
 }
@@ -185,7 +201,10 @@ fn write_number(number: i32) -> () {
 }
 
 pub fn report_status(status: i32) -> i32 {
-    if status == 64 { let text = b"error: expected one Oxid source file\n"; write_to(&text, true); }
+    if status == 64 {
+        let text = b"usage: oxid-scalar-compiler <source.ox> [--target=x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu]\n";
+        write_to(&text, true);
+    }
     if status == 66 { let text = b"error: could not read Oxid source\n"; write_to(&text, true); }
     if status == 68 { let text = b"error: compiler resource limit exceeded\n"; write_to(&text, true); }
     if status == 74 { let text = b"error: compiler I/O failed\n"; write_to(&text, true); }

@@ -189,6 +189,7 @@ def source_for(case: dict) -> bytes:
 
 def actual_protocol(compiler: Path, clang: Path, runtime: Path,
                     output: Path, timeout: int) -> list[dict]:
+    target = driver.host_target()
     evidence = output / "actual-protocol"
     evidence.mkdir()
     source = evidence / "valid.ox"
@@ -206,12 +207,24 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
             and sentinel.stat().st_ino == original.st_ino,
             "existing output bytes/inode changed")
 
+    rows = []
+    for selected in (driver.DEFAULT_TARGET, driver.ARM64_TARGET):
+        command = [str(compiler), str(source), f"--target={selected}"]
+        result = run(command, evidence, timeout)
+        driver.module_from_result(result, selected)
+        rows.append(record(evidence, selected, command, result))
+    command = [str(compiler), str(source), "--target=unknown"]
+    result = run(command, evidence, timeout)
+    require(result.returncode == 64 and result.stdout == b"" and result.stderr.startswith(b"usage: "),
+            "unsupported targets must fail before writing LLVM")
+    rows.append(record(evidence, "invalid-target", command, result))
+
     missing = evidence / "absent.ox"
-    missing_command = [str(compiler), str(missing)]
+    missing_command = driver.compiler_command(compiler, missing, target)
     absent = run(missing_command, evidence, timeout)
     require((absent.returncode, absent.stdout, absent.stderr) == (66, b"", INPUT_ERROR),
             "missing input must report its error without LLVM")
-    rows = [record(evidence, "missing-input", missing_command, absent)]
+    rows.append(record(evidence, "missing-input", missing_command, absent))
 
     # This uses the real compiler and real Clang, but an invalid C runtime input
     # deliberately forces linking/compilation failure after accepted LLVM.
@@ -232,7 +245,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     # report success, or terminate with SIGPIPE.
     reader, writer = os.pipe()
     os.close(reader)
-    command = [str(compiler), str(source)]
+    command = driver.compiler_command(compiler, source, target)
     try:
         child = subprocess.Popen(command, cwd=evidence, stdin=subprocess.DEVNULL,
                                  stdout=writer, stderr=subprocess.PIPE, env={})
@@ -245,7 +258,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
 
     too_large = evidence / "too-large.ox"
     too_large.write_bytes(b" " * 65537)
-    large_command = [str(compiler), str(too_large)]
+    large_command = driver.compiler_command(compiler, too_large, target)
     large_result = run(large_command, evidence, timeout)
     require((large_result.returncode, large_result.stdout, large_result.stderr) == (68, b"", RESOURCE_ERROR),
             "input byte limit was not enforced")
@@ -258,7 +271,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     (nested / "outer.ox").write_text("mod inner;\n")
     (nested / "outer").mkdir()
     inner = nested / "outer/inner.ox"
-    command = [str(compiler), str(nested_entry)]
+    command = driver.compiler_command(compiler, nested_entry, target)
     for name, code, position in (
         ("nested-lexical-error", "// 雪\r\n  @\n", b"2:3"),
         ("nested-type-error", "fn read()->i32{\n  return true;\n}\n", b"2:10"),
@@ -391,7 +404,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     ):
         source = evidence / (name + ".ox")
         source.write_text(code, encoding="ascii")
-        command = [str(compiler), str(source)]
+        command = driver.compiler_command(compiler, source, target)
         outcome = run(command, evidence, timeout)
         require((outcome.returncode, outcome.stdout, outcome.stderr) == (68, b"", RESOURCE_ERROR),
                 name + ": oversized input did not fail before emitting LLVM")
@@ -402,7 +415,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
             ("utf8-truncated", b"\xf0\x9f\xa6")):
         source = evidence / (name + ".ox")
         source.write_bytes(b"fn main()->i32{return 42;}\n// " + malformed)
-        command = [str(compiler), str(source)]
+        command = driver.compiler_command(compiler, source, target)
         outcome = run(command, evidence, timeout)
         check_source_rejection(name, outcome, source)
         require(outcome.stderr == os.fsencode(source) + b":2:4" + SOURCE_ERROR,
@@ -413,6 +426,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
 
 def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                    output: Path, timeout: int) -> list[dict]:
+    target = driver.host_target()
     evidence = output / "modules"
     evidence.mkdir()
     cases = (
@@ -536,7 +550,7 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             source_file.parent.mkdir(parents=True, exist_ok=True)
             source_file.write_text(code, encoding="utf-8")
         source = project / "main.ox"
-        command = [str(compiler), str(source)]
+        command = driver.compiler_command(compiler, source, target)
         compiled = run(command, evidence, timeout)
         row = {"name": name, "compiler": record(project, "compiler", command, compiled), "profiles": []}
         require(compiled.returncode == expected, name + ": unexpected module status")
@@ -558,7 +572,7 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             require(compiled.stdout == b"", name + ": rejected modules emitted LLVM")
             rows.append(row)
             continue
-        driver.module_from_result(compiled)
+        driver.module_from_result(compiled, target)
         for profile in ("dev", "release"):
             binary = evidence / f"{name}-{profile}"
             receipt = driver.build(compiler, source, clang, runtime, binary,
@@ -578,6 +592,7 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
 
 
 def verify(args) -> dict:
+    target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
     output = args.output.resolve()
     require(not output.exists(), "evidence directory must be new")
@@ -590,7 +605,7 @@ def verify(args) -> dict:
     require(os.access(compiler, os.X_OK), "copied compiler is not executable")
     clang = args.clang.resolve(strict=True)
     runtime = args.runtime.resolve(strict=True)
-    report = {"status": "running", "self_hosting": False, "cases": [],
+    report = {"status": "running", "self_hosting": False, "target": target, "cases": [],
               "compiler_sha256": hashlib.sha256(compiler.read_bytes()).hexdigest(),
               "runtime_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
               "driver_sha256": hashlib.sha256((ROOT / "build.py").read_bytes()).hexdigest(),
@@ -620,7 +635,7 @@ def verify(args) -> dict:
             row = {"name": case["name"], "kind": case["kind"],
                    "source_sha256": hashlib.sha256(source_bytes).hexdigest(), "profiles": []}
 
-            command = [str(compiler), str(source)]
+            command = driver.compiler_command(compiler, source, target)
             compiled = run(command, work, args.timeout)
             row["compiler"] = record(evidence, "compiler", command, compiled)
             if case["kind"] == "reject":
@@ -634,7 +649,7 @@ def verify(args) -> dict:
                     raise RuntimeError(case["name"] + ": invalid source built")
                 require(not os.path.lexists(rejected_destination), "rejected source published an artifact")
             else:
-                driver.module_from_result(compiled)
+                driver.module_from_result(compiled, target)
                 for profile in ("dev", "release"):
                     binary = deploy / (case["name"] + "-" + profile)
                     receipt = driver.build(compiler, source, clang, runtime, binary,

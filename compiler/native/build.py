@@ -17,7 +17,10 @@ import stat
 import subprocess
 import tempfile
 
-PREFIX = b'; Oxid scalar compiler 1\ntarget triple = "x86_64-unknown-linux-gnu"\n'
+DEFAULT_TARGET = "x86_64-unknown-linux-gnu"
+ARM64_TARGET = "aarch64-unknown-linux-gnu"
+TARGETS = {"x86_64": DEFAULT_TARGET, "AMD64": DEFAULT_TARGET,
+           "aarch64": ARM64_TARGET, "arm64": ARM64_TARGET}
 SUFFIX = b'; Oxid scalar compiler end\n'
 MAX_MODULE_BYTES = 8 * 1024 * 1024
 DEFAULT_RUNTIME = Path(__file__).resolve().with_name("runtime.c")
@@ -32,7 +35,28 @@ def require(condition: bool, message: str) -> None:
         raise BuildError(message)
 
 
-def module_from_result(result: subprocess.CompletedProcess[bytes]) -> bytes:
+def host_target() -> str:
+    target = TARGETS.get(platform.machine())
+    if platform.system() != "Linux" or target is None:
+        raise BuildError("this compiler requires Linux x86-64 or ARM64")
+    return target
+
+
+def module_prefix(target: str) -> bytes:
+    return f'; Oxid scalar compiler 1\ntarget triple = "{target}"\n'.encode("ascii")
+
+
+PREFIX = module_prefix(DEFAULT_TARGET)
+
+
+def compiler_command(compiler: Path, source: Path, target: str) -> list[str]:
+    command = [str(compiler), str(source)]
+    if target != DEFAULT_TARGET:
+        command.append(f"--target={target}")
+    return command
+
+
+def module_from_result(result: subprocess.CompletedProcess[bytes], target: str = DEFAULT_TARGET) -> bytes:
     if result.returncode != 0:
         raw_detail = result.stderr[:8192].decode("utf-8", errors="replace")
         detail = "".join(character if character.isprintable() else " " for character in raw_detail).strip()
@@ -41,8 +65,10 @@ def module_from_result(result: subprocess.CompletedProcess[bytes]) -> bytes:
     require(not result.stderr, "compiler emitted diagnostics on its success path")
     data = result.stdout
     require(0 < len(data) <= MAX_MODULE_BYTES, "compiler output size is invalid")
-    require(data.startswith(PREFIX) and data.endswith(SUFFIX), "incomplete compiler output framing")
-    require(data.count(PREFIX) == 1 and data.count(SUFFIX) == 1, "ambiguous compiler output framing")
+    prefix = module_prefix(target)
+    require(data.startswith(prefix) and data.endswith(SUFFIX), "incomplete compiler output or target mismatch")
+    require(data.count(b"; Oxid scalar compiler 1\n") == 1 and data.count(SUFFIX) == 1,
+            "ambiguous compiler output framing")
     require(all(byte in (9, 10, 13) or 32 <= byte < 127 for byte in data), "non-ASCII compiler output")
     # Never remove a trailing main result, diagnostic line, banner or prefix.
     # LLVM's verifier/Clang must independently accept the exact retained bytes.
@@ -61,8 +87,7 @@ def invoke(command: list[str], timeout: int, cwd: Path,
 
 def build(compiler: Path, source: Path, clang: Path, runtime: Path,
           destination: Path, profile: str, timeout: int = 120, evidence: Path | None = None) -> dict:
-    require(platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"),
-            "this compiler currently targets Linux x86_64")
+    target = host_target()
     compiler = compiler.resolve(strict=True)
     source = source.resolve(strict=True)
     clang = clang.resolve(strict=True)
@@ -76,7 +101,7 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
     require(not os.path.lexists(destination), "output already exists")
     if evidence is not None:
         evidence.mkdir(parents=True, exist_ok=False)
-    result = invoke([str(compiler), str(source)], timeout, source.parent, environment={})
+    result = invoke(compiler_command(compiler, source, target), timeout, source.parent, environment={})
     if evidence is not None:
         (evidence / "compiler.stdout").write_bytes(result.stdout)
         (evidence / "compiler.stderr").write_bytes(result.stderr)
@@ -84,13 +109,13 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
             "command": result.args, "status": result.returncode,
             "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         }, indent=2) + "\n")
-    module = module_from_result(result)
+    module = module_from_result(result, target)
     with tempfile.TemporaryDirectory(prefix=".oxid-scalar-build-", dir=destination.parent) as directory:
         staging = Path(directory)
         module_path = staging / "program.ll"
         binary = staging / "program"
         module_path.write_bytes(module)
-        command = [str(clang), "--no-default-config", "--target=x86_64-unknown-linux-gnu",
+        command = [str(clang), "--no-default-config", f"--target={target}",
                    "-O0" if profile == "dev" else "-O2", "-Werror", "-fuse-ld=lld",
                    str(module_path), str(runtime), "-o", str(binary)]
         linked = invoke(command, timeout, staging)
@@ -120,7 +145,7 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
             os.fsync(directory_fd)
         finally:
             os.close(directory_fd)
-    return {"output": str(destination), "sha256": digest, "profile": profile,
+    return {"output": str(destination), "sha256": digest, "profile": profile, "target": target,
             "module_sha256": hashlib.sha256(module).hexdigest(),
             "compiler_sha256": hashlib.sha256(compiler.read_bytes()).hexdigest(),
             "runtime_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),

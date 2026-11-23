@@ -753,6 +753,11 @@ pub fn finish_function(c: &mut Compiler, function: i32) -> () {
     return;
 }
 fn preamble_text_0_0(c: &mut Compiler) -> () {
+    if c.target_arm64 {
+        let text = b"; Oxid scalar compiler 1\ntarget triple = \"aarch64-unknown-linux-gnu\"\n";
+        append(&mut *c, 0, &text);
+        return;
+    }
     let text = b"; Oxid scalar compiler 1\ntarget triple = \"x86_64-unknown-linux-gnu\"\n";
     append(&mut *c, 0, &text);
     return;

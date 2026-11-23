@@ -52,10 +52,11 @@ pub struct Compiler {
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
     pub cursor: i32, pub current: i32, pub main: i32,
     pub next_value: i32, pub next_label: i32, pub next_slot: i32,
+    pub target_arm64: bool,
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
 
-pub fn new_compiler(source: ByteBuf, source_path: ByteBuf) -> Compiler {
+pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool) -> Compiler {
     return Compiler {
         source: source, source_path: source_path, literals: bytes_new(), sources: new::<SourceModule>(), imports: new::<Import>(),
         tokens: new::<Token>(), params: new::<Parameter>(),
@@ -64,7 +65,8 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf) -> Compiler {
         loop_move_floor: 0, call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
-        next_slot: 0, live: true, terminated: false, error: 0, error_start: 0, error_module: 0
+        next_slot: 0, target_arm64: target_arm64,
+        live: true, terminated: false, error: 0, error_start: 0, error_module: 0
     };
 }
 
