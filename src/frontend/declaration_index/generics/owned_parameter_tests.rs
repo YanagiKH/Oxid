@@ -93,7 +93,7 @@ fn borrowed_owned_parameter_unused_source_has_no_executable_identity() {
         .is_err());
     assert!(Element::checked(opaque.value(), nominals, at).is_err());
     assert!(index
-        .candidate_borrowed_element(opaque.value(), nominals, &WorkMeter::default(), at)
+        .candidate_deferred_element(opaque.value(), nominals, &WorkMeter::default(), at)
         .is_err());
     assert!(opaque.borrowed(at).is_err());
     let forged = owned::Function::record(owned::Operation::PushReserved, RecordId(0)).unwrap();
@@ -117,7 +117,6 @@ fn borrowed_owned_parameter_unused_definitions_still_prove_affine_operations() {
         "fn count<T:Copy>(v:&[T])->i32{return v.len();}fn bad<T>(v:&mut Vec<T>)->i32{return count(&*v[0..0]);}",
         "fn bad<T>(v:&Vec<T>,x:T)->(){push_reserved(&mut *v,x);return;}",
         "fn bad<T>(v:&mut Vec<T>,x:T)->(){while true{push_reserved(&mut *v,x);}return;}",
-        "fn bad<T>()->(){let v=new::<T>();return;}",
         "fn bad<T>(v:&[T])->(){return;}",
         "struct Packet<T>{value:T}fn bad<T>(v:&mut Vec<Packet<T>>)->(){return;}",
         "fn bad<T>(v:&mut Vec<Vec<T>>)->(){return;}",
@@ -137,6 +136,8 @@ fn function_owned_vector_parameters_and_results_remain_abstract_until_substituti
         "fn pass<T>(v:Vec<T>)->Vec<T>{return v;}",
         "fn detach<T>(v:&mut Vec<T>)->Vec<T>{return take(&mut *v);}",
         "fn discard<T>(v:Vec<T>)->(){return;}",
+        "fn empty<T>()->Vec<T>{return new::<T>();}",
+        "fn unused<T>()->(){let values=new::<T>();return;}",
     ] {
         let fixture = Fixture::new(&format!(
             "{IMPORTS}{declaration}fn main()->i32{{return 0;}}"
@@ -179,7 +180,7 @@ fn function_owned_vector_values_reject_duplicate_moves_loans_and_unsupported_pos
         "fn bad<T>(v:Vec<T>)->Vec<Vec<T>>{return v;}",
         "struct Holder<T>{values:Vec<T>}fn bad<T>(v:Vec<T>)->(){return;}",
         "enum Holder<T>{Values(Vec<T>)}fn bad<T>(v:Vec<T>)->(){return;}",
-        "fn bad<T>(v:Vec<T>)->Vec<T>{return new::<T>();}",
+        "fn bad<T,U>(v:Vec<T>)->Vec<T>{return new::<U>();}",
     ] {
         let fixture = Fixture::new(&format!(
             "{IMPORTS}{declaration}fn main()->i32{{return 0;}}"

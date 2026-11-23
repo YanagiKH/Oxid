@@ -3608,10 +3608,14 @@ impl<'a, 's> Walker<'a, 's> {
         }
         let mut element = if let Some(types) = explicit {
             let value = self.ty(types[0])?.value(types[0].span)?;
-            Some(
+            let origin = types[0].span;
+            let element = if operation == vector::Operation::New {
                 self.index
-                    .candidate_element(value, self.nominals, types[0].span)?,
-            )
+                    .candidate_deferred_element(value, self.nominals, self.work, origin)?
+            } else {
+                self.index.candidate_element(value, self.nominals, origin)?
+            };
+            Some(element)
         } else {
             None
         };
