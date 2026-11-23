@@ -697,6 +697,31 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "struct Pair{first:Chunk,second:Chunk}"
                        "struct Batch{a:Pair,b:Pair,c:Pair}fn main()->i32{return 42;}",
         }),
+        ("empty-owned-struct-transfers", 0, True, {
+            "main.ox": "struct Empty{}struct Pair{a:Empty,b:Empty}"
+                       "fn take(value:Empty)->i32{let Empty{}=value;return 21;}"
+                       "fn main()->i32{let pair=Pair{a:Empty{},b:Empty{}};"
+                       "let Pair{a:first,b:second}=pair;return take(first)+take(second);}",
+        }),
+        ("empty-copy-struct-retains-identity", 0, True, {
+            "main.ox": "mod data;use crate::data::Marker;"
+                       "fn main()->i32{let mark=Marker{};return crate::data::count(mark)+crate::data::count(mark);}",
+            "data.ox": "#[derive(Copy)]pub struct Marker{}"
+                       "pub fn count(marker:Marker)->i32{let Marker{}=marker;return 21;}",
+        }),
+        ("empty-struct-as-enum-payload", 0, True, {
+            "main.ox": "struct Empty{}enum Choice{None,Some(Empty)}"
+                       "fn main()->i32{let result=Choice::Some(Empty{});"
+                       "match result{Choice::None=>{return 0;},Choice::Some(item)=>{let Empty{}=item;return 42;},}}",
+        }),
+        ("empty-struct-is-still-owned", 65, True, {
+            "main.ox": "struct Empty{}fn main()->i32{let value=Empty{};"
+                       "let Empty{}=value;let Empty{}=value;return 42;}",
+        }),
+        ("empty-struct-types-are-distinct", 65, True, {
+            "main.ox": "struct First{}struct Second{}"
+                       "fn number(mark:First)->i32{return 42;}fn main()->i32{return number(Second{});}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",

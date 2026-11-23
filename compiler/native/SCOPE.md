@@ -80,7 +80,7 @@ Declare `#[derive(Copy)] struct Point { x: i32, y: i32 }` to group scalar
 fields. Construct it with `Point { y: 2, x: 40 }` and read a field with
 `point.x`. Use a `mut` binding to replace a field. Copies and function
 arguments hold independent values. These structs are private to their
-module by default and have 1–64 fields of type `i32`, `i64`, `u8`, `u32`,
+module by default and have up to 64 fields of type `i32`, `i64`, `u8`, `u32`,
 `bool` or `char`. Declare `pub struct` to use a record in another module.
 Refer to it by its `crate::module::Type` path or import it with `use`.
 Declare fields with `pub` to allow other modules to read, write or initialize them.
@@ -94,6 +94,8 @@ Struct fields can use earlier declared struct types. For example, use
 `struct Batch { item: Row }`, then `let Batch { item: row } = batch;` to take
 the nested value. Construction accepts up to eight levels of struct nesting.
 All nested fields of a `Copy` struct must also be `Copy`.
+Use `struct Empty {}` for a type with zero fields. Construct it with `Empty {}`
+and consume an owned value with `let Empty {} = value;`.
 
 Use `row: &Row` to read scalar fields during a call. Use `row: &mut Row` to
 change those fields. Pass `&row` or `&mut row` from the owner, or pass `&*row`
