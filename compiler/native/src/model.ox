@@ -175,6 +175,16 @@ pub fn slice_type(element: i32, exclusive: bool) -> i32 {
 pub fn is_mutable_slice(ty: i32) -> bool { return ty > 9010 && ty <= 9017; }
 pub fn is_slice(ty: i32) -> bool { return (ty > 9000 && ty <= 9007) || is_mutable_slice(ty); }
 pub fn slice_element(ty: i32) -> i32 { return ty % 10; }
+pub fn record_reference(ty: i32, exclusive: bool) -> i32 {
+    let index = record_index(ty);
+    if exclusive { return 9228 + index; }
+    return 9100 + index;
+}
+pub fn is_record_reference(ty: i32) -> bool { return ty >= 9100 && ty < 9356; }
+pub fn is_mutable_record_reference(ty: i32) -> bool { return ty >= 9228 && ty < 9356; }
+pub fn referent_record(ty: i32) -> i32 {
+    return record_type((ty - 9100) % 128);
+}
 
 pub fn record(c: &Compiler, source_module: i32, name: i32) -> i32 {
     let mut index = 0;

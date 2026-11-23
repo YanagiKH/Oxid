@@ -90,6 +90,12 @@ arrays in an owned value. Passing or assigning the value moves it. Use
 `let Row { id: row_id, bytes: data } = row;` to take all its fields. To replace
 an array field, assign a new value to the whole mutable struct.
 
+Use `row: &Row` to read scalar fields during a call. Use `row: &mut Row` to
+change those fields. Pass `&row` or `&mut row` from the owner, or pass `&*row`
+and `&mut *row` from a borrowed parameter. The same struct can fill multiple
+shared parameters in one call. An exclusive borrow reserves the owner until
+the call returns.
+
 Declare `enum Value { Empty, Count(i64) }` and construct `Value::Count(42i64)`.
 A variant can carry one scalar, fixed array or struct declared above the enum.
 Match a binding and give one arm for each variant.

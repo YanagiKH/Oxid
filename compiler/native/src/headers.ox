@@ -29,6 +29,9 @@ use crate::model::is_record;
 use crate::model::record_field;
 use crate::model::record_visible;
 use crate::model::record_index;
+use crate::model::record_reference;
+use crate::model::is_record_reference;
+use crate::model::referent_record;
 use alloc::vec::len;
 use alloc::vec::try_push;
 
@@ -51,6 +54,13 @@ pub fn ty(c: &mut Compiler, source_module: i32) -> i32 {
         expect(&mut *c, 65);
         let exclusive = kind(&*c) == 5;
         if exclusive { expect(&mut *c, 5); }
+        if kind(&*c) != 51 {
+            let target = named_type(&mut *c, source_module);
+            if !is_record(target) { return 0; }
+            let row = c.records[record_index(target)];
+            if row.tagged { fail(&mut *c); return 0; }
+            return record_reference(target, exclusive);
+        }
         expect(&mut *c, 51);
         let element = scalar_type(kind(&*c));
         if element == 0 { fail(&mut *c); return 0; }
@@ -71,6 +81,11 @@ pub fn ty(c: &mut Compiler, source_module: i32) -> i32 {
         let count = 0i64 - length.value;
         return array_type(element, count.to_i32_checked());
     }
+    return named_type(&mut *c, source_module);
+}
+
+fn named_type(c: &mut Compiler, source_module: i32) -> i32 {
+    let k = kind(&*c);
     if k == 44 {
         let first = c.cursor + 2;
         let name = path_name(&mut *c);
@@ -161,7 +176,7 @@ fn collect_enum(c: &mut Compiler, source_module: i32) -> () {
             expect(&mut *c, 20);
             payload = ty(&mut *c, source_module);
             expect(&mut *c, 21);
-            if payload == 3 || is_slice(payload) { fail(&mut *c); return; }
+            if payload == 3 || is_slice(payload) || is_record_reference(payload) { fail(&mut *c); return; }
             if is_record(payload) {
                 let nested = c.records[crate::model::record_index(payload)];
                 if nested.tagged { fail(&mut *c); return; }
@@ -297,8 +312,10 @@ fn collect_function(c: &mut Compiler, source_module: i32, public: bool) -> () {
         expect(&mut *c, 1);
         expect(&mut *c, 24);
         let parameter_type = ty(&mut *c, source_module);
-        if public && is_record(parameter_type) {
-            let selected = c.records[record_index(parameter_type)];
+        let mut exposed_type = parameter_type;
+        if is_record_reference(parameter_type) { exposed_type = referent_record(parameter_type); }
+        if public && is_record(exposed_type) {
+            let selected = c.records[record_index(exposed_type)];
             if !selected.public { fail(&mut *c); return; }
         }
         let mut i = first;
@@ -316,7 +333,7 @@ fn collect_function(c: &mut Compiler, source_module: i32, public: bool) -> () {
     expect(&mut *c, 21);
     expect(&mut *c, 27);
     let result = ty(&mut *c, source_module);
-    if is_slice(result) { fail(&mut *c); return; }
+    if is_slice(result) || is_record_reference(result) { fail(&mut *c); return; }
     if public && is_record(result) {
         let selected = c.records[record_index(result)];
         if !selected.public { fail(&mut *c); return; }
