@@ -2,8 +2,8 @@
 
 Use Oxid's typed mode to check code, test local packages and build native
 executables. Native project builds target Linux and macOS on x86_64 and ARM64.
-Windows MSVC x64 supports bounded scalar process entry and binary file I/O in
-result programs.
+Windows MSVC x64 supports bounded process entry with binary streams and binary
+file I/O in result programs.
 Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
 Oxid selects that host's native target automatically.
 
@@ -177,7 +177,7 @@ smoke = "tests/smoke.ox"
 A process entry is `fn main() -> i32`; return zero for success.
 `reproducible = true` uses project-relative paths in native error messages.
 
-On Linux and macOS, use `std::io::write_stderr(&bytes)` to write messages to
+Use `std::io::write_stderr(&bytes)` to write messages to
 standard error. It returns `WriteSomeStatus::Written(count)` or
 `WriteSomeStatus::Error(code)`. Handle short writes by passing the remaining
 bytes in the next call. `std::io::write_some` writes to standard output.

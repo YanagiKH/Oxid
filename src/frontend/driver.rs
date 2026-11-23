@@ -1736,7 +1736,8 @@ fn process_compile_loaded(
 ) -> i32 {
     let result = (|| {
         let verified = executable?;
-        super::windows_native::preflight(project, None).map_err(|error| vec![*error])?;
+        super::windows_native::preflight_checked(project, &verified, true, None)
+            .map_err(|error| vec![*error])?;
         let module = verified.native_process_module().map_err(|e| vec![*e])?;
         let output = output.expect("compile route validates output");
         super::native::compile(&module, output).map_err(|e| vec![*e])?;

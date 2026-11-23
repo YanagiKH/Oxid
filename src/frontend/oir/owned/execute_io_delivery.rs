@@ -33,7 +33,16 @@ struct ControlCarriers {
     release_loan: LoanRuntime,
 }
 pub(in super::super) fn control_bytes() -> usize {
-    size_of::<ControlCarriers>()
+    let bytes = size_of::<ControlCarriers>();
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    let bytes = bytes + super::super::process::windows_io::control_bytes();
+    bytes
 }
 
 #[allow(dead_code)]
