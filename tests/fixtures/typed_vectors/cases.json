@@ -162,7 +162,7 @@
     {
       "name": "unused_unconstrained_generic",
       "source": "tests/fixtures/typed_vectors/reject/unused_unconstrained_generic.ox",
-      "sha256": "8e40ebf8d67d080cf9ec3d37da9129781a328936ccb056d2e74a1adf572c721f",
+      "sha256": "0e20614396792fa4034ad8f21f1e0426437237ad1d07a4779dbe1cf6a6001060",
       "status": "reject",
       "requirement": "validate unused generic definitions",
       "expected_diagnostics": [

@@ -22,6 +22,7 @@ const WINDOWS_SCALAR: bool = cfg!(all(
     target_endian = "little"
 ));
 const TERMINAL: bool = QUALIFIED
+    || WINDOWS_SCALAR
     || cfg!(all(
         target_os = "macos",
         target_pointer_width = "64",

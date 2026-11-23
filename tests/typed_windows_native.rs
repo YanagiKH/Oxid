@@ -482,10 +482,10 @@ fn the_pure_test_adapter_cannot_be_selected_by_forged_general_run_options() {
         );
         fixture.clean();
     }
-    // A general process run keeps its unchanged unsupported-host behavior.
-    fs::write(fixture.0.join("main.ox"), "fn main()->i32{return 0;}").unwrap();
+    // A normal process run selects the program entry, not the declared test.
+    fs::write(fixture.0.join("main.ox"), "fn main()->i32{return 42;}").unwrap();
     let output = fixture.invoke(&["run", "--entry-mode=process"]);
-    assert_eq!(output.status.code(), Some(74), "{output:?}");
+    assert_eq!(output.status.code(), Some(42), "{output:?}");
     assert!(
         output.stdout.is_empty() && output.stderr.is_empty(),
         "{output:?}"
