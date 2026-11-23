@@ -608,6 +608,40 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "fn main()->i32{let row=crate::data::open();return read(&row);}",
             "data.ox": "pub struct Row{hidden:i32}pub fn open()->Row{return Row{hidden:42};}",
         }),
+        ("disjoint-array-field-borrows", 0, True, {
+            "main.ox": "struct Pair{left:[i32;2],number:i32,right:[i32;2]}"
+                       "fn write(left:&mut [i32],right:&mut [i32],amount:i32)->i32{"
+                       "left[0]=left[0]+amount;right[0]=right[0]+1;return left[0]+right[0];}"
+                       "fn main()->i32{let mut row=Pair{left:[0,10],number:20,right:[11,0]};"
+                       "return write(&mut row.left[1..2],&mut row.right[0..1],row.number);}",
+        }),
+        ("array-field-through-borrowed-record", 0, True, {
+            "main.ox": "mod rows;fn main()->i32{return crate::rows::answer();}",
+            "rows.ox": "struct Row{before:i64,values:[i32;3],after:bool}"
+                       "fn write(values:&mut [i32])->(){values[0]=42;return;}"
+                       "fn first(values:&[i32])->i32{return values[0];}"
+                       "fn update(row:&mut Row)->(){write(&mut *row.values[1..2]);return;}"
+                       "fn read(row:&Row)->i32{return first(&*row.values[1..3]);}"
+                       "pub fn answer()->i32{let mut row=Row{before:11i64,values:[3,2,1],after:true};"
+                       "update(&mut row);if row.before!=11i64||!row.after{return 0;}return read(&row);}",
+        }),
+        ("overlapping-array-field-borrows", 65, True, {
+            "main.ox": "struct Pair{left:[i32;2],right:[i32;2]}"
+                       "fn total(a:&mut [i32],b:&[i32])->i32{return a[0]+b[0];}"
+                       "fn main()->i32{let mut row=Pair{left:[21,0],right:[0,21]};"
+                       "return total(&mut row.left[0..1],&row.left);}",
+        }),
+        ("array-field-borrow-overlaps-record", 65, True, {
+            "main.ox": "struct Row{values:[i32;1],number:i32}"
+                       "fn total(values:&mut [i32],row:&Row)->i32{return values[0]+row.number;}"
+                       "fn main()->i32{let mut row=Row{values:[21],number:21};"
+                       "return total(&mut row.values,&row);}",
+        }),
+        ("private-array-field-borrow", 65, True, {
+            "main.ox": "mod rows;fn first(values:&[i32])->i32{return values[0];}"
+                       "fn main()->i32{let row=crate::rows::open();return first(&row.values);}",
+            "rows.ox": "pub struct Row{values:[i32;1]}pub fn open()->Row{return Row{values:[42]};}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
