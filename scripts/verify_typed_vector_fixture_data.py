@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 MANIFEST = "tests/fixtures/typed_vectors/cases.json"
-MANIFEST_SHA256 = "d9cb2529ff4f7ba5735afdc7655e468fee34d7832b03d6549d6980059f684317"
+MANIFEST_SHA256 = "b3259f97593d8c56d854fd5a19682d7125884e2a64ff93f295200d5f6000296f"
 ACCEPTED = (
     "bool", "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64",
     "u128", "isize", "usize", "char", "f32", "f64", "unit",

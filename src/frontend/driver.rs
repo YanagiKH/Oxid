@@ -1553,11 +1553,11 @@ fn process_file_with_lexical(
     if process_run && !oir::process::setup() {
         return 74;
     }
-    if entry_policy == EntryPolicy::Process && !oir::process::supported_host() {
+    if entry_policy == EntryPolicy::Process && !oir::process::entry_supported_host() {
         let diagnostic = *Diagnostic::new(
             "E0608",
             "oir-run",
-            "process execution requires Linux or macOS on x86_64 or ARM64",
+            "process execution supports Linux and macOS on x86_64 or ARM64, and Windows MSVC x64",
             None,
         );
         return if process_run {
@@ -1736,7 +1736,7 @@ fn process_compile_loaded(
 ) -> i32 {
     let result = (|| {
         let verified = executable?;
-        super::windows_native::preflight(project, true, None).map_err(|error| vec![*error])?;
+        super::windows_native::preflight(project, None).map_err(|error| vec![*error])?;
         let module = verified.native_process_module().map_err(|e| vec![*e])?;
         let output = output.expect("compile route validates output");
         super::native::compile(&module, output).map_err(|e| vec![*e])?;

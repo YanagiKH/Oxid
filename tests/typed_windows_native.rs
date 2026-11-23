@@ -9,7 +9,7 @@
 use std::{
     fs,
     path::PathBuf,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -108,7 +108,19 @@ fn unsupported_execution_and_debug_settings_do_not_create_managed_outputs() {
         ]));
         fixture.clean();
     }
-    let fixture = Fixture::new("fn main()->i32{return 0;}");
+}
+
+#[test]
+fn scalar_process_entry_runs_and_reaches_native_tool_selection() {
+    let fixture = Fixture::new("fn main()->i32{return 42;}");
+    let run = fixture.invoke(&[
+        "run",
+        "main.ox",
+        "--edition=typed-preview",
+        "--entry-mode=process",
+    ]);
+    assert_eq!(run.status.code(), Some(42), "{run:?}");
+    assert!(run.stdout.is_empty() && run.stderr.is_empty(), "{run:?}");
     let output = fixture.invoke(&[
         "compile",
         "main.ox",
@@ -121,13 +133,7 @@ fn unsupported_execution_and_debug_settings_do_not_create_managed_outputs() {
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
     let text = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        text.contains("\"code\":\"E0608\",\"stage\":\"oir-run\"")
-            && text.contains(
-                "\"message\":\"process execution requires Linux or macOS on x86_64 or ARM64\""
-            ),
-        "{text}"
-    );
+    assert!(text.contains("\"code\":\"E0701\""), "{text}");
     assert!(
         text.contains(
             "\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null"
@@ -135,10 +141,88 @@ fn unsupported_execution_and_debug_settings_do_not_create_managed_outputs() {
         "{text}"
     );
     assert!(
-        !text.contains("E0700") && !text.contains("E0701") && !text.contains("E0500"),
+        !text.contains("E0700") && !text.contains("E0608") && !text.contains("E0500"),
         "{text}"
     );
     fixture.clean();
+}
+
+#[test]
+#[ignore = "requires the Windows MSVC x64 LLVM 19.1.7 toolchain"]
+fn windows_native_process_entry_retains_status_and_stderr_after_relocation() {
+    fn check_process(output: Output, status: i32, diagnostic: &str) {
+        assert_eq!(output.status.code(), Some(status), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        if diagnostic.is_empty() {
+            assert!(output.stderr.is_empty(), "{output:?}");
+        } else {
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains(diagnostic),
+                "{output:?}"
+            );
+        }
+    }
+
+    for profile in ["dev", "release"] {
+        for (source, status, diagnostic) in [
+            ("fn main()->i32{return 42;}", 42, ""),
+            (
+                "fn main()->i32{return 256;}",
+                1,
+                "process main must return a status in 0..255",
+            ),
+            ("fn main()->i32{let n=0;return 7/n;}", 1, "division by zero"),
+        ] {
+            let fixture = Fixture::new(source);
+            let arguments = [
+                "run",
+                "main.ox",
+                "--edition=typed-preview",
+                "--entry-mode=process",
+            ];
+            check_process(fixture.invoke(&arguments), status, diagnostic);
+            if !diagnostic.is_empty() {
+                let (read, write) = std::io::pipe().unwrap();
+                drop(read);
+                let failed = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                    .current_dir(&fixture.0)
+                    .args(arguments)
+                    .stderr(Stdio::from(write))
+                    .output()
+                    .unwrap();
+                check_process(failed, 74, "");
+            }
+
+            fs::write(fixture.0.join("oxid.toml"), "[project]\nname=\"process-test\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"process\"\n").unwrap();
+            let built = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .current_dir(&fixture.0)
+                .args(["build", "--profile", profile])
+                .output()
+                .unwrap();
+            assert!(built.status.success(), "{built:?}");
+            let original = fixture.0.join(".oxid/bin/process-test.exe");
+            let deployment = fixture.0.join("relocated.exe");
+            fs::rename(original, &deployment).unwrap();
+            fs::remove_file(fixture.0.join("main.ox")).unwrap();
+            fs::remove_file(fixture.0.join("oxid.toml")).unwrap();
+            fs::remove_dir_all(fixture.0.join(".oxid")).unwrap();
+            let native = Command::new(&deployment)
+                .current_dir(&fixture.0)
+                .output()
+                .unwrap();
+            check_process(native, status, diagnostic);
+            if !diagnostic.is_empty() {
+                let (read, write) = std::io::pipe().unwrap();
+                drop(read);
+                let failed = Command::new(&deployment)
+                    .current_dir(&fixture.0)
+                    .stderr(Stdio::from(write))
+                    .output()
+                    .unwrap();
+                check_process(failed, 74, "");
+            }
+        }
+    }
 }
 
 #[test]
@@ -398,10 +482,10 @@ fn the_pure_test_adapter_cannot_be_selected_by_forged_general_run_options() {
         );
         fixture.clean();
     }
-    // A general process run keeps its unchanged unsupported-host behavior.
-    fs::write(fixture.0.join("main.ox"), "fn main()->i32{return 0;}").unwrap();
+    // A normal process run selects the program entry, not the declared test.
+    fs::write(fixture.0.join("main.ox"), "fn main()->i32{return 42;}").unwrap();
     let output = fixture.invoke(&["run", "--entry-mode=process"]);
-    assert_eq!(output.status.code(), Some(74), "{output:?}");
+    assert_eq!(output.status.code(), Some(42), "{output:?}");
     assert!(
         output.stdout.is_empty() && output.stderr.is_empty(),
         "{output:?}"
