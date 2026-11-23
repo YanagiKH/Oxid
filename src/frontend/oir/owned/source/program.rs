@@ -363,6 +363,13 @@ impl SourceProgram {
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }
 
+    pub(in crate::frontend::oir) fn windows_arguments_candidate(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        [Function::ArgCount, Function::ArgBytes]
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation).is_some())
+    }
+
     /// Tests may vary presentation paths while retaining the ordinary owned
     /// source producer and verifier. No new production witness access exists.
     #[cfg(test)]

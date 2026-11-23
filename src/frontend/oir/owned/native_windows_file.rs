@@ -2,6 +2,15 @@
 use super::*;
 use crate::frontend::builtin_catalog::{experimental, termination, BuiltinSet};
 
+const STATUS_ENUMS: [experimental::Enumeration; 5] = [
+    experimental::Enumeration::Read,
+    experimental::Enumeration::Write,
+    experimental::Enumeration::Open,
+    experimental::Enumeration::File,
+    experimental::Enumeration::Arguments,
+];
+type StatusEnums = [Option<EnumId>; STATUS_ENUMS.len()];
+
 #[allow(dead_code)]
 struct ControlCarriers {
     witness: &'static RawOwnedProgram,
@@ -20,15 +29,17 @@ struct ControlCarriers {
     selected_reference: &'static ReferenceDecl,
     enum_iterator: std::slice::Iter<'static, RawEnumDecl>,
     selected_enum: &'static RawEnumDecl,
-    allowed_enumerations: [Option<EnumId>; 4],
+    allowed_enumerations: StatusEnums,
     enumeration_rank: Option<usize>,
     enumeration_base: Option<usize>,
     enumeration_index: Option<usize>,
-    enumeration_iterator: std::iter::Enumerate<std::array::IntoIter<experimental::Enumeration, 4>>,
+    enumeration_iterator: std::iter::Enumerate<
+        std::array::IntoIter<experimental::Enumeration, { STATUS_ENUMS.len() }>,
+    >,
     selected_enumeration: (usize, experimental::Enumeration),
-    enumeration_argument: &'static [Option<EnumId>; 4],
+    enumeration_argument: &'static StatusEnums,
     enum_identity: EnumId,
-    enum_comparisons: [Option<EnumId>; 4],
+    enum_comparisons: StatusEnums,
     operation_iterator:
         std::array::IntoIter<experimental::Function, { experimental::Function::ALL.len() }>,
     operation: experimental::Function,
@@ -70,7 +81,8 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
     let mut has_byte_io = false;
     for operation in experimental::Function::ALL {
         if witness.experimental_function(operation).is_some() {
-            if !operation.is_file() && !operation.is_binary_delivery() {
+            if !operation.is_file() && !operation.is_binary_delivery() && !operation.is_arguments()
+            {
                 return false;
             }
             has_byte_io = true;
@@ -79,16 +91,8 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
     if !has_byte_io && (time.is_empty() || !raw.enums.is_empty()) {
         return false;
     }
-    let mut enumerations = [None; 4];
-    for (position, item) in [
-        experimental::Enumeration::Read,
-        experimental::Enumeration::Write,
-        experimental::Enumeration::Open,
-        experimental::Enumeration::File,
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    let mut enumerations = [None; STATUS_ENUMS.len()];
+    for (position, item) in STATUS_ENUMS.into_iter().enumerate() {
         if let Some(rank) = raw.builtins.experimental_enum_rank(item) {
             let Some(base) = raw.enums.len().checked_sub(raw.builtins.extra_enums()) else {
                 return false;
@@ -136,7 +140,7 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
     }
     true
 }
-fn aggregate(ty: AggregateTy, enumerations: &[Option<EnumId>; 4]) -> bool {
+fn aggregate(ty: AggregateTy, enumerations: &StatusEnums) -> bool {
     match ty {
         AggregateTy::File => true,
         AggregateTy::FixedArray(array) => array.element() == hir::Ty::U8,
@@ -144,11 +148,12 @@ fn aggregate(ty: AggregateTy, enumerations: &[Option<EnumId>; 4]) -> bool {
         _ => false,
     }
 }
-fn canonical_enum(id: EnumId, allowed: &[Option<EnumId>; 4]) -> bool {
+fn canonical_enum(id: EnumId, allowed: &StatusEnums) -> bool {
     Some(id) == allowed[0]
         || Some(id) == allowed[1]
         || Some(id) == allowed[2]
         || Some(id) == allowed[3]
+        || Some(id) == allowed[4]
 }
 fn scalar(ty: hir::Ty, has_byte_io: bool) -> bool {
     matches!(
@@ -170,6 +175,14 @@ mod tests {
             "{API}fn main()->i32{{let bytes=b\"bytes\";if bytes[0]==98u8{{return 42;}}return 0;}}"
         ));
         assert!(allowed(&accepted.witness, accepted.entry));
+        let arguments = checked_enum_project(
+            "use std::env::arg_count;use std::env::arg_bytes;use std::env::ArgStatus;\
+            fn main()->i32{let mut bytes=b\"xxx\";let value=arg_bytes(1,&mut bytes);\
+            match value{ArgStatus::Copied(n)=>{return n+arg_count();},\
+            ArgStatus::TooSmall(n)=>{return 0;},ArgStatus::Missing=>{return 0;},\
+            ArgStatus::TooLong=>{return 0;}}}",
+        );
+        assert!(allowed(&arguments.witness, arguments.entry));
         for declaration in [
             "struct Other{value:i32}",
             "enum Other{Value}",

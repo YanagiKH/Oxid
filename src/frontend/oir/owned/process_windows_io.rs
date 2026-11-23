@@ -19,7 +19,7 @@ unsafe extern "system" {
     fn GetLastError() -> u32;
     fn ReadFile(
         handle: Handle,
-        data: *mut c_void,
+        data: *mut u8,
         length: u32,
         read: *mut u32,
         overlapped: *mut c_void,
@@ -40,7 +40,7 @@ struct ControlCarriers {
     stream: u32,
     handle: Handle,
     selected_handle: Result<Handle, i32>,
-    read_args: (Handle, *mut c_void, u32, *mut u32, *mut c_void),
+    read_args: (Handle, *mut u8, u32, *mut u32, *mut c_void),
     write_args: (Handle, *const c_void, u32, *mut u32, *mut c_void),
     extent: u32,
     transferred: u32,
@@ -80,7 +80,7 @@ pub(in crate::frontend::oir::owned) fn read(bytes: &mut [u8]) -> Result<usize, i
     let ok = unsafe {
         ReadFile(
             handle,
-            bytes.as_mut_ptr().cast(),
+            bytes.as_mut_ptr(),
             length,
             &mut count,
             std::ptr::null_mut(),
