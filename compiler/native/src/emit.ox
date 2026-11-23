@@ -12,7 +12,7 @@ use crate::model::array_bytes;
 use crate::model::is_slice;
 use crate::model::slice_element;
 use crate::model::is_record_reference;
-use crate::model::referent_record;
+use crate::model::record_value_type;
 use crate::model::code;
 use crate::model::is_record;
 use crate::model::record_index;
@@ -481,26 +481,41 @@ pub fn borrow_record(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
 }
 
 fn record_field_address(c: &mut Compiler, binding: Binding, field: i32) -> i32 {
-    let base = load(&mut *c, binding.slot, binding.ty);
+    let borrowed = is_record_reference(binding.ty);
+    let mut base = binding.slot;
+    if borrowed {
+        let address = load(&mut *c, binding.slot, binding.ty);
+        base = address.id;
+    }
     let name = b"  %v";
     let address = b" = getelementptr inbounds ";
-    let pointer_prefix = b", ptr ";
+    let pointer_prefix = b", ptr %v";
+    let slot_prefix = b", ptr %s";
     let ordinal = b", i32 0, i32 ";
     let line = b"\n";
     let pointer = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &address);
-    write_type(&mut *c, 2, referent_record(binding.ty), false); append(&mut *c, 2, &pointer_prefix);
-    operand(&mut *c, 2, base); append(&mut *c, 2, &ordinal);
+    write_type(&mut *c, 2, record_value_type(binding.ty), false);
+    if borrowed { append(&mut *c, 2, &pointer_prefix); }
+    else { append(&mut *c, 2, &slot_prefix); }
+    number(&mut *c, 2, base); append(&mut *c, 2, &ordinal);
     number(&mut *c, 2, field); append(&mut *c, 2, &line);
     return pointer;
 }
 
-pub fn borrowed_field(c: &mut Compiler, binding: Binding, field: i32, ty: i32) -> Value {
+pub fn borrow_array_field(c: &mut Compiler, binding: Binding, field: i32, array: i32, ty: i32) -> Value {
+    let pointer = record_field_address(&mut *c, binding, field);
+    let count = array_count(array);
+    let length = constant(&mut *c, 1, count.to_i64());
+    return slice_value(&mut *c, ty, length, pointer, false);
+}
+
+pub fn load_record_field(c: &mut Compiler, binding: Binding, field: i32, ty: i32) -> Value {
     let pointer = record_field_address(&mut *c, binding, field);
     return load_element(&mut *c, pointer, ty);
 }
 
-pub fn set_borrowed_field(c: &mut Compiler, binding: Binding, field: i32, value: Value) -> () {
+pub fn store_record_field(c: &mut Compiler, binding: Binding, field: i32, value: Value) -> () {
     let pointer = record_field_address(&mut *c, binding, field);
     store_element(&mut *c, pointer, value);
     return;

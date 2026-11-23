@@ -31,7 +31,7 @@ use crate::model::record_visible;
 use crate::model::record_index;
 use crate::model::record_reference;
 use crate::model::is_record_reference;
-use crate::model::referent_record;
+use crate::model::record_value_type;
 use alloc::vec::len;
 use alloc::vec::try_push;
 
@@ -312,8 +312,7 @@ fn collect_function(c: &mut Compiler, source_module: i32, public: bool) -> () {
         expect(&mut *c, 1);
         expect(&mut *c, 24);
         let parameter_type = ty(&mut *c, source_module);
-        let mut exposed_type = parameter_type;
-        if is_record_reference(parameter_type) { exposed_type = referent_record(parameter_type); }
+        let exposed_type = record_value_type(parameter_type);
         if public && is_record(exposed_type) {
             let selected = c.records[record_index(exposed_type)];
             if !selected.public { fail(&mut *c); return; }

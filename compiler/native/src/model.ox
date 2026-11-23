@@ -34,7 +34,7 @@ pub struct Binding {
     pub name: i32, pub ty: i32, pub slot: i32, pub writable: bool, pub available: bool
 }
 #[derive(Copy)]
-pub struct Loan { pub binding: i32, pub exclusive: bool }
+pub struct Loan { pub binding: i32, pub field: i32, pub exclusive: bool }
 #[derive(Copy)]
 pub struct Value { pub ty: i32, pub id: i32 }
 #[derive(Copy)]
@@ -184,6 +184,10 @@ pub fn is_record_reference(ty: i32) -> bool { return ty >= 9100 && ty < 9356; }
 pub fn is_mutable_record_reference(ty: i32) -> bool { return ty >= 9228 && ty < 9356; }
 pub fn referent_record(ty: i32) -> i32 {
     return record_type((ty - 9100) % 128);
+}
+pub fn record_value_type(ty: i32) -> i32 {
+    if is_record_reference(ty) { return referent_record(ty); }
+    return ty;
 }
 
 pub fn record(c: &Compiler, source_module: i32, name: i32) -> i32 {

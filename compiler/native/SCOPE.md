@@ -96,6 +96,11 @@ and `&mut *row` from a borrowed parameter. The same struct can fill multiple
 shared parameters in one call. An exclusive borrow reserves the owner until
 the call returns.
 
+Pass a fixed array field as a slice with `&row.bytes` or a range with
+`&mut row.bytes[start..end]`. A borrowed record can pass its field with
+`&*row.bytes` or `&mut *row.bytes`. Separate fields can be borrowed mutably
+in the same call.
+
 Declare `enum Value { Empty, Count(i64) }` and construct `Value::Count(42i64)`.
 A variant can carry one scalar, fixed array or struct declared above the enum.
 Match a binding and give one arm for each variant.
