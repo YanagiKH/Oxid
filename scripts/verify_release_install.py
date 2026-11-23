@@ -17,6 +17,14 @@ from package_release import PACKAGE_FILES
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PUBLISHED_ARCHIVES = {
+    "0.8.0": {
+        "oxid-linux-x86_64.tar.gz": "ed7b85d9a924e59cc20eddd6e6f1bd3021eeae8bd2a41db2042ede60da906773",
+        "oxid-macos-aarch64.tar.gz": "0072aa3c941da266371d51fd633165166378bb6ec50b34b8b0842ffa91a1c881",
+        "oxid-macos-x86_64.tar.gz": "9da4e0c07bedc485149ab9a5643562ce57ebe9760e14f40e51ee39ef5d5bfdb3",
+        "oxid-windows-x86_64.zip": "4772e3524d10ffeec62df841074149b3b844ae60c410204e5cfabf0ce88e2cf9",
+    },
+}
 
 
 def run(args: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[bytes]:
@@ -137,7 +145,7 @@ def verify(archive: Path, previous: tuple[Path, str] | None = None) -> None:
               "without changes to the existing project or its saved data.")
 
 
-def verify_binary(binary: Path, previous: tuple[Path, str] | None = None) -> None:
+def host_asset() -> str:
     system = {"linux": "linux", "darwin": "macos", "win32": "windows"}.get(sys.platform)
     machine = platform.machine().lower()
     arch = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
@@ -146,10 +154,36 @@ def verify_binary(binary: Path, previous: tuple[Path, str] | None = None) -> Non
     if (system, arch) not in supported:
         raise ValueError(f"no release archive for {sys.platform} {machine}")
     suffix = "zip" if system == "windows" else "tar.gz"
-    asset = f"oxid-{system}-{arch}.{suffix}"
+    return f"oxid-{system}-{arch}.{suffix}"
+
+
+def fetch_previous(work: Path, asset: str, version: str, env: dict[str, str]) -> tuple[Path, str]:
+    expected = PUBLISHED_ARCHIVES[version].get(asset)
+    if expected is None:
+        raise ValueError(f"Oxid {version} has no published archive for {asset}")
+    folder = work / "previous"
+    folder.mkdir()
+    archive = folder / asset
+    curl = "curl.exe" if sys.platform == "win32" else "curl"
+    url = f"https://github.com/YanagiKH/Oxid/releases/download/v{version}/{asset}"
+    run([curl, "--proto", "=https", "--proto-redir", "=https", "--tlsv1.2",
+         "--fail", "--location", "--silent", "--show-error", "--retry", "2",
+         "--retry-max-time", "50", "--connect-timeout", "15", "--max-time", "25",
+         "--max-filesize", "1048576", "--output", str(archive), url], work, env)
+    if archive.stat().st_size > 1048576 or digest(archive) != expected:
+        raise ValueError(f"published archive checksum mismatch for {asset}")
+    archive.with_name(asset + ".sha256").write_bytes(f"{expected}  {asset}\n".encode("ascii"))
+    return archive, version
+
+
+def verify_binary(binary: Path, previous: tuple[Path, str] | None = None,
+                  published_previous: str | None = None) -> None:
+    asset = host_asset()
     env = clean_environment()
     with tempfile.TemporaryDirectory(prefix="oxid-candidate-archive-") as directory:
         work = Path(directory)
+        if published_previous:
+            previous = fetch_previous(work, asset, published_previous, env)
         for relative in PACKAGE_FILES:
             if relative.parts[0] != ".oxid":
                 destination = work / relative
@@ -166,18 +200,22 @@ def main() -> int:
     parser.add_argument("--binary", type=Path, help="build and install an archive from this compiler")
     parser.add_argument("--previous-archive", type=Path, help="older archive with its .sha256 file")
     parser.add_argument("--previous-version", help="version reported by the older compiler")
+    parser.add_argument("--published-previous", choices=sorted(PUBLISHED_ARCHIVES),
+                        help="download and verify a pinned published archive for this host")
     args = parser.parse_args()
     if (args.archive is None) == (args.binary is None):
         parser.error("provide either an archive or --binary")
     if (args.previous_archive is None) != (args.previous_version is None):
         parser.error("provide both --previous-archive and --previous-version")
+    if args.published_previous and (args.binary is None or args.previous_archive is not None):
+        parser.error("--published-previous requires --binary and its own previous archive")
     try:
         previous = ((args.previous_archive.resolve(strict=True), args.previous_version)
                     if args.previous_archive is not None else None)
         if args.binary is None:
             verify(args.archive.resolve(strict=True), previous)
         else:
-            verify_binary(args.binary.resolve(strict=True), previous)
+            verify_binary(args.binary.resolve(strict=True), previous, args.published_previous)
     except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
         print(f"Release installation failed: {error}", file=sys.stderr)
         return 1
