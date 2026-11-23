@@ -7,6 +7,7 @@ use alloc::bytes::ByteBuf;
 use alloc::bytes::new as bytes_new;
 use alloc::bytes::try_push as bytes_push;
 use alloc::bytes::len as bytes_len;
+use alloc::vec::Vec;
 use alloc::vec::new;
 use alloc::vec::len;
 use alloc::vec::capacity;
