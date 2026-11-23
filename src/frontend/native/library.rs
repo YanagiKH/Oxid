@@ -4,14 +4,21 @@ use super::*;
 use crate::frontend::{native_library::Options, project::ProjectSources};
 use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
 use sha2::{Digest, Sha256};
-use std::{fs::File, io::Read, mem::size_of};
+use std::{
+    fs::File,
+    io::{Read, Seek},
+    mem::size_of,
+};
 
-const LIBRARY: &str = if cfg!(target_os = "macos") {
+const LIBRARY: &str = if cfg!(windows) {
+    "oxid_library.dll"
+} else if cfg!(target_os = "macos") {
     "liboxid_library.dylib"
 } else {
     "liboxid_library.so"
 };
 const HEADER: &str = "oxid_library.h";
+const IMPORT_LIBRARY: &str = "oxid_library.lib";
 const EXPORTS: &str = if cfg!(target_os = "macos") {
     "_oxid_library_abi_version\n_oxid_library_call_v1\n"
 } else {
@@ -19,11 +26,16 @@ const EXPORTS: &str = if cfg!(target_os = "macos") {
 };
 const LINK_ARGUMENT_COUNT: usize = if cfg!(target_os = "macos") { 16 } else { 14 };
 
+#[cfg(windows)]
+type PublicationPath = Vec<u16>;
+#[cfg(not(windows))]
+type PublicationPath = std::ffi::CString;
+
 #[allow(dead_code)]
 struct PublicationBank {
     file_buffer: [u8; 8192],
-    hashes: [[u8; 64]; 5],
-    digests: [[u8; 32]; 5],
+    hashes: [[u8; 64]; 6],
+    digests: [[u8; 32]; 6],
     hashers: [Sha256; 2],
     files: [File; 3],
     file_metadata: [fs::Metadata; 3],
@@ -44,7 +56,9 @@ struct PublicationBank {
     workspace: [Workspace; 2],
     target: String,
     linker: OsString,
-    publication_paths: [std::ffi::CString; 2],
+    publication_paths: [PublicationPath; 2],
+    pe_signature: [u8; 26],
+    pe_offset: u64,
     serializer: serde_json::Serializer<&'static mut File>,
     metadata: Metadata<'static>,
     source_row: SourceRow<'static>,
@@ -59,14 +73,45 @@ pub(super) const CONTROL_BYTES: usize = size_of::<PublicationBank>();
 
 pub(in crate::frontend) fn carrier_bytes() -> usize {
     let path = 2 * crate::frontend::project::ProjectLimits::default().relative_bytes;
-    // Ten named PathBuf roles, two copied publication C strings, the linker
+    // Ten named PathBuf roles, two NUL-terminated publication paths, the linker
     // option and target. All IR/header/source bytes are borrowed or streamed.
     CONTROL_BYTES
         + 10 * path
-        + 2 * (path + 1)
+        + 2 * (path + 1) * if cfg!(windows) { 4 } else { 1 }
         + path
         + "--ld-path=".len()
         + 2 * ("--target=".len() + NativeBuildSettings::new(false).target_triple().len())
+}
+
+#[cfg(windows)]
+fn publish(source: &Path, output: &Path) -> Result<(), Box<Diagnostic>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn MoveFileW(source: *const u16, output: *const u16) -> i32;
+    }
+
+    let encode = |path: &Path| {
+        let mut wide = Vec::with_capacity(path.as_os_str().len() + 1);
+        for unit in path.as_os_str().encode_wide() {
+            if unit == 0 {
+                return Err(reject("library path contains a NUL byte"));
+            }
+            wide.push(unit);
+        }
+        wide.push(0);
+        Ok(wide)
+    };
+    let source = encode(source)?;
+    let output = encode(output)?;
+    // SAFETY: Both paths are NUL-terminated and remain live for the call.
+    // MoveFileW requires a fresh destination and moves directories on one volume.
+    if unsafe { MoveFileW(source.as_ptr(), output.as_ptr()) } != 0 {
+        Ok(())
+    } else {
+        Err(io(std::io::Error::last_os_error()))
+    }
 }
 
 fn path_admitted(path: &PathBuf) -> Result<(), Box<Diagnostic>> {
@@ -189,13 +234,17 @@ struct Metadata<'a> {
     parameters: usize,
     target: &'a str,
     library_sha256: &'a str,
+    import_library_sha256: Option<&'a str>,
     header_sha256: &'a str,
     compiler_sha256: &'a str,
     ir_sha256: &'a str,
 }
 impl Serialize for Metadata<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut row = serializer.serialize_struct("ScalarLibrary", 17)?;
+        let mut row = serializer.serialize_struct(
+            "ScalarLibrary",
+            17 + usize::from(self.import_library_sha256.is_some()),
+        )?;
         row.serialize_field("schema", "oxid-scalar-native-library-v1")?;
         row.serialize_field("abi_version", &1)?;
         row.serialize_field("export", &self.options.export)?;
@@ -215,6 +264,9 @@ impl Serialize for Metadata<'_> {
         row.serialize_field("execution_policy", "bounded")?;
         row.serialize_field("fuel", &self.options.fuel)?;
         row.serialize_field("library_sha256", self.library_sha256)?;
+        if let Some(hash) = self.import_library_sha256 {
+            row.serialize_field("import_library_sha256", hash)?;
+        }
         row.serialize_field("header_sha256", self.header_sha256)?;
         row.serialize_field("compiler_package_version", env!("CARGO_PKG_VERSION"))?;
         row.serialize_field("compiler_sha256", self.compiler_sha256)?;
@@ -257,16 +309,38 @@ fn publish(source: &Path, output: &Path) -> Result<(), Box<Diagnostic>> {
         Err(io(std::io::Error::last_os_error()))
     }
 }
-#[cfg(not(all(
-    any(target_os = "linux", target_os = "macos"),
-    target_pointer_width = "64",
-    target_endian = "little",
-    any(target_arch = "x86_64", target_arch = "aarch64")
+#[cfg(not(any(
+    windows,
+    all(
+        any(target_os = "linux", target_os = "macos"),
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
 )))]
 fn publish(_: &Path, _: &Path) -> Result<(), Box<Diagnostic>> {
     Err(reject(
-        "scalar native libraries currently require Linux or macOS on x86_64 or ARM64",
+        "scalar native libraries require Linux or macOS on x86_64 or ARM64, or Windows MSVC x64",
     ))
+}
+
+fn check_pe_dll(file: &mut File, dos: &[u8; 64]) -> Result<(), Box<Diagnostic>> {
+    let invalid = || reject("library linker did not produce a Windows x64 PE32+ DLL");
+    let offset = u32::from_le_bytes(dos[60..64].try_into().unwrap()) as u64;
+    let mut header = [0u8; 26];
+    if &dos[..2] != b"MZ" || offset < 64 || file.metadata().map_err(io)?.len() < offset + 26 {
+        return Err(invalid());
+    }
+    file.seek(std::io::SeekFrom::Start(offset)).map_err(io)?;
+    file.read_exact(&mut header).map_err(io)?;
+    let flags = u16::from_le_bytes([header[22], header[23]]);
+    if &header[..6] != b"PE\0\0\x64\x86"
+        || &header[24..26] != b"\x0b\x02"
+        || flags & 0x2002 != 0x2002
+    {
+        return Err(invalid());
+    }
+    Ok(())
 }
 
 pub(in crate::frontend) fn compile(
@@ -285,10 +359,13 @@ pub(in crate::frontend) fn compile(
     let requested = Path::new(&options.output);
     let name = requested
         .file_name()
-        .filter(|_| {
+        .filter(|name| {
             !options.output.ends_with('/')
                 && !options.output.ends_with("/.")
                 && !options.output.ends_with("/..")
+                && (!cfg!(windows)
+                    || (!options.output.ends_with(['\\', '.'])
+                        && !NativeBuildSettings::windows_device_name(name)))
         })
         .ok_or_else(|| reject("library output must name a new version directory"))?;
     let parent = requested
@@ -323,7 +400,9 @@ pub(in crate::frontend) fn compile(
     path_admitted(&complete)?;
     fs::create_dir(&complete).map_err(io)?;
     fs::write(child(&workspace.0, "program.ll")?, module).map_err(io)?;
-    fs::write(child(&workspace.0, "exports.map")?, EXPORTS).map_err(io)?;
+    if !cfg!(windows) {
+        fs::write(child(&workspace.0, "exports.map")?, EXPORTS).map_err(io)?;
+    }
     let target = format!(
         "--target={}",
         NativeBuildSettings::new(false).target_triple()
@@ -354,7 +433,11 @@ pub(in crate::frontend) fn compile(
             OsStr::new("--no-default-config"),
             OsStr::new(object_target),
             OsStr::new(optimization),
-            OsStr::new("-fPIC"),
+            OsStr::new(if cfg!(windows) {
+                "-fms-runtime-lib=static"
+            } else {
+                "-fPIC"
+            }),
             OsStr::new("-c"),
             OsStr::new("-x"),
             OsStr::new("ir"),
@@ -365,7 +448,25 @@ pub(in crate::frontend) fn compile(
         &workspace.0,
         None,
     )?;
-    if cfg!(target_os = "macos") {
+    if cfg!(windows) {
+        let arguments = [
+            "/DLL",
+            "/NOENTRY",
+            "/IMPLIB:complete/oxid_library.lib",
+            "/MACHINE:X64",
+            "/Brepro",
+            "/OPT:REF",
+            "/DYNAMICBASE",
+            "/HIGHENTROPYVA",
+            "/NXCOMPAT",
+            "/DEFAULTLIB:libcmt",
+            "/EXPORT:oxid_library_abi_version",
+            "/EXPORT:oxid_library_call_v1",
+            "program.o",
+            "/OUT:complete/oxid_library.dll",
+        ];
+        run(&lld, &arguments.map(OsStr::new), &workspace.0, None)?;
+    } else if cfg!(target_os = "macos") {
         // The scalar object is self-contained. Pin the Mach-O deployment
         // version without adding a dependency on a local SDK or runtime.
         let arguments = [
@@ -415,11 +516,11 @@ pub(in crate::frontend) fn compile(
     let library = child(&complete, LIBRARY)?;
     path_admitted(&library)?;
     let mut identity = [0u8; 64];
-    File::open(&library)
-        .map_err(io)?
-        .read_exact(&mut identity)
-        .map_err(io)?;
-    if cfg!(target_os = "macos") {
+    let mut file = File::open(&library).map_err(io)?;
+    file.read_exact(&mut identity).map_err(io)?;
+    if cfg!(windows) {
+        check_pe_dll(&mut file, &identity)?;
+    } else if cfg!(target_os = "macos") {
         let cpu: u32 = if cfg!(target_arch = "aarch64") {
             0x0100_000c
         } else {
@@ -441,8 +542,14 @@ pub(in crate::frontend) fn compile(
             "library linker did not produce a native ELF64 shared object",
         ));
     }
+    drop(file);
     fs::write(child(&complete, HEADER)?, header).map_err(io)?;
     let library_hash = digest_file(&library)?;
+    let import_library_hash = if cfg!(windows) {
+        Some(digest_file(&child(&complete, IMPORT_LIBRARY)?)?)
+    } else {
+        None
+    };
     let header_hash = digest_file(&child(&complete, HEADER)?)?;
     let compiler = std::env::current_exe().map_err(io)?;
     path_admitted(&compiler)?;
@@ -454,6 +561,7 @@ pub(in crate::frontend) fn compile(
         parameters,
         target: NativeBuildSettings::new(false).target_triple(),
         library_sha256: ascii(&library_hash),
+        import_library_sha256: import_library_hash.as_ref().map(ascii),
         header_sha256: ascii(&header_hash),
         compiler_sha256: ascii(&compiler_hash),
         ir_sha256: ascii(&ir_hash),
