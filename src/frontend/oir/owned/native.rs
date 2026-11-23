@@ -891,6 +891,7 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
     ))]
     let windows_resources = plan.has_file_delivery()
         || plan.has_binary_delivery()
+        || plan.has_program_arguments()
         || plan.has_clock()
         || plan.has_unix_clock()
         || plan.has_sleep();
@@ -4118,7 +4119,8 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
         unreachable!("entry gate")
     };
     if plan.has_program_arguments() {
-        out.write_str("\ndefine i32 @main(i32 %argc, ptr %argv) {\nentry:\n  call void @__oxid_arguments_start(i32 %argc, ptr %argv)\n").unwrap();
+        let entry_name = if cfg!(windows) { "wmain" } else { "main" };
+        write!(out, "\ndefine i32 @{entry_name}(i32 %argc, ptr %argv) {{\nentry:\n  call void @__oxid_arguments_start(i32 %argc, ptr %argv)\n").unwrap();
     } else {
         out.write_str("\ndefine i32 @main() {\nentry:\n").unwrap();
     }

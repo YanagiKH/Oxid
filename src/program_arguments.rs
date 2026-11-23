@@ -31,8 +31,34 @@ impl Drop for Scope {
     }
 }
 
-pub(crate) fn install(values: Vec<OsString>) -> Result<Scope, &'static str> {
+pub(crate) const fn supported_host() -> bool {
+    cfg!(all(
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
+            all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64"
+            )
+        )
+    ))
+}
+
+pub(crate) fn install(mut values: Vec<OsString>) -> Result<Scope, &'static str> {
     let count = i32::try_from(values.len()).map_err(|_| "too many program arguments")?;
+    if cfg!(windows) {
+        // Match the native UTF-16 adapter while retaining valid strings as-is.
+        for value in &mut values {
+            if value.to_str().is_none() {
+                *value = value.to_string_lossy().into_owned().into();
+            }
+        }
+    }
     let previous = CURRENT.with(|current| current.replace(Arguments { count, values }));
     Ok(Scope {
         previous,
