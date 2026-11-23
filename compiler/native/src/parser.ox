@@ -27,6 +27,7 @@ use crate::model::is_record_reference;
 use crate::model::is_mutable_record_reference;
 use crate::model::referent_record;
 use crate::model::record_value_type;
+use crate::model::FieldPath;
 use crate::model::record;
 use crate::model::record_binding;
 use crate::model::record_type;
@@ -393,17 +394,40 @@ fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
     return aggregate;
 }
 
-fn field_value(c: &mut Compiler, binding: Binding, position: i32) -> Value {
-    expect(&mut *c, 43);
-    let row = c.records[record_index(record_value_type(binding.ty))];
-    if row.tagged { fail(&mut *c); return invalid(); }
+fn field_path(c: &mut Compiler, binding: Binding) -> FieldPath {
     let owner = c.functions[c.current];
-    let field = visible_field(&*c, owner.source_module, row, c.cursor);
-    expect(&mut *c, 1);
-    if field < 0 || !access_allowed(&*c, position, field, false) { fail(&mut *c); return invalid(); }
-    let descriptor = c.fields[row.first_field + field];
-    if !is_value_scalar(descriptor.ty) { fail(&mut *c); return invalid(); }
-    return crate::emit::load_record_field(&mut *c, binding, field, descriptor.ty);
+    let mut path = FieldPath { field: -1, ty: record_value_type(binding.ty), pointer: -1 };
+    let mut depth = 0;
+    while kind(&*c) == 43 && c.error == 0 {
+        if depth >= 8 { c.error = 68; return path; }
+        if !is_record(path.ty) { fail(&mut *c); return path; }
+        let row = c.records[record_index(path.ty)];
+        if row.tagged { fail(&mut *c); return path; }
+        expect(&mut *c, 43);
+        let field = visible_field(&*c, owner.source_module, row, c.cursor);
+        expect(&mut *c, 1);
+        if field < 0 || c.error != 0 { fail(&mut *c); return path; }
+        if depth == 0 {
+            path.field = field;
+            path.pointer = crate::emit::record_field_address(&mut *c, binding, field);
+        } else {
+            let parent = path.ty;
+            let pointer = path.pointer;
+            path.pointer = crate::emit::field_address(&mut *c, parent, pointer, false, field);
+        }
+        let descriptor = c.fields[row.first_field + field];
+        path.ty = descriptor.ty;
+        depth = depth + 1;
+    }
+    return path;
+}
+
+fn field_value(c: &mut Compiler, binding: Binding, position: i32) -> Value {
+    let path = field_path(&mut *c, binding);
+    if c.error != 0 || !is_value_scalar(path.ty) || !access_allowed(&*c, position, path.field, false) {
+        fail(&mut *c); return invalid();
+    }
+    return crate::emit::load_element(&mut *c, path.pointer, path.ty);
 }
 
 fn moves_on_read(c: &Compiler, ty: i32) -> bool {
@@ -713,22 +737,31 @@ fn assign_field(c: &mut Compiler) -> () {
     let binding = c.vars[position];
     let borrowed = is_mutable_record_reference(binding.ty);
     if !borrowed && (!binding.writable || !is_record(binding.ty)) { fail(&mut *c); return; }
-    let row = c.records[record_index(record_value_type(binding.ty))];
-    if row.tagged { fail(&mut *c); return; }
-    c.cursor = c.cursor + 2;
-    let owner = c.functions[c.current];
-    let field = visible_field(&*c, owner.source_module, row, c.cursor);
-    expect(&mut *c, 1); expect(&mut *c, 28);
-    if field < 0 { fail(&mut *c); return; }
-    let descriptor = c.fields[row.first_field + field];
-    if !is_value_scalar(descriptor.ty) { fail(&mut *c); return; }
+    c.cursor = c.cursor + 1;
+    let path = field_path(&mut *c, binding);
+    expect(&mut *c, 28);
+    if c.error != 0 || !is_value_scalar(path.ty) { fail(&mut *c); return; }
     let value = expression(&mut *c, 1, 0);
-    if value.ty != descriptor.ty { fail(&mut *c); return; }
+    if value.ty != path.ty { fail(&mut *c); return; }
     expect(&mut *c, 25);
     let target = c.vars[position];
-    if !target.available || !access_allowed(&*c, position, field, true) { fail(&mut *c); return; }
-    crate::emit::store_record_field(&mut *c, binding, field, value);
+    if !target.available || !access_allowed(&*c, position, path.field, true) { fail(&mut *c); return; }
+    crate::emit::store_element(&mut *c, path.pointer, value);
     return;
+}
+fn field_assignment(c: &Compiler) -> bool {
+    let mut index = c.cursor + 1;
+    let mut depth = 0;
+    while depth < 8 {
+        let mark = token(&*c, index);
+        if mark.kind != 43 { return mark.kind == 28; }
+        let name = token(&*c, index + 1);
+        if name.kind != 1 { return false; }
+        index = index + 2;
+        depth = depth + 1;
+    }
+    let mark = token(&*c, index);
+    return mark.kind == 28;
 }
 fn index_assignment_end(c: &Compiler, open: i32) -> i32 {
     let mut at = open + 1;
@@ -989,10 +1022,7 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
     }
     let next = token(&*c, c.cursor + 1);
     if k == 1 && next.kind == 28 { assigned(&mut *c); return; }
-    if k == 1 && next.kind == 43 {
-        let assign = token(&*c, c.cursor + 3);
-        if assign.kind == 28 { assign_field(&mut *c); return; }
-    }
+    if k == 1 && next.kind == 43 && field_assignment(&*c) { assign_field(&mut *c); return; }
     if k == 1 && next.kind == 51 {
         let end = index_assignment_end(&*c, c.cursor + 1);
         if end >= 0 { index_assignment(&mut *c, end); return; }

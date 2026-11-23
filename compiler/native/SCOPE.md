@@ -94,6 +94,8 @@ Struct fields can use earlier declared struct types. For example, use
 `struct Batch { item: Row }`, then `let Batch { item: row } = batch;` to take
 the nested value. Construction accepts up to eight levels of struct nesting.
 All nested fields of a `Copy` struct must also be `Copy`.
+Read a nested scalar with `batch.item.id`. A mutable binding or an `&mut`
+parameter can assign to the same field path.
 Use `struct Empty {}` for a type with zero fields. Construct it with `Empty {}`
 and consume an owned value with `let Empty {} = value;`.
 
