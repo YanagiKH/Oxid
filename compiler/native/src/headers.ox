@@ -156,7 +156,8 @@ fn collect_record(c: &mut Compiler, source_module: i32) -> () {
         if kind(&*c) != 23 { expect(&mut *c, 26); }
     }
     expect(&mut *c, 23);
-    if row.field_count == 0 { fail(&mut *c); return; }
+    // Even a zero-sized value reserves a distinct local slot identifier.
+    if row.field_count == 0 { row.cells = 1; }
     if row.depth > 8 { c.error = 68; return; }
     row.end = c.cursor;
     if c.error == 0 && !grown(try_push(&mut *c.records, row)) { c.error = 68; }

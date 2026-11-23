@@ -103,8 +103,10 @@ pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> 
 pub fn operand(c: &mut Compiler, destination: i32, value: Value) -> () {
     let literal_bytes_0 = b"false";
     let literal_bytes_1 = b"%v";
+    let empty_record = b"zeroinitializer";
 
     if value.ty == 3 { append(&mut *c, destination, &literal_bytes_0); }
+    else if is_record(value.ty) && value.id == -1 { append(&mut *c, destination, &empty_record); }
     else {
         append(&mut *c, destination, &literal_bytes_1);
         number(&mut *c, destination, value.id);
