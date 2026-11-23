@@ -76,7 +76,7 @@ fn failure(output: Output, code: &str) -> String {
 
 #[test]
 #[cfg(not(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -85,11 +85,174 @@ fn library_command_rejects_unsupported_hosts_before_tools_and_publication() {
     let fixture = Fixture::new(PRICING);
     let text = failure(fixture.without_tools("crate::line_total", &[]), "E0700");
     assert!(
-        text.contains("scalar native libraries currently require Linux x86_64 or ARM64"),
+        text.contains(
+            "scalar native libraries currently require Linux or macOS on x86_64 or ARM64"
+        ),
         "{text}"
     );
     assert!(!text.contains("E0701"), "{text}");
     assert_eq!(fixture.entries(), [std::ffi::OsString::from("input.ox")]);
+}
+
+#[cfg(all(
+    target_os = "macos",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[test]
+#[ignore = "requires the macOS SDK, LLVM 19.1.7, rustc and Python"]
+fn actual_macos_library_is_called_by_c_rust_and_python() {
+    use sha2::{Digest, Sha256};
+
+    const LIBRARY: &str = "liboxid_library.dylib";
+    const RPATH: &str = "-Wl,-rpath,@loader_path/published-v1";
+    const C_CLIENT: &str = r#"
+#include "oxid_library.h"
+#include <string.h>
+int main(int argc, char **argv) {
+    int fuel_only = argc == 2 && !strcmp(argv[1], "fuel");
+    int32_t result = -100;
+    if (oxid_library_abi_version() != 1) return 1;
+    if (oxid_library_call_v1(1250, 3, 2, &result) != (fuel_only ? 3 : 0)) return 2;
+    if (result != (fuel_only ? -100 : 1875)) return 3;
+    if (oxid_library_call_v1(1, 1, 0, &result) != (fuel_only ? 3 : 2)) return 4;
+    if (result != (fuel_only ? -100 : 1875)) return 5;
+    return oxid_library_call_v1(1, 1, 1, 0) == 4 ? 0 : 6;
+}
+"#;
+    let llvm = PathBuf::from(std::env::var_os("OXID_LLVM_BIN").unwrap());
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let python = std::env::var_os("OXID_TEST_PYTHON").unwrap_or_else(|| "python3".into());
+    let successful = |command: &mut Command| {
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{command:?}: {output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+    for profile in ["dev", "release"] {
+        for (fuel, mode) in [("1000000", "pricing"), ("0", "fuel")] {
+            let fixture = Fixture::new(PRICING);
+            let directory = fixture.0.join("published-v1");
+            let summary = successful(fixture.command("crate::line_total", "published-v1").args([
+                "--profile",
+                profile,
+                "--fuel",
+                fuel,
+            ]));
+            assert!(summary.contains("\"success\":true"));
+            let expected_files = [LIBRARY, "metadata.json", "oxid_library.h"];
+            let mut files: Vec<_> = fs::read_dir(&directory)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect();
+            files.sort();
+            assert_eq!(files, expected_files.map(std::ffi::OsString::from));
+            let library_path = directory.join(LIBRARY);
+            let library = fs::read(&library_path).unwrap();
+            let metadata: serde_json::Value =
+                serde_json::from_slice(&fs::read(directory.join("metadata.json")).unwrap())
+                    .unwrap();
+            assert_eq!(
+                metadata["library_sha256"],
+                format!("{:x}", Sha256::digest(&library))
+            );
+            assert_eq!(metadata["profile"], profile);
+            assert_eq!(metadata["fuel"], fuel.parse::<u64>().unwrap());
+            let symbols = successful(
+                Command::new("/usr/bin/nm")
+                    .args(["-gUj"])
+                    .arg(&library_path),
+            );
+            let mut names: Vec<_> = symbols.lines().collect();
+            names.sort_unstable();
+            assert_eq!(
+                names,
+                ["_oxid_library_abi_version", "_oxid_library_call_v1"]
+            );
+            let imports = successful(Command::new("/usr/bin/nm").arg("-u").arg(&library_path));
+            assert!(imports.trim().is_empty(), "{imports}");
+            let dependencies = successful(Command::new("otool").arg("-L").arg(&library_path));
+            let names: Vec<_> = dependencies.lines().skip(1).map(str::trim).collect();
+            assert_eq!(names.len(), 1, "{dependencies}");
+            assert!(names[0].starts_with("@rpath/liboxid_library.dylib ("));
+
+            let repeated = fixture.without_tools("crate::line_total", &[]);
+            assert!(failure(repeated, "E0701").contains("already exists"));
+            assert_eq!(fs::read(&library_path).unwrap(), library);
+
+            fs::write(fixture.0.join("client.c"), C_CLIENT).unwrap();
+            fs::write(
+                fixture.0.join("client.rs"),
+                include_bytes!("fixtures/native_library/client.rs"),
+            )
+            .unwrap();
+            fs::write(
+                fixture.0.join("client.py"),
+                include_bytes!("native_library_python.py"),
+            )
+            .unwrap();
+            successful(
+                Command::new(llvm.join("clang"))
+                    .current_dir(&fixture.0)
+                    .args([
+                        "--no-default-config",
+                        "-std=c11",
+                        "-Wall",
+                        "-Wextra",
+                        "-Werror",
+                        "-I",
+                        "published-v1",
+                        "client.c",
+                        "-L",
+                        "published-v1",
+                        "-loxid_library",
+                        RPATH,
+                        "-o",
+                        "c-client",
+                    ]),
+            );
+            successful(Command::new(&rustc).current_dir(&fixture.0).args([
+                "--edition=2021",
+                "client.rs",
+                "-L",
+                "native=published-v1",
+                "-C",
+                &format!("link-arg={RPATH}"),
+                "-o",
+                "rust-client",
+            ]));
+            let deployed = fixture.0.join("deployed");
+            fs::create_dir(&deployed).unwrap();
+            for entry in ["published-v1", "c-client", "rust-client", "client.py"] {
+                fs::rename(fixture.0.join(entry), deployed.join(entry)).unwrap();
+            }
+            fs::remove_file(fixture.0.join("input.ox")).unwrap();
+            successful(
+                Command::new(deployed.join("c-client"))
+                    .current_dir(&deployed)
+                    .arg(mode),
+            );
+            assert_eq!(
+                successful(
+                    Command::new(deployed.join("rust-client"))
+                        .current_dir(&deployed)
+                        .arg(mode)
+                ),
+                "native Rust calls passed\n"
+            );
+            assert_eq!(
+                successful(
+                    Command::new(&python)
+                        .current_dir(&deployed)
+                        .args(["client.py", "published-v1/liboxid_library.dylib", mode])
+                        .env_remove("PYTHONOPTIMIZE")
+                ),
+                "native Python calls passed\n"
+            );
+            assert_eq!(
+                fs::read(deployed.join("published-v1").join(LIBRARY)).unwrap(),
+                library
+            );
+        }
+    }
 }
 
 #[cfg(all(
