@@ -582,10 +582,9 @@ macro_rules! source_program_methods {
                         }
                     }
                 }
-                for operation in [
-                    crate::frontend::builtin_catalog::experimental::Function::ReadSome,
-                    crate::frontend::builtin_catalog::experimental::Function::WriteSome,
-                ] {
+                for operation in
+                    crate::frontend::builtin_catalog::experimental::Function::PROCESS_IO
+                {
                     if let Some(id) = self.witness.experimental_function(operation) {
                         return Err(execute::OwnedRunFailure::BinaryEntry(
                             self.witness.functions()[id.0].span,

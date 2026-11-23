@@ -27,7 +27,9 @@ pub(super) trait Transport {
     fn read(&mut self, bytes: &mut [u8]) -> std::result::Result<usize, i32>;
     fn write(&mut self, bytes: &[u8]) -> std::result::Result<usize, i32>;
 }
-pub(super) struct Stdio;
+struct Stdio {
+    to_stderr: bool,
+}
 /// Prepay the supplied extent and the sealed primitive's immediate delivery.
 /// No transport or result mutation occurs on refusal; successful attempts need
 /// no further fuel check. This does not prepay any caller source operation.
@@ -57,10 +59,10 @@ pub(super) fn admit_delivery(
     Ok(())
 }
 pub(super) fn read_admitted(bytes: &mut [u8]) -> ReadStatus {
-    read_attempt(&mut Stdio, bytes)
+    read_attempt(&mut Stdio { to_stderr: false }, bytes)
 }
-pub(super) fn write_admitted(bytes: &[u8]) -> WriteStatus {
-    write_attempt(&mut Stdio, bytes)
+pub(super) fn write_admitted(bytes: &[u8], to_stderr: bool) -> WriteStatus {
+    write_attempt(&mut Stdio { to_stderr }, bytes)
 }
 impl Transport for Stdio {
     fn read(&mut self, bytes: &mut [u8]) -> std::result::Result<usize, i32> {
@@ -96,8 +98,9 @@ impl Transport for Stdio {
         }
     }
     fn write(&mut self, bytes: &[u8]) -> std::result::Result<usize, i32> {
+        let descriptor = if self.to_stderr { 2 } else { 1 };
         #[cfg(test)]
-        if let Some(result) = testing::write(bytes) {
+        if let Some(result) = testing::write(bytes, self.to_stderr) {
             return result;
         }
         #[cfg(all(
@@ -108,7 +111,7 @@ impl Transport for Stdio {
         ))]
         {
             // SAFETY: Exactly the borrowed initialized extent is readable.
-            let result = unsafe { libc::write(1, bytes.as_ptr().cast(), bytes.len()) };
+            let result = unsafe { libc::write(descriptor, bytes.as_ptr().cast(), bytes.len()) };
             if result < 0 {
                 Err(std::io::Error::last_os_error().raw_os_error().unwrap_or(5))
             } else {
@@ -122,7 +125,7 @@ impl Transport for Stdio {
             any(target_arch = "x86_64", target_arch = "aarch64")
         )))]
         {
-            let _ = bytes;
+            let _ = (bytes, descriptor);
             Err(38)
         }
     }
@@ -148,6 +151,7 @@ pub(super) mod testing {
         pub output: Vec<u8>,
         pub read_calls: usize,
         pub write_calls: usize,
+        pub stderr_calls: usize,
         pub delivery_fault: Option<DeliveryFault>,
         pub fault_applied: bool,
         pub deliveries: usize,
@@ -198,10 +202,11 @@ pub(super) mod testing {
             })
         })
     }
-    pub(super) fn write(bytes: &[u8]) -> Option<Result<usize, i32>> {
+    pub(super) fn write(bytes: &[u8], to_stderr: bool) -> Option<Result<usize, i32>> {
         ACTIVE.with(|active| {
             active.borrow_mut().as_mut().map(|script| {
                 script.write_calls += 1;
+                script.stderr_calls += usize::from(to_stderr);
                 let count = script.writes.pop_front().unwrap_or(Ok(bytes.len()))?;
                 assert!(count <= bytes.len());
                 script.output.extend_from_slice(&bytes[..count]);

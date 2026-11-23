@@ -444,7 +444,10 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 self.frames[frame].payload[bytes].copy_from_slice(&encoding);
                 return Ok(());
             }
-            Function::ReadSome | Function::WriteSome | Function::ArgBytes => {
+            Function::ReadSome
+            | Function::WriteSome
+            | Function::WriteStderr
+            | Function::ArgBytes => {
                 return Err(bad("binary operation requires prepared delivery", span));
             }
             Function::Len | Function::Capacity => {

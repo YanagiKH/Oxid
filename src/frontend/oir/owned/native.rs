@@ -714,10 +714,7 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         }
     }
     if !policy.process() {
-        for operation in [
-            crate::frontend::builtin_catalog::experimental::Function::ReadSome,
-            crate::frontend::builtin_catalog::experimental::Function::WriteSome,
-        ] {
+        for operation in crate::frontend::builtin_catalog::experimental::Function::PROCESS_IO {
             if witness.experimental_function(operation).is_some() {
                 return Err(reject("binary I/O requires process entry", None));
             }

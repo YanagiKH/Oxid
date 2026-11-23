@@ -41,9 +41,10 @@ pub(in crate::frontend) enum Item {
     SleepMillis,
     UnixMillis,
     OpenAppend,
+    WriteStderr,
 }
 impl Item {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::ByteBuf,
         Self::GrowStatus,
         Self::ReadSomeStatus,
@@ -73,6 +74,7 @@ impl Item {
         Self::ArgBytes,
         Self::SeekAbsolute,
         Self::OpenAppend,
+        Self::WriteStderr,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -105,6 +107,7 @@ impl Item {
             Self::ArgBytes => "arg_bytes",
             Self::SeekAbsolute => "seek_absolute",
             Self::OpenAppend => "open_append",
+            Self::WriteStderr => "write_stderr",
             Self::EnableTermination => "enable_termination_notifications",
             Self::TerminationRequested => "termination_requested",
             Self::WaitForTermination => "wait_for_termination",
@@ -116,7 +119,7 @@ impl Item {
     pub fn family(self) -> usize {
         match self {
             Self::ReadSomeStatus | Self::ReadSome => 1,
-            Self::WriteSomeStatus | Self::WriteSome => 2,
+            Self::WriteSomeStatus | Self::WriteSome | Self::WriteStderr => 2,
             Self::File
             | Self::OpenResult
             | Self::FileStatus
@@ -167,6 +170,7 @@ impl Item {
             Self::ArgBytes => Function::ArgBytes,
             Self::SeekAbsolute => Function::SeekAbsolute,
             Self::OpenAppend => Function::OpenAppend,
+            Self::WriteStderr => Function::WriteStderr,
             Self::EnableTermination => Function::EnableTermination,
             Self::TerminationRequested => Function::TerminationRequested,
             Self::WaitForTermination => Function::WaitForTermination,
@@ -275,8 +279,23 @@ pub(in crate::frontend) enum Function {
     SleepMillis,
     UnixMillis,
     OpenAppend,
+    WriteStderr,
 }
 impl Function {
+    pub const PROCESS_IO: [Self; 3] = [Self::ReadSome, Self::WriteSome, Self::WriteStderr];
+    pub const BINARY_DELIVERY: [Self; 4] = [
+        Self::ReadSome,
+        Self::WriteSome,
+        Self::WriteStderr,
+        Self::ArgBytes,
+    ];
+
+    pub fn is_binary_delivery(self) -> bool {
+        matches!(
+            self,
+            Self::ReadSome | Self::WriteSome | Self::WriteStderr | Self::ArgBytes
+        )
+    }
     pub fn process(self) -> Option<super::termination::Function> {
         match self {
             Self::EnableTermination => Some(super::termination::Function::Enable),
@@ -294,7 +313,7 @@ impl Function {
     pub fn is_arguments(self) -> bool {
         self.item().family() == 4
     }
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::New,
         Self::Len,
         Self::Capacity,
@@ -316,6 +335,7 @@ impl Function {
         Self::ArgBytes,
         Self::SeekAbsolute,
         Self::OpenAppend,
+        Self::WriteStderr,
     ];
     pub fn item(self) -> Item {
         match self {
@@ -340,6 +360,7 @@ impl Function {
             Self::ArgBytes => Item::ArgBytes,
             Self::SeekAbsolute => Item::SeekAbsolute,
             Self::OpenAppend => Item::OpenAppend,
+            Self::WriteStderr => Item::WriteStderr,
             Self::EnableTermination => Item::EnableTermination,
             Self::TerminationRequested => Item::TerminationRequested,
             Self::WaitForTermination => Item::WaitForTermination,
@@ -352,7 +373,7 @@ impl Function {
         match self {
             Self::Reserve | Self::Push | Self::Extend | Self::Resize => Some(Enumeration::Grow),
             Self::ReadSome | Self::FileReadSome => Some(Enumeration::Read),
-            Self::WriteSome | Self::FileWriteSome => Some(Enumeration::Write),
+            Self::WriteSome | Self::WriteStderr | Self::FileWriteSome => Some(Enumeration::Write),
             Self::OpenRead | Self::Create | Self::OpenAppend => Some(Enumeration::Open),
             Self::SyncAll | Self::Close | Self::SeekAbsolute => Some(Enumeration::File),
             Self::ArgBytes => Some(Enumeration::Arguments),
@@ -391,7 +412,7 @@ impl Function {
             Extend => ([exclusive, bytes(BorrowKind::Shared), unit], 2),
             Resize => ([exclusive, scalar(Ty::I32), scalar(Ty::U8)], 3),
             ReadSome => ([bytes(BorrowKind::Exclusive), unit, unit], 1),
-            WriteSome | OpenRead | Create | OpenAppend => {
+            WriteSome | WriteStderr | OpenRead | Create | OpenAppend => {
                 ([bytes(BorrowKind::Shared), unit, unit], 1)
             }
             FileReadSome => ([file, bytes(BorrowKind::Exclusive), unit], 2),
@@ -461,11 +482,13 @@ const SEEK_ITEM_BIT: usize = 37;
 const OWNED_VECTOR_ITEM_START: usize = 38;
 const PROCESS_ITEM_START: usize = 40;
 const FILE_APPEND_ITEM_BIT: usize = 46;
+const STDERR_ITEM_BIT: usize = 47;
 impl Item {
     const fn inventory_bit(self) -> usize {
         match self {
             Self::SeekAbsolute => SEEK_ITEM_BIT,
             Self::OpenAppend => FILE_APPEND_ITEM_BIT,
+            Self::WriteStderr => STDERR_ITEM_BIT,
             Self::EnableTermination => PROCESS_ITEM_START,
             Self::TerminationRequested => PROCESS_ITEM_START + 1,
             Self::WaitForTermination => PROCESS_ITEM_START + 2,
@@ -544,7 +567,7 @@ impl Inventory {
                 PROCESS_ITEM_START + super::termination::Function::ALL.len()
                     <= FILE_APPEND_ITEM_BIT
             );
-            assert!(FILE_APPEND_ITEM_BIT < 60);
+            assert!(FILE_APPEND_ITEM_BIT < STDERR_ITEM_BIT && STDERR_ITEM_BIT < 60);
         }
         debug_assert!(legacy < 9);
         ((self.bits() << 4) | u64::from(legacy)).to_le_bytes()
@@ -913,7 +936,7 @@ mod tests {
         let all = Item::ALL
             .into_iter()
             .fold(Inventory::default(), Inventory::admit);
-        assert_eq!((all.enums(), all.functions()), (6, 21));
+        assert_eq!((all.enums(), all.functions()), (6, 22));
         for (index, item) in Function::ALL.into_iter().enumerate() {
             assert_eq!(all.function_rank(item), Some(index));
         }

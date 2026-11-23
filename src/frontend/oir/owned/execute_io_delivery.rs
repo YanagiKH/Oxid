@@ -199,7 +199,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         // A shared vector source must stay an immutable host slice. Do not
         // construct vector_range_mut under a shared language loan merely to
         // feed a write-only syscall that consumes immutable bytes.
-        if operation == Function::WriteSome {
+        if matches!(operation, Function::WriteSome | Function::WriteStderr) {
             let bytes = match region {
                 ByteRegion::Activation { frame, bytes } => super::super::element_loans::bytes(
                     &self.frames,
@@ -224,7 +224,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 self.fuel = operation_fuel;
             }
             admission.map_err(|failure| io_failure(failure, span))?;
-            let value = match binary_io::write_admitted(bytes) {
+            let value = match binary_io::write_admitted(bytes, operation == Function::WriteStderr) {
                 binary_io::WriteStatus::Written(value) => OperationValue::Status {
                     tag: 0,
                     payload: Some(value),
@@ -291,32 +291,19 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             self.fuel = operation_fuel;
         }
         admission.map_err(|failure| io_failure(failure, span))?;
-        let value = if operation == Function::ReadSome {
-            match binary_io::read_admitted(bytes) {
-                binary_io::ReadStatus::Data(value) => OperationValue::Status {
-                    tag: 0,
-                    payload: Some(value),
-                },
-                binary_io::ReadStatus::Eof => OperationValue::Status {
-                    tag: 1,
-                    payload: None,
-                },
-                binary_io::ReadStatus::Error(value) => OperationValue::Status {
-                    tag: 2,
-                    payload: Some(value),
-                },
-            }
-        } else {
-            match binary_io::write_admitted(bytes) {
-                binary_io::WriteStatus::Written(value) => OperationValue::Status {
-                    tag: 0,
-                    payload: Some(value),
-                },
-                binary_io::WriteStatus::Error(value) => OperationValue::Status {
-                    tag: 1,
-                    payload: Some(value),
-                },
-            }
+        let value = match binary_io::read_admitted(bytes) {
+            binary_io::ReadStatus::Data(value) => OperationValue::Status {
+                tag: 0,
+                payload: Some(value),
+            },
+            binary_io::ReadStatus::Eof => OperationValue::Status {
+                tag: 1,
+                payload: None,
+            },
+            binary_io::ReadStatus::Error(value) => OperationValue::Status {
+                tag: 2,
+                payload: Some(value),
+            },
         };
         self.complete_binary_delivery(frame, delivery, value, span);
         Ok(())
