@@ -25,6 +25,8 @@ const EXPORTS: &str = if cfg!(target_os = "macos") {
     "{ global: oxid_library_abi_version; oxid_library_call_v1; local: *; };\n"
 };
 const LINK_ARGUMENT_COUNT: usize = if cfg!(target_os = "macos") { 16 } else { 14 };
+const PUBLICATION_PATHS: usize = 10 + cfg!(windows) as usize;
+const FILE_DIGESTS: usize = 5 + cfg!(windows) as usize;
 
 #[cfg(windows)]
 type PublicationPath = Vec<u16>;
@@ -34,12 +36,12 @@ type PublicationPath = std::ffi::CString;
 #[allow(dead_code)]
 struct PublicationBank {
     file_buffer: [u8; 8192],
-    hashes: [[u8; 64]; 6],
-    digests: [[u8; 32]; 6],
+    hashes: [[u8; 64]; FILE_DIGESTS],
+    digests: [[u8; 32]; FILE_DIGESTS],
     hashers: [Sha256; 2],
     files: [File; 3],
     file_metadata: [fs::Metadata; 3],
-    paths: [PathBuf; 10],
+    paths: [PathBuf; PUBLICATION_PATHS],
     path_returns: [Result<PathBuf, std::io::Error>; 3],
     parameters: [(
         &'static str,
@@ -57,7 +59,9 @@ struct PublicationBank {
     target: String,
     linker: OsString,
     publication_paths: [PublicationPath; 2],
+    #[cfg(windows)]
     pe_signature: [u8; 26],
+    #[cfg(windows)]
     pe_offset: u64,
     serializer: serde_json::Serializer<&'static mut File>,
     metadata: Metadata<'static>,
@@ -73,10 +77,10 @@ pub(super) const CONTROL_BYTES: usize = size_of::<PublicationBank>();
 
 pub(in crate::frontend) fn carrier_bytes() -> usize {
     let path = 2 * crate::frontend::project::ProjectLimits::default().relative_bytes;
-    // Ten named PathBuf roles, two NUL-terminated publication paths, the linker
+    // PathBuf roles, two NUL-terminated publication paths, the linker
     // option and target. All IR/header/source bytes are borrowed or streamed.
     CONTROL_BYTES
-        + 10 * path
+        + PUBLICATION_PATHS * path
         + 2 * (path + 1) * if cfg!(windows) { 4 } else { 1 }
         + path
         + "--ld-path=".len()
@@ -365,7 +369,9 @@ pub(in crate::frontend) fn compile(
                 && !options.output.ends_with("/..")
                 && (!cfg!(windows)
                     || (!options.output.ends_with(['\\', '.'])
-                        && !NativeBuildSettings::windows_device_name(name)))
+                        && name
+                            .to_str()
+                            .is_some_and(|name| !NativeBuildSettings::windows_device_name(name))))
         })
         .ok_or_else(|| reject("library output must name a new version directory"))?;
     let parent = requested
