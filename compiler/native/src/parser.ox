@@ -24,10 +24,13 @@ use crate::model::is_mutable_slice;
 use crate::model::slice_type;
 use crate::model::slice_element;
 use crate::model::record;
+use crate::model::record_binding;
 use crate::model::record_type;
 use crate::model::record_index;
 use crate::model::is_record;
 use crate::model::record_field;
+use crate::model::record_visible;
+use crate::model::visible_field;
 use crate::model::word;
 use crate::headers::ty as parse_type;
 use crate::headers::path_name;
@@ -189,13 +192,18 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     c.call_sites = c.call_sites + 1;
     return crate::emit::call(&mut *c, target, &args, f.result);
 }
-fn qualified_call(c: &mut Compiler, depth: i32) -> Value {
+fn qualified_value(c: &mut Compiler, depth: i32) -> Value {
     let path_start = c.cursor + 2;
     let name = path_name(&mut *c);
     if c.error != 0 { return invalid(); }
     let caller = c.functions[c.current];
     let source_module = path_module(&*c, path_start, name, caller.source_module);
     if source_module < 0 { fail(&mut *c); return invalid(); }
+    if kind(&*c) == 22 {
+        let record_id = record(&*c, source_module, name);
+        if !record_visible(&*c, caller.source_module, record_id) { fail(&mut *c); return invalid(); }
+        return record_literal(&mut *c, record_id, depth);
+    }
     let target = function(&*c, source_module, name);
     if !function_visible(&*c, caller.source_module, target) { fail(&mut *c); return invalid(); }
     return called(&mut *c, target, depth);
@@ -300,6 +308,7 @@ fn enum_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
 }
 fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
     let row = c.records[index];
+    let owner = c.functions[c.current];
     if row.tagged { fail(&mut *c); return invalid(); }
     let mut seen = new::<bool>();
     while len(&seen) < row.field_count {
@@ -309,7 +318,7 @@ fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
     let mut count = 0;
     let mut aggregate = Value { ty: record_type(index), id: -1 };
     while kind(&*c) != 23 && c.error == 0 {
-        let field = record_field(&*c, row, c.cursor);
+        let field = visible_field(&*c, owner.source_module, row, c.cursor);
         expect(&mut *c, 1); expect(&mut *c, 24);
         if field < 0 || seen[field] { fail(&mut *c); return invalid(); }
         let descriptor = c.fields[row.first_field + field];
@@ -329,7 +338,8 @@ fn field_value(c: &mut Compiler, binding: Binding) -> Value {
     expect(&mut *c, 43);
     let row = c.records[record_index(binding.ty)];
     if row.tagged { fail(&mut *c); return invalid(); }
-    let field = record_field(&*c, row, c.cursor);
+    let owner = c.functions[c.current];
+    let field = visible_field(&*c, owner.source_module, row, c.cursor);
     expect(&mut *c, 1);
     if field < 0 { fail(&mut *c); return invalid(); }
     let descriptor = c.fields[row.first_field + field];
@@ -351,7 +361,7 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
     c.cursor = c.cursor + 1;
     let owner = c.functions[c.current];
     if kind(&*c) == 45 {
-        let index = record(&*c, owner.source_module, name);
+        let index = record_binding(&*c, owner.source_module, name);
         return enum_literal(&mut *c, index, depth);
     }
     if kind(&*c) == 20 {
@@ -362,7 +372,7 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
     if kind(&*c) == 22 {
         let separator = token(&*c, c.cursor + 2);
         if position < 0 || separator.kind == 24 {
-            let index = record(&*c, owner.source_module, name);
+        let index = record_binding(&*c, owner.source_module, name);
             if index >= 0 { return record_literal(&mut *c, index, depth); }
         }
     }
@@ -492,7 +502,7 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
         return parenthesized;
     }
     if t.kind == 51 { return array_literal(&mut *c, depth); }
-    if t.kind == 44 { return qualified_call(&mut *c, depth); }
+    if t.kind == 44 { return qualified_value(&mut *c, depth); }
     if t.kind == 1 { return named_value(&mut *c, depth); }
     fail(&mut *c); return invalid();
 }
@@ -552,7 +562,7 @@ pub fn expression(c: &mut Compiler, minimum: i32, depth: i32) -> Value {
 }
 fn destructure(c: &mut Compiler) -> () {
     let owner = c.functions[c.current];
-    let index = record(&*c, owner.source_module, c.cursor);
+    let index = record_binding(&*c, owner.source_module, c.cursor);
     if index < 0 { fail(&mut *c); return; }
     let row = c.records[index];
     if row.tagged { fail(&mut *c); return; }
@@ -565,7 +575,7 @@ fn destructure(c: &mut Compiler) -> () {
     let mut count = 0;
     while kind(&*c) != 23 && c.error == 0 {
         let field_name = c.cursor;
-        let field = record_field(&*c, row, field_name);
+        let field = visible_field(&*c, owner.source_module, row, field_name);
         expect(&mut *c, 1);
         if field < 0 || destinations[field] >= 0 { fail(&mut *c); return; }
         expect(&mut *c, 24);
@@ -643,7 +653,8 @@ fn assign_field(c: &mut Compiler) -> () {
     let row = c.records[record_index(binding.ty)];
     if row.tagged { fail(&mut *c); return; }
     c.cursor = c.cursor + 2;
-    let field = record_field(&*c, row, c.cursor);
+    let owner = c.functions[c.current];
+    let field = visible_field(&*c, owner.source_module, row, c.cursor);
     expect(&mut *c, 1); expect(&mut *c, 28);
     if field < 0 { fail(&mut *c); return; }
     let descriptor = c.fields[row.first_field + field];
