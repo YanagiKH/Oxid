@@ -15,7 +15,8 @@ The project uses process entry mode: a successful compiler exits 0 and writes
 only one complete LLVM module to stdout, with no printed main return value.
 The driver rejects failed status, stderr diagnostics, missing framing, partial
 output or any bytes after the module footer. It never strips a printed `0` or
-other lines. LLVM/Clang and the scalar C I/O adapter are explicit dependencies;
+other lines. The driver selects the current Linux target on x86-64 or ARM64.
+LLVM/Clang and the scalar C I/O adapter are explicit dependencies;
 they do not parse or check Oxid source. Existing output paths are refused.
 
 Supported input uses ASCII identifiers, i32/i64/u8/u32/bool/char/unit, named functions
