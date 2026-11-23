@@ -22,6 +22,7 @@ use std::fs::OpenResult;
 use std::io::ReadSomeStatus;
 use std::io::WriteSomeStatus;
 use std::io::write_some;
+use std::io::write_stderr;
 
 pub enum Input { Loaded(Compiler), Failed(i32) }
 enum FileInput { Loaded(ByteBuf), Failed(i32) }
@@ -83,7 +84,7 @@ fn append_parent_path(c: &Compiler, parent: i32, path: &mut ByteBuf) -> bool {
         && grown(try_extend(&mut *path, &slash));
 }
 
-pub fn load_module(c: &mut Compiler, parent: i32, name: i32, public: bool) -> () {
+fn append_module_path(c: &Compiler, parent: i32, name: i32, path: &mut ByteBuf) -> bool {
     let extension = b".ox";
     let spelling = token(&*c, name);
     let size = spelling.end - spelling.start;
@@ -91,17 +92,23 @@ pub fn load_module(c: &mut Compiler, parent: i32, name: i32, public: bool) -> ()
     while directory_end > 0 && byte_code(&*c.source_path, directory_end - 1) != 47 {
         directory_end = directory_end - 1;
     }
+    return size <= 255 && directory_end + size + 3 <= 4096
+        && grown(try_extend(&mut *path, &*c.source_path[0..directory_end]))
+        && append_parent_path(&*c, parent, &mut *path) && len(&*path) + size + 3 <= 4096
+        && grown(try_extend(&mut *path, &*c.source[spelling.start..spelling.end]))
+        && grown(try_extend(&mut *path, &extension));
+}
+
+pub fn load_module(c: &mut Compiler, parent: i32, name: i32, public: bool) -> () {
     let mut path = new();
-    if size > 255 || directory_end + size + 3 > 4096
-        || !grown(try_extend(&mut path, &*c.source_path[0..directory_end]))
-        || !append_parent_path(&*c, parent, &mut path) || len(&path) + size + 3 > 4096
-        || !grown(try_extend(&mut path, &*c.source[spelling.start..spelling.end]))
-        || !grown(try_extend(&mut path, &extension)) {
+    if !append_module_path(&*c, parent, name, &mut path) {
         c.error = 68;
         return;
     }
     if word(&*c.source_path, 0, len(&*c.source_path), &path) {
         c.error = 65;
+        let spelling = token(&*c, name);
+        c.error_start = spelling.start;
         return;
     }
     let start = len(&*c.source);
@@ -112,23 +119,30 @@ pub fn load_module(c: &mut Compiler, parent: i32, name: i32, public: bool) -> ()
             if !grown(try_extend(&mut *c.source, &bytes)) { c.error = 68; return; }
             let first = vector_len(&*c.tokens);
             let end = len(&*c.source);
-            crate::lexer::scan_range(&mut *c, start, end);
-            if c.error != 0 { return; }
             let owner = c.sources[parent];
-            let row = SourceModule { name: name, first_token: first, parent: parent,
+            let row = SourceModule { name: name, first_token: first, first_byte: start, parent: parent,
                 depth: owner.depth + 1, public: public };
+            let module = vector_len(&*c.sources);
             if !grown(try_push(&mut *c.sources, row)) {
-                c.error = 68;
+                c.error = 68; return;
             }
+            c.error_module = module;
+            crate::lexer::scan_range(&mut *c, start, end);
+            if c.error == 0 { c.error_module = parent; }
         },
     }
     return;
 }
 
-pub fn write_all(bytes: &[u8]) -> i32 {
+fn write_part(bytes: &[u8], diagnostic: bool) -> WriteSomeStatus {
+    if diagnostic { return write_stderr(&*bytes); }
+    return write_some(&*bytes);
+}
+
+fn write_to(bytes: &[u8], diagnostic: bool) -> i32 {
     let mut offset = 0;
     while offset < bytes.len() {
-        let written = write_some(&*bytes[offset..bytes.len()]);
+        let written = write_part(&*bytes[offset..bytes.len()], diagnostic);
         match written {
             WriteSomeStatus::Written(size) => {
                 if size <= 0 || size > bytes.len() - offset { return 74; }
@@ -138,4 +152,71 @@ pub fn write_all(bytes: &[u8]) -> i32 {
         }
     }
     return 0;
+}
+
+pub fn write_all(bytes: &[u8]) -> i32 { return write_to(&*bytes, false); }
+
+fn write_path(path: &[u8]) -> () {
+    let replacement = b"?";
+    let mut from = 0;
+    for index in 0..path.len() {
+        let byte = path[index];
+        if byte < 32u8 || byte == 127u8 {
+            if write_to(&*path[from..index], true) != 0 || write_to(&replacement, true) != 0 { return; }
+            from = index + 1;
+        }
+    }
+    write_to(&*path[from..path.len()], true);
+    return;
+}
+
+fn write_number(number: i32) -> () {
+    let mut digits = [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let mut remaining = number;
+    let mut start = 10;
+    while remaining > 0 {
+        start = start - 1;
+        let ascii = remaining % 10 + 48;
+        digits[start] = ascii.to_u8_checked();
+        remaining = remaining / 10;
+    }
+    write_to(&digits[start..10], true);
+    return;
+}
+
+pub fn report_status(status: i32) -> i32 {
+    if status == 64 { let text = b"error: expected one Oxid source file\n"; write_to(&text, true); }
+    if status == 66 { let text = b"error: could not read Oxid source\n"; write_to(&text, true); }
+    if status == 68 { let text = b"error: compiler resource limit exceeded\n"; write_to(&text, true); }
+    if status == 74 { let text = b"error: compiler I/O failed\n"; write_to(&text, true); }
+    return status;
+}
+
+pub fn report(c: &Compiler) -> i32 {
+    if c.error != 65 { return report_status(c.error); }
+    let mut first = 0;
+    let mut path = new();
+    let mut use_module = false;
+    if c.error_module > 0 {
+        let source = c.sources[c.error_module];
+        first = source.first_byte;
+        use_module = append_module_path(&*c, source.parent, source.name, &mut path);
+    }
+    if use_module { write_path(&path); }
+    else { write_path(&*c.source_path); }
+    let separator = b":";
+    let diagnostic = b": error: invalid or unsupported Oxid source\n";
+    let mut line = 1;
+    let mut column = 1;
+    while first < c.error_start {
+        if byte_code(&*c.source, first) == 10 { line = line + 1; column = 1; }
+        else { column = column + 1; }
+        first = first + 1;
+    }
+    write_to(&separator, true);
+    write_number(line);
+    write_to(&separator, true);
+    write_number(column);
+    write_to(&diagnostic, true);
+    return c.error;
 }

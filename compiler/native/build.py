@@ -33,7 +33,11 @@ def require(condition: bool, message: str) -> None:
 
 
 def module_from_result(result: subprocess.CompletedProcess[bytes]) -> bytes:
-    require(result.returncode == 0, f"compiler failed with status {result.returncode}")
+    if result.returncode != 0:
+        raw_detail = result.stderr[:8192].decode("utf-8", errors="replace")
+        detail = "".join(character if character.isprintable() else " " for character in raw_detail).strip()
+        suffix = f"\n{detail}" if detail else ""
+        raise BuildError(f"compiler failed with status {result.returncode}{suffix}")
     require(not result.stderr, "compiler emitted diagnostics on its success path")
     data = result.stdout
     require(0 < len(data) <= MAX_MODULE_BYTES, "compiler output size is invalid")
