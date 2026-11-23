@@ -23,6 +23,9 @@ use crate::model::is_slice;
 use crate::model::is_mutable_slice;
 use crate::model::slice_type;
 use crate::model::slice_element;
+use crate::model::is_record_reference;
+use crate::model::is_mutable_record_reference;
+use crate::model::referent_record;
 use crate::model::record;
 use crate::model::record_binding;
 use crate::model::record_type;
@@ -163,6 +166,34 @@ fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
     if projected { return crate::emit::project_slice(&mut *c, view, start, end); }
     return view;
 }
+fn record_argument(c: &mut Compiler, expected: i32) -> Value {
+    expect(&mut *c, 65);
+    let exclusive = kind(&*c) == 5;
+    if exclusive { expect(&mut *c, 5); }
+    if exclusive != is_mutable_record_reference(expected) { fail(&mut *c); return invalid(); }
+    let reborrow = kind(&*c) == 31;
+    if reborrow { expect(&mut *c, 31); }
+    let position = local(&*c, c.cursor);
+    expect(&mut *c, 1);
+    if position < 0 || c.error != 0 { fail(&mut *c); return invalid(); }
+    let binding = c.vars[position];
+    let target = referent_record(expected);
+    if reborrow {
+        if !is_record_reference(binding.ty) || referent_record(binding.ty) != target
+            || (exclusive && !is_mutable_record_reference(binding.ty)) {
+            fail(&mut *c); return invalid();
+        }
+    } else if binding.ty != target || (exclusive && !binding.writable) {
+        fail(&mut *c); return invalid();
+    }
+    if !binding.available || !access_allowed(&*c, position, exclusive) {
+        fail(&mut *c); return invalid();
+    }
+    if !grown(try_push(&mut *c.loans, Loan { binding: position, exclusive: exclusive })) {
+        c.error = 68; return invalid();
+    }
+    return crate::emit::borrow_record(&mut *c, binding, expected);
+}
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     if target < 0 { fail(&mut *c); return invalid(); }
     let f = c.functions[target];
@@ -176,6 +207,8 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
         let mut value = invalid();
         if is_slice(expected.ty) {
             value = slice_argument(&mut *c, expected.ty, depth);
+        } else if is_record_reference(expected.ty) {
+            value = record_argument(&mut *c, expected.ty);
         } else {
             value = expression(&mut *c, 1, depth + 1);
         }
@@ -336,7 +369,10 @@ fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
 
 fn field_value(c: &mut Compiler, binding: Binding) -> Value {
     expect(&mut *c, 43);
-    let row = c.records[record_index(binding.ty)];
+    let borrowed = is_record_reference(binding.ty);
+    let mut target = binding.ty;
+    if borrowed { target = referent_record(target); }
+    let row = c.records[record_index(target)];
     if row.tagged { fail(&mut *c); return invalid(); }
     let owner = c.functions[c.current];
     let field = visible_field(&*c, owner.source_module, row, c.cursor);
@@ -344,6 +380,7 @@ fn field_value(c: &mut Compiler, binding: Binding) -> Value {
     if field < 0 { fail(&mut *c); return invalid(); }
     let descriptor = c.fields[row.first_field + field];
     if is_array(descriptor.ty) { fail(&mut *c); return invalid(); }
+    if borrowed { return crate::emit::borrowed_field(&mut *c, binding, field, descriptor.ty); }
     let aggregate = crate::emit::load(&mut *c, binding.slot, binding.ty);
     return crate::emit::extract_field(&mut *c, aggregate, field, descriptor.ty);
 }
@@ -393,7 +430,10 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
         return region_length(&mut *c, binding);
     }
     if is_slice(binding.ty) { fail(&mut *c); return invalid(); }
-    if is_record(binding.ty) && kind(&*c) == 43 { return field_value(&mut *c, binding); }
+    if (is_record(binding.ty) || is_record_reference(binding.ty)) && kind(&*c) == 43 {
+        return field_value(&mut *c, binding);
+    }
+    if is_record_reference(binding.ty) { fail(&mut *c); return invalid(); }
     if moves_on_read(&*c, binding.ty) {
         // An outer binding must remain available for the next loop iteration.
         if position < c.loop_move_floor || !access_allowed(&*c, position, true) {
@@ -649,8 +689,11 @@ fn assign_field(c: &mut Compiler) -> () {
     let position = local(&*c, c.cursor);
     if position < 0 { fail(&mut *c); return; }
     let binding = c.vars[position];
-    if !binding.writable || !is_record(binding.ty) { fail(&mut *c); return; }
-    let row = c.records[record_index(binding.ty)];
+    let borrowed = is_mutable_record_reference(binding.ty);
+    if !borrowed && (!binding.writable || !is_record(binding.ty)) { fail(&mut *c); return; }
+    let mut referent = binding.ty;
+    if borrowed { referent = referent_record(referent); }
+    let row = c.records[record_index(referent)];
     if row.tagged { fail(&mut *c); return; }
     c.cursor = c.cursor + 2;
     let owner = c.functions[c.current];
@@ -663,7 +706,11 @@ fn assign_field(c: &mut Compiler) -> () {
     if value.ty != descriptor.ty { fail(&mut *c); return; }
     expect(&mut *c, 25);
     let target = c.vars[position];
-    if !target.available { fail(&mut *c); return; }
+    if !target.available || !access_allowed(&*c, position, true) { fail(&mut *c); return; }
+    if borrowed {
+        crate::emit::set_borrowed_field(&mut *c, binding, field, value);
+        return;
+    }
     let aggregate = crate::emit::load(&mut *c, binding.slot, binding.ty);
     let updated = crate::emit::insert_field(&mut *c, aggregate, value, field);
     crate::emit::store(&mut *c, binding.slot, updated);

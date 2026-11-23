@@ -11,6 +11,8 @@ use crate::model::array_element;
 use crate::model::array_bytes;
 use crate::model::is_slice;
 use crate::model::slice_element;
+use crate::model::is_record_reference;
+use crate::model::referent_record;
 use crate::model::code;
 use crate::model::is_record;
 use crate::model::record_index;
@@ -69,6 +71,11 @@ fn write_scalar_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) 
     return;
 }
 pub fn write_type(c: &mut Compiler, destination: i32, ty: i32, result: bool) -> () {
+    if is_record_reference(ty) {
+        let pointer = b"ptr";
+        append(&mut *c, destination, &pointer);
+        return;
+    }
     if is_slice(ty) {
         let view = b"{ ptr, i32 }";
         append(&mut *c, destination, &view);
@@ -454,6 +461,47 @@ pub fn array_store(c: &mut Compiler, binding: Binding, index: Value, value: Valu
 }
 pub fn slice_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
     let pointer = checked_slice_address(&mut *c, binding, index);
+    store_element(&mut *c, pointer, value);
+    return;
+}
+pub fn borrow_record(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
+    if is_record_reference(binding.ty) {
+        let pointer = load(&mut *c, binding.slot, binding.ty);
+        return Value { ty: ty, id: pointer.id };
+    }
+    let name = b"  %v";
+    let address = b" = getelementptr inbounds ";
+    let slot_prefix = b", ptr %s";
+    let end = b", i32 0\n";
+    let pointer = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &address);
+    write_type(&mut *c, 2, binding.ty, false); append(&mut *c, 2, &slot_prefix);
+    number(&mut *c, 2, binding.slot); append(&mut *c, 2, &end);
+    return Value { ty: ty, id: pointer };
+}
+
+fn record_field_address(c: &mut Compiler, binding: Binding, field: i32) -> i32 {
+    let base = load(&mut *c, binding.slot, binding.ty);
+    let name = b"  %v";
+    let address = b" = getelementptr inbounds ";
+    let pointer_prefix = b", ptr ";
+    let ordinal = b", i32 0, i32 ";
+    let line = b"\n";
+    let pointer = fresh(&mut *c);
+    append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &address);
+    write_type(&mut *c, 2, referent_record(binding.ty), false); append(&mut *c, 2, &pointer_prefix);
+    operand(&mut *c, 2, base); append(&mut *c, 2, &ordinal);
+    number(&mut *c, 2, field); append(&mut *c, 2, &line);
+    return pointer;
+}
+
+pub fn borrowed_field(c: &mut Compiler, binding: Binding, field: i32, ty: i32) -> Value {
+    let pointer = record_field_address(&mut *c, binding, field);
+    return load_element(&mut *c, pointer, ty);
+}
+
+pub fn set_borrowed_field(c: &mut Compiler, binding: Binding, field: i32, value: Value) -> () {
+    let pointer = record_field_address(&mut *c, binding, field);
     store_element(&mut *c, pointer, value);
     return;
 }

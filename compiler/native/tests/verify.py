@@ -561,6 +561,53 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "fn main()->i32{let Entry{number:answer}=id(Entry{number:42});return answer;}",
             "data.ox": "#[derive(Copy)]pub struct Row{pub number:i32}",
         }),
+        ("cross-module-record-borrows", 0, True, {
+            "main.ox": "mod data;use crate::data::Row as Entry;"
+                       "fn update(row:&mut Entry)->(){crate::data::add(&mut *row,40);return;}"
+                       "fn main()->i32{let mut row=crate::data::open();update(&mut row);"
+                       "return crate::data::read(&row);}",
+            "data.ox": "pub struct Row{number:i32,bytes:[u8;2]}"
+                       "pub fn open()->Row{return Row{number:2,bytes:[1u8,2u8]};}"
+                       "pub fn read(row:&crate::data::Row)->i32{return row.number;}"
+                       "pub fn add(row:&mut Row,change:i32)->(){row.number=read(&*row)+change;return;}",
+        }),
+        ("repeated-shared-record-borrows", 0, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn total(a:&Row,b:&Row)->i32{return a.value+b.value;}"
+                       "fn main()->i32{let a=Row{value:14};let previous=total(&a,&a);"
+                       "let renamed=a;return previous+renamed.value;}",
+        }),
+        ("duplicate-mutable-record-borrow", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn total(a:&mut Row,b:&mut Row)->i32{return a.value+b.value;}"
+                       "fn main()->i32{let mut a=Row{value:21};return total(&mut a,&mut a);}",
+        }),
+        ("record-shared-borrow-cannot-write", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn update(row:&Row)->(){row.value=42;return;}"
+                       "fn main()->i32{let row=Row{value:0};update(&row);return row.value;}",
+        }),
+        ("record-shared-borrow-cannot-upgrade", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn update(row:&mut Row)->(){row.value=42;return;}"
+                       "fn wrap(row:&Row)->(){update(&mut *row);return;}"
+                       "fn main()->i32{let row=Row{value:0};wrap(&row);return row.value;}",
+        }),
+        ("record-move-while-borrowed", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn take(row:Row)->i32{return row.value;}"
+                       "fn total(row:&Row,amount:i32)->i32{return row.value+amount;}"
+                       "fn main()->i32{let row=Row{value:21};return total(&row,take(row));}",
+        }),
+        ("record-borrow-return", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn escape(row:&Row)->&Row{return row;}fn main()->i32{return 42;}",
+        }),
+        ("private-field-through-record-borrow", 65, True, {
+            "main.ox": "mod data;fn read(row:&crate::data::Row)->i32{return row.hidden;}"
+                       "fn main()->i32{let row=crate::data::open();return read(&row);}",
+            "data.ox": "pub struct Row{hidden:i32}pub fn open()->Row{return Row{hidden:42};}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
