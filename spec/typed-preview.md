@@ -454,8 +454,9 @@ error contracts.
 ## Scalar native libraries
 
 `oxid --edition typed-preview library --export crate::NAME --output NEW_DIRECTORY SOURCE`
-builds a Linux x86_64/ARM64 shared library. The selected root function must be
-explicitly public, take only `i32` parameters and return `i32`. The generated
+builds a shared library on Linux or macOS x86_64/ARM64 and Windows MSVC x64.
+The selected root function must be public, take only `i32` parameters and return
+`i32`. The generated
 header exposes a fixed status-returning C ABI with caller-owned output storage.
 Arithmetic errors and execution exhaustion return to the host without changing
 that output. Every invocation owns its bounded execution allowance.

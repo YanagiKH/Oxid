@@ -1148,6 +1148,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --test native_doctor --test typed_windows_native -- --include-ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows libraries from C, Rust and Python
+        run: |
+          cargo test --locked --test native_library actual_windows_library_is_called_by_c_rust_and_python -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Windows binary file programs
         run: |
           $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN

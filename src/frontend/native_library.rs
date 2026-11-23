@@ -96,13 +96,14 @@ pub(super) fn require_host() -> Result<(), Box<Diagnostic>> {
         target_pointer_width = "64",
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")
-    )) {
+    )) || super::build_config::NativeBuildSettings::windows_msvc_host()
+    {
         Ok(())
     } else {
         Err(Diagnostic::new(
             "E0700",
             "native-library",
-            "scalar native libraries currently require Linux or macOS on x86_64 or ARM64",
+            "scalar native libraries require Linux or macOS on x86_64 or ARM64, or Windows MSVC x64",
             None,
         ))
     }
