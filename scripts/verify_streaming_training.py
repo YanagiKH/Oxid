@@ -13,7 +13,7 @@ import threading
 import time
 import zlib
 
-from data_pipeline_verification import ROOT, Verification, native_limits, sha
+from data_pipeline_verification import ROOT, STREAMING_TRAINING_SOURCES, Verification, native_limits, sha
 import streaming_training_oracle as oracle
 
 DATA = Path('tests/data/reader.oxds')
@@ -191,7 +191,7 @@ def checkpoint_cases(check, label, command, directory, native):
 def verify(args):
     check = Verification(args, ['verify_streaming_training.py', 'streaming_training_oracle.py',
                                'data_pipeline_verification.py', 'linux_native_target.py'],
-                         ['apps/cpu-training/tensor', 'apps/cpu-training/checkpoint/storage', 'apps/streaming-training'],
+                         STREAMING_TRAINING_SOURCES,
                          'Sequential finite f64 dataset batches, terminal cleanup, analytic SGD and source-free native execution.')
     # Dataset bytes are part of the source snapshot, rather than compiler input.
     for name in ['data/sample.oxds', 'tests/data/reader.oxds']:
