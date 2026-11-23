@@ -677,6 +677,10 @@ impl CheckedSourceProgram<'_> {
     pub(in crate::frontend) fn windows_file_or_time_candidate(&self) -> bool {
         matches!(&self.body, CheckedBody::Owned(program) if program.windows_file_or_time_candidate())
     }
+
+    pub(in crate::frontend) fn windows_binary_io_candidate(&self) -> bool {
+        matches!(&self.body, CheckedBody::Owned(program) if program.windows_binary_io_candidate())
+    }
     pub(in crate::frontend) fn debug_records(&self) -> Option<super::super::DebugRecords<'_>> {
         match &self.body {
             CheckedBody::Scalar(_) => None,
@@ -974,14 +978,15 @@ impl CheckedSourceProgram<'_> {
     fn require_process_host(&self) -> Result<(), Box<Diagnostic>> {
         if super::super::process::supported_host()
             || (crate::frontend::build_config::NativeBuildSettings::windows_msvc_host()
-                && matches!(self.body, CheckedBody::Scalar(_)))
+                && (matches!(self.body, CheckedBody::Scalar(_))
+                    || self.windows_binary_io_candidate()))
         {
             Ok(())
         } else {
             Err(Diagnostic::new(
                 "E0608",
                 "oir-run",
-                "process execution supports Linux and macOS on x86_64 or ARM64, and scalar programs on Windows MSVC x64",
+                "process execution supports Linux and macOS on x86_64 or ARM64, and scalar or binary stream programs on Windows MSVC x64",
                 None,
             ))
         }

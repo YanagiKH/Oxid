@@ -13,6 +13,13 @@
 #include <string.h>
 #if defined(_WIN32)
 #include <io.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #define oxid_close_descriptor _close
 #else
 #include <unistd.h>
@@ -223,12 +230,28 @@ int32_t oxid_bytebuf_truncate(oxid_byte_heap *heap, oxid_bytebuf *value, int32_t
     return 0;
 }
 
+#if defined(_WIN32)
+static DWORD stream_error(void) {
+    DWORD error = GetLastError();
+    return error ? error : ERROR_GEN_FAILURE;
+}
+#endif
+
 static oxid_binary_result read_once(uint8_t *bytes, int32_t length) {
     if (!length) return (oxid_binary_result){0, 0};
 #if defined(_WIN32)
-    /* Public process I/O remains closed. Never use CRT text-mode stdin. */
-    (void)bytes;
-    return (oxid_binary_result){2, ENOSYS};
+    HANDLE handle = GetStdHandle(STD_INPUT_HANDLE);
+    if (handle == NULL || handle == INVALID_HANDLE_VALUE)
+        return (oxid_binary_result){2, ERROR_INVALID_HANDLE};
+    DWORD count = 0;
+    BOOL ok = ReadFile(handle, bytes, (DWORD)length, &count, NULL);
+    DWORD error = ok ? 0 : stream_error();
+    if (count > (DWORD)length) return (oxid_binary_result){2, ERROR_GEN_FAILURE};
+    if ((!error || error == ERROR_MORE_DATA) && count)
+        return (oxid_binary_result){0, (int32_t)count};
+    if (!error || error == ERROR_HANDLE_EOF || error == ERROR_BROKEN_PIPE || error == ERROR_NO_DATA)
+        return (oxid_binary_result){1, 0};
+    return (oxid_binary_result){2, (int32_t)error};
 #else
     ssize_t done = read(STDIN_FILENO, bytes, (size_t)length);
     if (done < 0) return (oxid_binary_result){2, errno};
@@ -240,9 +263,15 @@ static oxid_binary_result read_once(uint8_t *bytes, int32_t length) {
 static oxid_binary_result write_once(const uint8_t *bytes, int32_t length, int to_stderr) {
     if (!length) return (oxid_binary_result){0, 0};
 #if defined(_WIN32)
-    (void)bytes;
-    (void)to_stderr;
-    return (oxid_binary_result){2, ENOSYS};
+    HANDLE handle = GetStdHandle(to_stderr ? STD_ERROR_HANDLE : STD_OUTPUT_HANDLE);
+    if (handle == NULL || handle == INVALID_HANDLE_VALUE)
+        return (oxid_binary_result){2, ERROR_INVALID_HANDLE};
+    DWORD count = 0;
+    BOOL ok = WriteFile(handle, bytes, (DWORD)length, &count, NULL);
+    DWORD error = ok ? 0 : stream_error();
+    if (count > (DWORD)length) return (oxid_binary_result){2, ERROR_GEN_FAILURE};
+    if (!error || count) return (oxid_binary_result){0, (int32_t)count};
+    return (oxid_binary_result){2, (int32_t)error};
 #else
     int descriptor = to_stderr ? STDERR_FILENO : STDOUT_FILENO;
     ssize_t done = write(descriptor, bytes, (size_t)length);

@@ -4569,7 +4569,7 @@ fn checked_entry_policy<W: PlanWitness>(
             if policy == EntryPolicy::Result {
                 return Err(OwnedRunFailure::BinaryEntry(span));
             }
-            if !input::supported_host() {
+            if !process::entry_supported_host() {
                 return Err(OwnedRunFailure::BinaryHost(span));
             }
         }
@@ -4589,7 +4589,7 @@ fn checked_entry_policy<W: PlanWitness>(
                 witness.functions()[function.0].span,
             ));
         }
-        if policy == EntryPolicy::Process {
+        if policy == EntryPolicy::Process && !process::entry_supported_host() {
             return Err(OwnedRunFailure::ProcessHost);
         }
     }

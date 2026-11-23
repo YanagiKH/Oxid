@@ -8,13 +8,10 @@ use super::{
     source::SourceFile,
 };
 
-pub(super) fn preflight(
+fn preflight(
     project: &ProjectSources,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<(), Box<Diagnostic>> {
-    if !NativeBuildSettings::windows_msvc_host() {
-        return Ok(());
-    }
     let execution = settings.map_or(ExecutionPolicy::Bounded, |settings| settings.execution());
     if execution.hosted() || settings.is_some_and(|settings| settings.debug_info()) {
         return Err(reject());
@@ -36,9 +33,16 @@ pub(super) fn preflight_checked(
     process: bool,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<(), Box<Diagnostic>> {
-    if NativeBuildSettings::windows_msvc_host() && checked.windows_file_or_time_candidate() {
+    if !NativeBuildSettings::windows_msvc_host() {
+        return Ok(());
+    }
+    let binary_streams = checked.windows_binary_io_candidate();
+    if binary_streams || checked.windows_file_or_time_candidate() {
         let execution = settings.map_or(ExecutionPolicy::Bounded, |settings| settings.execution());
-        if process || execution.hosted() || settings.is_some_and(|settings| settings.debug_info()) {
+        if process != binary_streams
+            || execution.hosted()
+            || settings.is_some_and(|settings| settings.debug_info())
+        {
             return Err(reject());
         }
         // Reuse the existing complete module walk. This narrower parser fact
@@ -76,7 +80,7 @@ struct FileRoutingCarriers {
     candidate_arguments: [&'static super::oir::CheckedSourceProgram<'static>; 2],
     selected_body: &'static (),
     candidate_inventory: super::builtin_catalog::termination::Inventory,
-    candidate_returns: [bool; 5],
+    candidate_returns: [bool; 6],
     execution: ExecutionPolicy,
     scope_arguments: (&'static ProjectSources, bool),
     scope_iterator: std::slice::Iter<'static, super::project::ModuleHeader>,
@@ -156,7 +160,7 @@ fn outside_scalar_scope(program: &Program, source: &SourceFile) -> bool {
 fn reject() -> Box<Diagnostic> {
     Diagnostic::new(
         "E0700", "native-admission",
-        "Windows native builds support bounded bool/i32/unit functions with result or process entry. File byte I/O and std::time require result entry. Generics, other owned types, process I/O and debug information are unavailable",
+        "Windows native builds support bounded bool/i32/unit functions with result or process entry. Binary streams use process entry. File byte I/O and std::time can use result entry. Generics, other owned types and debug information are unavailable",
         None,
     )
 }
