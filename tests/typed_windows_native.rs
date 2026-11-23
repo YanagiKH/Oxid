@@ -332,6 +332,109 @@ fn main()->i32 {
 }
 
 #[test]
+#[ignore = "requires the Windows MSVC x64 LLVM 19.1.7 toolchain"]
+fn windows_arguments_use_utf8_in_reference_and_relocated_native_programs() {
+    use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+
+    fn verify(output: Output, status: i32, stdout: &str) {
+        assert_eq!(output.status.code(), Some(status), "{output:?}");
+        assert_eq!(output.stdout, stdout.as_bytes(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+
+    const SOURCE: &str = r#"
+use std::env::ArgStatus;
+use std::env::arg_bytes;
+use std::env::arg_count;
+fn main()->i32 {
+    if arg_count()!=4{return 1;}
+    let mut bytes=b"xxxxxxxxxxxxxxxx";
+    let expected=b"Oxid \xc2\xa2\xf0\x9f\xa6\x80\x5c\x22";
+    let short=arg_bytes(1,&mut bytes[0..2]);
+    match short {
+        ArgStatus::TooSmall(length)=>{if length!=13||bytes[0]!=120u8{return 2;}},
+        ArgStatus::Copied(length)=>{return 3;},
+        ArgStatus::Missing=>{return 4;},
+        ArgStatus::TooLong=>{return 5;},
+    }
+    let first=arg_bytes(1,&mut bytes);
+    match first {
+        ArgStatus::Copied(length)=>{if length!=13{return 6;}},
+        ArgStatus::TooSmall(required)=>{return 7;},
+        ArgStatus::Missing=>{return 8;},
+        ArgStatus::TooLong=>{return 9;},
+    }
+    let mut i=0;
+    while i<13 {
+        if bytes[i]!=expected[i]{return 10;}
+        i=i+1;
+    }
+    let empty=arg_bytes(2,&mut bytes[0..0]);
+    match empty {
+        ArgStatus::Copied(length)=>{if length!=0{return 11;}},
+        ArgStatus::TooSmall(required)=>{return 12;},
+        ArgStatus::Missing=>{return 13;},
+        ArgStatus::TooLong=>{return 14;},
+    }
+    let last=arg_bytes(3,&mut bytes);
+    match last {
+        ArgStatus::Copied(length)=>{if length!=3{return 15;}},
+        ArgStatus::TooSmall(required)=>{return 16;},
+        ArgStatus::Missing=>{return 17;},
+        ArgStatus::TooLong=>{return 18;},
+    }
+    if bytes[0]!=239u8||bytes[1]!=191u8||bytes[2]!=189u8||bytes[3]!=100u8||bytes[13]!=120u8{return 19;}
+    return 42;
+}
+"#;
+    let arguments = [
+        OsString::from("Oxid ¢🦀\\\""),
+        OsString::new(),
+        OsString::from_wide(&[0xd800]),
+    ];
+    for mode in ["process", "result"] {
+        let fixture = Fixture::new(SOURCE);
+        fs::write(fixture.0.join("oxid.toml"), format!("[project]\nname=\"arguments\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"{mode}\"\n")).unwrap();
+        let (status, stdout) = if mode == "process" {
+            (42, "")
+        } else {
+            (0, "42\n")
+        };
+        let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+            .current_dir(&fixture.0)
+            .args(["run", "--"])
+            .args(&arguments)
+            .output()
+            .unwrap();
+        verify(output, status, stdout);
+        for profile in ["dev", "release"] {
+            let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .current_dir(&fixture.0)
+                .args(["build", "--profile", profile])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            fs::rename(
+                fixture.0.join(".oxid/bin/arguments.exe"),
+                fixture.0.join(format!("{profile}.exe")),
+            )
+            .unwrap();
+        }
+        fs::remove_file(fixture.0.join("main.ox")).unwrap();
+        fs::remove_file(fixture.0.join("oxid.toml")).unwrap();
+        fs::remove_dir_all(fixture.0.join(".oxid")).unwrap();
+        for profile in ["dev", "release"] {
+            let output = Command::new(fixture.0.join(format!("{profile}.exe")))
+                .current_dir(&fixture.0)
+                .args(&arguments)
+                .output()
+                .unwrap();
+            verify(output, status, stdout);
+        }
+    }
+}
+
+#[test]
 fn unused_child_module_features_are_rejected_by_file_and_both_project_profiles() {
     for hidden in [
         "struct Private{x:i32}",

@@ -1,10 +1,10 @@
 # Program arguments
 
-Status: experimental, `typed-preview`, Linux x86_64.
+Status: `typed-preview`, Linux and macOS x86_64/ARM64, Windows MSVC x64.
 
 `std::env::arg_count()` returns the number of program arguments, including the
 executable at index 0. `arg_bytes(index, &mut destination)` copies an argument's
-raw OS bytes into a mutable byte slice:
+bytes into a mutable byte slice:
 
 | `ArgStatus` | Meaning |
 | --- | --- |
@@ -13,9 +13,11 @@ raw OS bytes into a mutable byte slice:
 | `Missing` | The index is negative or outside the argument list. |
 | `TooLong` | The argument's length cannot be represented by `i32`. |
 
-Empty arguments return `Copied(0)`. Arguments contain neither an appended NUL
-nor an implicit UTF-8 conversion. `Missing` and `TooLong` preserve every
-destination byte. Arguments are immutable; reading one does not consume it.
+Empty arguments return `Copied(0)`. Linux and macOS preserve each original OS
+byte. Windows encodes the wide arguments as UTF-8, replacing each unpaired
+UTF-16 surrogate with `U+FFFD`. The copy omits the terminating NUL. `Missing`
+and `TooLong` preserve every destination byte. Reading an argument keeps it
+available for later calls.
 Fixed byte arrays, borrowed byte ranges and initialized `ByteBuf` ranges can
 serve as destinations. The status is an ordinary move-only enum.
 
@@ -40,8 +42,9 @@ embedded executor without an installed argument context has zero arguments.
 Both result and process entry modes admit this API. Checking never reads a
 program argument. Unsupported execution hosts reject before source effects.
 
-For bounded execution, a present argument costs one unit per byte plus its NUL
-terminator scan. A successful copy additionally costs one unit per copied byte.
+For bounded execution, a present argument costs one unit per resulting byte
+plus one for the terminator. A successful copy additionally costs one unit per
+copied byte.
 A missing argument has no byte-work cost. The complete status delivery and loan
 release are prepared, and the immediate primitive return is prepaid, before
 any destination changes. Fuel refusal preserves the destination and result.

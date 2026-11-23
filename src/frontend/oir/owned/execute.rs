@@ -4555,7 +4555,7 @@ fn checked_entry_policy<W: PlanWitness>(
     }
     for operation in crate::frontend::builtin_catalog::experimental::Function::ALL {
         if ((operation.is_file() && !byte_buffer::file_supported_host())
-            || (operation.is_arguments() && !input::supported_host()))
+            || (operation.is_arguments() && !crate::program_arguments::supported_host()))
             && witness.experimental_function(operation).is_some()
         {
             return Err(OwnedRunFailure::BinaryHost(

@@ -37,6 +37,10 @@ Use `std::io::read_some`, `write_some` and `write_stderr` with byte arrays and
 slices in process mode. These functions use the inherited streams and return
 Windows error codes when a transfer fails.
 
+Pass arguments with `oxid run -- ARGUMENTS` or after the native executable's
+name. `std::env::arg_bytes` copies UTF-8 into a byte array or slice. User
+arguments start at index 1.
+
 Other scalar types, records, vectors, generics, hosted execution, native debug
 information, native object caching, multi-package dependencies and workspace
 projects are unavailable on this native target.
