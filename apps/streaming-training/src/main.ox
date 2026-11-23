@@ -1,3 +1,4 @@
+mod checkpoint;
 mod options;
 mod report;
 mod training;

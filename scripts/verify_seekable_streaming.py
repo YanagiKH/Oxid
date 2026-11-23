@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 import struct
 
-from data_pipeline_verification import ROOT, Verification, sha
+from data_pipeline_verification import ROOT, STREAMING_TRAINING_SOURCES, Verification, sha
 import streaming_training_oracle as oracle
 
 
@@ -155,7 +155,7 @@ def reader_cases(check, prefix, command, native):
 def verify(args):
     check = Verification(args, ['verify_seekable_streaming.py', 'data_pipeline_verification.py',
                                'streaming_training_oracle.py', 'linux_native_target.py'],
-                         ['apps/cpu-training/tensor', 'apps/streaming-training'],
+                         STREAMING_TRAINING_SOURCES,
                          'Absolute file seek and suffix-only dataset validation, independent SGD, '
                          'O0/O2 and source-free Linux native deployment; no throughput claim.')
     for name in ['data/sample.oxds', 'tests/data/reader.oxds']:

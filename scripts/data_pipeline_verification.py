@@ -11,6 +11,11 @@ import time
 import linux_native_target
 
 ROOT = Path(__file__).resolve().parents[1]
+STREAMING_TRAINING_SOURCES = (
+    'apps/cpu-training/tensor',
+    'apps/cpu-training/checkpoint/storage',
+    'apps/streaming-training',
+)
 
 
 def sha(path):

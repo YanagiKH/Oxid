@@ -193,6 +193,8 @@ pub fn random(seed: u32) -> Random {
     return Random { state: state };
 }
 
+pub fn random_state(generator: &Random) -> u32 { return generator.state; }
+
 pub fn next_random(state: &mut Random) -> u32 {
     let mut bits = state.state;
     bits = bits ^ (bits << 13);

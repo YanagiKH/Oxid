@@ -7,6 +7,7 @@ entry = "src/main.ox"
 [build]
 profile = "release"
 entry-mode = "process"
+reproducible = true
 
 [execution]
 policy = "hosted"
@@ -14,6 +15,11 @@ policy = "hosted"
 [dependencies]
 tensor = "../cpu-training/tensor"
 reader = "reader"
+checkpoint_files = "../cpu-training/checkpoint/storage"
 
 [tests]
 reader = "tests/reader.ox"
+
+[package-files]
+"data/sample.oxds" = true
+"tests/data/reader.oxds" = true

@@ -11,8 +11,9 @@ import struct
 import subprocess
 import threading
 import time
+import zlib
 
-from data_pipeline_verification import ROOT, Verification, native_limits, sha
+from data_pipeline_verification import ROOT, STREAMING_TRAINING_SOURCES, Verification, native_limits, sha
 import streaming_training_oracle as oracle
 
 DATA = Path('tests/data/reader.oxds')
@@ -132,10 +133,65 @@ def app_case(check, label, command, directory, epochs, size, native, shuffle=Non
     return result.stdout
 
 
+def checkpoint_cases(check, label, command, directory, native):
+    directory.mkdir(parents=True)
+    source = directory/'input.oxds'
+    payload = oracle.encode(oracle.SHUFFLE_ROWS)
+    source.write_bytes(payload)
+    batch_size = 2
+    start = 2
+    seed = 42
+    flags = [str(start), '--shuffle', str(seed)]
+
+    def run(name, epochs, mode, prefix, status=0, size=batch_size):
+        return check.command(label+'-'+name,
+                             [*command, str(source), str(epochs), str(size), *flags, mode, directory/prefix],
+                             directory, status, native=native)
+
+    whole = run('uninterrupted', 3, '--checkpoint', 'whole')
+    rows = oracle.SHUFFLE_ROWS[start:]
+    oracle.check_summary(whole.stdout, rows, 3, batch_size, seed)
+    first = run('first-epoch', 1, '--checkpoint', 'split')
+    oracle.check_summary(first.stdout, rows, 1, batch_size, seed)
+    resumed = run('resume-two-epochs', 2, '--resume', 'split')
+    require(resumed.stdout.splitlines()[1:3] == whole.stdout.splitlines()[1:3]
+            and resumed.stdout.splitlines()[-1:] == whole.stdout.splitlines()[-1:],
+            label+': resumed counts or final loss differ')
+
+    def slots(prefix):
+        return tuple((directory/f'{prefix}.{slot}').read_bytes() for slot in ('a', 'b'))
+
+    expected = slots('whole')
+    require(slots('split') == expected, label+': resumed model or shuffle state differ')
+    selected_start = 24 + start * 24
+    selected_digest = zlib.crc32(payload[selected_start:])
+    for epoch, raw in zip((2, 3), expected):
+        require(raw.startswith(b'OXSTR001') and struct.unpack_from('<I', raw, 8)[0] == epoch
+                and zlib.crc32(raw[:-4]) == struct.unpack_from('<I', raw, len(raw)-4)[0],
+                label+': wrong retained epoch or checksum')
+        require(selected_digest == struct.unpack_from('<I', raw, 36)[0],
+                label+': saved checksum does not cover the selected rows')
+
+    second = directory/'split.b'
+    second.write_bytes(expected[1][:37])
+    run('recover-truncated-latest', 1, '--resume', 'split')
+    require(slots('split') == expected, label+': recovery overwrote or diverged from the last good model')
+    run('refuse-existing-prefix', 1, '--checkpoint', 'split', 1)
+    run('refuse-changed-batch-size', 1, '--resume', 'split', 1, size=3)
+    changed = bytearray(payload)
+    changed[selected_start] ^= 1
+    source.write_bytes(changed)
+    run('refuse-changed-dataset', 1, '--resume', 'split', 1)
+    require(slots('split') == expected, label+': failed restore changed a checkpoint')
+    check.report['cases'].append({'name': label, 'epochs': 3, 'native': native,
+                                  'checkpoint_sha256': [hashlib.sha256(raw).hexdigest() for raw in expected]})
+    check.save()
+
+
 def verify(args):
     check = Verification(args, ['verify_streaming_training.py', 'streaming_training_oracle.py',
                                'data_pipeline_verification.py', 'linux_native_target.py'],
-                         ['apps/cpu-training/tensor', 'apps/streaming-training'],
+                         STREAMING_TRAINING_SOURCES,
                          'Sequential finite f64 dataset batches, terminal cleanup, analytic SGD and source-free native execution.')
     # Dataset bytes are part of the source snapshot, rather than compiler input.
     for name in ['data/sample.oxds', 'tests/data/reader.oxds']:
@@ -173,6 +229,8 @@ def verify(args):
                                          project, epochs, size, False, (start, seed))
             require(shuffled[5, 2, 2, 42] != shuffled[5, 2, 2, 43],
                     'distinct seeds produced the same measured training result')
+            checkpoint_cases(check, prefix+'-checkpoint-reference', [compiler, 'run', '--'],
+                             project/'checkpoint-test', False)
             binaries = []
             for profile in ['dev', 'release']:
                 check.command(f'{prefix}-{profile}-build', [compiler, 'build', '--profile', profile,
@@ -270,6 +328,7 @@ def verify(args):
                     require(actual == expected, 'native and reference shuffled summaries differ')
                 repeated = app_case(check, f'{label}-shuffle-repeated', [binary], directory, 5, 2, True, (2, 42))
                 require(repeated == shuffled[5, 2, 2, 42], 'identical seeds changed shuffled training')
+                checkpoint_cases(check, label+'-checkpoint', [binary], directory/'checkpoint-test', True)
                 for number, arguments in enumerate([[], ['--help'], ['-h']]):
                     result = check.command(f'{label}-help-{number}', [binary, *arguments], directory, native=True)
                     require(b'streaming-training <dataset> <epochs> <batch-size>' in result.stdout, 'missing usage')

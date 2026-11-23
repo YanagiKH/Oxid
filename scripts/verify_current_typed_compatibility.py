@@ -15,9 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "0e6dd3e27cbe1275bb9554773d68b70fe52976c4"
-REVIEWED_PARENTS = ("71b20ee9264ffc9486e8886ca34b8df2674ab01c",)
-REVIEWED_TREE = "18816d9f50e15cd50d8c144c027871339095c49e"
+REVIEWED_SOURCE = "02a4533267dd78b4eceb6c290ae30f049de7aa15"
+REVIEWED_PARENTS = ("b7e1dfd0dfb0d79261f2e3175b7ce3a81c972963",)
+REVIEWED_TREE = "62836f5d424f31c07b700e1d199e74d83c4b1fe2"
 PUBLIC_TESTS = {
     "tests/file_open_append.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
@@ -25,6 +25,10 @@ PUBLIC_TESTS = {
     "tests/windows_file_io.rs", "tests/windows_file_runtime.c",
 }
 PUBLIC_TEST_UPDATES = {"tests/typed_language_server.rs"}
+PUBLIC_VECTOR_UPDATES = {
+    "examples/owned-vector-results/src/main.ox",
+    "packages/owned_vec/src/lib.ox",
+}
 SOURCE_ROOTS = ("src", "native")
 RESOURCE_ADAPTER = "scripts/process_termination_resource_adapter.py"
 RESOURCE_ADAPTER_PIN = (3196, "d6b3bcd1bd0c958e4a2164d66425a231c086ba1f767657ea9c6ac360473aad0d")
@@ -70,15 +74,15 @@ def reviewed_delta(repo):
             "wrong reviewed integrated typed source")
     raw = git(repo, "diff", "--name-status", "--no-renames", "-z", PREDECESSOR, REVIEWED_SOURCE)
     words = raw.decode("utf-8").split("\0")
-    require(words[-1] == "" and len(words) == 273, "invalid reviewed compiler delta")
+    require(words[-1] == "" and len(words) == 279, "invalid reviewed compiler delta")
     rows = list(zip(words[:-1:2], words[1:-1:2]))
     added = {name for status, name in rows if status == "A"}
     modified = {name for status, name in rows if status == "M"}
-    require(len(added) == 27 and len(modified) == 109 and not added & modified,
+    require(len(added) == 27 and len(modified) == 112 and not added & modified,
             "wrong reviewed compiler delta membership")
-    require(PUBLIC_TESTS <= added and PUBLIC_TEST_UPDATES <= modified
+    require(PUBLIC_TESTS <= added and PUBLIC_TEST_UPDATES | PUBLIC_VECTOR_UPDATES <= modified
             and all(name.startswith(("src/", "native/"))
-                    for name in (added | modified) - PUBLIC_TESTS - PUBLIC_TEST_UPDATES),
+                    for name in (added | modified) - PUBLIC_TESTS - PUBLIC_TEST_UPDATES - PUBLIC_VECTOR_UPDATES),
             "unexpected reviewed compiler path")
     return added, modified
 

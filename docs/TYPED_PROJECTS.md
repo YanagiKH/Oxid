@@ -132,10 +132,10 @@ Workspace checks include every member and declared test entry. Dependencies are
 resolved offline; prepare Git dependencies with ordinary project commands first.
 Manifests and lockfiles are read from disk. Diagnostics reflect editor source
 buffers and do not replace `oxid check --frozen` for saved-input verification.
-Use Go to Definition on a named type in an annotation, a record name in a
-constructor, or a variant name in a constructor or `match` arm. Type arguments
-and type parameters also link to their definitions. Navigation follows visible
-imports and reads unsaved source. See the [language server contract](../rfcs/0065-typed-language-server.md)
+Use Go to Definition on a named type, a record or field in a constructor or
+destructuring pattern, or a variant in a constructor or `match` arm. Type
+arguments and type parameters also link to their declarations. Navigation follows
+visible imports and reads unsaved source. See the [language server contract](../rfcs/0065-typed-language-server.md)
 and [navigation scope](../rfcs/0066-editor-symbol-navigation.md).
 
 ## Generate API documentation
@@ -441,6 +441,13 @@ restored project does not require Git, a registry or the original cache.
 Creation never fetches dependencies.
 Use `--sha256 HEX` with verify or extract to compare a separately supplied hash.
 [Package details](../rfcs/0038-typed-source-packages.md).
+
+To include test data or other files, list their paths relative to `oxid.toml`.
+
+```toml
+[package-files]
+"tests/data/example.bin" = true
+```
 
 For complete applications, try [Byte count](../apps/byte-count/README.md) or
 [Frame filter](../apps/frame-filter/README.md), which passes owned records,
