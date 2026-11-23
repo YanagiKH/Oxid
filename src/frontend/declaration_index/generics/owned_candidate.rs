@@ -626,10 +626,11 @@ impl DeclarationIndex<'_> {
         }
         Ok(())
     }
-    /// References and outer function values may defer an unbounded element.
+    /// References, outer function values and empty construction may defer an
+    /// unbounded element.
     /// Concrete specialization still uses candidate_element and its finite-root
-    /// checks; field layouts, slices and explicit new::<T> never enter this seam.
-    pub(super) fn candidate_borrowed_element(
+    /// checks. Field layouts and slices still require a concrete/Copy element.
+    pub(super) fn candidate_deferred_element(
         &self,
         value: Value,
         nominals: &Nominals,
@@ -641,7 +642,7 @@ impl DeclarationIndex<'_> {
                 position,
                 copy: false,
             } if self.owned_vector_builder().is_some() => {
-                work.debit(1, at, "borrowed owned vector parameter admission")?;
+                work.debit(1, at, "deferred owned vector element admission")?;
                 self.note_owned_vector_source(at)?;
                 Ok(Element::OwnedParameter(position))
             }

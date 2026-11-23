@@ -23,10 +23,11 @@ struct Message { bytes: ByteBuf }
 enum Token { Empty, Wide(i128) }
 #[derive(Copy)] struct Point { value: i32 }
 fn first_byte(bytes: &[u8]) -> u8 { return bytes[0]; }
+fn empty<T>() -> Vec<T> { return new::<T>(); }
 fn main() -> i32 {
-    let empty = new::<Message>();
-    discard(transfer(empty));
-    let mut messages = new::<Message>();
+    let unused = empty::<Message>();
+    discard(transfer(unused));
+    let mut messages = empty::<Message>();
     let mut first = bytes_new();
     bytes_push(&mut first, 42u8);
     if bytes_len(&first) != 1 { return -1; }
@@ -72,7 +73,7 @@ fn main() -> i32 {
     if len(&detached) != 1 || capacity(&detached) != reserved { return -25; }
     discard(detached);
     discard(moved);
-    let mut tokens = new::<Token>();
+    let mut tokens = empty::<Token>();
     let token_push = try_push(&mut tokens, Token::Wide(170141183460469231731687303715884105727i128));
     match token_push {
         PushResult::Pushed => {},
@@ -92,14 +93,14 @@ fn main() -> i32 {
             }
         },
     }
-    let mut statuses = new::<GrowStatus>();
+    let mut statuses = empty::<GrowStatus>();
     let status_push = try_push(&mut statuses, GrowStatus::MemoryLimit);
     match status_push {
         PushResult::Pushed => {},
         PushResult::Failed(status_failure) => { return -15; },
     }
     discard(transfer(statuses));
-    let mut numbers = new::<i32>();
+    let mut numbers = empty::<i32>();
     let number_push = copy_push(&mut numbers, 40);
     match number_push {
         GrowStatus::Ok => {},
@@ -110,7 +111,7 @@ fn main() -> i32 {
     let mut number_owner = transfer(numbers);
     let number_batch = detach(&mut number_owner);
     if len(&number_owner) != 0 || len(&number_batch) != 1 { return -19; }
-    let mut points = new::<Point>();
+    let mut points = empty::<Point>();
     let point_push = copy_push(&mut points, Point { value: 2 });
     match point_push {
         GrowStatus::Ok => {},
