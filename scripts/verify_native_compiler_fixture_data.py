@@ -61,8 +61,8 @@ FIXTURE_INPUTS = (('compiler/native/tests/fixtures/comments.ox',
   51,
   '1ec8b81b351357a5b5597aad6cfa9fd31e56d949d97bb3bf7d3548313107af11'))
 CASES_JSON = ('compiler/native/tests/cases.json',
- 62471,
- '82bf372c0593d937a8d216d0745dc4719096befa0b0443824dbeeda0a002a289')
+ 66878,
+ '54f05170a73a566e8e988ae2d23f42b298ed2f783fbd3a74aa154e189baaeb95')
 CASE_NAMES = ('forward',
  'control',
  'scopes',
@@ -389,7 +389,39 @@ CASE_NAMES = ('forward',
  'mutable-slice-boolean-store',
  'mutable-slice-character-store',
  'mutable-slice-unsigned-store',
- 'mutable-slice-byte-store')
+ 'mutable-slice-byte-store',
+ 'bitwise-precedence',
+ 'bitwise-arithmetic-and-boolean-precedence',
+ 'bitwise-signed-precision',
+ 'bitwise-byte-width',
+ 'bitwise-u32-width',
+ 'bitwise-complement-byte',
+ 'bitwise-complement-signed',
+ 'bitwise-slice-and-parentheses',
+ 'bitwise-evaluates-left-first',
+ 'bitwise-bool',
+ 'bitwise-character',
+ 'bitwise-mixed-width',
+ 'bitwise-separated-operator',
+ 'bitwise-complement-bool',
+ 'shift-precedence',
+ 'shift-i32-sign',
+ 'shift-i64-sign',
+ 'shift-i64-high-bit',
+ 'shift-u32-zero-fill',
+ 'shift-u8-truncates',
+ 'shift-u8-zero-fill',
+ 'shift-u8-zero-count',
+ 'shift-short-circuit',
+ 'shift-negative-count',
+ 'shift-u8-width-count',
+ 'shift-i64-width-count',
+ 'shift-i64-count-before-truncation',
+ 'shift-largest-u32-count',
+ 'shift-bool-count',
+ 'shift-character-value',
+ 'shift-separated-angle',
+ 'shift-comment-between-angles')
 
 
 def require(condition, message):
@@ -450,7 +482,7 @@ def authenticated_inputs(root: Path, *, required: bool = False):
             "invalid exact scalar compiler fixture-data inventory")
     require(isinstance(CASES_JSON, tuple) and len(CASES_JSON) == 3
             and CASES_JSON[0] == PROJECT + "/tests/cases.json"
-            and type(CASES_JSON[1]) is int and 0 < CASES_JSON[1] <= 65536
+            and type(CASES_JSON[1]) is int and 0 < CASES_JSON[1] <= 96 * 1024
             and type(CASES_JSON[2]) is str and re.fullmatch(r"[0-9a-f]{64}", CASES_JSON[2]),
             "invalid scalar compiler case manifest identity")
     selected = (CASES_JSON, *FIXTURE_INPUTS)
@@ -466,11 +498,11 @@ def parse_cases(inputs):
         cases = json.loads(inputs[CASES_JSON[0]].decode("utf-8"), object_pairs_hook=unique_object)
     except (ValueError, UnicodeError) as error:
         raise RuntimeError("invalid scalar compiler case manifest: " + str(error)) from error
-    require(isinstance(cases, list) and len(cases) == 327
+    require(isinstance(cases, list) and len(cases) == 359
             and all(isinstance(case, dict) for case in cases),
-            "scalar compiler acceptance requires all 327 cases")
+            "scalar compiler acceptance requires all 359 cases")
     require(tuple(case.get("name") for case in cases) == CASE_NAMES
-            and len(set(CASE_NAMES)) == 327,
+            and len(set(CASE_NAMES)) == 359,
             "scalar compiler acceptance case names or order changed")
     sources, referenced = {}, []
     for case in cases:
@@ -500,7 +532,7 @@ def parse_cases(inputs):
     require(len(referenced) == 11 and set(referenced) == set(FIXTURE_FILES),
             "scalar compiler file fixtures must each be exercised once")
     require({kind: sum(case["kind"] == kind for case in cases) for kind in ("value", "reject", "runtime")}
-            == {"value": 130, "reject": 128, "runtime": 69},
+            == {"value": 147, "reject": 137, "runtime": 75},
             "scalar compiler positive, negative or runtime case census changed")
     return cases, sources
 

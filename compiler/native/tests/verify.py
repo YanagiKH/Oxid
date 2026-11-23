@@ -63,6 +63,8 @@ RUNTIME_EXPECTATIONS = {
     "i64 byte conversion": (b"byte conversion out of range\n", "E0610",
                             "checked i64 to u8 conversion out of range"),
     "array index": (b"array index out of bounds\n", "E0606", "array index out of bounds"),
+    "shift count": (b"integer shift count must be nonnegative and below the bit width\n",
+                    "E0611", "integer shift count must be nonnegative and below the bit width"),
     "u32 overflow": (b"integer overflow\n", "E0604", "checked u32 arithmetic overflow"),
     "u32 division by zero": (b"division by zero\n", "E0607", "checked u32 division by zero"),
     "i32 to u32": (b"u32 conversion out of range\n", "E0610",

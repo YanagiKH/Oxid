@@ -607,7 +607,63 @@ pub fn checked_character(c: &mut Compiler, value: Value) -> Value {
     return Value { ty: 6, id: id };
 }
 
+fn bitwise(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
+    let prefix = b"  %v";
+    let assign = b" = ";
+    let and_instruction = b"and ";
+    let or_instruction = b"or ";
+    let xor_instruction = b"xor ";
+    let left_shift = b"shl ";
+    let signed_right_shift = b"ashr ";
+    let unsigned_right_shift = b"lshr ";
+    let space = b" ";
+    let comma = b", ";
+    let line = b"\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &assign);
+    if op == 65 { append(&mut *c, 2, &and_instruction); }
+    if op == 66 { append(&mut *c, 2, &or_instruction); }
+    if op == 67 { append(&mut *c, 2, &xor_instruction); }
+    if op == 69 { append(&mut *c, 2, &left_shift); }
+    if op == 70 {
+        if left.ty == 1 || left.ty == 5 { append(&mut *c, 2, &signed_right_shift); }
+        else { append(&mut *c, 2, &unsigned_right_shift); }
+    }
+    write_type(&mut *c, 2, left.ty, false);
+    append(&mut *c, 2, &space); operand(&mut *c, 2, left);
+    append(&mut *c, 2, &comma); operand(&mut *c, 2, right);
+    append(&mut *c, 2, &line);
+    return Value { ty: left.ty, id: id };
+}
+
+pub fn shift(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
+    let guard = b"  call void @ox_check_shift(i64 ";
+    let width_arg = b", i64 ";
+    let end_call = b")\n";
+    let prefix = b"  %v";
+    let truncation = b" = trunc i64 ";
+    let to = b" to ";
+    let line = b"\n";
+    let mut width = 32;
+    if left.ty == 4 { width = 8; }
+    if left.ty == 5 { width = 64; }
+    let mut count = right;
+    if right.ty != 5 { count = widen(&mut *c, right, 5); }
+    append(&mut *c, 2, &guard); operand(&mut *c, 2, count);
+    append(&mut *c, 2, &width_arg); number(&mut *c, 2, width); append(&mut *c, 2, &end_call);
+    if left.ty != 5 {
+        // The guard checks the full count before truncation for LLVM's operand type.
+        let narrowed = fresh(&mut *c);
+        append(&mut *c, 2, &prefix); number(&mut *c, 2, narrowed);
+        append(&mut *c, 2, &truncation); operand(&mut *c, 2, count);
+        append(&mut *c, 2, &to); write_type(&mut *c, 2, left.ty, false); append(&mut *c, 2, &line);
+        count = Value { ty: left.ty, id: narrowed };
+    }
+    return bitwise(&mut *c, op, left, count);
+}
+
 pub fn binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
+    if op >= 65 && op <= 67 { return bitwise(&mut *c, op, left, right); }
     if left.ty == 4 { return byte_binary(&mut *c, op, left, right); }
     if left.ty == 7 {
         let a = widen(&mut *c, left, 5);
@@ -953,12 +1009,27 @@ fn preamble_character_surrogates(c: &mut Compiler) -> () {
     conversion_return(&mut *c);
     return;
 }
+fn preamble_shift_header(c: &mut Compiler) -> () {
+    let message = b"@shift_error = private constant [64 x i8] c\"integer shift count must be nonnegative and below the bit width\\0A\"\n";
+    let header = b"define internal void @ox_check_shift(i64 %count, i64 %width) {\nentry:\n";
+    append(&mut *c, 0, &message); append(&mut *c, 0, &header);
+    return;
+}
+fn preamble_shift_body(c: &mut Compiler) -> () {
+    // An unsigned comparison also rejects the sign-extended negative counts.
+    let check = b"  %fits = icmp ult i64 %count, %width\n  br i1 %fits, label %ok, label %invalid\n";
+    let failure = b"invalid:\n  call void @__oxid_overflow(ptr @shift_error, i64 64)\n  unreachable\n";
+    let success = b"ok:\n  ret void\n}\n";
+    append(&mut *c, 0, &check); append(&mut *c, 0, &failure); append(&mut *c, 0, &success);
+    return;
+}
 pub fn preamble(c: &mut Compiler) -> () {
     preamble_resources(&mut *c);
     preamble_unsigned(&mut *c);
     preamble_unsigned_check(&mut *c);
     preamble_character_check(&mut *c);
     preamble_character_surrogates(&mut *c);
+    preamble_shift_header(&mut *c); preamble_shift_body(&mut *c);
     array_preamble(&mut *c);
     byte_conversion_check(&mut *c);
     byte_conversion_paths(&mut *c);
