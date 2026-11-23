@@ -8,6 +8,7 @@
 ))]
 use std::{
     fs,
+    io::Write,
     path::PathBuf,
     process::{Command, Output, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
@@ -221,6 +222,111 @@ fn windows_native_process_entry_retains_status_and_stderr_after_relocation() {
                     .unwrap();
                 check_process(failed, 74, "");
             }
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the Windows MSVC x64 LLVM 19.1.7 toolchain"]
+fn windows_binary_streams_preserve_bytes_and_closed_pipe_errors() {
+    const SOURCE: &str = r#"
+use std::io::ReadSomeStatus;
+use std::io::WriteSomeStatus;
+use std::io::read_some;
+use std::io::write_some;
+use std::io::write_stderr;
+fn main()->i32 {
+    let mut bytes=b"xxxx";
+    let empty=read_some(&mut bytes[0..0]);
+    match empty {
+        ReadSomeStatus::Data(size)=>{if size!=0{return 2;}},
+        ReadSomeStatus::Eof=>{return 3;},
+        ReadSomeStatus::Error(code)=>{return 4;},
+    }
+    let input=read_some(&mut bytes);
+    match input {
+        ReadSomeStatus::Data(size)=>{if size!=3||bytes[3]!=120u8{return 5;}},
+        ReadSomeStatus::Eof=>{return 6;},
+        ReadSomeStatus::Error(code)=>{return 7;},
+    }
+    let sent=write_some(&bytes[0..3]);
+    match sent {
+        WriteSomeStatus::Written(size)=>{if size!=3{return 8;}},
+        WriteSomeStatus::Error(code)=>{return 9;},
+    }
+    let drained=read_some(&mut bytes);
+    match drained {
+        ReadSomeStatus::Eof=>{},
+        ReadSomeStatus::Data(size)=>{return 10;},
+        ReadSomeStatus::Error(code)=>{return 11;},
+    }
+    let diagnostic=b"err\x00\xff\r\n";
+    let emitted=write_stderr(&diagnostic);
+    match emitted {
+        WriteSomeStatus::Written(size)=>{if size!=7{return 12;}},
+        WriteSomeStatus::Error(code)=>{if code<=0{return 13;}return 74;},
+    }
+    return 42;
+}
+"#;
+    fn check(mut command: Command, closed: bool) {
+        command.stdin(Stdio::piped()).stdout(Stdio::piped());
+        if closed {
+            let (read, write) = std::io::pipe().unwrap();
+            drop(read);
+            command.stderr(Stdio::from(write));
+        } else {
+            command.stderr(Stdio::piped());
+        }
+        let mut child = command.spawn().unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"\x00\xff\r")
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(if closed { 74 } else { 42 }),
+            "{output:?}"
+        );
+        assert_eq!(output.stdout, b"\x00\xff\r", "{output:?}");
+        if closed {
+            assert!(output.stderr.is_empty(), "{output:?}");
+        } else {
+            assert_eq!(output.stderr, b"err\x00\xff\r\n", "{output:?}");
+        }
+    }
+
+    let fixture = Fixture::new(SOURCE);
+    fs::write(fixture.0.join("oxid.toml"), "[project]\nname=\"binary-streams\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"process\"\n").unwrap();
+    for closed in [false, true] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_oxid"));
+        command.current_dir(&fixture.0).arg("run");
+        check(command, closed);
+    }
+    for profile in ["dev", "release"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+            .current_dir(&fixture.0)
+            .args(["build", "--profile", profile])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        fs::rename(
+            fixture.0.join(".oxid/bin/binary-streams.exe"),
+            fixture.0.join(format!("{profile}.exe")),
+        )
+        .unwrap();
+    }
+    fs::remove_file(fixture.0.join("main.ox")).unwrap();
+    fs::remove_file(fixture.0.join("oxid.toml")).unwrap();
+    fs::remove_dir_all(fixture.0.join(".oxid")).unwrap();
+    for profile in ["dev", "release"] {
+        for closed in [false, true] {
+            let mut command = Command::new(fixture.0.join(format!("{profile}.exe")));
+            command.current_dir(&fixture.0);
+            check(command, closed);
         }
     }
 }

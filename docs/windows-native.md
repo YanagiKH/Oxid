@@ -33,7 +33,10 @@ returns zero.
 
 For binary file I/O, use `std::fs::File` with byte arrays or slices and the standard file status enums. Paths use UTF-8, and `seek_absolute` takes a signed 64-bit byte offset. [File operations](../spec/typed-preview.md#native-files)
 
-File I/O and clocks use result entry. Other scalar types, records, vectors,
-generics, process I/O, hosted execution, native debug information, native object
-caching, multi-package dependencies and workspace projects are unavailable on
-this native target.
+Use `std::io::read_some`, `write_some` and `write_stderr` with byte arrays and
+slices in process mode. These functions use the inherited streams and return
+Windows error codes when a transfer fails.
+
+Other scalar types, records, vectors, generics, hosted execution, native debug
+information, native object caching, multi-package dependencies and workspace
+projects are unavailable on this native target.
