@@ -1,4 +1,4 @@
-//! Linux scalar shared-library linkage and complete no-replace publication.
+//! Scalar shared-library linkage and complete no-replace publication.
 //! No runtime.c, executable adapter, object cache or source reopening is used.
 use super::*;
 use crate::frontend::{native_library::Options, project::ProjectSources};
@@ -6,9 +6,18 @@ use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
 use sha2::{Digest, Sha256};
 use std::{fs::File, io::Read, mem::size_of};
 
-const LIBRARY: &str = "liboxid_library.so";
+const LIBRARY: &str = if cfg!(target_os = "macos") {
+    "liboxid_library.dylib"
+} else {
+    "liboxid_library.so"
+};
 const HEADER: &str = "oxid_library.h";
-const EXPORTS: &str = "{ global: oxid_library_abi_version; oxid_library_call_v1; local: *; };\n";
+const EXPORTS: &str = if cfg!(target_os = "macos") {
+    "_oxid_library_abi_version\n_oxid_library_call_v1\n"
+} else {
+    "{ global: oxid_library_abi_version; oxid_library_call_v1; local: *; };\n"
+};
+const LINK_ARGUMENT_COUNT: usize = if cfg!(target_os = "macos") { 16 } else { 14 };
 
 #[allow(dead_code)]
 struct PublicationBank {
@@ -30,7 +39,7 @@ struct PublicationBank {
     version_arguments: [&'static OsStr; 1],
     verify_arguments: [&'static OsStr; 3],
     compile_arguments: [&'static OsStr; 10],
-    link_arguments: [&'static OsStr; 14],
+    link_arguments: [&'static OsStr; LINK_ARGUMENT_COUNT],
     tool_results: [Result<Output, Box<Diagnostic>>; 2],
     workspace: [Workspace; 2],
     target: String,
@@ -216,7 +225,7 @@ impl Serialize for Metadata<'_> {
 }
 
 #[cfg(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -229,6 +238,7 @@ fn publish(source: &Path, output: &Path) -> Result<(), Box<Diagnostic>> {
         .map_err(|_| reject("library path contains a NUL byte"))?;
     // Same-filesystem atomic no-replace publication of the complete directory.
     // An existing file, directory or symlink is preserved even after preflight.
+    #[cfg(target_os = "linux")]
     let status = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
@@ -239,6 +249,8 @@ fn publish(source: &Path, output: &Path) -> Result<(), Box<Diagnostic>> {
             libc::RENAME_NOREPLACE,
         )
     };
+    #[cfg(target_os = "macos")]
+    let status = unsafe { libc::renamex_np(source.as_ptr(), output.as_ptr(), libc::RENAME_EXCL) };
     if status == 0 {
         Ok(())
     } else {
@@ -246,14 +258,14 @@ fn publish(source: &Path, output: &Path) -> Result<(), Box<Diagnostic>> {
     }
 }
 #[cfg(not(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
 )))]
 fn publish(_: &Path, _: &Path) -> Result<(), Box<Diagnostic>> {
     Err(reject(
-        "scalar native libraries currently require Linux x86_64 or ARM64",
+        "scalar native libraries currently require Linux or macOS on x86_64 or ARM64",
     ))
 }
 
@@ -298,7 +310,7 @@ pub(in crate::frontend) fn compile(
     }
     let clang = resolve_tool(tool("clang"))?;
     let opt = resolve_tool(tool("opt"))?;
-    let lld = resolve_tool(tool("ld.lld"))?;
+    let lld = resolve_tool(tool(NativeBuildSettings::linker()))?;
     for path in [&clang, &opt, &lld] {
         path_admitted(path)?;
     }
@@ -316,6 +328,15 @@ pub(in crate::frontend) fn compile(
         "--target={}",
         NativeBuildSettings::new(false).target_triple()
     );
+    let (object_target, darwin_arch) = if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            ("--target=arm64-apple-macosx11.0.0", "arm64")
+        } else {
+            ("--target=x86_64-apple-macosx11.0.0", "x86_64")
+        }
+    } else {
+        (target.as_str(), "")
+    };
     let optimization = if options.release { "-O2" } else { "-O0" };
     run(
         &opt,
@@ -331,7 +352,7 @@ pub(in crate::frontend) fn compile(
         &clang,
         &[
             OsStr::new("--no-default-config"),
-            OsStr::new(&target),
+            OsStr::new(object_target),
             OsStr::new(optimization),
             OsStr::new("-fPIC"),
             OsStr::new("-c"),
@@ -344,29 +365,53 @@ pub(in crate::frontend) fn compile(
         &workspace.0,
         None,
     )?;
-    let mut linker = OsString::from("--ld-path=");
-    linker.push(lld);
-    run(
-        &clang,
-        &[
-            OsStr::new("--no-default-config"),
-            OsStr::new(&target),
-            OsStr::new("-shared"),
-            OsStr::new("-nostdlib"),
-            OsStr::new("-Wl,-z,noexecstack"),
-            OsStr::new("-Wl,-z,relro"),
-            OsStr::new("-Wl,-z,now"),
-            OsStr::new("-Wl,-z,defs"),
-            OsStr::new("-Wl,--version-script=exports.map"),
-            OsStr::new("-Wl,-soname,liboxid_library.so"),
-            OsStr::new("program.o"),
-            OsStr::new("-o"),
-            OsStr::new("complete/liboxid_library.so"),
-            &linker,
-        ],
-        &workspace.0,
-        None,
-    )?;
+    if cfg!(target_os = "macos") {
+        // The scalar object is self-contained. Pin the Mach-O deployment
+        // version without adding a dependency on a local SDK or runtime.
+        let arguments = [
+            "-arch",
+            darwin_arch,
+            "-platform_version",
+            "macos",
+            "11.0",
+            "11.0",
+            "-dylib",
+            "-undefined",
+            "error",
+            "-exported_symbols_list",
+            "exports.map",
+            "-install_name",
+            "@rpath/liboxid_library.dylib",
+            "program.o",
+            "-o",
+            "complete/liboxid_library.dylib",
+        ];
+        run(&lld, &arguments.map(OsStr::new), &workspace.0, None)?;
+    } else {
+        let mut linker = OsString::from("--ld-path=");
+        linker.push(lld);
+        run(
+            &clang,
+            &[
+                OsStr::new("--no-default-config"),
+                OsStr::new(&target),
+                OsStr::new("-shared"),
+                OsStr::new("-nostdlib"),
+                OsStr::new("-Wl,-z,noexecstack"),
+                OsStr::new("-Wl,-z,relro"),
+                OsStr::new("-Wl,-z,now"),
+                OsStr::new("-Wl,-z,defs"),
+                OsStr::new("-Wl,--version-script=exports.map"),
+                OsStr::new("-Wl,-soname,liboxid_library.so"),
+                OsStr::new("program.o"),
+                OsStr::new("-o"),
+                OsStr::new("complete/liboxid_library.so"),
+                &linker,
+            ],
+            &workspace.0,
+            None,
+        )?;
+    }
     let library = child(&complete, LIBRARY)?;
     path_admitted(&library)?;
     let mut identity = [0u8; 64];
@@ -374,7 +419,21 @@ pub(in crate::frontend) fn compile(
         .map_err(io)?
         .read_exact(&mut identity)
         .map_err(io)?;
-    if &identity[..7] != b"\x7fELF\x02\x01\x01"
+    if cfg!(target_os = "macos") {
+        let cpu: u32 = if cfg!(target_arch = "aarch64") {
+            0x0100_000c
+        } else {
+            0x0100_0007
+        };
+        if identity[..4] != [0xcf, 0xfa, 0xed, 0xfe]
+            || identity[4..8] != cpu.to_le_bytes()
+            || identity[12..16] != 6_u32.to_le_bytes()
+        {
+            return Err(reject(
+                "library linker did not produce a native Mach-O64 dynamic library",
+            ));
+        }
+    } else if &identity[..7] != b"\x7fELF\x02\x01\x01"
         || identity[16..18] != [3, 0]
         || identity[18..20] != NativeBuildSettings::elf_machine().to_le_bytes()
     {
