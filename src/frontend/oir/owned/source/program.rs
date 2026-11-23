@@ -357,6 +357,12 @@ impl SourceProgram {
         self.witness.has_file_delivery() || (!time.is_empty() && !time.has_signals())
     }
 
+    pub(in crate::frontend::oir) fn windows_binary_io_candidate(&self) -> bool {
+        crate::frontend::builtin_catalog::experimental::Function::PROCESS_IO
+            .into_iter()
+            .any(|operation| self.witness.experimental_function(operation).is_some())
+    }
+
     /// Tests may vary presentation paths while retaining the ordinary owned
     /// source producer and verifier. No new production witness access exists.
     #[cfg(test)]

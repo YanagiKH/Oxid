@@ -67,16 +67,16 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
     if time.has_signals() {
         return false;
     }
-    let mut has_file = false;
+    let mut has_byte_io = false;
     for operation in experimental::Function::ALL {
         if witness.experimental_function(operation).is_some() {
-            if !operation.is_file() {
+            if !operation.is_file() && !operation.is_binary_delivery() {
                 return false;
             }
-            has_file = true;
+            has_byte_io = true;
         }
     }
-    if !has_file && (time.is_empty() || !raw.enums.is_empty()) {
+    if !has_byte_io && (time.is_empty() || !raw.enums.is_empty()) {
         return false;
     }
     let mut enumerations = [None; 4];
@@ -105,17 +105,17 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
         }
     }
     for function in witness.functions() {
-        if !has_file && (!function.owners.is_empty() || !function.references.is_empty()) {
+        if !has_byte_io && (!function.owners.is_empty() || !function.references.is_empty()) {
             return false;
         }
         if !match function.result {
-            ValueTy::Scalar(ty) => scalar(ty, has_file),
-            ValueTy::Owned(ty) => has_file && aggregate(ty, &enumerations),
+            ValueTy::Scalar(ty) => scalar(ty, has_byte_io),
+            ValueTy::Owned(ty) => has_byte_io && aggregate(ty, &enumerations),
         } {
             return false;
         }
         for local in &function.locals {
-            if !scalar(local.ty, has_file) {
+            if !scalar(local.ty, has_byte_io) {
                 return false;
             }
         }
@@ -150,11 +150,11 @@ fn canonical_enum(id: EnumId, allowed: &[Option<EnumId>; 4]) -> bool {
         || Some(id) == allowed[2]
         || Some(id) == allowed[3]
 }
-fn scalar(ty: hir::Ty, has_file: bool) -> bool {
+fn scalar(ty: hir::Ty, has_byte_io: bool) -> bool {
     matches!(
         ty,
         hir::Ty::Bool | hir::Ty::I32 | hir::Ty::Unit | hir::Ty::I64
-    ) || (has_file && ty == hir::Ty::U8)
+    ) || (has_byte_io && ty == hir::Ty::U8)
 }
 
 #[cfg(test)]
