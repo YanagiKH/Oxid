@@ -722,6 +722,36 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             "main.ox": "struct First{}struct Second{}"
                        "fn number(mark:First)->i32{return 42;}fn main()->i32{return number(Second{});}",
         }),
+        ("nested-scalar-fields-through-owner-and-borrow", 0, True, {
+            "main.ox": "struct Leaf{prefix:u8,number:i32}"
+                       "struct Mid{wide:i64,leaf:Leaf}struct Whole{mid:Mid,tail:bool}"
+                       "fn add(value:&mut Whole)->(){value.mid.leaf.number=value.mid.leaf.number+1;return;}"
+                       "fn main()->i32{let mut whole=Whole{mid:Mid{wide:23i64,leaf:Leaf{prefix:7u8,number:1}},tail:true};"
+                       "whole.mid.leaf.number=41;add(&mut whole);if !whole.tail||whole.mid.wide!=23i64"
+                       "||whole.mid.leaf.prefix!=7u8{return 0;}return whole.mid.leaf.number;}",
+        }),
+        ("nested-field-access-with-disjoint-array-borrow", 0, True, {
+            "main.ox": "struct Detail{amount:i32}struct Product{numbers:[i32;2],detail:Detail}"
+                       "fn fill(numbers:&mut [i32],amount:i32)->i32{numbers[0]=amount;return numbers[0];}"
+                       "fn main()->i32{let mut product=Product{numbers:[0,0],detail:Detail{amount:42}};"
+                       "return fill(&mut product.numbers,product.detail.amount);}",
+        }),
+        ("nested-private-scalar-field", 65, True, {
+            "main.ox": "mod types;fn main()->i32{let row=crate::types::open();return row.part.number;}",
+            "types.ox": "pub struct Part{number:i32}pub struct Row{pub part:Part}"
+                        "pub fn open()->Row{return Row{part:Part{number:42}};}",
+        }),
+        ("nested-field-cannot-write-through-shared-borrow", 65, True, {
+            "main.ox": "struct Part{number:i32}struct Row{part:Part}"
+                       "fn set(row:&Row)->(){row.part.number=42;return;}"
+                       "fn main()->i32{let row=Row{part:Part{number:0}};set(&row);return 42;}",
+        }),
+        ("nested-field-owner-moved-on-assignment", 65, True, {
+            "main.ox": "struct Part{number:i32}struct Row{part:Part}"
+                       "fn take(row:Row)->i32{return row.part.number;}"
+                       "fn main()->i32{let mut row=Row{part:Part{number:42}};"
+                       "row.part.number=take(row);return 42;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",

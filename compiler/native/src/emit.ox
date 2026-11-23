@@ -335,7 +335,7 @@ fn array_address(c: &mut Compiler, binding: Binding, index: Value) -> i32 {
     operand(&mut *c, 2, index); append(&mut *c, 2, &line);
     return pointer;
 }
-fn load_element(c: &mut Compiler, pointer: i32, element: i32) -> Value {
+pub fn load_element(c: &mut Compiler, pointer: i32, element: i32) -> Value {
     let name = b"  %v";
     let load_instruction = b" = load ";
     let address = b", ptr %v";
@@ -409,7 +409,7 @@ pub fn project_slice(c: &mut Compiler, view: Value, start: Value, end: Value) ->
     let length = binary(&mut *c, 30, end, start);
     return slice_value(&mut *c, view.ty, length, pointer, false);
 }
-fn store_element(c: &mut Compiler, pointer: i32, value: Value) -> () {
+pub fn store_element(c: &mut Compiler, pointer: i32, value: Value) -> () {
     let store_instruction = b"  store ";
     let space = b" ";
     let address = b", ptr %v";
@@ -446,13 +446,17 @@ pub fn borrow_record(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
     return Value { ty: ty, id: pointer };
 }
 
-fn record_field_address(c: &mut Compiler, binding: Binding, field: i32) -> i32 {
+pub fn record_field_address(c: &mut Compiler, binding: Binding, field: i32) -> i32 {
     let borrowed = is_record_reference(binding.ty);
     let mut base = binding.slot;
     if borrowed {
         let address = load(&mut *c, binding.slot, binding.ty);
         base = address.id;
     }
+    return field_address(&mut *c, record_value_type(binding.ty), base, !borrowed, field);
+}
+
+pub fn field_address(c: &mut Compiler, record: i32, base: i32, local_slot: bool, field: i32) -> i32 {
     let name = b"  %v";
     let address = b" = getelementptr inbounds ";
     let pointer_prefix = b", ptr %v";
@@ -461,9 +465,9 @@ fn record_field_address(c: &mut Compiler, binding: Binding, field: i32) -> i32 {
     let line = b"\n";
     let pointer = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &address);
-    write_type(&mut *c, 2, record_value_type(binding.ty), false);
-    if borrowed { append(&mut *c, 2, &pointer_prefix); }
-    else { append(&mut *c, 2, &slot_prefix); }
+    write_type(&mut *c, 2, record, false);
+    if local_slot { append(&mut *c, 2, &slot_prefix); }
+    else { append(&mut *c, 2, &pointer_prefix); }
     number(&mut *c, 2, base); append(&mut *c, 2, &ordinal);
     number(&mut *c, 2, field); append(&mut *c, 2, &line);
     return pointer;
@@ -476,16 +480,6 @@ pub fn borrow_array_field(c: &mut Compiler, binding: Binding, field: i32, array:
     return slice_value(&mut *c, ty, length, pointer, false);
 }
 
-pub fn load_record_field(c: &mut Compiler, binding: Binding, field: i32, ty: i32) -> Value {
-    let pointer = record_field_address(&mut *c, binding, field);
-    return load_element(&mut *c, pointer, ty);
-}
-
-pub fn store_record_field(c: &mut Compiler, binding: Binding, field: i32, value: Value) -> () {
-    let pointer = record_field_address(&mut *c, binding, field);
-    store_element(&mut *c, pointer, value);
-    return;
-}
 pub fn enum_switch(c: &mut Compiler, tag: Value, labels: &Vec<i32>, invalid: i32) -> () {
     let head = b"  switch i32 ";
     let target = b", label %b";

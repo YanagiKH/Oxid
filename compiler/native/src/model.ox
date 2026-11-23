@@ -45,6 +45,8 @@ pub struct Record {
 }
 #[derive(Copy)]
 pub struct Field { pub name: i32, pub ty: i32, pub public: bool }
+#[derive(Copy)]
+pub struct FieldPath { pub field: i32, pub ty: i32, pub pointer: i32 }
 
 pub struct Compiler {
     pub source: ByteBuf, pub source_path: ByteBuf, pub literals: ByteBuf, pub sources: Vec<SourceModule>, pub imports: Vec<Import>,
