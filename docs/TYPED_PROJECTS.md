@@ -618,7 +618,9 @@ oxid run -- input.bin output.bin
 ```
 
 Import `arg_count`, `arg_bytes` and `ArgStatus` from `std::env` to read them.
-Index 0 is the executable name; user arguments start at 1. `arg_bytes` copies
-raw bytes into a mutable byte slice and reports the required length when that
-slice is too short. Arguments after `--` are literal program input.
+Index 0 is the executable name. User arguments start at 1. `arg_bytes` copies
+bytes into a mutable byte slice and reports the required length when that slice
+is too short. Linux and macOS preserve the original bytes. Windows provides
+UTF-8 and replaces unpaired UTF-16 surrogates with `U+FFFD`. Arguments after
+`--` are passed to the program as given.
 See the [argument API](../rfcs/0049-program-arguments.md) for status handling.
