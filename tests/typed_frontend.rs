@@ -434,7 +434,7 @@ fn malformed_branch_syntax_is_recovered_deterministically() {
     for source in [
         "fn f()->(){ if true return; } fn later()->(){return;}",
         "fn f()->(){ if true {} else return; } fn later()->(){return;}",
-        "fn f()->(){ if true {} else if true {} return; } fn later()->(){return;}",
+        "fn f()->(){ if true {} else if true return; } fn later()->(){return;}",
         "fn f()->(){ let x = if true {}; return; } fn later()->(){return;}",
         "fn f()->(){ { return; } } fn later()->(){return;}",
         "fn f()->(){ if true { return;",
