@@ -24,7 +24,13 @@ const EXPORTS: &str = if cfg!(target_os = "macos") {
 } else {
     "{ global: oxid_library_abi_version; oxid_library_call_v1; local: *; };\n"
 };
-const LINK_ARGUMENT_COUNT: usize = if cfg!(target_os = "macos") { 16 } else { 14 };
+const LINK_ARGUMENT_COUNT: usize = if cfg!(target_os = "macos") {
+    16
+} else if cfg!(windows) {
+    15
+} else {
+    14
+};
 const PUBLICATION_PATHS: usize = 10 + cfg!(windows) as usize;
 const FILE_DIGESTS: usize = 5 + cfg!(windows) as usize;
 
@@ -368,10 +374,11 @@ pub(in crate::frontend) fn compile(
                 && !options.output.ends_with("/.")
                 && !options.output.ends_with("/..")
                 && (!cfg!(windows)
-                    || (!options.output.ends_with(['\\', '.'])
-                        && name
-                            .to_str()
-                            .is_some_and(|name| !NativeBuildSettings::windows_device_name(name))))
+                    || (!options.output.ends_with(['\\', '.', ' '])
+                        && name.to_str().is_some_and(|name| {
+                            let stem = name.split('.').next().unwrap_or(name).trim_end();
+                            !NativeBuildSettings::windows_device_name(stem)
+                        })))
         })
         .ok_or_else(|| reject("library output must name a new version directory"))?;
     let parent = requested
@@ -466,6 +473,7 @@ pub(in crate::frontend) fn compile(
             "/HIGHENTROPYVA",
             "/NXCOMPAT",
             "/DEFAULTLIB:libcmt",
+            "/DEFAULTLIB:libvcruntime",
             "/EXPORT:oxid_library_abi_version",
             "/EXPORT:oxid_library_call_v1",
             "program.o",
