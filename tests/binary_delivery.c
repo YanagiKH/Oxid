@@ -12,6 +12,7 @@ static ssize_t injected_write(int fd, const void *bytes, size_t length);
 #undef write
 
 static int calls, error_code;
+static int write_descriptor = STDOUT_FILENO;
 static ssize_t progress;
 static uint8_t output[8];
 static size_t output_length;
@@ -25,7 +26,7 @@ static ssize_t injected_read(int fd, void *bytes, size_t length) {
     return progress;
 }
 static ssize_t injected_write(int fd, const void *bytes, size_t length) {
-    assert(fd == STDOUT_FILENO);
+    assert(fd == write_descriptor);
     ++calls;
     if (progress < 0) { errno = error_code; return -1; }
     assert((size_t)progress <= length && (size_t)progress <= sizeof output);
@@ -35,6 +36,7 @@ static ssize_t injected_write(int fd, const void *bytes, size_t length) {
 }
 
 static void real_delivery_thresholds(int operation) {
+    write_descriptor = operation == 11 ? STDERR_FILENO : STDOUT_FILENO;
     const uint64_t return_cost = 17;
     const uint64_t refused[] = {0, 3, 4, 20};
     /* Four bytes plus delivery cost: sufficient byte fuel alone must not
@@ -106,7 +108,9 @@ static void real_delivery_thresholds(int operation) {
 
 int main(void) {
     const uint64_t delivery_cost = 17; /* arbitrary derived-cost parameter */
-    for (int operation = 8; operation <= 9; ++operation) {
+    const int operations[] = {8, 9, 11};
+    for (size_t i = 0; i < sizeof operations / sizeof *operations; ++i) {
+        int operation = operations[i];
         uint8_t bytes[4] = {99, 99, 99, 99};
         uint64_t fuel = 1000;
         oxid_binary_result result = {77, 88};
@@ -126,8 +130,9 @@ int main(void) {
         assert(calls == 0 && result.tag == 0 && result.value == 0);
         assert(fuel == 1000 - delivery_cost);
     }
-    for (int operation = 8; operation <= 9; ++operation)
-        real_delivery_thresholds(operation);
+    for (size_t i = 0; i < sizeof operations / sizeof *operations; ++i)
+        real_delivery_thresholds(operations[i]);
+    write_descriptor = STDOUT_FILENO;
     const ssize_t outcomes[] = {3, 0, -1, -1};
     for (size_t i = 0; i < sizeof outcomes / sizeof *outcomes; ++i) {
         uint8_t bytes[4] = {99, 99, 99, 99};

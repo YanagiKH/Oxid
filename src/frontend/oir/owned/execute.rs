@@ -3967,7 +3967,6 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     destination,
                 } = statement.kind
                 {
-                    use crate::frontend::builtin_catalog::experimental::Function;
                     if operation.process().is_some() {
                         self.process_delivery(frame, operation, destination, span)?;
                         continue;
@@ -3976,10 +3975,7 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                         self.file_delivery(frame, operation, destination, span)?;
                         continue;
                     }
-                    if matches!(
-                        operation,
-                        Function::ReadSome | Function::WriteSome | Function::ArgBytes
-                    ) {
+                    if operation.is_binary_delivery() {
                         self.binary_delivery(frame, operation, destination, span)?;
                         // The canonical frame has completed its prepaid return.
                         continue;
@@ -4567,10 +4563,7 @@ fn checked_entry_policy<W: PlanWitness>(
             ));
         }
     }
-    for operation in [
-        crate::frontend::builtin_catalog::experimental::Function::ReadSome,
-        crate::frontend::builtin_catalog::experimental::Function::WriteSome,
-    ] {
+    for operation in crate::frontend::builtin_catalog::experimental::Function::PROCESS_IO {
         if let Some(function) = witness.experimental_function(operation) {
             let span = witness.functions()[function.0].span;
             if policy == EntryPolicy::Result {

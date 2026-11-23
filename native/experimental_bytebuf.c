@@ -237,13 +237,15 @@ static oxid_binary_result read_once(uint8_t *bytes, int32_t length) {
     return (oxid_binary_result){0, (int32_t)done};
 #endif
 }
-static oxid_binary_result write_once(const uint8_t *bytes, int32_t length) {
+static oxid_binary_result write_once(const uint8_t *bytes, int32_t length, int to_stderr) {
     if (!length) return (oxid_binary_result){0, 0};
 #if defined(_WIN32)
     (void)bytes;
+    (void)to_stderr;
     return (oxid_binary_result){2, ENOSYS};
 #else
-    ssize_t done = write(STDOUT_FILENO, bytes, (size_t)length);
+    int descriptor = to_stderr ? STDERR_FILENO : STDOUT_FILENO;
+    ssize_t done = write(descriptor, bytes, (size_t)length);
     if (done < 0) return (oxid_binary_result){2, errno};
     if (done > length) return (oxid_binary_result){2, EIO};
     return (oxid_binary_result){0, (int32_t)done};
@@ -268,7 +270,7 @@ int32_t oxid_binary_write_some(const uint8_t *bytes, int32_t length, uint64_t *f
     oxid_binary_result *result) {
     int32_t status = admit_attempt(bytes, length, fuel, result);
     if (status) return status;
-    *result = write_once(bytes, length);
+    *result = write_once(bytes, length, 0);
     return 0;
 }
 

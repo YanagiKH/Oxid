@@ -25,6 +25,55 @@ fn write_wrap(p:&[u8])->WriteSomeStatus{return write_some(&*p);}";
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 #[test]
+fn stderr_delivers_partial_bytes_and_errors_to_the_process() {
+    let project = super::project(&format!(
+        "{IMPORTS}{IO}use std::io::write_stderr;
+fn main()->i32{{let a=[byte(0),byte(128),byte(255)];return write_score(write_stderr(&a));}}"
+    ));
+    let (program, entry) = check_enum_source(SourceOwner::project(&project)).unwrap();
+    assert_eq!(
+        program.run(entry, project.sources()).unwrap_err().code,
+        "E0609"
+    );
+    let emitted = program
+        .native_module_with_execution(
+            entry,
+            project.sources(),
+            true,
+            crate::frontend::build_config::ExecutionPolicy::Hosted,
+            None,
+        )
+        .unwrap();
+    assert!(emitted.contains("@__oxid_binary_delivery_hosted(i32 11,"));
+
+    for (written, status, expected) in [(Ok(2), 2, &b"\x00\x80"[..]), (Err(32), 52, &b""[..])] {
+        let (result, observed) = binary_io::testing::capture(
+            Script {
+                writes: [written].into(),
+                ..Default::default()
+            },
+            || program.run_process(entry.unwrap(), project.sources()),
+        );
+        assert_eq!(result.unwrap(), Scalar::I32(status));
+        assert_eq!(
+            (
+                observed.write_calls,
+                observed.stderr_calls,
+                observed.deliveries
+            ),
+            (1, 1, 1)
+        );
+        assert_eq!(observed.output, expected);
+    }
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[test]
 fn binary_delivery_source_real_fuel_refusal_precedes_transport_and_status_commit() {
     for read in [false, true] {
         for length in [0, 4] {

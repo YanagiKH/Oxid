@@ -176,6 +176,11 @@ smoke = "tests/smoke.ox"
 A process entry is `fn main() -> i32`; return zero for success.
 `reproducible = true` uses project-relative paths in native error messages.
 
+On Linux and macOS, use `std::io::write_stderr(&bytes)` to write messages to
+standard error. It returns `WriteSomeStatus::Written(count)` or
+`WriteSomeStatus::Error(code)`. Handle short writes by passing the remaining
+bytes in the next call. `std::io::write_some` writes to standard output.
+
 On Linux and macOS, import `enable_termination_notifications` and
 `termination_requested` from `std::process`. Call `enable_termination_notifications()`
 from `main` to receive SIGINT and SIGTERM. If it returns true, poll

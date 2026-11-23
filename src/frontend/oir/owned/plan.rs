@@ -276,7 +276,7 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
     /// return. Ordinary source wrappers keep their ordinary return checks.
     pub(super) fn binary_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
         use crate::frontend::builtin_catalog::experimental::Function;
-        [Function::ReadSome, Function::WriteSome, Function::ArgBytes]
+        Function::BINARY_DELIVERY
             .into_iter()
             .any(|operation| self.witness.experimental_function(operation) == Some(function))
             .then(|| {
@@ -289,7 +289,7 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
     }
     pub(super) fn has_binary_delivery(&self) -> bool {
         use crate::frontend::builtin_catalog::experimental::Function;
-        [Function::ReadSome, Function::WriteSome, Function::ArgBytes]
+        Function::BINARY_DELIVERY
             .into_iter()
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }

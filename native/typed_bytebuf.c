@@ -106,7 +106,7 @@ static int refuse_binary_delivery;
 #endif
 int32_t __oxid_binary_delivery(int32_t operation, void *bytes, int32_t length,
     uint64_t *fuel, oxid_binary_result *result, uint64_t return_cost) {
-    if (operation != 8 && operation != 9) return OXID_BUFFER_DESCRIPTOR;
+    if (operation != 8 && operation != 9 && operation != 11) return OXID_BUFFER_DESCRIPTOR;
     if (length < 0) return OXID_BUFFER_BOUNDS;
     if ((length && !bytes) || !fuel || !result) return OXID_BUFFER_DESCRIPTOR;
 #ifdef OXID_BYTEBUF_TESTING
@@ -122,8 +122,8 @@ int32_t __oxid_binary_delivery(int32_t operation, void *bytes, int32_t length,
     *fuel = delivery.remaining;
     /* No allocation, admission, generation check or fuel check after this
      * point. The status is committed into the direct caller's result extent. */
-    delivery.value = operation == 8 ? read_once(bytes, length) : write_once(bytes, length);
-    if (operation == 9 && delivery.value.tag == 2) delivery.value.tag = 1;
+    delivery.value = operation == 8 ? read_once(bytes, length) : write_once(bytes, length, operation == 11);
+    if (operation != 8 && delivery.value.tag == 2) delivery.value.tag = 1;
     *result = delivery.value;
     return 0;
 }

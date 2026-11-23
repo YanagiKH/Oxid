@@ -401,7 +401,7 @@ pub(super) fn operation<W: PlanWitness>(
     };
     let size = match operation {
         Function::Reserve | Function::Resize | Function::Truncate => scalar(out, 0, "size"),
-        Function::ReadSome | Function::WriteSome => index_length(
+        Function::ReadSome | Function::WriteSome | Function::WriteStderr => index_length(
             out,
             f,
             &format!("{name}_extent"),
@@ -451,9 +451,10 @@ pub(super) fn operation<W: PlanWitness>(
         Function::ReadSome => 8,
         Function::WriteSome => 9,
         Function::Take => 10,
+        Function::WriteStderr => 11,
         _ => unreachable!("file primitive emitted separately"),
     };
-    if matches!(operation, Function::ReadSome | Function::WriteSome) {
+    if Function::PROCESS_IO.contains(&operation) {
         let cost = storage
             .execution()
             .binary_delivery_cost(f.id)
