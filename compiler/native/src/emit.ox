@@ -1026,6 +1026,13 @@ fn argument_preamble(c: &mut Compiler) -> () {
     return;
 }
 
+fn argument_bytes_preamble(c: &mut Compiler) -> () {
+    let start = b"declare void @__oxid_scalar_arguments_start(i32, ptr)\n";
+    let bytes = b"declare i64 @__oxid_scalar_arg_bytes(i32, ptr, i32)\n";
+    append(&mut *c, 0, &start); append(&mut *c, 0, &bytes);
+    return;
+}
+
 pub fn argument_count(c: &mut Compiler) -> Value {
     let prefix = b"  %v";
     let load_count = b" = load i32, ptr @argument_count, align 4\n";
@@ -1041,22 +1048,24 @@ fn binary_io_preamble(c: &mut Compiler) -> () {
     return;
 }
 
-fn binary_io_call(c: &mut Compiler, operation: i32, view: Value) -> i32 {
+fn transfer_call(c: &mut Compiler, input: Value, view: Value, argument: bool) -> i32 {
     let prefix = b"  %v";
-    let invoke = b" = call i64 @__oxid_scalar_binary_io(i32 ";
+    let io = b" = call i64 @__oxid_scalar_binary_io(i32 ";
+    let bytes = b" = call i64 @__oxid_scalar_arg_bytes(i32 ";
     let pointer = b", ptr ";
     let size = b", i32 ";
     let line = b")\n";
     let address = extract_field(&mut *c, view, 0, 0);
     let count = extract_field(&mut *c, view, 1, 1);
     let id = fresh(&mut *c);
-    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invoke);
-    number(&mut *c, 2, operation); append(&mut *c, 2, &pointer); operand(&mut *c, 2, address);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
+    if argument { append(&mut *c, 2, &bytes); } else { append(&mut *c, 2, &io); }
+    operand(&mut *c, 2, input); append(&mut *c, 2, &pointer); operand(&mut *c, 2, address);
     append(&mut *c, 2, &size); operand(&mut *c, 2, count); append(&mut *c, 2, &line);
     return id;
 }
 
-fn binary_io_word(c: &mut Compiler, pair: i32, high: bool) -> Value {
+fn transfer_word(c: &mut Compiler, pair: i32, high: bool) -> Value {
     let prefix = b"  %v";
     let truncate_word = b" = trunc i64 %v";
     let end = b" to i32\n";
@@ -1076,15 +1085,26 @@ fn binary_io_word(c: &mut Compiler, pair: i32, high: bool) -> Value {
 
 pub fn binary_io(c: &mut Compiler, binding: i32, view: Value, status: i32) -> Value {
     let operation = read_some_binding() - binding;
-    let pair = binary_io_call(&mut *c, operation, view);
-    let tag = binary_io_word(&mut *c, pair, false);
-    let payload = binary_io_word(&mut *c, pair, true);
+    let selector = constant(&mut *c, 1, operation.to_i64());
+    let pair = transfer_call(&mut *c, selector, view, false);
+    let tag = transfer_word(&mut *c, pair, false);
+    let payload = transfer_word(&mut *c, pair, true);
     let initial = Value { ty: record_type(status), id: -1 };
     let tagged = insert_field(&mut *c, initial, tag, 0);
     let value = insert_field(&mut *c, tagged, payload, 1);
     let mut error_field = 2;
     if operation == 0 { error_field = 3; }
     return insert_field(&mut *c, value, payload, error_field);
+}
+
+pub fn argument_bytes(c: &mut Compiler, index: Value, view: Value) -> Value {
+    let pair = transfer_call(&mut *c, index, view, true);
+    let tag = transfer_word(&mut *c, pair, false);
+    let payload = transfer_word(&mut *c, pair, true);
+    let initial = Value { ty: record_type(c.argument_status), id: -1 };
+    let tagged = insert_field(&mut *c, initial, tag, 0);
+    let copied = insert_field(&mut *c, tagged, payload, 1);
+    return insert_field(&mut *c, copied, payload, 2);
 }
 
 fn preamble_scalar_printing(c: &mut Compiler) -> () {
@@ -1099,6 +1119,7 @@ fn preamble_resources(c: &mut Compiler) -> () {
     preamble_text_0_0(&mut *c);
     if c.process_entry { process_preamble(&mut *c); }
     if c.uses_argument_count { argument_preamble(&mut *c); }
+    if c.uses_argument_bytes { argument_bytes_preamble(&mut *c); }
     if c.uses_binary_io { binary_io_preamble(&mut *c); }
     record_preamble(&mut *c);
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
@@ -1247,6 +1268,10 @@ fn process_exit(c: &mut Compiler) -> () {
 fn install_argument_count(c: &mut Compiler) -> () {
     let count = b"store i32 %argc, ptr @argument_count, align 4\n  ";
     append(&mut *c, 0, &count);
+    if c.uses_argument_bytes {
+        let start = b"call void @__oxid_scalar_arguments_start(i32 %argc, ptr %argv)\n  ";
+        append(&mut *c, 0, &start);
+    }
     return;
 }
 pub fn wrapper(c: &mut Compiler) -> () {

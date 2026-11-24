@@ -15,6 +15,8 @@ use crate::model::same_name;
 use crate::model::function;
 use crate::model::function_binding;
 use crate::model::argument_count_binding;
+use crate::model::argument_bytes_binding;
+use crate::model::argument_status_binding;
 use crate::model::read_some_binding;
 use crate::model::write_some_binding;
 use crate::model::write_stderr_binding;
@@ -291,7 +293,11 @@ fn standard_import(c: &mut Compiler) -> i32 {
     expect(&mut *c, 1);
     if word(&*c.source, namespace.start, namespace.end, &env_name) {
         let count_name = b"arg_count";
+        let bytes_name = b"arg_bytes";
+        let status_name = b"ArgStatus";
         if word(&*c.source, item.start, item.end, &count_name) { return argument_count_binding(); }
+        if word(&*c.source, item.start, item.end, &bytes_name) { return argument_bytes_binding(); }
+        if word(&*c.source, item.start, item.end, &status_name) { return argument_status_binding(); }
     }
     if word(&*c.source, namespace.start, namespace.end, &io_name) {
         let read_name = b"read_some";
@@ -331,22 +337,27 @@ fn collect_import(c: &mut Compiler, source_module: i32, save: bool) -> () {
     return;
 }
 
-fn register_binary_status(c: &mut Compiler, reading: bool) -> i32 {
+fn status_field(c: &mut Compiler, name: i32, payload: i32) -> bool {
+    if grown(try_push(&mut *c.fields, Field { name: name, ty: payload, public: true })) { return true; }
+    c.error = 68;
+    return false;
+}
+
+fn register_standard_status(c: &mut Compiler, binding: i32) -> i32 {
     let index = len(&*c.records);
     if index >= 128 { c.error = 68; return -1; }
     let first = len(&*c.fields);
-    let mut first_name = -4;
     let mut count = 2;
-    let mut binding = write_status_binding();
-    if reading { first_name = -1; count = 3; binding = read_status_binding(); }
-    if !grown(try_push(&mut *c.fields, Field { name: first_name, ty: 1, public: true })) {
-        c.error = 68; return -1;
-    }
-    if reading && !grown(try_push(&mut *c.fields, Field { name: -2, ty: 3, public: true })) {
-        c.error = 68; return -1;
-    }
-    if !grown(try_push(&mut *c.fields, Field { name: -3, ty: 1, public: true })) {
-        c.error = 68; return -1;
+    if binding == argument_status_binding() {
+        count = 4;
+        if !status_field(&mut *c, -5, 1) || !status_field(&mut *c, -6, 1)
+            || !status_field(&mut *c, -7, 3) || !status_field(&mut *c, -8, 3) { return -1; }
+    } else if binding == read_status_binding() {
+        count = 3;
+        if !status_field(&mut *c, -1, 1) || !status_field(&mut *c, -2, 3)
+            || !status_field(&mut *c, -3, 1) { return -1; }
+    } else {
+        if !status_field(&mut *c, -4, 1) || !status_field(&mut *c, -3, 1) { return -1; }
     }
     let row = Record { name: binding, source_module: -1, first_field: first, field_count: count,
         start: 0, body: 0, end: 0, cells: count + 1, depth: 1, layout_state: 2,
@@ -355,18 +366,21 @@ fn register_binary_status(c: &mut Compiler, reading: bool) -> i32 {
     return index;
 }
 
-fn register_binary_types(c: &mut Compiler) -> () {
+fn register_standard_types(c: &mut Compiler) -> () {
     let mut read = false;
     let mut write = false;
+    let mut arguments = false;
     for index in 0..len(&*c.imports) {
         let row = c.imports[index];
         let binding = row.path_start;
         read = read || binding == read_some_binding() || binding == read_status_binding();
         write = write || binding == write_some_binding() || binding == write_stderr_binding()
             || binding == write_status_binding();
+        arguments = arguments || binding == argument_bytes_binding() || binding == argument_status_binding();
     }
-    if read { c.read_status = register_binary_status(&mut *c, true); }
-    if c.error == 0 && write { c.write_status = register_binary_status(&mut *c, false); }
+    if read { c.read_status = register_standard_status(&mut *c, read_status_binding()); }
+    if c.error == 0 && write { c.write_status = register_standard_status(&mut *c, write_status_binding()); }
+    if c.error == 0 && arguments { c.argument_status = register_standard_status(&mut *c, argument_status_binding()); }
     return;
 }
 
@@ -376,6 +390,7 @@ fn resolve_record_imports(c: &mut Compiler) -> () {
         let mut target = -1;
         if row.path_start == read_status_binding() { target = c.read_status; }
         else if row.path_start == write_status_binding() { target = c.write_status; }
+        else if row.path_start == argument_status_binding() { target = c.argument_status; }
         else if row.path_start >= 0 {
             let module = path_module(&*c, row.path_start, row.name, row.scope);
             target = record(&*c, module, row.name);
@@ -428,6 +443,10 @@ fn resolve_imports(c: &mut Compiler) -> () {
         row.target = target;
         c.imports[index] = row;
         if target == argument_count_binding() { c.uses_argument_count = true; }
+        if target == argument_bytes_binding() {
+            c.uses_argument_count = true;
+            c.uses_argument_bytes = true;
+        }
         if is_binary_io_binding(target) {
             if !c.process_entry { fail(&mut *c); return; }
             c.uses_binary_io = true;
@@ -591,7 +610,7 @@ pub fn collect(c: &mut Compiler) -> () {
         source_module = source_module + 1;
     }
     if c.error != 0 { return; }
-    register_binary_types(&mut *c);
+    register_standard_types(&mut *c);
     if c.error != 0 { return; }
     resolve_record_imports(&mut *c);
     for nominal_index in 0..len(&*c.records) {

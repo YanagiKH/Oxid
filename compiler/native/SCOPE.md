@@ -36,6 +36,9 @@ Use `build.py --entry-mode=process` with `fn main() -> i32` to return an exit
 status without printing it. Valid exit statuses range from 0 to 255.
 Import `std::env::arg_count` to count the executable and the arguments
 passed to it. The executable is included, so the count starts at 1.
+Use `std::env::arg_bytes(index, &mut bytes)` to copy an argument as raw
+bytes. Index 0 is the executable. Match `std::env::ArgStatus` to get the
+copied byte count or the required size when the destination is too small.
 In process mode, `std::io::read_some(&mut bytes)` reads from stdin.
 `write_some(&bytes)` writes to stdout, and `write_stderr(&bytes)` writes to
 stderr. Match `ReadSomeStatus` or `WriteSomeStatus` for the transferred byte
