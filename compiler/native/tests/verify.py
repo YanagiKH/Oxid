@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -45,6 +46,18 @@ def run(command: list[str], cwd: Path, timeout: int, clear_environment: bool = T
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           timeout=timeout, check=False,
                           env={} if clear_environment else None)
+
+
+SOURCE_ERROR = b": error: invalid or unsupported Oxid source\n"
+INPUT_ERROR = b"error: could not read Oxid source\n"
+RESOURCE_ERROR = b"error: compiler resource limit exceeded\n"
+
+
+def check_source_rejection(name, result, source: Path | None = None):
+    path = re.escape(os.fsencode(source)) if source is not None else rb"[^\r\n]+"
+    pattern = path + rb":[1-9][0-9]*:[1-9][0-9]*" + re.escape(SOURCE_ERROR)
+    require(result.returncode == 65 and result.stdout == b"" and re.fullmatch(pattern, result.stderr),
+            name + ": rejected source needs one location diagnostic and no LLVM")
 
 
 # Emitted native bytes come from emit.ox; reference tuples come from the
@@ -196,7 +209,8 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     missing = evidence / "absent.ox"
     missing_command = [str(compiler), str(missing)]
     absent = run(missing_command, evidence, timeout)
-    require(absent.returncode == 66 and absent.stdout == b"", "missing input did not fail without LLVM")
+    require((absent.returncode, absent.stdout, absent.stderr) == (66, b"", INPUT_ERROR),
+            "missing input must report its error without LLVM")
     rows = [record(evidence, "missing-input", missing_command, absent)]
 
     # This uses the real compiler and real Clang, but an invalid C runtime input
@@ -233,8 +247,50 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     too_large.write_bytes(b" " * 65537)
     large_command = [str(compiler), str(too_large)]
     large_result = run(large_command, evidence, timeout)
-    require(large_result.returncode == 68 and large_result.stdout == b"", "input byte limit was not enforced")
+    require((large_result.returncode, large_result.stdout, large_result.stderr) == (68, b"", RESOURCE_ERROR),
+            "input byte limit was not enforced")
     rows.append(record(evidence, "input-limit", large_command, large_result))
+
+    nested = evidence / "nested"
+    nested.mkdir()
+    nested_entry = nested / "main.ox"
+    nested_entry.write_text("mod outer;fn main()->i32{return 42;}\n")
+    (nested / "outer.ox").write_text("mod inner;\n")
+    (nested / "outer").mkdir()
+    inner = nested / "outer/inner.ox"
+    command = [str(compiler), str(nested_entry)]
+    for name, code, position in (
+        ("nested-lexical-error", "// 雪\r\n  @\n", b"2:3"),
+        ("nested-type-error", "fn read()->i32{\n  return true;\n}\n", b"2:10"),
+        ("nested-source-eof", "fn read()->i32{\n  return 1;\n", b"3:1"),
+    ):
+        inner.write_text(code, encoding="utf-8")
+        outcome = run(command, nested, timeout)
+        check_source_rejection(name, outcome, inner)
+        expected = os.fsencode(inner) + b":" + position + SOURCE_ERROR
+        require(outcome.stderr == expected, name + ": incorrect module-relative position")
+        rows.append(record(evidence, name, command, outcome))
+
+    destination = nested / "rejected"
+    try:
+        driver.build(compiler, nested_entry, clang, runtime, destination, "dev", timeout)
+    except driver.BuildError as error:
+        require(f"{inner}:3:1" in str(error), "the build driver hid the compiler location")
+    else:
+        raise RuntimeError("rejected nested source was linked")
+    require(not destination.exists(), "rejected nested source was published")
+
+    reader, writer = os.pipe()
+    os.close(reader)
+    try:
+        child = subprocess.Popen(command, cwd=nested, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=writer, env={})
+    finally:
+        os.close(writer)
+    stdout, _ = child.communicate(timeout=timeout)
+    require((child.returncode, stdout) == (65, b""), "closed stderr masked the source error")
+    rows.append(record(evidence, "closed-stderr", command,
+                       subprocess.CompletedProcess(command, child.returncode, stdout, b"")))
 
     # Keep each recursive call non-tail so -O0 retains all admitted frames.
     # One i32 parameter plus 4095 scalar locals fills the scalar slot budget.
@@ -337,7 +393,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
         source.write_text(code, encoding="ascii")
         command = [str(compiler), str(source)]
         outcome = run(command, evidence, timeout)
-        require((outcome.returncode, outcome.stdout, outcome.stderr) == (68, b"", b""),
+        require((outcome.returncode, outcome.stdout, outcome.stderr) == (68, b"", RESOURCE_ERROR),
                 name + ": oversized input did not fail before emitting LLVM")
         rows.append(record(evidence, name, command, outcome))
     for name, malformed in (
@@ -348,8 +404,9 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
         source.write_bytes(b"fn main()->i32{return 42;}\n// " + malformed)
         command = [str(compiler), str(source)]
         outcome = run(command, evidence, timeout)
-        require((outcome.returncode, outcome.stdout, outcome.stderr) == (65, b"", b""),
-                name + ": malformed UTF-8 was admitted")
+        check_source_rejection(name, outcome, source)
+        require(outcome.stderr == os.fsencode(source) + b":2:4" + SOURCE_ERROR,
+                name + ": malformed UTF-8 was reported at the wrong position")
         rows.append(record(evidence, name, command, outcome))
     return rows
 
@@ -482,7 +539,13 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
         command = [str(compiler), str(source)]
         compiled = run(command, evidence, timeout)
         row = {"name": name, "compiler": record(project, "compiler", command, compiled), "profiles": []}
-        require(compiled.returncode == expected and compiled.stderr == b"", name + ": unexpected module status")
+        require(compiled.returncode == expected, name + ": unexpected module status")
+        if expected == 65:
+            check_source_rejection(name, compiled)
+        elif expected == 66:
+            require(compiled.stderr == INPUT_ERROR, name + ": expected an input diagnostic")
+        elif expected == 68:
+            require(compiled.stderr == RESOURCE_ERROR, name + ": expected a resource diagnostic")
         if compare:
             command = [str(reference), "run", str(source), "--edition=typed-preview"]
             observed = run(command, evidence, timeout, clear_environment=False)
@@ -561,8 +624,7 @@ def verify(args) -> dict:
             compiled = run(command, work, args.timeout)
             row["compiler"] = record(evidence, "compiler", command, compiled)
             if case["kind"] == "reject":
-                require(compiled.returncode == 65 and compiled.stdout == b"" and compiled.stderr == b"",
-                        case["name"] + ": rejected source leaked output or wrong status")
+                check_source_rejection(case["name"], compiled, source)
                 rejected_destination = deploy / (case["name"] + "-rejected")
                 try:
                     driver.build(compiler, source, clang, runtime, rejected_destination, "dev", args.timeout)

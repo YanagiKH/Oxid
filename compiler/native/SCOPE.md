@@ -122,4 +122,5 @@ is limited to 64 and LLVM output to 8 MiB. Each function also has checked budget
 of 4096 active bindings, 131072 temporary values and 65536 labels.
 Compiler status 64 means usage, 65 rejected
 source, 66 input failure, 68 resource refusal and 74 output/I/O failure. Rejected
-source emits no LLVM, including when earlier functions were already buffered.
+source writes the file, line and byte column to standard error and emits no LLVM.
+The build command displays the same location.

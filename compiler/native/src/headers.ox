@@ -208,6 +208,7 @@ fn resolve_imports(c: &mut Compiler) -> () {
     let mut index = 0;
     while index < len(&*c.imports) && c.error == 0 {
         let mut row = c.imports[index];
+        c.error_module = row.scope;
         c.cursor = row.alias;
         let target_module = path_module(&*c, row.path_start, row.name, row.scope);
         if target_module < 0 { fail(&mut *c); return; }
@@ -326,17 +327,18 @@ fn collect_module(c: &mut Compiler, source_module: i32) -> () {
 }
 
 pub fn collect(c: &mut Compiler) -> () {
-    if !grown(try_push(&mut *c.sources, SourceModule { name: -1, first_token: 0, parent: -1, depth: 0, public: true })) {
+    if !grown(try_push(&mut *c.sources, SourceModule { name: -1, first_token: 0, first_byte: 0, parent: -1, depth: 0, public: true })) {
         c.error = 68;
         return;
     }
     let mut source_module = 0;
     while source_module < len(&*c.sources) && c.error == 0 {
+        c.error_module = source_module;
         collect_module(&mut *c, source_module);
         source_module = source_module + 1;
     }
     if c.error != 0 { return; }
-    if c.main < 0 { fail(&mut *c); return; }
+    if c.main < 0 { c.error_module = 0; c.cursor = 0; fail(&mut *c); return; }
     resolve_imports(&mut *c);
     if c.error != 0 { return; }
     let mut index = 0;
@@ -345,7 +347,9 @@ pub fn collect(c: &mut Compiler) -> () {
         let mut parameter_index = f.params;
         while parameter_index < f.params + f.count {
             let p = c.params[parameter_index];
-            if function_binding(&*c, f.source_module, p.name) >= 0 { fail(&mut *c); return; }
+            if function_binding(&*c, f.source_module, p.name) >= 0 {
+                c.error_module = f.source_module; c.cursor = p.name; fail(&mut *c); return;
+            }
             parameter_index = parameter_index + 1;
         }
         index = index + 1;

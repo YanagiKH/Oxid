@@ -605,8 +605,12 @@ fn declared(c: &mut Compiler) -> () {
         expected = parse_type(&mut *c, owner.source_module);
     }
     expect(&mut *c, 28);
+    let initializer = c.cursor;
     let value = expression(&mut *c, 1, 0);
-    if expected != 0 && value.ty != expected { fail(&mut *c); return; }
+    if expected != 0 && value.ty != expected {
+        if c.error == 0 { c.cursor = initializer; }
+        fail(&mut *c); return;
+    }
     expect(&mut *c, 25);
     let slot = crate::emit::slot(&mut *c, value.ty);
     bind(&mut *c, name, value.ty, writable, slot);
@@ -620,8 +624,12 @@ fn assigned(c: &mut Compiler) -> () {
     let binding = c.vars[position];
     if !binding.writable { fail(&mut *c); return; }
     c.cursor = c.cursor + 2;
+    let initializer = c.cursor;
     let value = expression(&mut *c, 1, 0);
-    if value.ty != binding.ty { fail(&mut *c); return; }
+    if value.ty != binding.ty {
+        if c.error == 0 { c.cursor = initializer; }
+        fail(&mut *c); return;
+    }
     expect(&mut *c, 25);
     set_available(&mut *c, position, true);
     crate::emit::store(&mut *c, binding.slot, value);
@@ -896,11 +904,15 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
     }
     if k == 6 {
         c.cursor = c.cursor + 1;
+        let value_start = c.cursor;
         let mut value = Value { ty: 3, id: -1 };
         if kind(&*c) != 25 { value = expression(&mut *c, 1, 0); }
         expect(&mut *c, 25);
         let f = c.functions[c.current];
-        if value.ty != f.result { fail(&mut *c); return; }
+        if value.ty != f.result {
+            if c.error == 0 { c.cursor = value_start; }
+            fail(&mut *c); return;
+        }
         crate::emit::returned(&mut *c, value); return;
     }
     let next = token(&*c, c.cursor + 1);
@@ -938,6 +950,7 @@ pub fn bodies(c: &mut Compiler) -> () {
     let mut i = 0;
     while i < len(&*c.functions) && c.error == 0 {
         let f = c.functions[i];
+        c.error_module = f.source_module;
         c.current = i; c.cursor = f.begin; c.next_value = 0; c.next_label = 0;
         c.next_slot = 0; c.loop_move_floor = 0; c.live = true; c.terminated = false;
         truncate(&mut *c.vars, 0);

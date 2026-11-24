@@ -36,6 +36,13 @@ class Protocol(unittest.TestCase):
             with self.assertRaises(build_driver.BuildError):
                 build_driver.module_from_result(result)
 
+    def test_failed_compiler_location_is_forwarded_as_printable_text(self):
+        diagnostic = b"nested.ox:2:3: error: invalid \x1bOxid source\n"
+        with self.assertRaises(build_driver.BuildError) as failure:
+            build_driver.module_from_result(self.result(stdout=b"", stderr=diagnostic, status=65))
+        self.assertEqual(str(failure.exception), "compiler failed with status 65\n"
+                         "nested.ox:2:3: error: invalid  Oxid source")
+
     def script(self, root, name, body):
         path = root / name
         path.write_text("#!/usr/bin/env python3\n" + body)
