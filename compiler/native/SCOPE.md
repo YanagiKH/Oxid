@@ -94,7 +94,7 @@ arrays in an owned value. Passing or assigning the value moves it. Use
 `let Row { id: row_id, bytes: data } = row;` to take all its fields. To replace
 an array field, assign a new value to the whole mutable struct.
 
-Struct fields can use earlier declared struct types. For example, use
+Struct fields can use types declared elsewhere in the project. For example, use
 `struct Batch { item: Row }`, then `let Batch { item: row } = batch;` to take
 the nested value. Construction accepts up to eight levels of struct nesting.
 All nested fields of a `Copy` struct must also be `Copy`.
@@ -119,7 +119,7 @@ Separate nested fields can be borrowed mutably together. A borrow of an
 entire struct overlaps any borrow of its fields.
 
 Declare `enum Value { Empty, Count(i64) }` and construct `Value::Count(42i64)`.
-A variant can carry one scalar, fixed array or struct declared above the enum.
+A variant can carry one scalar, fixed array or struct.
 Match a binding and give one arm for each variant.
 
 ```rust
