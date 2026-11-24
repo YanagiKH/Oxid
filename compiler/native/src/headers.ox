@@ -14,6 +14,7 @@ use crate::model::word;
 use crate::model::same_name;
 use crate::model::function;
 use crate::model::function_binding;
+use crate::model::argument_count_binding;
 use crate::model::function_visible;
 use crate::model::child_module;
 use crate::model::path_module;
@@ -234,11 +235,35 @@ pub fn path_name(c: &mut Compiler) -> i32 {
     return name;
 }
 
+fn expect_name(c: &mut Compiler, spelling: &[u8]) -> () {
+    let part = token(&*c, c.cursor);
+    if part.kind != 1 || !word(&*c.source, part.start, part.end, &*spelling) {
+        fail(&mut *c); return;
+    }
+    expect(&mut *c, 1);
+    return;
+}
+
+fn argument_import(c: &mut Compiler) -> i32 {
+    let std_name = b"std";
+    let env_name = b"env";
+    let count_name = b"arg_count";
+    expect_name(&mut *c, &std_name); expect(&mut *c, 45);
+    expect_name(&mut *c, &env_name); expect(&mut *c, 45);
+    let selected = c.cursor;
+    expect_name(&mut *c, &count_name);
+    return selected;
+}
+
 fn collect_import(c: &mut Compiler, source_module: i32, save: bool) -> () {
     if save && len(&*c.imports) >= 4096 { c.error = 68; return; }
     expect(&mut *c, 46);
-    let path_start = c.cursor + 2;
-    let name = path_name(&mut *c);
+    let mut path_start = -1;
+    let mut name = 0;
+    if kind(&*c) == 44 {
+        path_start = c.cursor + 2;
+        name = path_name(&mut *c);
+    } else { name = argument_import(&mut *c); }
     let mut alias = name;
     if kind(&*c) == 47 {
         expect(&mut *c, 47);
@@ -256,6 +281,7 @@ fn collect_import(c: &mut Compiler, source_module: i32, save: bool) -> () {
 fn resolve_record_imports(c: &mut Compiler) -> () {
     for index in 0..len(&*c.imports) {
         let mut row = c.imports[index];
+        if row.path_start < 0 { continue; }
         let module = path_module(&*c, row.path_start, row.name, row.scope);
         let target = record(&*c, module, row.name);
         if !record_visible(&*c, row.scope, target) { continue; }
@@ -280,12 +306,15 @@ fn resolve_imports(c: &mut Compiler) -> () {
         let mut row = c.imports[index];
         c.error_module = row.scope;
         c.cursor = row.alias;
-        let target_module = path_module(&*c, row.path_start, row.name, row.scope);
-        if target_module < 0 { fail(&mut *c); return; }
-        let target = function(&*c, target_module, row.name);
-        if !function_visible(&*c, row.scope, target) {
-            if row.record_target >= 0 { index = index + 1; continue; }
-            fail(&mut *c); return;
+        let mut target = argument_count_binding();
+        if row.path_start >= 0 {
+            let target_module = path_module(&*c, row.path_start, row.name, row.scope);
+            if target_module < 0 { fail(&mut *c); return; }
+            target = function(&*c, target_module, row.name);
+            if !function_visible(&*c, row.scope, target) {
+                if row.record_target >= 0 { index = index + 1; continue; }
+                fail(&mut *c); return;
+            }
         }
         if function(&*c, row.scope, row.alias) >= 0 {
             fail(&mut *c);
@@ -294,7 +323,7 @@ fn resolve_imports(c: &mut Compiler) -> () {
         let mut previous = 0;
         while previous < index {
             let old = c.imports[previous];
-            if old.scope == row.scope && old.target >= 0
+            if old.scope == row.scope && old.target != -1
                 && (old.target == target || same_name(&*c, old.alias, row.alias)) {
                 fail(&mut *c);
                 return;
@@ -303,6 +332,7 @@ fn resolve_imports(c: &mut Compiler) -> () {
         }
         row.target = target;
         c.imports[index] = row;
+        if target == argument_count_binding() { c.uses_argument_count = true; }
         index = index + 1;
     }
     return;
@@ -478,7 +508,7 @@ pub fn collect(c: &mut Compiler) -> () {
         let mut parameter_index = f.params;
         while parameter_index < f.params + f.count {
             let p = c.params[parameter_index];
-            if function_binding(&*c, f.source_module, p.name) >= 0 {
+            if function_binding(&*c, f.source_module, p.name) != -1 {
                 c.error_module = f.source_module; c.cursor = p.name; fail(&mut *c); return;
             }
             parameter_index = parameter_index + 1;

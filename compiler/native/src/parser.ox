@@ -12,6 +12,7 @@ use crate::model::fail;
 use crate::model::local;
 use crate::model::function;
 use crate::model::function_binding;
+use crate::model::argument_count_binding;
 use crate::model::function_visible;
 use crate::model::path_module;
 use crate::model::is_array;
@@ -73,7 +74,7 @@ fn infix(c: &Compiler) -> i32 {
 }
 fn bind(c: &mut Compiler, name: i32, ty: i32, writable: bool, slot: i32) -> () {
     let owner = c.functions[c.current];
-    if local(&*c, name) >= 0 || function_binding(&*c, owner.source_module, name) >= 0 { fail(&mut *c); return; }
+    if local(&*c, name) >= 0 || function_binding(&*c, owner.source_module, name) != -1 { fail(&mut *c); return; }
     if len(&*c.vars) >= 4096 { c.error = 68; return; }
     let row = Binding { name: name, ty: ty, slot: slot, writable: writable, available: true };
     if !grown(try_push(&mut *c.vars, row)) { c.error = 68; }
@@ -225,6 +226,11 @@ fn record_argument(c: &mut Compiler, expected: i32) -> Value {
     return crate::emit::borrow_record(&mut *c, binding, expected);
 }
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
+    if target == argument_count_binding() {
+        expect(&mut *c, 20); expect(&mut *c, 21);
+        if c.error != 0 { return invalid(); }
+        return crate::emit::argument_count(&mut *c);
+    }
     if target < 0 { fail(&mut *c); return invalid(); }
     let f = c.functions[target];
     let mut args = new::<Value>();
