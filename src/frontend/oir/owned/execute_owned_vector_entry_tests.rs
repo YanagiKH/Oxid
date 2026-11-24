@@ -229,7 +229,7 @@ fn owned_vector_entry_process_signatures_and_result_policy_require_no_global_set
             Some(hir::DefId(0)),
             EntryPolicy::Process
         )),
-        if output::supported_host() {
+        if process::entry_supported_host() {
             Err(OwnedRunFailure::ProcessEntry(span))
         } else {
             Err(OwnedRunFailure::ProcessHost)
@@ -240,7 +240,7 @@ fn owned_vector_entry_process_signatures_and_result_policy_require_no_global_set
         let admitted = plan::fail_allocation_after(0, || {
             checked_entry_policy(&witness, Some(hir::DefId(0)), EntryPolicy::Process)
         });
-        if !output::supported_host() {
+        if !process::entry_supported_host() {
             assert_eq!(admitted, Err(OwnedRunFailure::ProcessHost));
             continue;
         }
