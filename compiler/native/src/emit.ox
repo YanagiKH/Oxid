@@ -12,7 +12,9 @@ use crate::model::is_slice;
 use crate::model::slice_element;
 use crate::model::is_record_reference;
 use crate::model::record_value_type;
+use crate::model::record_type;
 use crate::model::value_cells;
+use crate::model::read_some_binding;
 use crate::model::code;
 use crate::model::is_record;
 use crate::model::record_index;
@@ -1033,19 +1035,76 @@ pub fn argument_count(c: &mut Compiler) -> Value {
     return Value { ty: 1, id: id };
 }
 
+fn binary_io_preamble(c: &mut Compiler) -> () {
+    let io = b"declare i64 @__oxid_scalar_binary_io(i32, ptr, i32)\n";
+    append(&mut *c, 0, &io);
+    return;
+}
+
+fn binary_io_call(c: &mut Compiler, operation: i32, view: Value) -> i32 {
+    let prefix = b"  %v";
+    let invoke = b" = call i64 @__oxid_scalar_binary_io(i32 ";
+    let pointer = b", ptr ";
+    let size = b", i32 ";
+    let line = b")\n";
+    let address = extract_field(&mut *c, view, 0, 0);
+    let count = extract_field(&mut *c, view, 1, 1);
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invoke);
+    number(&mut *c, 2, operation); append(&mut *c, 2, &pointer); operand(&mut *c, 2, address);
+    append(&mut *c, 2, &size); operand(&mut *c, 2, count); append(&mut *c, 2, &line);
+    return id;
+}
+
+fn binary_io_word(c: &mut Compiler, pair: i32, high: bool) -> Value {
+    let prefix = b"  %v";
+    let truncate_word = b" = trunc i64 %v";
+    let end = b" to i32\n";
+    let mut word_id = pair;
+    if high {
+        let shift_prefix = b" = lshr i64 %v";
+        let width = b", 32\n";
+        word_id = fresh(&mut *c);
+        append(&mut *c, 2, &prefix); number(&mut *c, 2, word_id); append(&mut *c, 2, &shift_prefix);
+        number(&mut *c, 2, pair); append(&mut *c, 2, &width);
+    }
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &truncate_word);
+    number(&mut *c, 2, word_id); append(&mut *c, 2, &end);
+    return Value { ty: 1, id: id };
+}
+
+pub fn binary_io(c: &mut Compiler, binding: i32, view: Value, status: i32) -> Value {
+    let operation = read_some_binding() - binding;
+    let pair = binary_io_call(&mut *c, operation, view);
+    let tag = binary_io_word(&mut *c, pair, false);
+    let payload = binary_io_word(&mut *c, pair, true);
+    let initial = Value { ty: record_type(status), id: -1 };
+    let tagged = insert_field(&mut *c, initial, tag, 0);
+    let value = insert_field(&mut *c, tagged, payload, 1);
+    let mut error_field = 2;
+    if operation == 0 { error_field = 3; }
+    return insert_field(&mut *c, value, payload, error_field);
+}
+
+fn preamble_scalar_printing(c: &mut Compiler) -> () {
+    let print_long = b"declare i32 @__oxid_print_i64(i64)\n";
+    let print_character = b"declare i32 @__oxid_print_char(i32)\n";
+    append(&mut *c, 0, &print_long); append(&mut *c, 0, &print_character);
+    return;
+}
 fn preamble_resources(c: &mut Compiler) -> () {
     let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
     let int_error = b"@int_conversion = private constant [28 x i8] c\"i32 conversion out of range\\0A\"\n";
-    let print_long = b"declare i32 @__oxid_print_i64(i64)\n";
-    let print_character = b"declare i32 @__oxid_print_char(i32)\n";
     preamble_text_0_0(&mut *c);
     if c.process_entry { process_preamble(&mut *c); }
     if c.uses_argument_count { argument_preamble(&mut *c); }
+    if c.uses_binary_io { binary_io_preamble(&mut *c); }
     record_preamble(&mut *c);
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
-    append(&mut *c, 0, &depth_error); append(&mut *c, 0, &int_error); append(&mut *c, 0, &print_long);
-    append(&mut *c, 0, &print_character);
+    append(&mut *c, 0, &depth_error); append(&mut *c, 0, &int_error);
+    preamble_scalar_printing(&mut *c);
     return;
 }
 fn preamble_unsigned(c: &mut Compiler) -> () {

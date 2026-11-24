@@ -849,6 +849,12 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             "responses.ox": "struct Hidden{value:i32}pub enum Reply{Number(Hidden)}"
                             "pub fn open()->Reply{return Reply::Number(Hidden{value:42});}",
         }),
+        ("standard-io-status-identities-are-distinct", 65, True, {
+            "main.ox": "use std::io::ReadSomeStatus;use std::io::WriteSomeStatus;"
+                       "fn main()->i32{let value=WriteSomeStatus::Written(42);"
+                       "match value{ReadSomeStatus::Data(n)=>{return n;},"
+                       "ReadSomeStatus::Eof=>{return 0;},ReadSomeStatus::Error(e)=>{return 0;},}}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
@@ -1028,6 +1034,70 @@ def verify_argument_counts(compiler: Path, clang: Path, runtime: Path, reference
     return results
 
 
+def verify_binary_io(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                     output: Path, timeout: int) -> list[dict]:
+    evidence = output / "binary-io"
+    evidence.mkdir()
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::io::ReadSomeStatus as Read;
+use std::io::WriteSomeStatus as Write;
+use std::io::read_some as input;
+use std::io::write_some;
+use std::io::write_stderr;
+fn read_size(value:Read)->i32{
+    match value{Read::Data(n)=>{return n;},Read::Eof=>{return -1;},Read::Error(e)=>{return -2;},}
+}
+fn main()->i32{
+    let mut bytes=b"xxxx";
+    if read_size(input(&mut bytes[0..0]))!=0{return 1;}
+    if read_size(input(&mut bytes))!=3||bytes[3]!=120u8{return 2;}
+    let echoed=write_some(&bytes[0..3]);
+    match echoed{Write::Written(n)=>{if n!=3{return 3;}},Write::Error(e)=>{return 4;},}
+    if read_size(input(&mut bytes))!=-1{return 5;}
+    let message=b"e\x00\xff";
+    let logged=write_stderr(&message);
+    match logged{Write::Written(n)=>{if n!=3{return 6;}},Write::Error(e)=>{if e>0{return 74;}return 7;},}
+    return 42;
+}
+''', encoding="ascii")
+    payload = b"\xff\x00\r"
+    rows = []
+
+    def observe(name, command, environment):
+        completed = subprocess.run(command, cwd=evidence, input=payload, capture_output=True,
+                                   timeout=timeout, env=environment)
+        require((completed.returncode, completed.stdout, completed.stderr) == (42, payload, b"e\x00\xff"),
+                name + ": binary streams did not match")
+        rows.append(record(evidence, name, command, completed))
+        reader, writer = os.pipe()
+        os.close(reader)
+        try:
+            closed = subprocess.run(command, cwd=evidence, input=payload, stdout=subprocess.PIPE,
+                                    stderr=writer, timeout=timeout, env=environment)
+        finally:
+            os.close(writer)
+        require((closed.returncode, closed.stdout) == (74, payload), name + ": closed stderr did not match")
+        closed.stderr = b""
+        rows.append(record(evidence, name + "-closed", command, closed))
+
+    reference_command = [str(reference), "run", str(source), "--edition=typed-preview", "--entry-mode=process"]
+    observe("reference", reference_command, None)
+    command = driver.compiler_command(compiler, source, driver.host_target())
+    rejected = run(command, evidence, timeout)
+    check_source_rejection("binary I/O in result entry mode", rejected, source)
+    require(rejected.stdout == b"", "binary I/O in result mode emitted LLVM")
+    for profile in ("dev", "release"):
+        driver.build(compiler, source, clang, runtime, evidence / profile, profile,
+                     timeout, evidence / (profile + "-build"), entry_mode="process")
+    source.unlink()
+    for profile in ("dev", "release"):
+        moved = evidence / ("moved-" + profile)
+        (evidence / profile).rename(moved)
+        observe(profile, [str(moved)], {})
+    return rows
+
+
 def verify(args) -> dict:
     target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
@@ -1126,6 +1196,8 @@ def verify(args) -> dict:
             report["process_entries"] = verify_process_entries(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
             report["argument_counts"] = verify_argument_counts(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["binary_io"] = verify_binary_io(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"

@@ -13,6 +13,8 @@ use crate::model::local;
 use crate::model::function;
 use crate::model::function_binding;
 use crate::model::argument_count_binding;
+use crate::model::is_binary_io_binding;
+use crate::model::read_some_binding;
 use crate::model::function_visible;
 use crate::model::path_module;
 use crate::model::is_array;
@@ -230,6 +232,18 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
         expect(&mut *c, 20); expect(&mut *c, 21);
         if c.error != 0 { return invalid(); }
         return crate::emit::argument_count(&mut *c);
+    }
+    if is_binary_io_binding(target) {
+        let reading = target == read_some_binding();
+        let outer_loans = len(&*c.loans);
+        expect(&mut *c, 20);
+        let view = slice_argument(&mut *c, slice_type(4, reading), depth);
+        expect(&mut *c, 21);
+        truncate(&mut *c.loans, outer_loans);
+        if c.error != 0 { return invalid(); }
+        let mut status = c.write_status;
+        if reading { status = c.read_status; }
+        return crate::emit::binary_io(&mut *c, target, view, status);
     }
     if target < 0 { fail(&mut *c); return invalid(); }
     let f = c.functions[target];
