@@ -128,7 +128,7 @@ fn discover_nominal(c: &mut Compiler, source_module: i32) -> () {
     if public { expect(&mut *c, 19); }
     let tagged = kind(&*c) == 62;
     if tagged {
-        if copy_record || public { fail(&mut *c); return; }
+        if copy_record { fail(&mut *c); return; }
         expect(&mut *c, 62);
     } else { expect(&mut *c, 54); }
     let name = c.cursor;
@@ -243,7 +243,7 @@ fn discover_records(c: &mut Compiler, source_module: i32) -> () {
     while kind(&*c) != 0 && c.error == 0 {
         let k = kind(&*c);
         let next = token(&*c, c.cursor + 1);
-        if (k == 53 || k == 54 || k == 62 || (k == 19 && next.kind == 54)) && depth == 0 {
+        if (k == 53 || k == 54 || k == 62 || (k == 19 && (next.kind == 54 || next.kind == 62))) && depth == 0 {
             discover_nominal(&mut *c, source_module); continue;
         }
         if k == 22 { depth = depth + 1; }
@@ -315,8 +315,6 @@ fn resolve_record_imports(c: &mut Compiler) -> () {
         let module = path_module(&*c, row.path_start, row.name, row.scope);
         let target = record(&*c, module, row.name);
         if !record_visible(&*c, row.scope, target) { continue; }
-        let selected = c.records[target];
-        if selected.tagged { continue; }
         c.error_module = row.scope;
         c.cursor = row.alias;
         if record_binding(&*c, row.scope, row.alias) >= 0 { fail(&mut *c); return; }
@@ -481,7 +479,8 @@ fn collect_module(c: &mut Compiler, source_module: i32) -> () {
     while kind(&*c) != 0 && c.error == 0 {
         let declaration = kind(&*c);
         let next = token(&*c, c.cursor + 1);
-        if declaration == 53 || declaration == 54 || declaration == 62 || (declaration == 19 && next.kind == 54) {
+        if declaration == 53 || declaration == 54 || declaration == 62
+            || (declaration == 19 && (next.kind == 54 || next.kind == 62)) {
             if next_record >= len(&*c.records) { fail(&mut *c); return; }
             let row = c.records[next_record];
             if row.start != c.cursor { fail(&mut *c); return; }

@@ -261,11 +261,24 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     c.call_sites = c.call_sites + 1;
     return crate::emit::call(&mut *c, target, &args, f.result);
 }
+fn qualified_enum(c: &Compiler, first: i32, last: i32, requester: i32) -> i32 {
+    if last < first + 2 { return -1; }
+    let type_name = last - 2;
+    let owner_module = path_module(&*c, first, type_name, requester);
+    if owner_module < 0 { return -1; }
+    let index = record(&*c, owner_module, type_name);
+    if !record_visible(&*c, requester, index) { return -1; }
+    let row = c.records[index];
+    if !row.tagged { return -1; }
+    return index;
+}
 fn qualified_value(c: &mut Compiler, depth: i32) -> Value {
     let path_start = c.cursor + 2;
     let name = path_name(&mut *c);
     if c.error != 0 { return invalid(); }
     let caller = c.functions[c.current];
+    let enumeration = qualified_enum(&*c, path_start, name, caller.source_module);
+    if enumeration >= 0 { return enum_value(&mut *c, enumeration, name, depth); }
     let source_module = path_module(&*c, path_start, name, caller.source_module);
     if source_module < 0 { fail(&mut *c); return invalid(); }
     if kind(&*c) == 22 {
@@ -360,8 +373,13 @@ fn enum_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
     let row = c.records[index];
     if !row.tagged { fail(&mut *c); return invalid(); }
     expect(&mut *c, 45);
-    let variant = record_field(&*c, row, c.cursor);
+    let name = c.cursor;
     expect(&mut *c, 1);
+    return enum_value(&mut *c, index, name, depth);
+}
+fn enum_value(c: &mut Compiler, index: i32, name: i32, depth: i32) -> Value {
+    let row = c.records[index];
+    let variant = record_field(&*c, row, name);
     if variant < 0 { fail(&mut *c); return invalid(); }
     let field = c.fields[row.first_field + variant];
     let tag = crate::emit::constant(&mut *c, 1, variant.to_i64());
@@ -849,11 +867,19 @@ fn if_statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -
 }
 fn match_variant(c: &mut Compiler, row: Record, type_index: i32) -> i32 {
     let owner = c.functions[c.current];
-    let arm_type = record(&*c, owner.source_module, c.cursor);
-    expect(&mut *c, 1);
-    expect(&mut *c, 45);
-    let variant = record_field(&*c, row, c.cursor);
-    expect(&mut *c, 1);
+    let mut arm_type = -1;
+    let mut name = c.cursor;
+    if kind(&*c) == 44 {
+        let first = c.cursor + 2;
+        name = path_name(&mut *c);
+        arm_type = qualified_enum(&*c, first, name, owner.source_module);
+    } else {
+        arm_type = record_binding(&*c, owner.source_module, c.cursor);
+        expect(&mut *c, 1); expect(&mut *c, 45);
+        name = c.cursor;
+        expect(&mut *c, 1);
+    }
+    let variant = record_field(&*c, row, name);
     if arm_type != type_index || variant < 0 { fail(&mut *c); return -1; }
     return variant;
 }
