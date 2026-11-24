@@ -343,7 +343,8 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
                 row = record(evidence, f'{name}-{receipt["profile"]}', command, result)
                 rows.append({**row, "build": receipt})
                 require((result.returncode, result.stdout, result.stderr) == expected,
-                        f'{name}: wrong result at {receipt["profile"]}')
+                        f'{name}: wrong result at {receipt["profile"]}, '
+                        f'exit={result.returncode}, stderr={result.stderr[:256]!r}')
     source = evidence / "full-record-frame.ox"
     source.write_text(record_frame + "return copy62.x63;}", encoding="ascii")
     receipts = []
