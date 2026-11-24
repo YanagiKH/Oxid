@@ -131,6 +131,9 @@ match value {
 ```
 
 Passing, assigning or matching an enum moves it.
+Use `pub enum` to share the type with another module. Construct and match
+variants through an imported type name or a path such as
+`crate::messages::Value::Count`.
 
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports

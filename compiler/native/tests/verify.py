@@ -820,6 +820,35 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "fn read(root:Root)->i32{return 42;}fn main()->i32{return 42;}",
             "branches.ox": "pub struct Branch{root:crate::Root}",
         }),
+        ("public-enum-import-alias", 0, True, {
+            "main.ox": "mod responses;use crate::responses::Reply as Answer;"
+                       "fn read(reply:Answer)->i32{match reply{Answer::Missing=>{return 0;},"
+                       "Answer::Number(amount)=>{return amount;},}}"
+                       "fn main()->i32{return read(crate::responses::open());}",
+            "responses.ox": "pub enum Reply{Missing,Number(i32)}"
+                            "pub fn open()->Reply{return Reply::Number(42);}",
+        }),
+        ("public-enum-qualified-constructor-and-match", 0, True, {
+            "main.ox": "mod responses;fn main()->i32{let reply=crate::responses::Reply::Number(42);"
+                       "match reply{crate::responses::Reply::Number(amount)=>{return amount;},"
+                       "crate::responses::Reply::Missing=>{return 0;},}}",
+            "responses.ox": "pub enum Reply{Missing,Number(i32)}",
+        }),
+        ("private-enum-import-rejected", 65, True, {
+            "main.ox": "mod responses;use crate::responses::Reply;fn main()->i32{return 42;}",
+            "responses.ox": "enum Reply{Missing,Number(i32)}",
+        }),
+        ("qualified-match-preserves-enum-identity", 65, True, {
+            "main.ox": "mod responses;fn main()->i32{let reply=crate::responses::Reply::Number(42);"
+                       "match reply{crate::responses::Wrong::Number(amount)=>{return amount;},}}",
+            "responses.ox": "pub enum Reply{Number(i32)}pub enum Wrong{Number(i32)}",
+        }),
+        ("public-enum-private-payload", 65, True, {
+            "main.ox": "mod responses;fn main()->i32{let reply=crate::responses::open();"
+                       "match reply{crate::responses::Reply::Number(amount)=>{return 42;},}}",
+            "responses.ox": "struct Hidden{value:i32}pub enum Reply{Number(Hidden)}"
+                            "pub fn open()->Reply{return Reply::Number(Hidden{value:42});}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
