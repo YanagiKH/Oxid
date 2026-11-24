@@ -40,7 +40,8 @@ pub struct Value { pub ty: i32, pub id: i32 }
 #[derive(Copy)]
 pub struct Record {
     pub name: i32, pub source_module: i32, pub first_field: i32, pub field_count: i32,
-    pub start: i32, pub end: i32, pub cells: i32, pub depth: i32,
+    pub start: i32, pub body: i32, pub end: i32, pub cells: i32, pub depth: i32,
+    pub layout_state: i32,
     pub copy: bool, pub tagged: bool, pub public: bool
 }
 #[derive(Copy)]

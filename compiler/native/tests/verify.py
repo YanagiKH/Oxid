@@ -795,6 +795,31 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             "main.ox": "use std::env::arg_count as total;"
                        "fn main()->i32{let total=42;return total;}",
         }),
+        ("forward-copy-record-fields", 0, True, {
+            "main.ox": "#[derive(Copy)]struct Parent{child:Child}"
+                       "#[derive(Copy)]struct Child{number:i32}"
+                       "fn read(parent:Parent)->i32{return parent.child.number;}"
+                       "fn main()->i32{let value=Parent{child:Child{number:21}};return read(value)+read(value);}",
+        }),
+        ("forward-record-field-import", 0, True, {
+            "main.ox": "mod parts;use crate::parts::Leaf as Entry;struct Parent{child:Entry}"
+                       "fn main()->i32{let value=Parent{child:crate::parts::open()};return value.child.number;}",
+            "parts.ox": "pub struct Leaf{pub number:i32}pub fn open()->Leaf{return Leaf{number:42};}",
+        }),
+        ("forward-struct-enum-payload", 0, True, {
+            "main.ox": "enum Command{None,Send(Body)}struct Body{number:i32}"
+                       "fn main()->i32{let value=Command::Send(Body{number:42});"
+                       "match value{Command::None=>{return 0;},Command::Send(body)=>{return body.number;},}}",
+        }),
+        ("recursive-record-layout", 65, True, {
+            "main.ox": "struct Node{child:Node}fn read(node:Node)->i32{return 42;}"
+                       "fn main()->i32{return 42;}",
+        }),
+        ("cross-module-record-layout-cycle", 65, True, {
+            "main.ox": "mod branches;pub struct Root{branch:crate::branches::Branch}"
+                       "fn read(root:Root)->i32{return 42;}fn main()->i32{return 42;}",
+            "branches.ox": "pub struct Branch{root:crate::Root}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",

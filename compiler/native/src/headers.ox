@@ -27,13 +27,14 @@ use crate::model::record;
 use crate::model::record_binding;
 use crate::model::record_type;
 use crate::model::is_record;
-use crate::model::record_field;
 use crate::model::record_visible;
 use crate::model::record_index;
 use crate::model::record_reference;
 use crate::model::is_record_reference;
 use crate::model::record_value_type;
 use crate::model::value_cells;
+use alloc::vec::Vec;
+use alloc::vec::new;
 use alloc::vec::len;
 use alloc::vec::try_push;
 
@@ -106,7 +107,7 @@ fn named_type(c: &mut Compiler, source_module: i32) -> i32 {
     fail(&mut *c); return 0;
 }
 
-fn collect_record(c: &mut Compiler, source_module: i32) -> () {
+fn discover_nominal(c: &mut Compiler, source_module: i32) -> () {
     let derive = b"derive";
     let copy = b"Copy";
     if len(&*c.records) >= 128 { c.error = 68; return; }
@@ -125,85 +126,115 @@ fn collect_record(c: &mut Compiler, source_module: i32) -> () {
     }
     let public = kind(&*c) == 19;
     if public { expect(&mut *c, 19); }
-    expect(&mut *c, 54);
+    let tagged = kind(&*c) == 62;
+    if tagged {
+        if copy_record || public { fail(&mut *c); return; }
+        expect(&mut *c, 62);
+    } else { expect(&mut *c, 54); }
     let name = c.cursor;
     expect(&mut *c, 1); expect(&mut *c, 22);
     if record(&*c, source_module, name) >= 0 || child_module(&*c, source_module, name, true) >= 0 {
         fail(&mut *c); return;
     }
-    let mut row = Record { name: name, source_module: source_module,
-        first_field: len(&*c.fields), field_count: 0, start: start, end: 0, cells: 0, depth: 1,
-        copy: copy_record, tagged: false, public: public };
-    while kind(&*c) != 23 && c.error == 0 {
-        if row.field_count >= 64 { c.error = 68; return; }
-        let field_public = kind(&*c) == 19;
-        if field_public { expect(&mut *c, 19); }
-        let field_name = c.cursor;
-        expect(&mut *c, 1); expect(&mut *c, 24);
-        let field_type = ty(&mut *c, source_module);
-        let mut allowed = is_value_scalar(field_type) || (!copy_record && is_array(field_type));
-        if is_record(field_type) {
-            let component = c.records[record_index(field_type)];
-            allowed = !component.tagged && (!copy_record || component.copy)
-                && (!row.public || !field_public || component.public);
-            if component.depth >= row.depth { row.depth = component.depth + 1; }
-        }
-        if !allowed || record_field(&*c, row, field_name) >= 0 { fail(&mut *c); return; }
-        let field = Field { name: field_name, ty: field_type, public: field_public };
-        if !grown(try_push(&mut *c.fields, field)) { c.error = 68; return; }
-        row.field_count = row.field_count + 1;
-        // Round each field up to an eight-byte cell so the sum includes padding.
-        row.cells = row.cells + value_cells(&*c, field_type);
-        if kind(&*c) != 23 { expect(&mut *c, 26); }
+    let body = c.cursor;
+    let mut nesting = 1;
+    while nesting > 0 && c.error == 0 {
+        let current = kind(&*c);
+        if current == 0 { fail(&mut *c); return; }
+        if current == 22 { nesting = nesting + 1; }
+        if current == 23 { nesting = nesting - 1; }
+        if nesting > 64 { c.error = 68; return; }
+        c.cursor = c.cursor + 1;
     }
-    expect(&mut *c, 23);
-    // Even a zero-sized value reserves a distinct local slot identifier.
-    if row.field_count == 0 { row.cells = 1; }
-    if row.depth > 8 { c.error = 68; return; }
-    row.end = c.cursor;
+    let row = Record { name: name, source_module: source_module, first_field: 0, field_count: 0,
+        start: start, body: body, end: c.cursor, cells: 0, depth: 1, layout_state: 0,
+        copy: copy_record, tagged: tagged, public: public };
     if c.error == 0 && !grown(try_push(&mut *c.records, row)) { c.error = 68; }
     return;
 }
 
-fn collect_enum(c: &mut Compiler, source_module: i32) -> () {
-    if len(&*c.records) >= 128 { c.error = 68; return; }
-    let start = c.cursor;
-    expect(&mut *c, 62);
-    let name = c.cursor;
-    expect(&mut *c, 1);
-    expect(&mut *c, 22);
-    if record(&*c, source_module, name) >= 0 || child_module(&*c, source_module, name, true) >= 0 {
-        fail(&mut *c); return;
+fn field_already_seen(c: &Compiler, fields: &Vec<Field>, name: i32) -> bool {
+    for index in 0..len(&*fields) {
+        let field = fields[index];
+        if same_name(&*c, field.name, name) { return true; }
     }
-    let mut row = Record { name: name, source_module: source_module,
-        first_field: len(&*c.fields), field_count: 0, start: start, end: 0, cells: 1, depth: 1,
-        copy: false, tagged: true, public: false };
+    return false;
+}
+
+fn enum_payload(c: &mut Compiler, source_module: i32) -> i32 {
+    if kind(&*c) != 20 { return 3; }
+    expect(&mut *c, 20);
+    let payload = ty(&mut *c, source_module);
+    expect(&mut *c, 21);
+    if payload == 3 || is_slice(payload) || is_record_reference(payload) { fail(&mut *c); }
+    return payload;
+}
+
+fn field_dependency(c: &mut Compiler, index: i32, depth: i32) -> Record {
+    let position = c.cursor;
+    let caller_module = c.error_module;
+    layout_nominal(&mut *c, index, depth);
+    if c.error == 0 { c.cursor = position; c.error_module = caller_module; }
+    return c.records[index];
+}
+
+fn layout_nominal(c: &mut Compiler, index: i32, depth: i32) -> () {
+    let mut row = c.records[index];
+    if row.layout_state == 2 { return; }
+    if row.layout_state == 1 { fail(&mut *c); return; }
+    if depth > 9 { c.error = 68; return; }
+    row.layout_state = 1;
+    c.records[index] = row;
+    c.cursor = row.body;
+    c.error_module = row.source_module;
+    if row.tagged { row.cells = 1; }
+    // A dependency can append its own fields while the current fields are staged.
+    let mut fields = new::<Field>();
     while kind(&*c) != 23 && c.error == 0 {
         if row.field_count >= 64 { c.error = 68; return; }
-        let variant = c.cursor;
+        let mut field_public = row.tagged;
+        if !row.tagged && kind(&*c) == 19 { expect(&mut *c, 19); field_public = true; }
+        let field_name = c.cursor;
         expect(&mut *c, 1);
-        if record_field(&*c, row, variant) >= 0 { fail(&mut *c); return; }
-        let mut payload = 3;
-        if kind(&*c) == 20 {
-            expect(&mut *c, 20);
-            payload = ty(&mut *c, source_module);
-            expect(&mut *c, 21);
-            if payload == 3 || is_slice(payload) || is_record_reference(payload) { fail(&mut *c); return; }
-            if is_record(payload) {
-                let nested = c.records[crate::model::record_index(payload)];
-                if nested.tagged { fail(&mut *c); return; }
+        if field_already_seen(&*c, &fields, field_name) { fail(&mut *c); return; }
+        let mut field_type = 0;
+        if row.tagged { field_type = enum_payload(&mut *c, row.source_module); }
+        else { expect(&mut *c, 24); field_type = ty(&mut *c, row.source_module); }
+        if c.error != 0 { return; }
+        let mut allowed = (row.tagged && field_type == 3) || is_value_scalar(field_type)
+            || (!row.copy && is_array(field_type));
+        if is_record(field_type) {
+            let child = record_index(field_type);
+            let declared = c.records[child];
+            allowed = !declared.tagged && (!row.copy || declared.copy)
+                && (!row.public || !field_public || declared.public);
+            if allowed {
+                let component = field_dependency(&mut *c, child, depth + 1);
+                if c.error != 0 { return; }
+                if !row.tagged && component.depth >= row.depth { row.depth = component.depth + 1; }
             }
         }
-        if c.error != 0 { return; }
-        if !grown(try_push(&mut *c.fields, Field { name: variant, ty: payload, public: true })) { c.error = 68; return; }
+        if !allowed { fail(&mut *c); return; }
+        if !grown(try_push(&mut fields, Field { name: field_name, ty: field_type, public: field_public })) {
+            c.error = 68; return;
+        }
         row.field_count = row.field_count + 1;
-        row.cells = row.cells + value_cells(&*c, payload);
+        // Rounding individual fields to eight-byte cells includes padding.
+        row.cells = row.cells + value_cells(&*c, field_type);
         if kind(&*c) != 23 { expect(&mut *c, 26); }
     }
     expect(&mut *c, 23);
-    if row.field_count == 0 { fail(&mut *c); return; }
-    row.end = c.cursor;
-    if c.error == 0 && !grown(try_push(&mut *c.records, row)) { c.error = 68; }
+    if c.error != 0 { return; }
+    if row.tagged && row.field_count == 0 { fail(&mut *c); return; }
+    // A zero-sized value still has a distinct local slot identifier.
+    if row.field_count == 0 { row.cells = 1; }
+    if row.depth > 8 { c.error = 68; return; }
+    row.first_field = len(&*c.fields);
+    for field_index in 0..row.field_count {
+        if !grown(try_push(&mut *c.fields, fields[field_index])) { c.error = 68; return; }
+    }
+    row.layout_state = 2;
+    c.records[index] = row;
     return;
 }
 
@@ -212,10 +243,9 @@ fn discover_records(c: &mut Compiler, source_module: i32) -> () {
     while kind(&*c) != 0 && c.error == 0 {
         let k = kind(&*c);
         let next = token(&*c, c.cursor + 1);
-        if (k == 53 || k == 54 || (k == 19 && next.kind == 54)) && depth == 0 {
-            collect_record(&mut *c, source_module); continue;
+        if (k == 53 || k == 54 || k == 62 || (k == 19 && next.kind == 54)) && depth == 0 {
+            discover_nominal(&mut *c, source_module); continue;
         }
-        if k == 62 && depth == 0 { collect_enum(&mut *c, source_module); continue; }
         if k == 22 { depth = depth + 1; }
         if k == 23 { depth = depth - 1; }
         c.cursor = c.cursor + 1;
@@ -492,6 +522,10 @@ pub fn collect(c: &mut Compiler) -> () {
     }
     if c.error != 0 { return; }
     resolve_record_imports(&mut *c);
+    for nominal_index in 0..len(&*c.records) {
+        if c.error != 0 { return; }
+        layout_nominal(&mut *c, nominal_index, 1);
+    }
     source_module = 0;
     while source_module < len(&*c.sources) && c.error == 0 {
         c.error_module = source_module;
