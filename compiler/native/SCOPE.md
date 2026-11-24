@@ -36,6 +36,10 @@ Use `build.py --entry-mode=process` with `fn main() -> i32` to return an exit
 status without printing it. Valid exit statuses range from 0 to 255.
 Import `std::env::arg_count` to count the executable and the arguments
 passed to it. The executable is included, so the count starts at 1.
+In process mode, `std::io::read_some(&mut bytes)` reads from stdin.
+`write_some(&bytes)` writes to stdout, and `write_stderr(&bytes)` writes to
+stderr. Match `ReadSomeStatus` or `WriteSomeStatus` for the transferred byte
+count, end of input or an operating system error.
 Use `for index in start..end { ... }` to iterate over matching integer bounds.
 The bounds evaluate once from left to right, and the end is excluded. The
 index is immutable and available inside the loop body.
@@ -140,7 +144,7 @@ calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
 nested enums, other reference forms, generics, text strings, nested arrays,
-I/O in compiled input and other integer types are unsupported. The compiler
+File I/O and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 
 Declare `mod math;` in the entry file to load `math.ox`. Inside `math.ox`,

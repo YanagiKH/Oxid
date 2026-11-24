@@ -15,6 +15,12 @@ use crate::model::same_name;
 use crate::model::function;
 use crate::model::function_binding;
 use crate::model::argument_count_binding;
+use crate::model::read_some_binding;
+use crate::model::write_some_binding;
+use crate::model::write_stderr_binding;
+use crate::model::read_status_binding;
+use crate::model::write_status_binding;
+use crate::model::is_binary_io_binding;
 use crate::model::function_visible;
 use crate::model::child_module;
 use crate::model::path_module;
@@ -274,15 +280,32 @@ fn expect_name(c: &mut Compiler, spelling: &[u8]) -> () {
     return;
 }
 
-fn argument_import(c: &mut Compiler) -> i32 {
+fn standard_import(c: &mut Compiler) -> i32 {
     let std_name = b"std";
     let env_name = b"env";
-    let count_name = b"arg_count";
+    let io_name = b"io";
     expect_name(&mut *c, &std_name); expect(&mut *c, 45);
-    expect_name(&mut *c, &env_name); expect(&mut *c, 45);
-    let selected = c.cursor;
-    expect_name(&mut *c, &count_name);
-    return selected;
+    let namespace = token(&*c, c.cursor);
+    expect(&mut *c, 1); expect(&mut *c, 45);
+    let item = token(&*c, c.cursor);
+    expect(&mut *c, 1);
+    if word(&*c.source, namespace.start, namespace.end, &env_name) {
+        let count_name = b"arg_count";
+        if word(&*c.source, item.start, item.end, &count_name) { return argument_count_binding(); }
+    }
+    if word(&*c.source, namespace.start, namespace.end, &io_name) {
+        let read_name = b"read_some";
+        let write_name = b"write_some";
+        let stderr_name = b"write_stderr";
+        let read_type = b"ReadSomeStatus";
+        let write_type = b"WriteSomeStatus";
+        if word(&*c.source, item.start, item.end, &read_name) { return read_some_binding(); }
+        if word(&*c.source, item.start, item.end, &write_name) { return write_some_binding(); }
+        if word(&*c.source, item.start, item.end, &stderr_name) { return write_stderr_binding(); }
+        if word(&*c.source, item.start, item.end, &read_type) { return read_status_binding(); }
+        if word(&*c.source, item.start, item.end, &write_type) { return write_status_binding(); }
+    }
+    fail(&mut *c); return -1;
 }
 
 fn collect_import(c: &mut Compiler, source_module: i32, save: bool) -> () {
@@ -293,7 +316,7 @@ fn collect_import(c: &mut Compiler, source_module: i32, save: bool) -> () {
     if kind(&*c) == 44 {
         path_start = c.cursor + 2;
         name = path_name(&mut *c);
-    } else { name = argument_import(&mut *c); }
+    } else { path_start = standard_import(&mut *c); name = c.cursor - 1; }
     let mut alias = name;
     if kind(&*c) == 47 {
         expect(&mut *c, 47);
@@ -308,12 +331,55 @@ fn collect_import(c: &mut Compiler, source_module: i32, save: bool) -> () {
     return;
 }
 
+fn register_binary_status(c: &mut Compiler, reading: bool) -> i32 {
+    let index = len(&*c.records);
+    if index >= 128 { c.error = 68; return -1; }
+    let first = len(&*c.fields);
+    let mut first_name = -4;
+    let mut count = 2;
+    let mut binding = write_status_binding();
+    if reading { first_name = -1; count = 3; binding = read_status_binding(); }
+    if !grown(try_push(&mut *c.fields, Field { name: first_name, ty: 1, public: true })) {
+        c.error = 68; return -1;
+    }
+    if reading && !grown(try_push(&mut *c.fields, Field { name: -2, ty: 3, public: true })) {
+        c.error = 68; return -1;
+    }
+    if !grown(try_push(&mut *c.fields, Field { name: -3, ty: 1, public: true })) {
+        c.error = 68; return -1;
+    }
+    let row = Record { name: binding, source_module: -1, first_field: first, field_count: count,
+        start: 0, body: 0, end: 0, cells: count + 1, depth: 1, layout_state: 2,
+        copy: false, tagged: true, public: true };
+    if !grown(try_push(&mut *c.records, row)) { c.error = 68; return -1; }
+    return index;
+}
+
+fn register_binary_types(c: &mut Compiler) -> () {
+    let mut read = false;
+    let mut write = false;
+    for index in 0..len(&*c.imports) {
+        let row = c.imports[index];
+        let binding = row.path_start;
+        read = read || binding == read_some_binding() || binding == read_status_binding();
+        write = write || binding == write_some_binding() || binding == write_stderr_binding()
+            || binding == write_status_binding();
+    }
+    if read { c.read_status = register_binary_status(&mut *c, true); }
+    if c.error == 0 && write { c.write_status = register_binary_status(&mut *c, false); }
+    return;
+}
+
 fn resolve_record_imports(c: &mut Compiler) -> () {
     for index in 0..len(&*c.imports) {
         let mut row = c.imports[index];
-        if row.path_start < 0 { continue; }
-        let module = path_module(&*c, row.path_start, row.name, row.scope);
-        let target = record(&*c, module, row.name);
+        let mut target = -1;
+        if row.path_start == read_status_binding() { target = c.read_status; }
+        else if row.path_start == write_status_binding() { target = c.write_status; }
+        else if row.path_start >= 0 {
+            let module = path_module(&*c, row.path_start, row.name, row.scope);
+            target = record(&*c, module, row.name);
+        }
         if !record_visible(&*c, row.scope, target) { continue; }
         c.error_module = row.scope;
         c.cursor = row.alias;
@@ -334,7 +400,8 @@ fn resolve_imports(c: &mut Compiler) -> () {
         let mut row = c.imports[index];
         c.error_module = row.scope;
         c.cursor = row.alias;
-        let mut target = argument_count_binding();
+        let mut target = row.path_start;
+        if target < 0 && row.record_target >= 0 { index = index + 1; continue; }
         if row.path_start >= 0 {
             let target_module = path_module(&*c, row.path_start, row.name, row.scope);
             if target_module < 0 { fail(&mut *c); return; }
@@ -361,6 +428,10 @@ fn resolve_imports(c: &mut Compiler) -> () {
         row.target = target;
         c.imports[index] = row;
         if target == argument_count_binding() { c.uses_argument_count = true; }
+        if is_binary_io_binding(target) {
+            if !c.process_entry { fail(&mut *c); return; }
+            c.uses_binary_io = true;
+        }
         index = index + 1;
     }
     return;
@@ -519,6 +590,8 @@ pub fn collect(c: &mut Compiler) -> () {
         discover_records(&mut *c, source_module);
         source_module = source_module + 1;
     }
+    if c.error != 0 { return; }
+    register_binary_types(&mut *c);
     if c.error != 0 { return; }
     resolve_record_imports(&mut *c);
     for nominal_index in 0..len(&*c.records) {
