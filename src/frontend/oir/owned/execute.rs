@@ -557,6 +557,13 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                 .aggregate
                 .ok_or_else(|| bad("alias view type", span))?
                 .aggregate();
+            // ByteBuf slice views encode an initialized byte range, while
+            // the alias check needs the owning descriptor's place.
+            let offset = if aggregate == AggregateTy::ByteBuf {
+                self.resource_origin(handle.permission, handle.root, span)?
+            } else {
+                handle.view.offset
+            };
             let size = match aggregate {
                 AggregateTy::FixedArray(array) if array.length() == 0 => 0,
                 _ => self
@@ -566,12 +573,10 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                     .map_err(|_| bad("alias view layout", span))?
                     .size() as u64,
             };
-            let end = handle
-                .view
-                .offset
+            let end = offset
                 .checked_add(size)
                 .ok_or_else(|| bad("alias view extent", span))?;
-            Ok((handle.view.offset, end))
+            Ok((offset, end))
         };
         let (left_start, left_end) = extent(left)?;
         let (right_start, right_end) = extent(right)?;
