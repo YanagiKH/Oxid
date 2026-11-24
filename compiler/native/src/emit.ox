@@ -1018,6 +1018,21 @@ fn process_preamble(c: &mut Compiler) -> () {
     return;
 }
 
+fn argument_preamble(c: &mut Compiler) -> () {
+    let count = b"@argument_count = internal global i32 0, align 4\n";
+    append(&mut *c, 0, &count);
+    return;
+}
+
+pub fn argument_count(c: &mut Compiler) -> Value {
+    let prefix = b"  %v";
+    let load_count = b" = load i32, ptr @argument_count, align 4\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
+    append(&mut *c, 2, &load_count);
+    return Value { ty: 1, id: id };
+}
+
 fn preamble_resources(c: &mut Compiler) -> () {
     let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
     let int_error = b"@int_conversion = private constant [28 x i8] c\"i32 conversion out of range\\0A\"\n";
@@ -1025,6 +1040,7 @@ fn preamble_resources(c: &mut Compiler) -> () {
     let print_character = b"declare i32 @__oxid_print_char(i32)\n";
     preamble_text_0_0(&mut *c);
     if c.process_entry { process_preamble(&mut *c); }
+    if c.uses_argument_count { argument_preamble(&mut *c); }
     record_preamble(&mut *c);
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
@@ -1102,6 +1118,11 @@ pub fn preamble(c: &mut Compiler) -> () {
     return;
 }
 fn wrapper_text_0_0(c: &mut Compiler) -> () {
+    if c.uses_argument_count {
+        let text = b"define i32 @main(i32 %argc, ptr %argv) {\nentry:\n  ";
+        append(&mut *c, 0, &text);
+        return;
+    }
     let text = b"define i32 @main() {\nentry:\n  ";
     append(&mut *c, 0, &text);
     return;
@@ -1164,6 +1185,11 @@ fn process_exit(c: &mut Compiler) -> () {
     append(&mut *c, 0, &check); append(&mut *c, 0, &failure); append(&mut *c, 0, &success);
     return;
 }
+fn install_argument_count(c: &mut Compiler) -> () {
+    let count = b"store i32 %argc, ptr @argument_count, align 4\n  ";
+    append(&mut *c, 0, &count);
+    return;
+}
 pub fn wrapper(c: &mut Compiler) -> () {
     let print_long = b"  %status = call i32 @__oxid_print_i64(i64 %value)\n";
     let print_character = b"  %status = call i32 @__oxid_print_char(i32 %value)\n";
@@ -1173,6 +1199,7 @@ pub fn wrapper(c: &mut Compiler) -> () {
     let f = c.functions[entry];
     wrapper_text_0_0(&mut *c);
     if c.process_entry { process_setup(&mut *c); }
+    if c.uses_argument_count { install_argument_count(&mut *c); }
     if f.result != 3 { wrapper_text_1_0(&mut *c); }
     wrapper_text_2_0(&mut *c); write_type(&mut *c, 0, f.result, true);
     wrapper_text_3_0(&mut *c); number(&mut *c, 0, entry); wrapper_text_4_0(&mut *c);

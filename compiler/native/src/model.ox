@@ -56,7 +56,7 @@ pub struct Compiler {
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
     pub cursor: i32, pub current: i32, pub main: i32,
     pub next_value: i32, pub next_label: i32, pub next_slot: i32,
-    pub target_arm64: bool, pub process_entry: bool,
+    pub target_arm64: bool, pub process_entry: bool, pub uses_argument_count: bool,
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
 
@@ -69,7 +69,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool, p
         loop_move_floor: 0, call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
-        next_slot: 0, target_arm64: target_arm64, process_entry: process_entry,
+        next_slot: 0, target_arm64: target_arm64, process_entry: process_entry, uses_argument_count: false,
         live: true, terminated: false, error: 0, error_start: 0, error_module: 0
     };
 }
@@ -283,12 +283,14 @@ pub fn function_binding(c: &Compiler, source_module: i32, name: i32) -> i32 {
     let mut index = 0;
     while index < len(&*c.imports) {
         let imported = c.imports[index];
-        if imported.scope == source_module && imported.target >= 0
+        if imported.scope == source_module && imported.target != -1
             && same_name(&*c, imported.alias, name) { return imported.target; }
         index = index + 1;
     }
     return -1;
 }
+
+pub fn argument_count_binding() -> i32 { return -2; }
 
 pub fn child_module(c: &Compiler, parent: i32, name: i32, fold_case: bool) -> i32 {
     let mut index = 1;

@@ -788,6 +788,13 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:21},right:Item{value:21}}};"
                        "return evaluate(&mut row.pair.left,row.pair.left.value);}",
         }),
+        ("argument-count-wrong-arity", 65, True, {
+            "main.ox": "use std::env::arg_count;fn main()->i32{return arg_count(1);}",
+        }),
+        ("argument-count-alias-shadowing", 65, True, {
+            "main.ox": "use std::env::arg_count as total;"
+                       "fn main()->i32{let total=42;return total;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
@@ -927,6 +934,46 @@ def verify_process_entries(compiler: Path, clang: Path, runtime: Path, reference
     return rows
 
 
+def verify_argument_counts(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                           output: Path, timeout: int) -> list[dict]:
+    evidence = output / "argument-counts"
+    evidence.mkdir()
+    source = evidence / "main.ox"
+    source.write_text("mod arguments;fn main()->i32{return crate::arguments::count();}", encoding="ascii")
+    child = evidence / "arguments.ox"
+    child.write_text("use std::env::arg_count as argc;pub fn count()->i32{return argc();}", encoding="ascii")
+    samples = ((), ("", "--entry-mode=result"), (os.fsdecode(b"\xff"), "a b", "--"))
+    results = []
+
+    def observe(label, command, mode, count, clear_env):
+        observed = run(command, evidence, timeout, clear_environment=clear_env)
+        expected = (count, b"", b"") if mode == "process" else (0, f"{count}\n".encode(), b"")
+        require((observed.returncode, observed.stdout, observed.stderr) == expected,
+                label + ": argument count did not match")
+        return record(evidence, label, command, observed)
+
+    for entry_mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={entry_mode}", "--"]
+        for n, arguments in enumerate(samples):
+            results.append(observe(f"{entry_mode}-reference-{n}", [*command, *arguments],
+                                   entry_mode, len(arguments) + 1, False))
+        for profile in ("dev", "release"):
+            name = f"{entry_mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=entry_mode)
+    source.unlink()
+    child.unlink()
+    for entry_mode in ("result", "process"):
+        for profile in ("dev", "release"):
+            name = f"{entry_mode}-{profile}"
+            moved = evidence / ("moved-" + name)
+            (evidence / name).rename(moved)
+            for n, arguments in enumerate(samples):
+                results.append(observe(f"{name}-run-{n}", [str(moved), *arguments],
+                                       entry_mode, len(arguments) + 1, True))
+    return results
+
+
 def verify(args) -> dict:
     target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
@@ -1023,6 +1070,8 @@ def verify(args) -> dict:
             report["modules"] = verify_modules(compiler, clang, runtime, args.reference.resolve(strict=True),
                                                output, args.timeout)
             report["process_entries"] = verify_process_entries(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["argument_counts"] = verify_argument_counts(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"
