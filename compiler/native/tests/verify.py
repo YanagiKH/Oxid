@@ -951,6 +951,78 @@ fn main()->i32{
                        "fn main()->i32{let mut bytes=new();"
                        "try_extend(&mut bytes,&bytes[0..0]);return 42;}",
         }),
+        ("owned-record-fields-can-be-borrowed-and-moved", 0, True, {
+            "main.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::new;
+use alloc::bytes::try_resize;
+use alloc::bytes::take;
+use alloc::bytes::len;
+struct Pair{left:ByteBuf,right:ByteBuf}
+struct Envelope{data:Pair}
+fn sum(left:&mut [u8],right:&mut [u8])->i32{
+    left[0]=19u8;
+    right[0]=23u8;
+    let a=left[0];
+    let b=right[0];
+    return a.to_i32()+b.to_i32();
+}
+fn measure(owner:&mut Envelope)->i32{
+    try_resize(&mut *owner.data.left,1,0u8);
+    try_resize(&mut *owner.data.right,1,0u8);
+    let score=sum(&mut *owner.data.left,&mut *owner.data.right);
+    let extracted_buffer=take(&mut *owner.data.right);
+    if len(&*owner.data.right)!=0||len(&extracted_buffer)!=1{return 1;}
+    return score;
+}
+fn main()->i32{
+    let mut item=Envelope{data:Pair{left:new(),right:new()}};
+    let score=measure(&mut item);
+    let Envelope{data:extracted}=item;
+    let Pair{left:previous,right:empty}=extracted;
+    if len(&previous)!=1||len(&empty)!=0{return 2;}
+    return score;
+}
+''',
+        }),
+        ("active-enum-payloads-release-owned-fields", 0, True, {
+            "main.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::new;
+use alloc::bytes::try_resize;
+use alloc::bytes::len;
+struct Record{data:ByteBuf}
+enum Parcel{Bytes(ByteBuf),Empty,Wrapped(Record)}
+fn make(which:i32)->Parcel{
+    let mut buffer=new();
+    try_resize(&mut buffer,64,1u8);
+    if which==0{return Parcel::Bytes(buffer);}
+    if which==1{return Parcel::Wrapped(Record{data:buffer});}
+    return Parcel::Empty;
+}
+fn main()->i32{
+    for variant in 0..3{
+        let value=make(variant);
+        match value{
+            Parcel::Bytes(bytes)=>{if len(&bytes)!=64{return 1;}},
+            Parcel::Empty=>{},
+            Parcel::Wrapped(record)=>{if len(&record.data)!=64{return 2;}},
+        }
+        make(variant);
+    }
+    return 42;
+}
+''',
+        }),
+        ("owned-byte-fields-cannot-derive-copy", 65, True, {
+            "main.ox": "use alloc::bytes::ByteBuf;"
+                       "#[derive(Copy)]struct Pair{left:ByteBuf}fn main()->i32{return 42;}",
+        }),
+        ("owned-byte-field-refuses-overlapping-loans", 65, True, {
+            "main.ox": "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_extend;"
+                       "struct Packet{bytes:ByteBuf}fn main()->i32{let mut value=Packet{bytes:new()};"
+                       "try_extend(&mut value.bytes,&value.bytes[0..0]);return 42;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",

@@ -42,7 +42,7 @@ pub struct Record {
     pub name: i32, pub source_module: i32, pub first_field: i32, pub field_count: i32,
     pub start: i32, pub body: i32, pub end: i32, pub cells: i32, pub depth: i32,
     pub layout_state: i32,
-    pub copy: bool, pub tagged: bool, pub public: bool
+    pub copy: bool, pub tagged: bool, pub public: bool, pub needs_drop: bool
 }
 #[derive(Copy)]
 pub struct Field { pub name: i32, pub ty: i32, pub public: bool }
@@ -366,6 +366,11 @@ pub fn is_byte_operation(binding: i32) -> bool {
 }
 pub fn is_byte_buffer(c: &Compiler, ty: i32) -> bool {
     return c.byte_buffer >= 0 && ty == record_type(c.byte_buffer);
+}
+pub fn needs_drop(c: &Compiler, ty: i32) -> bool {
+    if !is_record(ty) { return false; }
+    let row = c.records[record_index(ty)];
+    return row.needs_drop;
 }
 
 pub fn is_binary_io_binding(binding: i32) -> bool { return binding >= -5 && binding <= -3; }

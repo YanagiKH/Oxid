@@ -27,7 +27,6 @@ use crate::model::byte_buffer_binding;
 use crate::model::growth_status_binding;
 use crate::model::byte_operation_binding;
 use crate::model::is_byte_operation;
-use crate::model::is_byte_buffer;
 use crate::model::function_visible;
 use crate::model::child_module;
 use crate::model::path_module;
@@ -161,7 +160,7 @@ fn discover_nominal(c: &mut Compiler, source_module: i32) -> () {
     }
     let row = Record { name: name, source_module: source_module, first_field: 0, field_count: 0,
         start: start, body: body, end: c.cursor, cells: 0, depth: 1, layout_state: 0,
-        copy: copy_record, tagged: tagged, public: public };
+        copy: copy_record, tagged: tagged, public: public, needs_drop: false };
     if c.error == 0 && !grown(try_push(&mut *c.records, row)) { c.error = 68; }
     return;
 }
@@ -224,10 +223,11 @@ fn layout_nominal(c: &mut Compiler, index: i32, depth: i32) -> () {
             if allowed {
                 let component = field_dependency(&mut *c, child, depth + 1);
                 if c.error != 0 { return; }
+                row.needs_drop = row.needs_drop || component.needs_drop;
                 if !row.tagged && component.depth >= row.depth { row.depth = component.depth + 1; }
             }
         }
-        if !allowed || is_byte_buffer(&*c, field_type) { fail(&mut *c); return; }
+        if !allowed { fail(&mut *c); return; }
         if !grown(try_push(&mut fields, Field { name: field_name, ty: field_type, public: field_public })) {
             c.error = 68; return;
         }
@@ -406,7 +406,7 @@ fn register_standard_status(c: &mut Compiler, binding: i32) -> i32 {
     }
     let row = Record { name: binding, source_module: -1, first_field: first, field_count: count,
         start: 0, body: 0, end: 0, cells: count + 1, depth: 1, layout_state: 2,
-        copy: false, tagged: true, public: true };
+        copy: false, tagged: true, public: true, needs_drop: false };
     if !grown(try_push(&mut *c.records, row)) { c.error = 68; return -1; }
     return index;
 }
@@ -416,7 +416,7 @@ fn register_byte_buffer(c: &mut Compiler) -> i32 {
     if index >= 128 { c.error = 68; return -1; }
     let row = Record { name: byte_buffer_binding(), source_module: -1, first_field: 0, field_count: 0,
         start: 0, body: 0, end: 0, cells: 2, depth: 1, layout_state: 2,
-        copy: false, tagged: false, public: true };
+        copy: false, tagged: false, public: true, needs_drop: true };
     if !grown(try_push(&mut *c.records, row)) { c.error = 68; return -1; }
     return index;
 }

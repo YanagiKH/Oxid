@@ -48,6 +48,8 @@ Use `alloc::bytes::new()` to create an empty `ByteBuf`. Use `try_resize`,
 whether the operation succeeded. Borrow the buffer as `&[u8]` or
 `&mut [u8]` to read and write individual bytes by index. Buffers can
 move between functions and free their storage when their owner goes out of scope.
+Store a buffer in a struct field or enum variant to give that value ownership
+of the bytes. Use `take(&mut field)` to move a buffer out and leave it empty.
 Use `for index in start..end { ... }` to iterate over matching integer bounds.
 The bounds evaluate once from left to right, and the end is excluded. The
 index is immutable and available inside the loop body.
