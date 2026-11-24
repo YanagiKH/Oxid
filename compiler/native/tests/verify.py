@@ -864,6 +864,68 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
     return rows
 
 
+def verify_process_entries(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                           output: Path, timeout: int) -> list[dict]:
+    target = driver.host_target()
+    evidence = output / "process-entries"
+    evidence.mkdir()
+    rows = []
+    cases = (
+        ("zero", "return 0;", 0, b""),
+        ("status-42", "return 42;", 42, b""),
+        ("maximum-status", "return 255;", 255, b""),
+        ("negative-status", "return -1;", 1, b"process main must return a status in 0..255"),
+        ("large-status", "return 256;", 1, b"process main must return a status in 0..255"),
+        ("division-error", "let zero=0;return 1/zero;", 1, b"division by zero"),
+    )
+
+    def check(name, command, work, status, error, clear_env):
+        observed = run(command, work, timeout, clear_environment=clear_env)
+        require((observed.returncode, observed.stdout) == (status, b""), name + ": incorrect process outcome")
+        require(error in observed.stderr if error else not observed.stderr, name + ": incorrect process diagnostic")
+        if error:
+            read_fd, write_fd = os.pipe()
+            os.close(read_fd)
+            try:
+                refused = subprocess.run(command, cwd=work, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                         stderr=write_fd, timeout=timeout, env={} if clear_env else None)
+            finally:
+                os.close(write_fd)
+            require((refused.returncode, refused.stdout) == (74, b""), name + ": closed stderr outcome")
+        return record(work, name, command, observed)
+
+    for name, body, status, error in cases:
+        work = evidence / name
+        work.mkdir()
+        source = work / "main.ox"
+        source.write_text("fn main()->i32{" + body + "}", encoding="ascii")
+        reference_command = [str(reference), "run", str(source), "--edition=typed-preview", "--entry-mode=process"]
+        row = {"name": name, "reference": check("reference", reference_command, work, status, error, False),
+               "profiles": []}
+        for profile in ("dev", "release"):
+            built = driver.build(compiler, source, clang, runtime, work / profile, profile,
+                                 timeout, work / (profile + "-build"), entry_mode="process")
+            require(built["entry_mode"] == "process", "incorrect process build receipt")
+            row["profiles"].append(built)
+        source.unlink()
+        for built in row["profiles"]:
+            moved = work / ("moved-" + built["profile"])
+            Path(built["output"]).rename(moved)
+            built["run"] = check("run-" + built["profile"], [str(moved)], work, status, error, True)
+        rows.append(row)
+
+    work = evidence / "invalid-signature"
+    work.mkdir()
+    source = work / "main.ox"
+    source.write_text("fn main()->bool{return true;}", encoding="ascii")
+    command = driver.compiler_command(compiler, source, target, "process")
+    rejected = run(command, work, timeout)
+    check_source_rejection("process return type", rejected, source)
+    require(rejected.stdout == b"", "process signature rejection emitted a module")
+    rows.append({"name": "invalid-signature", "compiler": record(work, "compiler", command, rejected)})
+    return rows
+
+
 def verify(args) -> dict:
     target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
@@ -959,6 +1021,8 @@ def verify(args) -> dict:
         if args.reference is not None:
             report["modules"] = verify_modules(compiler, clang, runtime, args.reference.resolve(strict=True),
                                                output, args.timeout)
+            report["process_entries"] = verify_process_entries(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"
         return report
