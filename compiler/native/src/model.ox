@@ -58,6 +58,7 @@ pub struct Compiler {
     pub cursor: i32, pub current: i32, pub main: i32,
     pub next_value: i32, pub next_label: i32, pub next_slot: i32,
     pub target_arm64: bool, pub process_entry: bool, pub uses_argument_count: bool,
+    pub uses_argument_bytes: bool, pub argument_status: i32,
     pub uses_binary_io: bool, pub read_status: i32, pub write_status: i32,
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
@@ -72,6 +73,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool, p
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
         next_slot: 0, target_arm64: target_arm64, process_entry: process_entry, uses_argument_count: false,
+        uses_argument_bytes: false, argument_status: -1,
         uses_binary_io: false, read_status: -1, write_status: -1,
         live: true, terminated: false, error: 0, error_start: 0, error_module: 0
     };
@@ -245,8 +247,24 @@ fn standard_variant(c: &Compiler, variant_id: i32, name: i32) -> bool {
         let error_name = b"Error";
         return word(&*c.source, spelling.start, spelling.end, &error_name);
     }
-    let written = b"Written";
-    return variant_id == -4 && word(&*c.source, spelling.start, spelling.end, &written);
+    if variant_id == -4 {
+        let written = b"Written";
+        return word(&*c.source, spelling.start, spelling.end, &written);
+    }
+    if variant_id == -5 {
+        let copied = b"Copied";
+        return word(&*c.source, spelling.start, spelling.end, &copied);
+    }
+    if variant_id == -6 {
+        let too_small = b"TooSmall";
+        return word(&*c.source, spelling.start, spelling.end, &too_small);
+    }
+    if variant_id == -7 {
+        let missing = b"Missing";
+        return word(&*c.source, spelling.start, spelling.end, &missing);
+    }
+    let too_long = b"TooLong";
+    return variant_id == -8 && word(&*c.source, spelling.start, spelling.end, &too_long);
 }
 
 pub fn function(c: &Compiler, source_module: i32, name: i32) -> i32 {
@@ -319,6 +337,8 @@ pub fn write_some_binding() -> i32 { return -4; }
 pub fn write_stderr_binding() -> i32 { return -5; }
 pub fn read_status_binding() -> i32 { return -6; }
 pub fn write_status_binding() -> i32 { return -7; }
+pub fn argument_bytes_binding() -> i32 { return -8; }
+pub fn argument_status_binding() -> i32 { return -9; }
 
 pub fn is_binary_io_binding(binding: i32) -> bool { return binding >= -5 && binding <= -3; }
 

@@ -1034,6 +1034,62 @@ def verify_argument_counts(compiler: Path, clang: Path, runtime: Path, reference
     return results
 
 
+def verify_argument_bytes(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                          output: Path, timeout: int) -> list[dict]:
+    evidence = output / "argument-bytes"
+    evidence.mkdir()
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::env::arg_bytes as copy;
+use std::env::ArgStatus as Status;
+fn count(index:i32,bytes:&mut [u8])->i32{
+    let status=copy(index,&mut *bytes);
+    match status{
+        Status::Copied(n)=>{return n;},
+        Status::TooSmall(n)=>{return -n;},
+        Status::Missing=>{return -100;},
+        Status::TooLong=>{return -101;},
+    }
+}
+fn main()->i32{
+    let mut bytes=b"xxxx";
+    if count(0,&mut bytes[0..0])>=0{return 1;}
+    if count(1,&mut bytes[1..2])!=-2||bytes[1]!=120u8{return 2;}
+    if count(1,&mut bytes[1..4])!=2{return 3;}
+    if bytes[0]!=120u8||bytes[1]!=255u8||bytes[2]!=65u8||bytes[3]!=120u8{return 4;}
+    if count(2,&mut bytes[0..0])!=0{return 5;}
+    if count(-1,&mut bytes)!=-100||count(3,&mut bytes)!=-100{return 6;}
+    if bytes[0]!=120u8||bytes[1]!=255u8||bytes[2]!=65u8||bytes[3]!=120u8{return 7;}
+    return 42;
+}
+''', encoding="ascii")
+    arguments = [os.fsdecode(b"\xffA"), ""]
+    results = []
+    builds = []
+
+    def observe(label, command, mode, clear_env):
+        observed = run([*command, *arguments], evidence, timeout, clear_environment=clear_env)
+        expected = (42, b"", b"") if mode == "process" else (0, b"42\n", b"")
+        require((observed.returncode, observed.stdout, observed.stderr) == expected,
+                label + ": argument bytes did not match")
+        results.append(record(evidence, label, [*command, *arguments], observed))
+
+    for mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={mode}", "--"]
+        observe(f"{mode}-reference", command, mode, False)
+        for profile in ("dev", "release"):
+            name = f"{mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=mode)
+            builds.append((mode, name))
+    source.unlink()
+    for mode, name in builds:
+        moved = evidence / ("moved-" + name)
+        (evidence / name).rename(moved)
+        observe(name, [str(moved)], mode, True)
+    return results
+
+
 def verify_binary_io(compiler: Path, clang: Path, runtime: Path, reference: Path,
                      output: Path, timeout: int) -> list[dict]:
     evidence = output / "binary-io"
@@ -1196,6 +1252,8 @@ def verify(args) -> dict:
             report["process_entries"] = verify_process_entries(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
             report["argument_counts"] = verify_argument_counts(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["argument_bytes"] = verify_argument_bytes(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
             report["binary_io"] = verify_binary_io(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
