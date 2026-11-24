@@ -3,6 +3,7 @@ use crate::model::Value;
 use crate::model::grown;
 use crate::model::Binding;
 use crate::model::Token;
+use crate::model::token;
 use crate::model::array_type;
 use crate::model::is_array;
 use crate::model::array_count;
@@ -107,6 +108,10 @@ pub fn operand(c: &mut Compiler, destination: i32, value: Value) -> () {
 
     if value.ty == 3 { append(&mut *c, destination, &literal_bytes_0); }
     else if is_record(value.ty) && value.id == -1 { append(&mut *c, destination, &empty_record); }
+    else if value.id < -1 {
+        let row = token(&*c, -2 - value.id);
+        literal_text(&mut *c, destination, row);
+    }
     else {
         append(&mut *c, destination, &literal_bytes_1);
         number(&mut *c, destination, value.id);
@@ -174,6 +179,10 @@ pub fn slot(c: &mut Compiler, ty: i32) -> i32 {
     return id;
 }
 pub fn store(c: &mut Compiler, position: i32, value: Value) -> () {
+    if value.id < -1 {
+        store_byte_literal(&mut *c, position, value);
+        return;
+    }
     let literal_bytes_0 = b"  store ";
     let literal_bytes_1 = b" ";
     let literal_bytes_2 = b", ptr %s";
@@ -228,25 +237,33 @@ fn hex_byte(value: i32) -> u8 {
     if value > 9 { ascii = value + 55; }
     return ascii.to_u8_checked();
 }
-fn literal_constant(c: &mut Compiler, index: i32, row: Token) -> () {
-    let prefix = b" = private constant ";
-    let data = b" c\"";
-    let end = b"\"\n";
-    literal_name(&mut *c, 0, index);
-    append(&mut *c, 0, &prefix);
-    write_type(&mut *c, 0, array_type(4, row.decoded_length), false);
-    append(&mut *c, 0, &data);
+fn literal_text(c: &mut Compiler, destination: i32, row: Token) -> () {
+    let data = b"c\"";
+    let end = b"\"";
+    append(&mut *c, destination, &data);
     let mut at = row.decoded_start;
     while at < row.decoded_start + row.decoded_length && c.error == 0 {
         let value = code(&*c.literals, at);
         let escaped = [92u8, hex_byte(value / 16), hex_byte(value % 16)];
-        append(&mut *c, 0, &escaped);
+        append(&mut *c, destination, &escaped);
         at = at + 1;
     }
-    append(&mut *c, 0, &end);
+    append(&mut *c, destination, &end);
+    return;
+}
+fn literal_constant(c: &mut Compiler, index: i32, row: Token) -> () {
+    let prefix = b" = private constant ";
+    let space = b" ";
+    let line = b"\n";
+    literal_name(&mut *c, 0, index);
+    append(&mut *c, 0, &prefix);
+    write_type(&mut *c, 0, array_type(4, row.decoded_length), false);
+    append(&mut *c, 0, &space); literal_text(&mut *c, 0, row); append(&mut *c, 0, &line);
     return;
 }
 fn byte_literals(c: &mut Compiler) -> () {
+    let intrinsic = b"declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1 immarg)\n";
+    append(&mut *c, 0, &intrinsic);
     let mut index = 0;
     while index < vector_len(&*c.tokens) && c.error == 0 {
         let row = c.tokens[index];
@@ -255,17 +272,20 @@ fn byte_literals(c: &mut Compiler) -> () {
     }
     return;
 }
-pub fn byte_literal(c: &mut Compiler, index: i32, length: i32) -> Value {
-    let name = b"  %v";
-    let load_instruction = b" = load ";
-    let pointer = b", ptr ";
-    let end = b", align 1\n";
-    let ty = array_type(4, length);
-    let id = fresh(&mut *c);
-    append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &load_instruction);
-    write_type(&mut *c, 2, ty, false); append(&mut *c, 2, &pointer);
-    literal_name(&mut *c, 2, index); append(&mut *c, 2, &end);
-    return Value { ty: ty, id: id };
+pub fn byte_literal(index: i32, length: i32) -> Value {
+    // Leave large byte constants out of SSA so a local store can use one copy.
+    return Value { ty: array_type(4, length), id: -2 - index };
+}
+fn store_byte_literal(c: &mut Compiler, position: i32, value: Value) -> () {
+    let copy = b"  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %s";
+    let pointer = b", ptr align 1 ";
+    let width = b", i64 ";
+    let end = b", i1 false)\n";
+    append(&mut *c, 2, &copy); number(&mut *c, 2, position); append(&mut *c, 2, &pointer);
+    literal_name(&mut *c, 2, -2 - value.id);
+    append(&mut *c, 2, &width); number(&mut *c, 2, array_count(value.ty));
+    append(&mut *c, 2, &end);
+    return;
 }
 pub fn insert_field(c: &mut Compiler, aggregate: Value, value: Value, field: i32) -> Value {
     let name = b"  %v";

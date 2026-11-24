@@ -571,7 +571,7 @@ fn prefix(c: &mut Compiler, depth: i32) -> Value {
     if t.kind == 50 {
         let index = c.cursor;
         c.cursor = c.cursor + 1;
-        return crate::emit::byte_literal(&mut *c, index, t.decoded_length);
+        return crate::emit::byte_literal(index, t.decoded_length);
     }
     if t.kind == 12 || t.kind == 13 {
         c.cursor = c.cursor + 1;
