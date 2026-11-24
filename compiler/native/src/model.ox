@@ -60,6 +60,7 @@ pub struct Compiler {
     pub target_arm64: bool, pub process_entry: bool, pub uses_argument_count: bool,
     pub uses_argument_bytes: bool, pub argument_status: i32,
     pub uses_binary_io: bool, pub read_status: i32, pub write_status: i32,
+    pub byte_buffer: i32, pub growth_status: i32,
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
 
@@ -75,6 +76,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool, p
         next_slot: 0, target_arm64: target_arm64, process_entry: process_entry, uses_argument_count: false,
         uses_argument_bytes: false, argument_status: -1,
         uses_binary_io: false, read_status: -1, write_status: -1,
+        byte_buffer: -1, growth_status: -1,
         live: true, terminated: false, error: 0, error_start: 0, error_module: 0
     };
 }
@@ -263,8 +265,24 @@ fn standard_variant(c: &Compiler, variant_id: i32, name: i32) -> bool {
         let missing = b"Missing";
         return word(&*c.source, spelling.start, spelling.end, &missing);
     }
-    let too_long = b"TooLong";
-    return variant_id == -8 && word(&*c.source, spelling.start, spelling.end, &too_long);
+    if variant_id == -8 {
+        let too_long = b"TooLong";
+        return word(&*c.source, spelling.start, spelling.end, &too_long);
+    }
+    if variant_id == -9 {
+        let ok = b"Ok";
+        return word(&*c.source, spelling.start, spelling.end, &ok);
+    }
+    if variant_id == -10 {
+        let capacity = b"CapacityOverflow";
+        return word(&*c.source, spelling.start, spelling.end, &capacity);
+    }
+    if variant_id == -11 {
+        let allocation = b"AllocationFailed";
+        return word(&*c.source, spelling.start, spelling.end, &allocation);
+    }
+    let memory = b"MemoryLimit";
+    return variant_id == -12 && word(&*c.source, spelling.start, spelling.end, &memory);
 }
 
 pub fn function(c: &Compiler, source_module: i32, name: i32) -> i32 {
@@ -339,6 +357,16 @@ pub fn read_status_binding() -> i32 { return -6; }
 pub fn write_status_binding() -> i32 { return -7; }
 pub fn argument_bytes_binding() -> i32 { return -8; }
 pub fn argument_status_binding() -> i32 { return -9; }
+pub fn byte_buffer_binding() -> i32 { return -10; }
+pub fn growth_status_binding() -> i32 { return -11; }
+pub fn byte_operation_binding(operation: i32) -> i32 { return -12 - operation; }
+pub fn is_byte_operation(binding: i32) -> bool {
+    return (binding <= byte_operation_binding(0) && binding >= byte_operation_binding(7))
+        || binding == byte_operation_binding(10);
+}
+pub fn is_byte_buffer(c: &Compiler, ty: i32) -> bool {
+    return c.byte_buffer >= 0 && ty == record_type(c.byte_buffer);
+}
 
 pub fn is_binary_io_binding(binding: i32) -> bool { return binding >= -5 && binding <= -3; }
 

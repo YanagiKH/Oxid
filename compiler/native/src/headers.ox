@@ -23,6 +23,11 @@ use crate::model::write_stderr_binding;
 use crate::model::read_status_binding;
 use crate::model::write_status_binding;
 use crate::model::is_binary_io_binding;
+use crate::model::byte_buffer_binding;
+use crate::model::growth_status_binding;
+use crate::model::byte_operation_binding;
+use crate::model::is_byte_operation;
+use crate::model::is_byte_buffer;
 use crate::model::function_visible;
 use crate::model::child_module;
 use crate::model::path_module;
@@ -222,7 +227,7 @@ fn layout_nominal(c: &mut Compiler, index: i32, depth: i32) -> () {
                 if !row.tagged && component.depth >= row.depth { row.depth = component.depth + 1; }
             }
         }
-        if !allowed { fail(&mut *c); return; }
+        if !allowed || is_byte_buffer(&*c, field_type) { fail(&mut *c); return; }
         if !grown(try_push(&mut fields, Field { name: field_name, ty: field_type, public: field_public })) {
             c.error = 68; return;
         }
@@ -282,7 +287,43 @@ fn expect_name(c: &mut Compiler, spelling: &[u8]) -> () {
     return;
 }
 
+fn byte_import(c: &mut Compiler) -> i32 {
+    let namespace = b"bytes";
+    expect_name(&mut *c, &namespace); expect(&mut *c, 45);
+    let item = token(&*c, c.cursor);
+    expect(&mut *c, 1);
+    let type_name = b"ByteBuf";
+    let growth_name = b"GrowStatus";
+    let create = b"new";
+    let length = b"len";
+    let capacity = b"capacity";
+    let reserve = b"try_reserve";
+    let push = b"try_push";
+    let extend = b"try_extend";
+    let resize = b"try_resize";
+    let shrink = b"truncate";
+    let transfer = b"take";
+    if word(&*c.source, item.start, item.end, &type_name) { return byte_buffer_binding(); }
+    if word(&*c.source, item.start, item.end, &growth_name) { return growth_status_binding(); }
+    if word(&*c.source, item.start, item.end, &create) { return byte_operation_binding(0); }
+    if word(&*c.source, item.start, item.end, &length) { return byte_operation_binding(1); }
+    if word(&*c.source, item.start, item.end, &capacity) { return byte_operation_binding(2); }
+    if word(&*c.source, item.start, item.end, &reserve) { return byte_operation_binding(3); }
+    if word(&*c.source, item.start, item.end, &push) { return byte_operation_binding(4); }
+    if word(&*c.source, item.start, item.end, &extend) { return byte_operation_binding(5); }
+    if word(&*c.source, item.start, item.end, &resize) { return byte_operation_binding(6); }
+    if word(&*c.source, item.start, item.end, &shrink) { return byte_operation_binding(7); }
+    if word(&*c.source, item.start, item.end, &transfer) { return byte_operation_binding(10); }
+    fail(&mut *c); return -1;
+}
+
 fn standard_import(c: &mut Compiler) -> i32 {
+    let allocation = b"alloc";
+    let root = token(&*c, c.cursor);
+    if word(&*c.source, root.start, root.end, &allocation) {
+        expect(&mut *c, 1); expect(&mut *c, 45);
+        return byte_import(&mut *c);
+    }
     let std_name = b"std";
     let env_name = b"env";
     let io_name = b"io";
@@ -348,7 +389,11 @@ fn register_standard_status(c: &mut Compiler, binding: i32) -> i32 {
     if index >= 128 { c.error = 68; return -1; }
     let first = len(&*c.fields);
     let mut count = 2;
-    if binding == argument_status_binding() {
+    if binding == growth_status_binding() {
+        count = 4;
+        if !status_field(&mut *c, -9, 3) || !status_field(&mut *c, -10, 3)
+            || !status_field(&mut *c, -11, 3) || !status_field(&mut *c, -12, 3) { return -1; }
+    } else if binding == argument_status_binding() {
         count = 4;
         if !status_field(&mut *c, -5, 1) || !status_field(&mut *c, -6, 1)
             || !status_field(&mut *c, -7, 3) || !status_field(&mut *c, -8, 3) { return -1; }
@@ -366,10 +411,22 @@ fn register_standard_status(c: &mut Compiler, binding: i32) -> i32 {
     return index;
 }
 
+fn register_byte_buffer(c: &mut Compiler) -> i32 {
+    let index = len(&*c.records);
+    if index >= 128 { c.error = 68; return -1; }
+    let row = Record { name: byte_buffer_binding(), source_module: -1, first_field: 0, field_count: 0,
+        start: 0, body: 0, end: 0, cells: 2, depth: 1, layout_state: 2,
+        copy: false, tagged: false, public: true };
+    if !grown(try_push(&mut *c.records, row)) { c.error = 68; return -1; }
+    return index;
+}
+
 fn register_standard_types(c: &mut Compiler) -> () {
     let mut read = false;
     let mut write = false;
     let mut arguments = false;
+    let mut buffers = false;
+    let mut growth = false;
     for index in 0..len(&*c.imports) {
         let row = c.imports[index];
         let binding = row.path_start;
@@ -377,10 +434,15 @@ fn register_standard_types(c: &mut Compiler) -> () {
         write = write || binding == write_some_binding() || binding == write_stderr_binding()
             || binding == write_status_binding();
         arguments = arguments || binding == argument_bytes_binding() || binding == argument_status_binding();
+        buffers = buffers || binding == byte_buffer_binding() || is_byte_operation(binding);
+        growth = growth || binding == growth_status_binding()
+            || (binding >= byte_operation_binding(6) && binding <= byte_operation_binding(3));
     }
     if read { c.read_status = register_standard_status(&mut *c, read_status_binding()); }
     if c.error == 0 && write { c.write_status = register_standard_status(&mut *c, write_status_binding()); }
     if c.error == 0 && arguments { c.argument_status = register_standard_status(&mut *c, argument_status_binding()); }
+    if c.error == 0 && buffers { c.byte_buffer = register_byte_buffer(&mut *c); }
+    if c.error == 0 && growth { c.growth_status = register_standard_status(&mut *c, growth_status_binding()); }
     return;
 }
 
@@ -391,6 +453,8 @@ fn resolve_record_imports(c: &mut Compiler) -> () {
         if row.path_start == read_status_binding() { target = c.read_status; }
         else if row.path_start == write_status_binding() { target = c.write_status; }
         else if row.path_start == argument_status_binding() { target = c.argument_status; }
+        else if row.path_start == byte_buffer_binding() { target = c.byte_buffer; }
+        else if row.path_start == growth_status_binding() { target = c.growth_status; }
         else if row.path_start >= 0 {
             let module = path_module(&*c, row.path_start, row.name, row.scope);
             target = record(&*c, module, row.name);

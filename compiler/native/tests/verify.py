@@ -855,6 +855,102 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "match value{ReadSomeStatus::Data(n)=>{return n;},"
                        "ReadSomeStatus::Eof=>{return 0;},ReadSomeStatus::Error(e)=>{return 0;},}}",
         }),
+        ("byte-buffer-moves-and-borrows", 0, True, {
+            "main.ox": '''
+mod buffers;
+use alloc::bytes::ByteBuf;
+use alloc::bytes::len;
+use alloc::bytes::truncate;
+use alloc::bytes::take;
+fn view(bytes:&[u8])->i32{
+    let first=bytes[0];
+    let second=bytes[1];
+    return first.to_i32()+second.to_i32();
+}
+fn set_first(bytes:&mut [u8])->i32{
+    bytes[0]=5u8;
+    let first=bytes[0];
+    return first.to_i32();
+}
+fn choose(value:ByteBuf)->ByteBuf{return value;}
+fn main()->i32{
+    let mut bytes=crate::buffers::make();
+    let mut moved=choose(take(&mut bytes));
+    if len(&bytes)!=0||len(&moved)!=5{return 1;}
+    truncate(&mut moved,4);
+    let score=set_first(&mut moved)+view(&moved[2..4]);
+    moved=crate::buffers::make();
+    crate::buffers::make();
+    if len(&moved)!=5{return 2;}
+    return score;
+}
+''',
+            "buffers.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::capacity;
+use alloc::bytes::try_reserve;
+use alloc::bytes::try_resize;
+use alloc::bytes::try_push;
+use alloc::bytes::try_extend;
+fn grew(status:GrowStatus)->bool{
+    match status{GrowStatus::Ok=>{return true;},
+    GrowStatus::CapacityOverflow=>{return false;},GrowStatus::AllocationFailed=>{return false;},
+    GrowStatus::MemoryLimit=>{return false;},}
+}
+fn fill(bytes:&mut ByteBuf)->bool{
+    if !grew(try_reserve(&mut *bytes,8))||capacity(&*bytes)<8{return false;}
+    if !grew(try_resize(&mut *bytes,2,11u8))||!grew(try_push(&mut *bytes,7u8)){return false;}
+    let extra=b"\\x1eZ";
+    return grew(try_extend(&mut *bytes,&extra));
+}
+pub fn make()->ByteBuf{
+    let mut bytes=new();
+    if !fill(&mut bytes){return new();}
+    return bytes;
+}
+''',
+        }),
+        ("byte-buffer-drop-on-control-flow", 0, True, {
+            "main.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::try_reserve;
+fn reserve(buffer:&mut ByteBuf)->bool{
+    let status=try_reserve(&mut *buffer,2097152);
+    match status{GrowStatus::Ok=>{return true;},GrowStatus::CapacityOverflow=>{return false;},
+    GrowStatus::AllocationFailed=>{return false;},GrowStatus::MemoryLimit=>{return false;},}
+}
+fn dispose(buffer:ByteBuf)->(){return;}
+fn exercise(transfer:bool)->i32{
+    let mut outer=new();
+    if !reserve(&mut outer){return 1;}
+    if transfer{dispose(outer);}
+    for i in 0..12{
+        let mut nested=new();
+        if !reserve(&mut nested){return 2;}
+        if i==11{break;}
+        if i%2==0{continue;}
+    }
+    return 42;
+}
+fn main()->i32{
+    if exercise(true)!=42{return 3;}
+    return exercise(false);
+}
+''',
+        }),
+        ("byte-buffer-refuses-stale-owner", 65, True, {
+            "main.ox": "use alloc::bytes::new;use alloc::bytes::len;"
+                       "fn main()->i32{let bytes=new();let moved=bytes;return len(&bytes);}",
+        }),
+        ("byte-buffer-refuses-overlapping-loans", 65, True, {
+            "main.ox": "use alloc::bytes::new;use alloc::bytes::try_extend;"
+                       "fn main()->i32{let mut bytes=new();"
+                       "try_extend(&mut bytes,&bytes[0..0]);return 42;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
@@ -1174,7 +1270,11 @@ def verify(args) -> dict:
               "driver_sha256": hashlib.sha256((ROOT / "build.py").read_bytes()).hexdigest(),
               "cases_sha256": hashlib.sha256((ROOT / "tests/cases.json").read_bytes()).hexdigest()}
     if runtime == driver.DEFAULT_RUNTIME:
-        runtime_sources = ("native/typed_preview.c", "native/typed_character.c")
+        runtime_sources = (
+            "native/typed_preview.c", "native/typed_character.c", "native/typed_bytebuf.c",
+            "native/typed_vector.c", "native/experimental_bytebuf.c", "native/experimental_bytebuf.h",
+            "native/experimental_vector.c", "native/experimental_vector.h", "native/experimental_files.c",
+        )
         report["runtime_sources_sha256"] = {
             name: hashlib.sha256((ROOT.parents[1] / name).read_bytes()).hexdigest()
             for name in runtime_sources

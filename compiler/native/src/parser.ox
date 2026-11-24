@@ -14,6 +14,10 @@ use crate::model::function;
 use crate::model::function_binding;
 use crate::model::argument_count_binding;
 use crate::model::argument_bytes_binding;
+use crate::model::byte_operation_binding;
+use crate::model::is_byte_operation;
+use crate::model::is_byte_buffer;
+use crate::model::record_reference;
 use crate::model::is_binary_io_binding;
 use crate::model::read_some_binding;
 use crate::model::function_visible;
@@ -133,6 +137,32 @@ fn access_allowed(c: &Compiler, position: i32, path: i64, depth: i32, exclusive:
     }
     return true;
 }
+fn slice_owner_matches(c: &Compiler, binding: Binding, expected: i32, reborrow: bool) -> bool {
+    let exclusive = is_mutable_slice(expected);
+    if is_byte_buffer(&*c, record_value_type(binding.ty)) {
+        let reference = is_record_reference(binding.ty);
+        let mut writable = binding.writable;
+        if reference { writable = is_mutable_record_reference(binding.ty); }
+        return expected == slice_type(4, exclusive) && reborrow == reference && (!exclusive || writable);
+    }
+    if reborrow {
+        return is_slice(binding.ty) && slice_element(binding.ty) == slice_element(expected)
+            && (!exclusive || is_mutable_slice(binding.ty));
+    }
+    return is_array(binding.ty) && slice_type(array_element(binding.ty), exclusive) == expected
+        && (!exclusive || binding.writable);
+}
+fn slice_owner_view(c: &mut Compiler, binding: Binding, path: FieldPath, expected: i32) -> Value {
+    if path.depth > 0 { return crate::emit::borrow_array_field(&mut *c, path.pointer, path.ty, expected); }
+    if is_byte_buffer(&*c, record_value_type(binding.ty)) {
+        return crate::emit::byte_buffer_view(&mut *c, binding, expected);
+    }
+    if is_slice(binding.ty) {
+        let loaded = crate::emit::load(&mut *c, binding.slot, binding.ty);
+        return Value { ty: expected, id: loaded.id };
+    }
+    return crate::emit::borrow_array(&mut *c, binding, expected);
+}
 fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
     expect(&mut *c, 65);
     let exclusive = kind(&*c) == 5;
@@ -157,16 +187,8 @@ fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
         if c.error != 0 || !is_array(path.ty) || slice_type(array_element(path.ty), exclusive) != expected {
             fail(&mut *c); return invalid();
         }
-    } else if reborrow {
-        if !is_slice(binding.ty) || slice_element(binding.ty) != slice_element(expected)
-            || (exclusive && !is_mutable_slice(binding.ty)) {
-            fail(&mut *c); return invalid();
-        }
-    } else {
-        if !is_array(binding.ty) || slice_type(array_element(binding.ty), exclusive) != expected
-            || (exclusive && !binding.writable) {
-            fail(&mut *c); return invalid();
-        }
+    } else if !slice_owner_matches(&*c, binding, expected, reborrow) {
+        fail(&mut *c); return invalid();
     }
     let projected = kind(&*c) == 51;
     let mut start = invalid();
@@ -186,15 +208,7 @@ fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
     if !grown(try_push(&mut *c.loans, Loan { binding: position, path: path.code, depth: path.depth, exclusive: exclusive })) {
         c.error = 68; return invalid();
     }
-    let mut view = invalid();
-    if path.depth > 0 {
-        view = crate::emit::borrow_array_field(&mut *c, path.pointer, path.ty, expected);
-    } else if reborrow {
-        let loaded = crate::emit::load(&mut *c, binding.slot, binding.ty);
-        view = Value { ty: expected, id: loaded.id };
-    } else {
-        view = crate::emit::borrow_array(&mut *c, binding, expected);
-    }
+    let view = slice_owner_view(&mut *c, binding, path, expected);
     if projected { return crate::emit::project_slice(&mut *c, view, start, end); }
     return view;
 }
@@ -228,7 +242,42 @@ fn record_argument(c: &mut Compiler, expected: i32) -> Value {
     if path.depth > 0 { return Value { ty: expected, id: path.pointer }; }
     return crate::emit::borrow_record(&mut *c, binding, expected);
 }
+fn byte_buffer_call(c: &mut Compiler, operation: i32, depth: i32) -> Value {
+    expect(&mut *c, 20);
+    let ty = record_type(c.byte_buffer);
+    if operation == 0 {
+        expect(&mut *c, 21);
+        return Value { ty: ty, id: -1 };
+    }
+    let outer_loans = len(&*c.loans);
+    let borrow_type = record_reference(ty, operation >= 3);
+    let buffer = record_argument(&mut *c, borrow_type);
+    let mut size = invalid();
+    let mut fill = invalid();
+    let mut view = invalid();
+    if operation == 3 || operation == 6 || operation == 7 {
+        expect(&mut *c, 26);
+        size = expression(&mut *c, 1, depth + 1);
+        if size.ty != 1 { fail(&mut *c); return invalid(); }
+    }
+    if operation == 4 || operation == 6 {
+        expect(&mut *c, 26);
+        fill = expression(&mut *c, 1, depth + 1);
+        if fill.ty != 4 { fail(&mut *c); return invalid(); }
+    }
+    if operation == 5 {
+        expect(&mut *c, 26);
+        view = slice_argument(&mut *c, slice_type(4, false), depth);
+    }
+    expect(&mut *c, 21);
+    truncate(&mut *c.loans, outer_loans);
+    if c.error != 0 { return invalid(); }
+    return crate::emit::byte_buffer_operation(&mut *c, operation, buffer, size, fill, view);
+}
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
+    if is_byte_operation(target) {
+        return byte_buffer_call(&mut *c, byte_operation_binding(0) - target, depth);
+    }
     if target == argument_count_binding() {
         expect(&mut *c, 20); expect(&mut *c, 21);
         if c.error != 0 { return invalid(); }
@@ -423,7 +472,7 @@ fn enum_value(c: &mut Compiler, index: i32, name: i32, depth: i32) -> Value {
 fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
     let row = c.records[index];
     let owner = c.functions[c.current];
-    if row.tagged { fail(&mut *c); return invalid(); }
+    if row.tagged || index == c.byte_buffer { fail(&mut *c); return invalid(); }
     let mut seen = new::<bool>();
     while len(&seen) < row.field_count {
         if !grown(try_push(&mut seen, false)) { c.error = 68; return invalid(); }
@@ -541,6 +590,9 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
         set_available(&mut *c, position, false);
     }
     let value = crate::emit::load(&mut *c, binding.slot, binding.ty);
+    if is_byte_buffer(&*c, binding.ty) {
+        crate::emit::store(&mut *c, binding.slot, Value { ty: binding.ty, id: -1 });
+    }
     if kind(&*c) == 43 { return convert_binding(&mut *c, value); }
     return value;
 }
@@ -704,7 +756,7 @@ fn destructure(c: &mut Compiler) -> () {
     let index = record_binding(&*c, owner.source_module, c.cursor);
     if index < 0 { fail(&mut *c); return; }
     let row = c.records[index];
-    if row.tagged { fail(&mut *c); return; }
+    if row.tagged || index == c.byte_buffer { fail(&mut *c); return; }
     expect(&mut *c, 1);
     expect(&mut *c, 22);
     let mut destinations = new::<i32>();
@@ -780,6 +832,7 @@ fn assigned(c: &mut Compiler) -> () {
         fail(&mut *c); return;
     }
     expect(&mut *c, 25);
+    if is_byte_buffer(&*c, binding.ty) { crate::emit::drop_byte_buffer(&mut *c, binding.slot); }
     set_available(&mut *c, position, true);
     crate::emit::store(&mut *c, binding.slot, value);
     return;
@@ -1052,6 +1105,19 @@ fn for_statement(c: &mut Compiler, depth: i32) -> () {
     c.loop_move_floor = previous_floor;
     return;
 }
+fn drop_byte_buffers(c: &mut Compiler, floor: i32) -> () {
+    if c.byte_buffer < 0 || !c.live { return; }
+    let mut index = len(&*c.vars);
+    while index > floor {
+        index = index - 1;
+        let binding = c.vars[index];
+        // Moved slots hold empty descriptors. At a branch join a slot can
+        // still own a buffer on one path even if further reads are refused.
+        if is_byte_buffer(&*c, binding.ty) { crate::emit::drop_byte_buffer(&mut *c, binding.slot); }
+    }
+    return;
+}
+
 fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> () {
     crate::emit::ensure(&mut *c);
     let k = kind(&*c);
@@ -1064,6 +1130,8 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
     if k == 10 || k == 11 {
         if break_to < 0 || continue_to < 0 { fail(&mut *c); return; }
         c.cursor = c.cursor + 1; expect(&mut *c, 25);
+        let floor = c.loop_move_floor;
+        drop_byte_buffers(&mut *c, floor);
         if k == 10 { crate::emit::branch(&mut *c, break_to); }
         else { crate::emit::branch(&mut *c, continue_to); }
         c.live = false; return;
@@ -1079,6 +1147,7 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
             if c.error == 0 { c.cursor = value_start; }
             fail(&mut *c); return;
         }
+        drop_byte_buffers(&mut *c, 0);
         crate::emit::returned(&mut *c, value); return;
     }
     let next = token(&*c, c.cursor + 1);
@@ -1088,7 +1157,13 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
         let end = index_assignment_end(&*c, c.cursor + 1);
         if end >= 0 { index_assignment(&mut *c, end); return; }
     }
-    expression(&mut *c, 1, 0); expect(&mut *c, 25);
+    let value = expression(&mut *c, 1, 0);
+    expect(&mut *c, 25);
+    if is_byte_buffer(&*c, value.ty) {
+        let temporary = crate::emit::slot(&mut *c, value.ty);
+        crate::emit::store(&mut *c, temporary, value);
+        crate::emit::drop_byte_buffer(&mut *c, temporary);
+    }
     return;
 }
 pub fn block(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> () {
@@ -1100,6 +1175,7 @@ pub fn block(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
         statement(&mut *c, break_to, continue_to, depth);
     }
     expect(&mut *c, 23);
+    drop_byte_buffers(&mut *c, saved);
     truncate(&mut *c.vars, saved);
     return;
 }
@@ -1134,6 +1210,7 @@ pub fn bodies(c: &mut Compiler) -> () {
         if c.cursor != f.end { fail(&mut *c); return; }
         if c.live {
             if f.result != 3 { fail(&mut *c); return; }
+            drop_byte_buffers(&mut *c, 0);
             crate::emit::returned(&mut *c, Value { ty: 3, id: -1 });
         } else {
             if !c.terminated { crate::emit::append(&mut *c, 2, &literal_bytes_4); c.terminated = true; }

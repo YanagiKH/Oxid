@@ -43,6 +43,11 @@ In process mode, `std::io::read_some(&mut bytes)` reads from stdin.
 `write_some(&bytes)` writes to stdout, and `write_stderr(&bytes)` writes to
 stderr. Match `ReadSomeStatus` or `WriteSomeStatus` for the transferred byte
 count, end of input or an operating system error.
+Use `alloc::bytes::new()` to create an empty `ByteBuf`. Use `try_resize`,
+`try_push` or `try_extend` to add bytes, and match `GrowStatus` to check
+whether the operation succeeded. Borrow the buffer as `&[u8]` or
+`&mut [u8]` to read and write individual bytes by index. Buffers can
+move between functions and free their storage when their owner goes out of scope.
 Use `for index in start..end { ... }` to iterate over matching integer bounds.
 The bounds evaluate once from left to right, and the end is excluded. The
 index is immutable and available inside the loop body.
