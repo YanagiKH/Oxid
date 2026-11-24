@@ -1,7 +1,8 @@
 # Call Oxid from C, Rust and Python
 
 Oxid can build a shared library that runs inside another program. This
-experimental command supports Linux x86_64 and ARM64 with LLVM 19.1.7. Exported
+experimental command supports x86_64 and ARM64 on Linux and macOS 11 or newer
+with LLVM 19.1.7. Exported
 functions take `i32` arguments and return `i32`; they report errors without
 terminating the caller.
 
@@ -21,8 +22,9 @@ oxid --edition typed-preview library --export crate::line_total \
   --profile release --output dist/pricing-v1 pricing.ox
 ```
 
-The directory contains `liboxid_library.so`, `oxid_library.h` and
-`metadata.json`. Keep these matching files together. An existing destination
+The directory contains `liboxid_library.so` on Linux or
+`liboxid_library.dylib` on macOS, plus `oxid_library.h` and `metadata.json`.
+Keep these matching files together. An existing destination
 is never replaced; use a new directory for the next version. The compiled
 library needs neither Oxid nor the source files when called.
 
@@ -45,8 +47,12 @@ int main(void) {
 ```
 
 ```sh
+case "$(uname -s)" in
+  Darwin) library_origin='@loader_path' ;;
+  Linux) library_origin='$ORIGIN' ;;
+esac
 cc -I dist/pricing-v1 client.c -L dist/pricing-v1 -loxid_library \
-  '-Wl,-rpath,$ORIGIN/dist/pricing-v1' -o c-client
+  "-Wl,-rpath,$library_origin/dist/pricing-v1" -o c-client
 ./c-client
 ```
 
@@ -70,7 +76,7 @@ fn main() {
 
 ```sh
 rustc --edition=2021 client.rs -L native=dist/pricing-v1 \
-  -C 'link-arg=-Wl,-rpath,$ORIGIN/dist/pricing-v1' -o rust-client
+  -C "link-arg=-Wl,-rpath,$library_origin/dist/pricing-v1" -o rust-client
 ./rust-client
 ```
 
@@ -80,8 +86,11 @@ Save as `client.py` and run `python3 client.py`:
 
 ```python
 import ctypes
+import sys
+from pathlib import Path
 
-library = ctypes.CDLL("./dist/pricing-v1/liboxid_library.so")
+suffix = ".dylib" if sys.platform == "darwin" else ".so"
+library = ctypes.CDLL(Path("dist/pricing-v1") / f"liboxid_library{suffix}")
 call = library.oxid_library_call_v1
 call.argtypes = [ctypes.c_int32, ctypes.c_int32, ctypes.c_int32,
                  ctypes.POINTER(ctypes.c_int32)]
