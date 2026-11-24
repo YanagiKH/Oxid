@@ -76,7 +76,7 @@ fn process_reference_admission_checks_signature_without_setup_or_allocation() {
     let denied = plan::fail_allocation_after(0, || {
         checked_entry_policy(&witness, Some(schedule.entry), EntryPolicy::Process)
     });
-    let expected = if output::supported_host() {
+    let expected = if process::entry_supported_host() {
         OwnedRunFailure::ProcessEntry(span)
     } else {
         OwnedRunFailure::ProcessHost
@@ -91,7 +91,7 @@ fn process_reference_admission_checks_signature_without_setup_or_allocation() {
     });
     assert_eq!(
         admitted,
-        if output::supported_host() {
+        if process::entry_supported_host() {
             Ok(hir::DefId(0))
         } else {
             Err(OwnedRunFailure::ProcessHost)

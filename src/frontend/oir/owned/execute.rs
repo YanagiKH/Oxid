@@ -146,7 +146,7 @@ impl OwnedRunFailure {
             Self::ProcessHost => Diagnostic::new(
                 "E0608",
                 "oir-owned-run",
-                "process execution requires Linux or macOS on x86_64 or ARM64",
+                "process execution requires Linux or macOS on x86_64 or ARM64, or Windows MSVC x64",
                 None,
             ),
             // Process drivers must intercept this and exit 74 silently. This
@@ -5231,7 +5231,7 @@ fn run_process_policy<W: PlanWitness>(
 ) -> Result<Scalar> {
     // This host-only check intentionally precedes setup and does not validate
     // the entry, inspect source cells, allocate a plan or debit source fuel.
-    if !output::supported_host() {
+    if !process::entry_supported_host() {
         return Err(OwnedRunFailure::ProcessHost);
     }
     if !process::setup() {
