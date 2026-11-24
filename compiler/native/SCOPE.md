@@ -32,6 +32,8 @@ Use `<<` or `>>` with an integer shift count from zero up to the value's bit
 width, excluding the width itself. Right shifts preserve the sign of signed
 values. Left shifts discard bits that move beyond the width.
 A result-mode `main` has no arguments and prints its scalar result, then exits 0.
+Use `build.py --entry-mode=process` with `fn main() -> i32` to return an exit
+status without printing it. Valid exit statuses range from 0 to 255.
 Use `for index in start..end { ... }` to iterate over matching integer bounds.
 The bounds evaluate once from left to right, and the end is excluded. The
 index is immutable and available inside the loop body.

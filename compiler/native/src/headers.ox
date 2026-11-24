@@ -368,6 +368,7 @@ fn collect_function(c: &mut Compiler, source_module: i32, public: bool) -> () {
     if source_module == 0 && word(&*c.source, name_token.start, name_token.end, &entry_name) {
         c.main = len(&*c.functions) - 1;
         if count != 0 || is_array(result) || is_record(result) { fail(&mut *c); return; }
+        if c.process_entry && result != 1 { c.cursor = name; fail(&mut *c); return; }
     }
     return;
 }

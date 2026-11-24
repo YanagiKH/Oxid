@@ -1010,12 +1010,21 @@ fn record_preamble(c: &mut Compiler) -> () {
     }
     return;
 }
+fn process_preamble(c: &mut Compiler) -> () {
+    let mode = b"; entry mode = process\ndeclare i32 @__oxid_process_setup()\n";
+    let message = b"@status_error = private constant [44 x i8] c\"process main must return a status in 0..255\\0A\"\n";
+    append(&mut *c, 0, &mode);
+    append(&mut *c, 0, &message);
+    return;
+}
+
 fn preamble_resources(c: &mut Compiler) -> () {
     let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
     let int_error = b"@int_conversion = private constant [28 x i8] c\"i32 conversion out of range\\0A\"\n";
     let print_long = b"declare i32 @__oxid_print_i64(i64)\n";
     let print_character = b"declare i32 @__oxid_print_char(i32)\n";
     preamble_text_0_0(&mut *c);
+    if c.process_entry { process_preamble(&mut *c); }
     record_preamble(&mut *c);
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
@@ -1142,6 +1151,19 @@ fn wrapper_text_8_0(c: &mut Compiler) -> () {
     append(&mut *c, 0, &text);
     return;
 }
+fn process_setup(c: &mut Compiler) -> () {
+    let setup = b"%setup = call i32 @__oxid_process_setup()\n  %ready = icmp eq i32 %setup, 0\n";
+    let edges = b"  br i1 %ready, label %process, label %setup_error\nsetup_error:\n  ret i32 74\nprocess:\n  ";
+    append(&mut *c, 0, &setup); append(&mut *c, 0, &edges);
+    return;
+}
+fn process_exit(c: &mut Compiler) -> () {
+    let check = b"  %accepted = icmp ule i32 %value, 255\n  br i1 %accepted, label %exit, label %bad_status\n";
+    let failure = b"bad_status:\n  call void @__oxid_overflow(ptr @status_error, i64 44)\n  unreachable\n";
+    let success = b"exit:\n  ret i32 %value\n}\n; Oxid scalar compiler end\n";
+    append(&mut *c, 0, &check); append(&mut *c, 0, &failure); append(&mut *c, 0, &success);
+    return;
+}
 pub fn wrapper(c: &mut Compiler) -> () {
     let print_long = b"  %status = call i32 @__oxid_print_i64(i64 %value)\n";
     let print_character = b"  %status = call i32 @__oxid_print_char(i32 %value)\n";
@@ -1150,9 +1172,11 @@ pub fn wrapper(c: &mut Compiler) -> () {
     let entry = c.main;
     let f = c.functions[entry];
     wrapper_text_0_0(&mut *c);
+    if c.process_entry { process_setup(&mut *c); }
     if f.result != 3 { wrapper_text_1_0(&mut *c); }
     wrapper_text_2_0(&mut *c); write_type(&mut *c, 0, f.result, true);
     wrapper_text_3_0(&mut *c); number(&mut *c, 0, entry); wrapper_text_4_0(&mut *c);
+    if c.process_entry { process_exit(&mut *c); return; }
     if f.result == 1 { wrapper_text_5_0(&mut *c); }
     if f.result == 2 { wrapper_text_6_0(&mut *c); }
     if f.result == 3 { wrapper_text_7_0(&mut *c); }

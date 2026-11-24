@@ -28,6 +28,15 @@ class Protocol(unittest.TestCase):
         with self.assertRaisesRegex(build_driver.BuildError, "target mismatch"):
             build_driver.module_from_result(self.result(stdout=arm), build_driver.DEFAULT_TARGET)
 
+    def test_module_entry_mode_must_match_the_requested_mode(self):
+        prefix = build_driver.module_prefix(build_driver.DEFAULT_TARGET, "process")
+        process = prefix + MODULE[len(build_driver.PREFIX):]
+        self.assertEqual(build_driver.module_from_result(self.result(stdout=process), entry_mode="process"), process)
+        for data, requested in ((MODULE, "process"), (process, "result")):
+            with self.subTest(requested=requested):
+                with self.assertRaisesRegex(build_driver.BuildError, "entry mode mismatch"):
+                    build_driver.module_from_result(self.result(stdout=data), entry_mode=requested)
+
     def test_no_return_value_banner_or_diagnostic_is_stripped(self):
         for data in (MODULE + b"0\n", b"0\n" + MODULE, b"diagnostic\n" + MODULE,
                      MODULE + b"diagnostic\n", MODULE[:-1], build_driver.PREFIX,
