@@ -40,7 +40,8 @@ pub struct Value { pub ty: i32, pub id: i32 }
 #[derive(Copy)]
 pub struct Record {
     pub name: i32, pub source_module: i32, pub first_field: i32, pub field_count: i32,
-    pub start: i32, pub end: i32, pub cells: i32, pub depth: i32,
+    pub start: i32, pub body: i32, pub end: i32, pub cells: i32, pub depth: i32,
+    pub layout_state: i32,
     pub copy: bool, pub tagged: bool, pub public: bool
 }
 #[derive(Copy)]
@@ -56,11 +57,14 @@ pub struct Compiler {
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
     pub cursor: i32, pub current: i32, pub main: i32,
     pub next_value: i32, pub next_label: i32, pub next_slot: i32,
-    pub target_arm64: bool,
+    pub target_arm64: bool, pub process_entry: bool, pub uses_argument_count: bool,
+    pub uses_argument_bytes: bool, pub argument_status: i32,
+    pub uses_binary_io: bool, pub read_status: i32, pub write_status: i32,
+    pub byte_buffer: i32, pub growth_status: i32,
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
 
-pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool) -> Compiler {
+pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool, process_entry: bool) -> Compiler {
     return Compiler {
         source: source, source_path: source_path, literals: bytes_new(), sources: new::<SourceModule>(), imports: new::<Import>(),
         tokens: new::<Token>(), params: new::<Parameter>(),
@@ -69,7 +73,10 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool) -
         loop_move_floor: 0, call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
-        next_slot: 0, target_arm64: target_arm64,
+        next_slot: 0, target_arm64: target_arm64, process_entry: process_entry, uses_argument_count: false,
+        uses_argument_bytes: false, argument_status: -1,
+        uses_binary_io: false, read_status: -1, write_status: -1,
+        byte_buffer: -1, growth_status: -1,
         live: true, terminated: false, error: 0, error_start: 0, error_module: 0
     };
 }
@@ -220,10 +227,62 @@ pub fn record_field(c: &Compiler, row: Record, name: i32) -> i32 {
     let mut index = 0;
     while index < row.field_count {
         let field = c.fields[row.first_field + index];
-        if same_name(&*c, field.name, name) { return index; }
+        if field.name >= 0 {
+            if same_name(&*c, field.name, name) { return index; }
+        } else if standard_variant(&*c, field.name, name) { return index; }
         index = index + 1;
     }
     return -1;
+}
+
+fn standard_variant(c: &Compiler, variant_id: i32, name: i32) -> bool {
+    let spelling = token(&*c, name);
+    if variant_id == -1 {
+        let data = b"Data";
+        return word(&*c.source, spelling.start, spelling.end, &data);
+    }
+    if variant_id == -2 {
+        let eof = b"Eof";
+        return word(&*c.source, spelling.start, spelling.end, &eof);
+    }
+    if variant_id == -3 {
+        let error_name = b"Error";
+        return word(&*c.source, spelling.start, spelling.end, &error_name);
+    }
+    if variant_id == -4 {
+        let written = b"Written";
+        return word(&*c.source, spelling.start, spelling.end, &written);
+    }
+    if variant_id == -5 {
+        let copied = b"Copied";
+        return word(&*c.source, spelling.start, spelling.end, &copied);
+    }
+    if variant_id == -6 {
+        let too_small = b"TooSmall";
+        return word(&*c.source, spelling.start, spelling.end, &too_small);
+    }
+    if variant_id == -7 {
+        let missing = b"Missing";
+        return word(&*c.source, spelling.start, spelling.end, &missing);
+    }
+    if variant_id == -8 {
+        let too_long = b"TooLong";
+        return word(&*c.source, spelling.start, spelling.end, &too_long);
+    }
+    if variant_id == -9 {
+        let ok = b"Ok";
+        return word(&*c.source, spelling.start, spelling.end, &ok);
+    }
+    if variant_id == -10 {
+        let capacity = b"CapacityOverflow";
+        return word(&*c.source, spelling.start, spelling.end, &capacity);
+    }
+    if variant_id == -11 {
+        let allocation = b"AllocationFailed";
+        return word(&*c.source, spelling.start, spelling.end, &allocation);
+    }
+    let memory = b"MemoryLimit";
+    return variant_id == -12 && word(&*c.source, spelling.start, spelling.end, &memory);
 }
 
 pub fn function(c: &Compiler, source_module: i32, name: i32) -> i32 {
@@ -283,12 +342,33 @@ pub fn function_binding(c: &Compiler, source_module: i32, name: i32) -> i32 {
     let mut index = 0;
     while index < len(&*c.imports) {
         let imported = c.imports[index];
-        if imported.scope == source_module && imported.target >= 0
+        if imported.scope == source_module && imported.target != -1
             && same_name(&*c, imported.alias, name) { return imported.target; }
         index = index + 1;
     }
     return -1;
 }
+
+pub fn argument_count_binding() -> i32 { return -2; }
+pub fn read_some_binding() -> i32 { return -3; }
+pub fn write_some_binding() -> i32 { return -4; }
+pub fn write_stderr_binding() -> i32 { return -5; }
+pub fn read_status_binding() -> i32 { return -6; }
+pub fn write_status_binding() -> i32 { return -7; }
+pub fn argument_bytes_binding() -> i32 { return -8; }
+pub fn argument_status_binding() -> i32 { return -9; }
+pub fn byte_buffer_binding() -> i32 { return -10; }
+pub fn growth_status_binding() -> i32 { return -11; }
+pub fn byte_operation_binding(operation: i32) -> i32 { return -12 - operation; }
+pub fn is_byte_operation(binding: i32) -> bool {
+    return (binding <= byte_operation_binding(0) && binding >= byte_operation_binding(7))
+        || binding == byte_operation_binding(10);
+}
+pub fn is_byte_buffer(c: &Compiler, ty: i32) -> bool {
+    return c.byte_buffer >= 0 && ty == record_type(c.byte_buffer);
+}
+
+pub fn is_binary_io_binding(binding: i32) -> bool { return binding >= -5 && binding <= -3; }
 
 pub fn child_module(c: &Compiler, parent: i32, name: i32, fold_case: bool) -> i32 {
     let mut index = 1;

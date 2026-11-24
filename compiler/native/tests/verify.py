@@ -788,6 +788,169 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:21},right:Item{value:21}}};"
                        "return evaluate(&mut row.pair.left,row.pair.left.value);}",
         }),
+        ("argument-count-wrong-arity", 65, True, {
+            "main.ox": "use std::env::arg_count;fn main()->i32{return arg_count(1);}",
+        }),
+        ("argument-count-alias-shadowing", 65, True, {
+            "main.ox": "use std::env::arg_count as total;"
+                       "fn main()->i32{let total=42;return total;}",
+        }),
+        ("forward-copy-record-fields", 0, True, {
+            "main.ox": "#[derive(Copy)]struct Parent{child:Child}"
+                       "#[derive(Copy)]struct Child{number:i32}"
+                       "fn read(parent:Parent)->i32{return parent.child.number;}"
+                       "fn main()->i32{let value=Parent{child:Child{number:21}};return read(value)+read(value);}",
+        }),
+        ("forward-record-field-import", 0, True, {
+            "main.ox": "mod parts;use crate::parts::Leaf as Entry;struct Parent{child:Entry}"
+                       "fn main()->i32{let value=Parent{child:crate::parts::open()};return value.child.number;}",
+            "parts.ox": "pub struct Leaf{pub number:i32}pub fn open()->Leaf{return Leaf{number:42};}",
+        }),
+        ("forward-struct-enum-payload", 0, True, {
+            "main.ox": "enum Command{None,Send(Body)}struct Body{number:i32}"
+                       "fn main()->i32{let value=Command::Send(Body{number:42});"
+                       "match value{Command::None=>{return 0;},Command::Send(body)=>{return body.number;},}}",
+        }),
+        ("recursive-record-layout", 65, True, {
+            "main.ox": "struct Node{child:Node}fn read(node:Node)->i32{return 42;}"
+                       "fn main()->i32{return 42;}",
+        }),
+        ("cross-module-record-layout-cycle", 65, True, {
+            "main.ox": "mod branches;pub struct Root{branch:crate::branches::Branch}"
+                       "fn read(root:Root)->i32{return 42;}fn main()->i32{return 42;}",
+            "branches.ox": "pub struct Branch{root:crate::Root}",
+        }),
+        ("public-enum-import-alias", 0, True, {
+            "main.ox": "mod responses;use crate::responses::Reply as Answer;"
+                       "fn read(reply:Answer)->i32{match reply{Answer::Missing=>{return 0;},"
+                       "Answer::Number(amount)=>{return amount;},}}"
+                       "fn main()->i32{return read(crate::responses::open());}",
+            "responses.ox": "pub enum Reply{Missing,Number(i32)}"
+                            "pub fn open()->Reply{return Reply::Number(42);}",
+        }),
+        ("public-enum-qualified-constructor-and-match", 0, True, {
+            "main.ox": "mod responses;fn main()->i32{let reply=crate::responses::Reply::Number(42);"
+                       "match reply{crate::responses::Reply::Number(amount)=>{return amount;},"
+                       "crate::responses::Reply::Missing=>{return 0;},}}",
+            "responses.ox": "pub enum Reply{Missing,Number(i32)}",
+        }),
+        ("private-enum-import-rejected", 65, True, {
+            "main.ox": "mod responses;use crate::responses::Reply;fn main()->i32{return 42;}",
+            "responses.ox": "enum Reply{Missing,Number(i32)}",
+        }),
+        ("qualified-match-preserves-enum-identity", 65, True, {
+            "main.ox": "mod responses;fn main()->i32{let reply=crate::responses::Reply::Number(42);"
+                       "match reply{crate::responses::Wrong::Number(amount)=>{return amount;},}}",
+            "responses.ox": "pub enum Reply{Number(i32)}pub enum Wrong{Number(i32)}",
+        }),
+        ("public-enum-private-payload", 65, True, {
+            "main.ox": "mod responses;fn main()->i32{let reply=crate::responses::open();"
+                       "match reply{crate::responses::Reply::Number(amount)=>{return 42;},}}",
+            "responses.ox": "struct Hidden{value:i32}pub enum Reply{Number(Hidden)}"
+                            "pub fn open()->Reply{return Reply::Number(Hidden{value:42});}",
+        }),
+        ("standard-io-status-identities-are-distinct", 65, True, {
+            "main.ox": "use std::io::ReadSomeStatus;use std::io::WriteSomeStatus;"
+                       "fn main()->i32{let value=WriteSomeStatus::Written(42);"
+                       "match value{ReadSomeStatus::Data(n)=>{return n;},"
+                       "ReadSomeStatus::Eof=>{return 0;},ReadSomeStatus::Error(e)=>{return 0;},}}",
+        }),
+        ("byte-buffer-moves-and-borrows", 0, True, {
+            "main.ox": '''
+mod buffers;
+use alloc::bytes::ByteBuf;
+use alloc::bytes::len;
+use alloc::bytes::truncate;
+use alloc::bytes::take;
+fn view(bytes:&[u8])->i32{
+    let first=bytes[0];
+    let second=bytes[1];
+    return first.to_i32()+second.to_i32();
+}
+fn set_first(bytes:&mut [u8])->i32{
+    bytes[0]=5u8;
+    let first=bytes[0];
+    return first.to_i32();
+}
+fn choose(value:ByteBuf)->ByteBuf{return value;}
+fn main()->i32{
+    let mut bytes=crate::buffers::make();
+    let mut moved=choose(take(&mut bytes));
+    if len(&bytes)!=0||len(&moved)!=5{return 1;}
+    truncate(&mut moved,4);
+    let score=set_first(&mut moved)+view(&moved[2..4]);
+    moved=crate::buffers::make();
+    crate::buffers::make();
+    if len(&moved)!=5{return 2;}
+    return score;
+}
+''',
+            "buffers.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::capacity;
+use alloc::bytes::try_reserve;
+use alloc::bytes::try_resize;
+use alloc::bytes::try_push;
+use alloc::bytes::try_extend;
+fn grew(status:GrowStatus)->bool{
+    match status{GrowStatus::Ok=>{return true;},
+    GrowStatus::CapacityOverflow=>{return false;},GrowStatus::AllocationFailed=>{return false;},
+    GrowStatus::MemoryLimit=>{return false;},}
+}
+fn fill(bytes:&mut ByteBuf)->bool{
+    if !grew(try_reserve(&mut *bytes,8))||capacity(&*bytes)<8{return false;}
+    if !grew(try_resize(&mut *bytes,2,11u8))||!grew(try_push(&mut *bytes,7u8)){return false;}
+    let extra=b"\\x1eZ";
+    return grew(try_extend(&mut *bytes,&extra));
+}
+pub fn make()->ByteBuf{
+    let mut bytes=new();
+    if !fill(&mut bytes){return new();}
+    return bytes;
+}
+''',
+        }),
+        ("byte-buffer-drop-on-control-flow", 0, True, {
+            "main.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::try_reserve;
+fn reserve(buffer:&mut ByteBuf)->bool{
+    let status=try_reserve(&mut *buffer,2097152);
+    match status{GrowStatus::Ok=>{return true;},GrowStatus::CapacityOverflow=>{return false;},
+    GrowStatus::AllocationFailed=>{return false;},GrowStatus::MemoryLimit=>{return false;},}
+}
+fn dispose(buffer:ByteBuf)->(){return;}
+fn exercise(transfer:bool)->i32{
+    let mut outer=new();
+    if !reserve(&mut outer){return 1;}
+    if transfer{dispose(outer);}
+    for i in 0..12{
+        let mut nested=new();
+        if !reserve(&mut nested){return 2;}
+        if i==11{break;}
+        if i%2==0{continue;}
+    }
+    return 42;
+}
+fn main()->i32{
+    if exercise(true)!=42{return 3;}
+    return exercise(false);
+}
+''',
+        }),
+        ("byte-buffer-refuses-stale-owner", 65, True, {
+            "main.ox": "use alloc::bytes::new;use alloc::bytes::len;"
+                       "fn main()->i32{let bytes=new();let moved=bytes;return len(&bytes);}",
+        }),
+        ("byte-buffer-refuses-overlapping-loans", 65, True, {
+            "main.ox": "use alloc::bytes::new;use alloc::bytes::try_extend;"
+                       "fn main()->i32{let mut bytes=new();"
+                       "try_extend(&mut bytes,&bytes[0..0]);return 42;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
@@ -865,6 +1028,228 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
     return rows
 
 
+def verify_process_entries(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                           output: Path, timeout: int) -> list[dict]:
+    target = driver.host_target()
+    evidence = output / "process-entries"
+    evidence.mkdir()
+    rows = []
+    cases = (
+        ("zero", "return 0;", 0, b""),
+        ("status-42", "return 42;", 42, b""),
+        ("maximum-status", "return 255;", 255, b""),
+        ("negative-status", "return -1;", 1, b"process main must return a status in 0..255"),
+        ("large-status", "return 256;", 1, b"process main must return a status in 0..255"),
+        ("division-error", "let zero=0;return 1/zero;", 1, b"division by zero"),
+    )
+
+    def check(name, command, work, status, error, clear_env):
+        observed = run(command, work, timeout, clear_environment=clear_env)
+        require((observed.returncode, observed.stdout) == (status, b""), name + ": incorrect process outcome")
+        require(error in observed.stderr if error else not observed.stderr, name + ": incorrect process diagnostic")
+        if error:
+            read_fd, write_fd = os.pipe()
+            os.close(read_fd)
+            try:
+                refused = subprocess.run(command, cwd=work, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                         stderr=write_fd, timeout=timeout, env={} if clear_env else None)
+            finally:
+                os.close(write_fd)
+            require((refused.returncode, refused.stdout) == (74, b""), name + ": closed stderr outcome")
+        return record(work, name, command, observed)
+
+    for name, body, status, error in cases:
+        work = evidence / name
+        work.mkdir()
+        source = work / "main.ox"
+        source.write_text("fn main()->i32{" + body + "}", encoding="ascii")
+        reference_command = [str(reference), "run", str(source), "--edition=typed-preview", "--entry-mode=process"]
+        row = {"name": name, "reference": check("reference", reference_command, work, status, error, False),
+               "profiles": []}
+        for profile in ("dev", "release"):
+            built = driver.build(compiler, source, clang, runtime, work / profile, profile,
+                                 timeout, work / (profile + "-build"), entry_mode="process")
+            require(built["entry_mode"] == "process", "incorrect process build receipt")
+            row["profiles"].append(built)
+        source.unlink()
+        for built in row["profiles"]:
+            moved = work / ("moved-" + built["profile"])
+            Path(built["output"]).rename(moved)
+            built["run"] = check("run-" + built["profile"], [str(moved)], work, status, error, True)
+        rows.append(row)
+
+    work = evidence / "invalid-signature"
+    work.mkdir()
+    source = work / "main.ox"
+    source.write_text("fn main()->bool{return true;}", encoding="ascii")
+    command = driver.compiler_command(compiler, source, target, "process")
+    rejected = run(command, work, timeout)
+    check_source_rejection("process return type", rejected, source)
+    require(rejected.stdout == b"", "process signature rejection emitted a module")
+    rows.append({"name": "invalid-signature", "compiler": record(work, "compiler", command, rejected)})
+    return rows
+
+
+def verify_argument_counts(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                           output: Path, timeout: int) -> list[dict]:
+    evidence = output / "argument-counts"
+    evidence.mkdir()
+    source = evidence / "main.ox"
+    source.write_text("mod arguments;fn main()->i32{return crate::arguments::count();}", encoding="ascii")
+    child = evidence / "arguments.ox"
+    child.write_text("use std::env::arg_count as argc;pub fn count()->i32{return argc();}", encoding="ascii")
+    samples = ((), ("", "--entry-mode=result"), (os.fsdecode(b"\xff"), "a b", "--"))
+    results = []
+
+    def observe(label, command, mode, count, clear_env):
+        observed = run(command, evidence, timeout, clear_environment=clear_env)
+        expected = (count, b"", b"") if mode == "process" else (0, f"{count}\n".encode(), b"")
+        require((observed.returncode, observed.stdout, observed.stderr) == expected,
+                label + ": argument count did not match")
+        return record(evidence, label, command, observed)
+
+    for entry_mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={entry_mode}", "--"]
+        for n, arguments in enumerate(samples):
+            results.append(observe(f"{entry_mode}-reference-{n}", [*command, *arguments],
+                                   entry_mode, len(arguments) + 1, False))
+        for profile in ("dev", "release"):
+            name = f"{entry_mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=entry_mode)
+    source.unlink()
+    child.unlink()
+    for entry_mode in ("result", "process"):
+        for profile in ("dev", "release"):
+            name = f"{entry_mode}-{profile}"
+            moved = evidence / ("moved-" + name)
+            (evidence / name).rename(moved)
+            for n, arguments in enumerate(samples):
+                results.append(observe(f"{name}-run-{n}", [str(moved), *arguments],
+                                       entry_mode, len(arguments) + 1, True))
+    return results
+
+
+def verify_argument_bytes(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                          output: Path, timeout: int) -> list[dict]:
+    evidence = output / "argument-bytes"
+    evidence.mkdir()
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::env::arg_bytes as copy;
+use std::env::ArgStatus as Status;
+fn count(index:i32,bytes:&mut [u8])->i32{
+    let status=copy(index,&mut *bytes);
+    match status{
+        Status::Copied(n)=>{return n;},
+        Status::TooSmall(n)=>{return -n;},
+        Status::Missing=>{return -100;},
+        Status::TooLong=>{return -101;},
+    }
+}
+fn main()->i32{
+    let mut bytes=b"xxxx";
+    if count(0,&mut bytes[0..0])>=0{return 1;}
+    if count(1,&mut bytes[1..2])!=-2||bytes[1]!=120u8{return 2;}
+    if count(1,&mut bytes[1..4])!=2{return 3;}
+    if bytes[0]!=120u8||bytes[1]!=255u8||bytes[2]!=65u8||bytes[3]!=120u8{return 4;}
+    if count(2,&mut bytes[0..0])!=0{return 5;}
+    if count(-1,&mut bytes)!=-100||count(3,&mut bytes)!=-100{return 6;}
+    if bytes[0]!=120u8||bytes[1]!=255u8||bytes[2]!=65u8||bytes[3]!=120u8{return 7;}
+    return 42;
+}
+''', encoding="ascii")
+    arguments = [os.fsdecode(b"\xffA"), ""]
+    results = []
+    builds = []
+
+    def observe(label, command, mode, clear_env):
+        observed = run([*command, *arguments], evidence, timeout, clear_environment=clear_env)
+        expected = (42, b"", b"") if mode == "process" else (0, b"42\n", b"")
+        require((observed.returncode, observed.stdout, observed.stderr) == expected,
+                label + ": argument bytes did not match")
+        results.append(record(evidence, label, [*command, *arguments], observed))
+
+    for mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={mode}", "--"]
+        observe(f"{mode}-reference", command, mode, False)
+        for profile in ("dev", "release"):
+            name = f"{mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=mode)
+            builds.append((mode, name))
+    source.unlink()
+    for mode, name in builds:
+        moved = evidence / ("moved-" + name)
+        (evidence / name).rename(moved)
+        observe(name, [str(moved)], mode, True)
+    return results
+
+
+def verify_binary_io(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                     output: Path, timeout: int) -> list[dict]:
+    evidence = output / "binary-io"
+    evidence.mkdir()
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::io::ReadSomeStatus as Read;
+use std::io::WriteSomeStatus as Write;
+use std::io::read_some as input;
+use std::io::write_some;
+use std::io::write_stderr;
+fn read_size(value:Read)->i32{
+    match value{Read::Data(n)=>{return n;},Read::Eof=>{return -1;},Read::Error(e)=>{return -2;},}
+}
+fn main()->i32{
+    let mut bytes=b"xxxx";
+    if read_size(input(&mut bytes[0..0]))!=0{return 1;}
+    if read_size(input(&mut bytes))!=3||bytes[3]!=120u8{return 2;}
+    let echoed=write_some(&bytes[0..3]);
+    match echoed{Write::Written(n)=>{if n!=3{return 3;}},Write::Error(e)=>{return 4;},}
+    if read_size(input(&mut bytes))!=-1{return 5;}
+    let message=b"e\x00\xff";
+    let logged=write_stderr(&message);
+    match logged{Write::Written(n)=>{if n!=3{return 6;}},Write::Error(e)=>{if e>0{return 74;}return 7;},}
+    return 42;
+}
+''', encoding="ascii")
+    payload = b"\xff\x00\r"
+    rows = []
+
+    def observe(name, command, environment):
+        completed = subprocess.run(command, cwd=evidence, input=payload, capture_output=True,
+                                   timeout=timeout, env=environment)
+        require((completed.returncode, completed.stdout, completed.stderr) == (42, payload, b"e\x00\xff"),
+                name + ": binary streams did not match")
+        rows.append(record(evidence, name, command, completed))
+        reader, writer = os.pipe()
+        os.close(reader)
+        try:
+            closed = subprocess.run(command, cwd=evidence, input=payload, stdout=subprocess.PIPE,
+                                    stderr=writer, timeout=timeout, env=environment)
+        finally:
+            os.close(writer)
+        require((closed.returncode, closed.stdout) == (74, payload), name + ": closed stderr did not match")
+        closed.stderr = b""
+        rows.append(record(evidence, name + "-closed", command, closed))
+
+    reference_command = [str(reference), "run", str(source), "--edition=typed-preview", "--entry-mode=process"]
+    observe("reference", reference_command, None)
+    command = driver.compiler_command(compiler, source, driver.host_target())
+    rejected = run(command, evidence, timeout)
+    check_source_rejection("binary I/O in result entry mode", rejected, source)
+    require(rejected.stdout == b"", "binary I/O in result mode emitted LLVM")
+    for profile in ("dev", "release"):
+        driver.build(compiler, source, clang, runtime, evidence / profile, profile,
+                     timeout, evidence / (profile + "-build"), entry_mode="process")
+    source.unlink()
+    for profile in ("dev", "release"):
+        moved = evidence / ("moved-" + profile)
+        (evidence / profile).rename(moved)
+        observe(profile, [str(moved)], {})
+    return rows
+
+
 def verify(args) -> dict:
     target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
@@ -885,7 +1270,11 @@ def verify(args) -> dict:
               "driver_sha256": hashlib.sha256((ROOT / "build.py").read_bytes()).hexdigest(),
               "cases_sha256": hashlib.sha256((ROOT / "tests/cases.json").read_bytes()).hexdigest()}
     if runtime == driver.DEFAULT_RUNTIME:
-        runtime_sources = ("native/typed_preview.c", "native/typed_character.c")
+        runtime_sources = (
+            "native/typed_preview.c", "native/typed_character.c", "native/typed_bytebuf.c",
+            "native/typed_vector.c", "native/experimental_bytebuf.c", "native/experimental_bytebuf.h",
+            "native/experimental_vector.c", "native/experimental_vector.h", "native/experimental_files.c",
+        )
         report["runtime_sources_sha256"] = {
             name: hashlib.sha256((ROOT.parents[1] / name).read_bytes()).hexdigest()
             for name in runtime_sources
@@ -960,6 +1349,14 @@ def verify(args) -> dict:
         if args.reference is not None:
             report["modules"] = verify_modules(compiler, clang, runtime, args.reference.resolve(strict=True),
                                                output, args.timeout)
+            report["process_entries"] = verify_process_entries(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["argument_counts"] = verify_argument_counts(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["argument_bytes"] = verify_argument_bytes(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["binary_io"] = verify_binary_io(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"
         return report

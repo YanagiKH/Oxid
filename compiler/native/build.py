@@ -42,21 +42,27 @@ def host_target() -> str:
     return target
 
 
-def module_prefix(target: str) -> bytes:
-    return f'; Oxid scalar compiler 1\ntarget triple = "{target}"\n'.encode("ascii")
+def module_prefix(target: str, entry_mode: str = "result") -> bytes:
+    prefix = f'; Oxid scalar compiler 1\ntarget triple = "{target}"\n'.encode("ascii")
+    if entry_mode == "process":
+        return prefix + b"; entry mode = process\n"
+    return prefix
 
 
 PREFIX = module_prefix(DEFAULT_TARGET)
 
 
-def compiler_command(compiler: Path, source: Path, target: str) -> list[str]:
+def compiler_command(compiler: Path, source: Path, target: str, entry_mode: str = "result") -> list[str]:
     command = [str(compiler), str(source)]
-    if target != DEFAULT_TARGET:
+    if entry_mode == "process" or target != DEFAULT_TARGET:
         command.append(f"--target={target}")
+    if entry_mode == "process":
+        command.append("--entry-mode=process")
     return command
 
 
-def module_from_result(result: subprocess.CompletedProcess[bytes], target: str = DEFAULT_TARGET) -> bytes:
+def module_from_result(result: subprocess.CompletedProcess[bytes], target: str = DEFAULT_TARGET,
+                       entry_mode: str = "result") -> bytes:
     if result.returncode != 0:
         raw_detail = result.stderr[:8192].decode("utf-8", errors="replace")
         detail = "".join(character if character.isprintable() else " " for character in raw_detail).strip()
@@ -65,8 +71,11 @@ def module_from_result(result: subprocess.CompletedProcess[bytes], target: str =
     require(not result.stderr, "compiler emitted diagnostics on its success path")
     data = result.stdout
     require(0 < len(data) <= MAX_MODULE_BYTES, "compiler output size is invalid")
-    prefix = module_prefix(target)
-    require(data.startswith(prefix) and data.endswith(SUFFIX), "incomplete compiler output or target mismatch")
+    require(entry_mode in ("result", "process"), "unknown entry mode")
+    require(data.startswith(module_prefix(target)) and data.endswith(SUFFIX),
+            "incomplete compiler output or target mismatch")
+    require(data.startswith(module_prefix(target, "process")) == (entry_mode == "process"),
+            "compiler output entry mode mismatch")
     require(data.count(b"; Oxid scalar compiler 1\n") == 1 and data.count(SUFFIX) == 1,
             "ambiguous compiler output framing")
     require(all(byte in (9, 10, 13) or 32 <= byte < 127 for byte in data), "non-ASCII compiler output")
@@ -86,7 +95,8 @@ def invoke(command: list[str], timeout: int, cwd: Path,
 
 
 def build(compiler: Path, source: Path, clang: Path, runtime: Path,
-          destination: Path, profile: str, timeout: int = 120, evidence: Path | None = None) -> dict:
+          destination: Path, profile: str, timeout: int = 120, evidence: Path | None = None,
+          entry_mode: str = "result") -> dict:
     target = host_target()
     compiler = compiler.resolve(strict=True)
     source = source.resolve(strict=True)
@@ -94,6 +104,7 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
     runtime = runtime.resolve(strict=True)
     destination = destination.absolute()
     require(profile in ("dev", "release"), "unknown build profile")
+    require(entry_mode in ("result", "process"), "unknown entry mode")
     require(source.is_file() and runtime.is_file(), "source and runtime must be regular files")
     require(compiler.is_file() and os.access(compiler, os.X_OK), "compiler is not executable")
     require(clang.is_file() and os.access(clang, os.X_OK), "Clang is not executable")
@@ -101,7 +112,7 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
     require(not os.path.lexists(destination), "output already exists")
     if evidence is not None:
         evidence.mkdir(parents=True, exist_ok=False)
-    result = invoke(compiler_command(compiler, source, target), timeout, source.parent, environment={})
+    result = invoke(compiler_command(compiler, source, target, entry_mode), timeout, source.parent, environment={})
     if evidence is not None:
         (evidence / "compiler.stdout").write_bytes(result.stdout)
         (evidence / "compiler.stderr").write_bytes(result.stderr)
@@ -109,15 +120,17 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
             "command": result.args, "status": result.returncode,
             "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         }, indent=2) + "\n")
-    module = module_from_result(result, target)
+    module = module_from_result(result, target, entry_mode)
     with tempfile.TemporaryDirectory(prefix=".oxid-scalar-build-", dir=destination.parent) as directory:
         staging = Path(directory)
         module_path = staging / "program.ll"
         binary = staging / "program"
         module_path.write_bytes(module)
         command = [str(clang), "--no-default-config", f"--target={target}",
-                   "-O0" if profile == "dev" else "-O2", "-Werror", "-fuse-ld=lld",
-                   str(module_path), str(runtime), "-o", str(binary)]
+                   "-O0" if profile == "dev" else "-O2", "-Werror", "-fuse-ld=lld"]
+        if runtime == DEFAULT_RUNTIME and b"\ndeclare void @__oxid_bytebuf_start()\n" in module:
+            command.append("-DOXID_SCALAR_BYTEBUF")
+        command.extend([str(module_path), str(runtime), "-o", str(binary)])
         linked = invoke(command, timeout, staging)
         if evidence is not None:
             (evidence / "program.ll").write_bytes(module)
@@ -146,6 +159,7 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
         finally:
             os.close(directory_fd)
     return {"output": str(destination), "sha256": digest, "profile": profile, "target": target,
+            "entry_mode": entry_mode,
             "module_sha256": hashlib.sha256(module).hexdigest(),
             "compiler_sha256": hashlib.sha256(compiler.read_bytes()).hexdigest(),
             "runtime_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
@@ -161,11 +175,12 @@ def main() -> int:
     parser.add_argument("--clang", type=Path, required=True)
     parser.add_argument("--runtime", type=Path, default=DEFAULT_RUNTIME)
     parser.add_argument("--profile", choices=("dev", "release"), default="dev")
+    parser.add_argument("--entry-mode", choices=("result", "process"), default="result")
     parser.add_argument("--evidence", type=Path)
     args = parser.parse_args()
     try:
         receipt = build(args.compiler, args.source, args.clang, args.runtime, args.output,
-                        args.profile, evidence=args.evidence)
+                        args.profile, evidence=args.evidence, entry_mode=args.entry_mode)
     except (BuildError, OSError) as error:
         parser.exit(1, f"build failed: {error}\n")
     print(json.dumps(receipt, sort_keys=True))

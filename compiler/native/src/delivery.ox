@@ -29,11 +29,11 @@ enum FileInput { Loaded(ByteBuf), Failed(i32) }
 
 pub fn load() -> Input {
     let argc = arg_count();
-    if argc != 2 && argc != 3 { return Input::Failed(64); }
+    if argc < 2 || argc > 4 { return Input::Failed(64); }
     let mut path = new();
     if !grown(try_resize(&mut path, 4096, 0u8)) { return Input::Failed(68); }
     let mut arm64 = false;
-    if argc == 3 {
+    if argc >= 3 {
         let arm = b"--target=aarch64-unknown-linux-gnu";
         let intel = b"--target=x86_64-unknown-linux-gnu";
         let target = arg_bytes(2, &mut path);
@@ -41,6 +41,19 @@ pub fn load() -> Input {
             ArgStatus::Copied(size) => {
                 arm64 = word(&path, 0, size, &arm);
                 if !arm64 && !word(&path, 0, size, &intel) { return Input::Failed(64); }
+            },
+            ArgStatus::TooSmall(required) => { return Input::Failed(64); },
+            ArgStatus::Missing => { return Input::Failed(64); },
+            ArgStatus::TooLong => { return Input::Failed(64); },
+        }
+    }
+    let process_entry = argc == 4;
+    if process_entry {
+        let process = b"--entry-mode=process";
+        let mode = arg_bytes(3, &mut path);
+        match mode {
+            ArgStatus::Copied(size) => {
+                if !word(&path, 0, size, &process) { return Input::Failed(64); }
             },
             ArgStatus::TooSmall(required) => { return Input::Failed(64); },
             ArgStatus::Missing => { return Input::Failed(64); },
@@ -56,7 +69,7 @@ pub fn load() -> Input {
     }
     let input = load_file(&path, 65536);
     match input {
-        FileInput::Loaded(bytes) => { return Input::Loaded(new_compiler(bytes, path, arm64)); },
+        FileInput::Loaded(bytes) => { return Input::Loaded(new_compiler(bytes, path, arm64, process_entry)); },
         FileInput::Failed(status_code) => { return Input::Failed(status_code); },
     }
 }

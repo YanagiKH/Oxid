@@ -32,6 +32,22 @@ Use `<<` or `>>` with an integer shift count from zero up to the value's bit
 width, excluding the width itself. Right shifts preserve the sign of signed
 values. Left shifts discard bits that move beyond the width.
 A result-mode `main` has no arguments and prints its scalar result, then exits 0.
+Use `build.py --entry-mode=process` with `fn main() -> i32` to return an exit
+status without printing it. Valid exit statuses range from 0 to 255.
+Import `std::env::arg_count` to count the executable and the arguments
+passed to it. The executable is included, so the count starts at 1.
+Use `std::env::arg_bytes(index, &mut bytes)` to copy an argument as raw
+bytes. Index 0 is the executable. Match `std::env::ArgStatus` to get the
+copied byte count or the required size when the destination is too small.
+In process mode, `std::io::read_some(&mut bytes)` reads from stdin.
+`write_some(&bytes)` writes to stdout, and `write_stderr(&bytes)` writes to
+stderr. Match `ReadSomeStatus` or `WriteSomeStatus` for the transferred byte
+count, end of input or an operating system error.
+Use `alloc::bytes::new()` to create an empty `ByteBuf`. Use `try_resize`,
+`try_push` or `try_extend` to add bytes, and match `GrowStatus` to check
+whether the operation succeeded. Borrow the buffer as `&[u8]` or
+`&mut [u8]` to read and write individual bytes by index. Buffers can
+move between functions and free their storage when their owner goes out of scope.
 Use `for index in start..end { ... }` to iterate over matching integer bounds.
 The bounds evaluate once from left to right, and the end is excluded. The
 index is immutable and available inside the loop body.
@@ -90,7 +106,7 @@ arrays in an owned value. Passing or assigning the value moves it. Use
 `let Row { id: row_id, bytes: data } = row;` to take all its fields. To replace
 an array field, assign a new value to the whole mutable struct.
 
-Struct fields can use earlier declared struct types. For example, use
+Struct fields can use types declared elsewhere in the project. For example, use
 `struct Batch { item: Row }`, then `let Batch { item: row } = batch;` to take
 the nested value. Construction accepts up to eight levels of struct nesting.
 All nested fields of a `Copy` struct must also be `Copy`.
@@ -115,7 +131,7 @@ Separate nested fields can be borrowed mutably together. A borrow of an
 entire struct overlaps any borrow of its fields.
 
 Declare `enum Value { Empty, Count(i64) }` and construct `Value::Count(42i64)`.
-A variant can carry one scalar, fixed array or struct declared above the enum.
+A variant can carry one scalar, fixed array or struct.
 Match a binding and give one arm for each variant.
 
 ```rust
@@ -127,13 +143,16 @@ match value {
 ```
 
 Passing, assigning or matching an enum moves it.
+Use `pub enum` to share the type with another module. Construct and match
+variants through an imported type name or a path such as
+`crate::messages::Value::Count`.
 
 Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
 nested enums, other reference forms, generics, text strings, nested arrays,
-I/O in compiled input and other integer types are unsupported. The compiler
+File I/O and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 
 Declare `mod math;` in the entry file to load `math.ox`. Inside `math.ox`,
