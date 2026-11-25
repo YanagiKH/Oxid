@@ -59,7 +59,7 @@
         "Multi-version dependencies, registry publishing, lockfiles, offline/frozen/vendor builds, integrity and supply-chain verification."
       ],
       "remaining": [
-        "Typed project/workspace commands, local and pinned Git dependencies, input locks, portable source bundles, self-contained offline checkouts, native object reuse, relocatable dev/release builds and exact-version private file registries are experimental. Version ranges, authenticated remote registries, per-module frontend incrementality and broader native artifact qualification remain incomplete."
+        "Typed projects have input locks, offline source bundles, native object reuse and private file registries with exact versions, compatible ranges and yanks. Private registries can list available packages by name prefix. Authenticated remote registries, per-module frontend incrementality and broader native artifact qualification remain incomplete."
       ]
     },
     {

@@ -96,7 +96,7 @@ def verify(args):
     pins = {str(path.relative_to(ROOT)): digest(path) for path in inputs}
     output.mkdir(parents=True)
     report = {"schema": "oxid-typed-private-registry-acceptance-v1", "status": "running", "native": args.native,
-              "scope": "experimental exact-version private file registry; no general release qualification",
+              "scope": "Private file registry publication, search, locked versions and offline deployment.",
               "source_sha256": pins, "compilers": []}
     try:
         for index, compiler in enumerate(compilers):

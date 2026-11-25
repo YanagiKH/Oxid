@@ -21,6 +21,7 @@ const MAX_METADATA: usize = 8 * 1024 * 1024;
 const MAX_WIRE: u64 = 64 * 1024 * 1024;
 const MAX_PAYLOAD: usize = 32 * 1024 * 1024;
 const MAX_FILES: usize = 2047;
+const MAX_SEARCH_ENTRIES: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Dependency {
@@ -1011,14 +1012,18 @@ pub(crate) struct Publication {
     pub archive: package::LibraryArchive,
 }
 
-fn registry_package_path(source: &str, name: &str, budget: &mut Budget) -> Result<PathBuf, String> {
+fn registry_packages_path(source: &str, budget: &mut Budget) -> Result<PathBuf, String> {
     let root = budget.uri_path(source)?;
     ordinary(&root, false)?;
     let marker = budget.join(&root, "registry.toml")?;
     if read_regular(&marker, MARKER.len(), budget)? != MARKER {
         return Err("unsupported private registry marker".into());
     }
-    let packages = budget.join(&root, "packages")?;
+    budget.join(&root, "packages")
+}
+
+fn registry_package_path(source: &str, name: &str, budget: &mut Budget) -> Result<PathBuf, String> {
+    let packages = registry_packages_path(source, budget)?;
     budget.join(&packages, name)
 }
 
@@ -1054,15 +1059,31 @@ fn newest_compatible(
     requirement: CompatibleVersion,
     budget: &mut Budget,
 ) -> Result<String, String> {
+    let mut remaining = MAX_SEARCH_ENTRIES;
+    newest_release(
+        package,
+        |value| requirement.accepts(value),
+        &mut remaining,
+        budget,
+    )?
+    .ok_or_else(|| "no compatible registry release".to_owned())
+}
+
+fn newest_release(
+    package: &Path,
+    accepts: impl Fn([u32; 3]) -> bool,
+    remaining: &mut usize,
+    budget: &mut Budget,
+) -> Result<Option<String>, String> {
     ordinary(package, false)?;
     let yanked = yank_directory(package, budget)?;
     let entries = fs::read_dir(package)
         .map_err(|error| format!("cannot inspect registry versions: {error}"))?;
     let mut best = None;
-    for (index, entry) in entries.enumerate() {
-        if index == 4096 {
-            return Err("registry package exceeds the 4096-entry version search limit".into());
-        }
+    for entry in entries {
+        *remaining = remaining
+            .checked_sub(1)
+            .ok_or("registry version search exceeds the 4096-entry limit")?;
         let entry = entry.map_err(|error| format!("cannot inspect registry version: {error}"))?;
         let name = budget.scoped(255, || Ok(entry.file_name()), |value| Ok(value.capacity()))?;
         let Some((version, candidate)) = name
@@ -1071,7 +1092,7 @@ fn newest_compatible(
         else {
             continue;
         };
-        if !requirement.accepts(candidate) {
+        if !accepts(candidate) {
             continue;
         }
         if !entry
@@ -1096,10 +1117,11 @@ fn newest_compatible(
             best = Some((candidate, name));
         }
     }
-    best.ok_or_else(|| "no compatible registry release".to_owned())?
-        .1
-        .into_string()
-        .map_err(|_| "registry version is not UTF-8".into())
+    best.map(|(_, name)| {
+        name.into_string()
+            .map_err(|_| "registry version is not UTF-8".into())
+    })
+    .transpose()
 }
 
 pub(crate) struct Session {
@@ -1729,23 +1751,17 @@ fn ensure_yank_directory(path: &Path) -> Result<(), String> {
     }
 }
 
-fn change_yank_status(args: &[String], yanked: bool) -> Result<String, String> {
-    let [_, _, source, package_name, package_version] = args else {
-        return Err("use oxid registry yank or unyank FILE_URI PACKAGE VERSION".into());
-    };
-    name(package_name)?;
-    version(package_version)?;
-    let mut budget = Budget::new()?;
-    budget.metadata(resources::yank_update_bytes())?;
-    let package = registry_package_path(source, package_name, &mut budget)?;
-    let release = budget.join(&package, package_version)?;
+fn check_release_record(
+    package: &Path,
+    package_name: &str,
+    package_version: &str,
+    budget: &mut Budget,
+) -> Result<(), String> {
+    let release = budget.join(package, package_version)?;
     ordinary(&release, false)?;
     let record_path = budget.join(&release, "release.toml")?;
-    let record = Record::decode(
-        &read_regular(&record_path, 1024 * 1024, &mut budget)?,
-        &mut budget,
-    )?;
-    if record.name != *package_name || record.version != *package_version {
+    let record = Record::decode(&read_regular(&record_path, 1024 * 1024, budget)?, budget)?;
+    if record.name != package_name || record.version != package_version {
         return Err("registry release name/version differs from the requested identity".into());
     }
     let artifact = budget.join(&release, "artifact.tar")?;
@@ -1757,6 +1773,71 @@ fn change_yank_status(args: &[String], yanked: bool) -> Result<String, String> {
     {
         return Err("registry artifact length differs from its release record".into());
     }
+    Ok(())
+}
+
+fn search(args: &[String]) -> Result<String, String> {
+    let (source, prefix) = match args {
+        [_, _, source] => (source, ""),
+        [_, _, source, prefix] => {
+            name(prefix)?;
+            (source, prefix.as_str())
+        }
+        _ => return Err("use oxid registry search FILE_URI [PREFIX]".into()),
+    };
+    let mut budget = Budget::new()?;
+    let packages = registry_packages_path(source, &mut budget)?;
+    ordinary(&packages, false)?;
+    let entries = fs::read_dir(packages)
+        .map_err(|error| format!("cannot inspect registry packages: {error}"))?;
+    let mut results = Vec::new();
+    let mut remaining = MAX_SEARCH_ENTRIES;
+    for (index, entry) in entries.enumerate() {
+        if index == MAX_SEARCH_ENTRIES {
+            return Err("registry package search exceeds the 4096-entry limit".into());
+        }
+        let entry = entry.map_err(|error| format!("cannot inspect registry package: {error}"))?;
+        let basename = budget.scoped(255, || Ok(entry.file_name()), |path| Ok(path.capacity()))?;
+        let Some(package_name) = basename.to_str().filter(|value| value.starts_with(prefix)) else {
+            continue;
+        };
+        if name(package_name).is_err() {
+            continue;
+        }
+        let path = budget.scoped(8192, || Ok(entry.path()), |path| Ok(path.capacity()))?;
+        if let Some(version) = newest_release(&path, |_| true, &mut remaining, &mut budget)? {
+            check_release_record(&path, package_name, &version, &mut budget)?;
+            budget.reserve(&mut results, 1)?;
+            results.push((budget.text(package_name)?, version));
+        }
+    }
+    if results.is_empty() {
+        return budget.text("No packages match.\n");
+    }
+    results.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    let length = results
+        .iter()
+        .map(|(package, version)| package.len() + version.len() + 2)
+        .sum();
+    let mut message = budget.string(length)?;
+    use std::fmt::Write as _;
+    for (package, version) in results {
+        writeln!(message, "{package} {version}")
+            .map_err(|_| "cannot format registry search result")?;
+    }
+    Ok(message)
+}
+
+fn change_yank_status(args: &[String], yanked: bool) -> Result<String, String> {
+    let [_, _, source, package_name, package_version] = args else {
+        return Err("use oxid registry yank or unyank FILE_URI PACKAGE VERSION".into());
+    };
+    name(package_name)?;
+    version(package_version)?;
+    let mut budget = Budget::new()?;
+    budget.metadata(resources::yank_update_bytes())?;
+    let package = registry_package_path(source, package_name, &mut budget)?;
+    check_release_record(&package, package_name, package_version, &mut budget)?;
     let directory = yank_directory(&package, &mut budget)?;
     let marker = budget.join(&directory, package_version)?;
     let previous = yank_marker(&marker)?;
@@ -1829,12 +1910,13 @@ fn command(args: &[String]) -> Result<String, String> {
     qualified()?;
     if args.first().is_some_and(|word| word == "registry") {
         match args.get(1).map(String::as_str) {
+            Some("search") => return search(args),
             Some("yank") => return change_yank_status(args, true),
             Some("unyank") => return change_yank_status(args, false),
             _ => {}
         }
         if args.len() != 3 || args[1] != "init" || args[2].starts_with('-') {
-            return Err("use oxid registry init NEW_DIRECTORY or registry yank/unyank FILE_URI PACKAGE VERSION".into());
+            return Err("use oxid registry init NEW_DIRECTORY, search FILE_URI [PREFIX], or yank/unyank FILE_URI PACKAGE VERSION".into());
         }
         let mut budget = Budget::new()?;
         if args[2].len() > 8192 {
