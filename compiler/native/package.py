@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package the Linux native compiler and the inputs needed to rebuild it."""
+"""Package the native compiler and the inputs needed to rebuild it."""
 from __future__ import annotations
 
 import argparse
@@ -22,7 +22,8 @@ RUNTIME_FILES = (
     "native/typed_vector.c", "native/experimental_bytebuf.c", "native/experimental_bytebuf.h",
     "native/experimental_vector.c", "native/experimental_vector.h", "native/experimental_files.c",
 )
-TARGETS = {62: "x86_64-unknown-linux-gnu", 183: "aarch64-unknown-linux-gnu"}
+ELF_TARGETS = {62: "x86_64-unknown-linux-gnu", 183: "aarch64-unknown-linux-gnu"}
+MACHO_TARGETS = {0x1000007: "x86_64-apple-macosx11.0.0", 0x100000C: "arm64-apple-macosx11.0.0"}
 
 
 def digest(data: bytes) -> str:
@@ -36,11 +37,17 @@ def read_file(path: Path) -> bytes:
 
 
 def seed_target(seed: Path, binary: bytes) -> str:
-    if not os.access(seed, os.X_OK) or len(binary) < 20 or binary[:6] != b"\x7fELF\x02\x01":
-        raise ValueError("the seed must be an executable Linux ELF64 file")
-    target = TARGETS.get(int.from_bytes(binary[18:20], "little"))
+    if not os.access(seed, os.X_OK):
+        raise ValueError("the seed file is not executable")
+    target = None
+    if len(binary) >= 64 and binary[:6] == b"\x7fELF\x02\x01":
+        if int.from_bytes(binary[16:18], "little") in (2, 3):
+            target = ELF_TARGETS.get(int.from_bytes(binary[18:20], "little"))
+    elif len(binary) >= 32 and binary[:4] == b"\xcf\xfa\xed\xfe":
+        if int.from_bytes(binary[12:16], "little") == 2:
+            target = MACHO_TARGETS.get(int.from_bytes(binary[4:8], "little"))
     if target is None:
-        raise ValueError("the seed must target Linux x86-64 or ARM64")
+        raise ValueError("the seed must be a Linux or macOS x86-64 or ARM64 executable")
     return target
 
 

@@ -1055,8 +1055,19 @@ pub fn finish_function(c: &mut Compiler, function: i32) -> () {
     append(&mut *c, 0, &body); append(&mut *c, 0, &literal_bytes_6);
     return;
 }
+fn preamble_macos(c: &mut Compiler) -> () {
+    if c.target == 3 {
+        let text = b"; Oxid scalar compiler 1\ntarget triple = \"arm64-apple-macosx11.0.0\"\n";
+        append(&mut *c, 0, &text);
+        return;
+    }
+    let text = b"; Oxid scalar compiler 1\ntarget triple = \"x86_64-apple-macosx11.0.0\"\n";
+    append(&mut *c, 0, &text);
+    return;
+}
 fn preamble_text_0_0(c: &mut Compiler) -> () {
-    if c.target_arm64 {
+    if c.target >= 2 { preamble_macos(&mut *c); return; }
+    if c.target == 1 {
         let text = b"; Oxid scalar compiler 1\ntarget triple = \"aarch64-unknown-linux-gnu\"\n";
         append(&mut *c, 0, &text);
         return;

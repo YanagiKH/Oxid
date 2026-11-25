@@ -28,20 +28,31 @@ use std::io::write_stderr;
 pub enum Input { Loaded(Compiler), Failed(i32) }
 enum FileInput { Loaded(ByteBuf), Failed(i32) }
 
+fn target_code(flag: &[u8]) -> i32 {
+    let size = flag.len();
+    let linux_intel = b"--target=x86_64-unknown-linux-gnu";
+    let linux_arm = b"--target=aarch64-unknown-linux-gnu";
+    let macos_intel = b"--target=x86_64-apple-macosx11.0.0";
+    let macos_arm = b"--target=arm64-apple-macosx11.0.0";
+    if word(&*flag, 0, size, &linux_intel) { return 0; }
+    if word(&*flag, 0, size, &linux_arm) { return 1; }
+    if word(&*flag, 0, size, &macos_intel) { return 2; }
+    if word(&*flag, 0, size, &macos_arm) { return 3; }
+    return -1;
+}
+
 pub fn load() -> Input {
     let argc = arg_count();
     if argc < 2 || argc > 4 { return Input::Failed(64); }
     let mut path = new();
     if !grown(try_resize(&mut path, 4096, 0u8)) { return Input::Failed(68); }
-    let mut arm64 = false;
+    let mut platform = 0;
     if argc >= 3 {
-        let arm = b"--target=aarch64-unknown-linux-gnu";
-        let intel = b"--target=x86_64-unknown-linux-gnu";
         let target = arg_bytes(2, &mut path);
         match target {
             ArgStatus::Copied(size) => {
-                arm64 = word(&path, 0, size, &arm);
-                if !arm64 && !word(&path, 0, size, &intel) { return Input::Failed(64); }
+                platform = target_code(&path[0..size]);
+                if platform < 0 { return Input::Failed(64); }
             },
             ArgStatus::TooSmall(required) => { return Input::Failed(64); },
             ArgStatus::Missing => { return Input::Failed(64); },
@@ -70,7 +81,7 @@ pub fn load() -> Input {
     }
     let input = load_file(&path, source_byte_limit());
     match input {
-        FileInput::Loaded(bytes) => { return Input::Loaded(new_compiler(bytes, path, arm64, process_entry)); },
+        FileInput::Loaded(bytes) => { return Input::Loaded(new_compiler(bytes, path, platform, process_entry)); },
         FileInput::Failed(status_code) => { return Input::Failed(status_code); },
     }
 }
@@ -216,7 +227,7 @@ fn write_number(number: i32) -> () {
 
 pub fn report_status(status: i32) -> i32 {
     if status == 64 {
-        let text = b"usage: oxid-scalar-compiler <source.ox> [--target=x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu]\n";
+        let text = b"usage: oxid-scalar-compiler <source.ox> [--target=<triple>] [--entry-mode=process]\n";
         write_to(&text, true);
     }
     if status == 66 { let text = b"error: could not read Oxid source\n"; write_to(&text, true); }

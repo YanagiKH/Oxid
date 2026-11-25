@@ -921,6 +921,18 @@ jobs:
             --output "$RUNNER_TEMP/current-macos-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-macos-native/copy-record-vectors" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Rebuild and run the Oxid compiler on macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd compiler/native
+            "$GITHUB_WORKSPACE/target/release/oxid" build --profile=release
+          )
+          python3 -B compiler/native/tests/verify.py \
+            --compiler compiler/native/.oxid/bin/oxid-scalar-compiler \
+            --clang "$OXID_LLVM_BIN/clang" --reference target/release/oxid \
+            --verify-rebuild --output "$RUNNER_TEMP/current-macos-native/scalar-compiler"
       - name: Run C Rust and Python clients against relocated macOS libraries
         env:
           TMPDIR: ${{ runner.temp }}/current-macos-native/libraries
