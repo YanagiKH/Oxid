@@ -410,6 +410,8 @@ fn separately_present_process_neighbors_still_traverse_the_guarded_catalogs() {
             1usize,
         ),
         ("use std::process::termination_requested;", 2usize),
+        ("use std::process::wait_for_termination;", 3usize),
+        ("use std::process::wait_for_stdin;", 4usize),
         (IMPORTS, 1usize),
     ] {
         let project = project(&format!("{imports}fn main()->i32{{return 42;}}"));
