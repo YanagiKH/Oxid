@@ -137,4 +137,30 @@ uint8_t *__oxid_scalar_vector_view(const oxid_vector *vector, uint32_t element, 
     if (status != 0) invalid_heap_resource(status);
     return bytes;
 }
+
+void __oxid_scalar_vector_pack(uint32_t element, uint8_t *owner, uint8_t *packed) {
+    const oxid_vector_record_schema *schema = vector_record_schema(element);
+    if (!schema || !vector_record_layout_valid(schema) || !owner
+        || vector_heap_overlap(owner, schema->owner_bytes)) {
+        invalid_heap_resource(OXID_BUFFER_DESCRIPTOR);
+    }
+    /* LLVM bool fields use i1. Normalize their containing bytes in the
+       temporary owner before the dense runtime validates and copies them. */
+    for (uint32_t i = 0; i < schema->leaf_count; ++i) {
+        const oxid_vector_record_leaf *leaf = &schema->leaves[i];
+        if (leaf->element == OXID_VECTOR_BOOL) owner[leaf->owner_offset] &= 1;
+    }
+    int32_t status = __oxid_record_vector_pack(element, owner, packed);
+    if (status != 0) invalid_heap_resource(status);
+}
+
+void __oxid_scalar_vector_unpack(uint32_t element, const uint8_t *packed, uint8_t *owner) {
+    int32_t status = __oxid_record_vector_unpack(element, packed, owner);
+    if (status != 0) invalid_heap_resource(status);
+}
+
+void __oxid_scalar_vector_write(uint32_t element, const uint8_t *packed, uint8_t *destination) {
+    int32_t status = __oxid_record_vector_write(element, packed, destination);
+    if (status != 0) invalid_heap_resource(status);
+}
 #endif

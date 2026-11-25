@@ -152,7 +152,9 @@ fn access_allowed(c: &Compiler, position: i32, path: i64, depth: i32, exclusive:
 }
 fn collection_slice_element(c: &Compiler, ty: i32) -> i32 {
     if is_byte_buffer(&*c, ty) { return 4; }
-    return vector_element(&*c, ty);
+    let element = vector_element(&*c, ty);
+    if is_record(element) { return 0; }
+    return element;
 }
 fn slice_owner_matches(c: &Compiler, binding: Binding, expected: i32, reborrow: bool) -> bool {
     let exclusive = is_mutable_slice(expected);
@@ -286,7 +288,8 @@ fn record_argument(c: &mut Compiler, expected: i32) -> Value {
 }
 fn vector_constructor(c: &mut Compiler) -> Value {
     expect(&mut *c, 45);
-    let ty = vector_type_argument(&mut *c);
+    let owner = c.functions[c.current];
+    let ty = vector_type_argument(&mut *c, owner.source_module);
     expect(&mut *c, 20); expect(&mut *c, 21);
     if c.error != 0 { return invalid(); }
     return Value { ty: ty, id: -1 };
@@ -312,6 +315,7 @@ fn vector_call(c: &mut Compiler, operation: i32, depth: i32) -> Value {
         if item.ty != element { fail(&mut *c); return invalid(); }
     }
     if operation == 5 {
+        if is_record(element) { fail(&mut *c); return invalid(); }
         expect(&mut *c, 26);
         view = slice_argument(&mut *c, slice_type(element, false), depth);
     }
@@ -672,7 +676,7 @@ fn vector_field_value(c: &mut Compiler, binding: Binding, position: i32,
     }
     let buffer = vector_field_reference(&mut *c, binding, path);
     let pointer = crate::emit::vector_index(&mut *c, buffer, index, element);
-    return crate::emit::load_element(&mut *c, pointer, element);
+    return crate::emit::vector_load(&mut *c, pointer, element);
 }
 
 fn field_value(c: &mut Compiler, binding: Binding, position: i32, depth: i32) -> Value {
@@ -740,7 +744,7 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
         if index.ty != 1 || !target.available { fail(&mut *c); return invalid(); }
         if vector_item != 0 {
             let selected = vector_binding_index(&mut *c, binding, index, vector_item);
-            return crate::emit::load_element(&mut *c, selected, vector_item);
+            return crate::emit::vector_load(&mut *c, selected, vector_item);
         }
         if is_slice(binding.ty) { return crate::emit::slice_index(&mut *c, binding, index); }
         return crate::emit::array_index(&mut *c, binding, index);

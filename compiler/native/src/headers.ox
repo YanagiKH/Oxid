@@ -126,12 +126,16 @@ fn vector_alias(c: &Compiler, source_module: i32, name: i32) -> bool {
     return false;
 }
 
-pub fn vector_type_argument(c: &mut Compiler) -> i32 {
+pub fn vector_type_argument(c: &mut Compiler, source_module: i32) -> i32 {
     expect(&mut *c, 37);
-    let element = scalar_type(kind(&*c));
+    let mut element = scalar_type(kind(&*c));
+    if element != 0 { c.cursor = c.cursor + 1; }
+    else {
+        if vector_alias(&*c, source_module, c.cursor) { fail(&mut *c); return 0; }
+        element = named_type(&mut *c, source_module);
+    }
     let result = vector_type(&*c, element);
     if result == 0 { fail(&mut *c); return 0; }
-    c.cursor = c.cursor + 1;
     if kind(&*c) == 40 {
         // A type annotation can end immediately before its initializer's "=".
         let mut assignment = token(&*c, c.cursor);
@@ -155,7 +159,7 @@ fn named_type(c: &mut Compiler, source_module: i32) -> i32 {
     if k == 1 {
         if vector_alias(&*c, source_module, c.cursor) {
             expect(&mut *c, 1);
-            return vector_type_argument(&mut *c);
+            return vector_type_argument(&mut *c, source_module);
         }
         let index = record_binding(&*c, source_module, c.cursor);
         if index >= 0 {
@@ -561,9 +565,17 @@ fn register_file_types(c: &mut Compiler) -> () {
 }
 
 fn register_vector_types(c: &mut Compiler) -> () {
+    let nominal_count = len(&*c.records);
     for element in 0..8 {
         let mut index = -1;
         if is_value_scalar(element) { index = register_resource(&mut *c, vector_type_binding(), element); }
+        if c.error != 0 { return; }
+        if !grown(try_push(&mut *c.vector_types, index)) { c.error = 68; return; }
+    }
+    for ordinal in 0..nominal_count {
+        let row = c.records[ordinal];
+        let mut index = -1;
+        if row.copy { index = register_resource(&mut *c, vector_type_binding(), record_type(ordinal)); }
         if c.error != 0 { return; }
         if !grown(try_push(&mut *c.vector_types, index)) { c.error = 68; return; }
     }

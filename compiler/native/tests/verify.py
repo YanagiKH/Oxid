@@ -1125,6 +1125,64 @@ fn main()->i32{
                        "fn replace(row:&Row)->(){row.values[0]=42;}"
                        "fn main()->i32{return 42;}",
         }),
+        ("copy-record-vector-preserves-fields-and-padding", 0, True, {
+            "main.ox": '''
+mod data;
+use crate::data::Row;
+use alloc::vec::Vec;
+use alloc::vec::new;
+use alloc::vec::try_push;
+use alloc::vec::try_resize;
+struct Table{rows:Vec<Row>}
+fn read(table:&Table)->i32{
+    if table.rows.len()!=2{return 1;}
+    let old=table.rows[0];
+    if old.ready||old.code!=7u8{return 2;}
+    let picked=table.rows[1];
+    if !picked.ready{return 3;}
+    let number=picked.number;
+    let code=picked.code;
+    return number.to_i32_checked()+code.to_i32();
+}
+fn main()->i32{
+    let mut table=Table{rows:new::<crate::data::Row>()};
+    let initial=crate::data::make(9i64,false,7u8);
+    try_push(&mut table.rows,initial);
+    try_resize(&mut table.rows,2,initial);
+    table.rows[1]=crate::data::make(40i64,true,2u8);
+    return read(&table);
+}
+''',
+            "data.ox": '''
+#[derive(Copy)] pub struct Empty{}
+#[derive(Copy)] pub struct Row{pub ready:bool,pub gap:Empty,pub number:i64,pub code:u8}
+pub fn make(number:i64,ready:bool,code:u8)->Row{
+    return Row{ready:ready,gap:Empty{},number:number,code:code};
+}
+''',
+        }),
+        ("copy-record-vector-with-empty-elements", 0, True, {
+            "main.ox": '''
+use alloc::vec::new;
+use alloc::vec::try_push;
+#[derive(Copy)] struct Empty{}
+fn score(value:Empty)->i32{return 42;}
+fn main()->i32{
+    let mut values=new::<Empty>();
+    try_push(&mut values,Empty{});
+    try_push(&mut values,Empty{});
+    if values.len()!=2{return 1;}
+    let selected=values[1];
+    return score(selected);
+}
+''',
+        }),
+        ("copy-record-vector-refuses-another-nominal-type", 65, True, {
+            "main.ox": "use alloc::vec::new;use alloc::vec::try_push;"
+                       "#[derive(Copy)]struct First{number:i32}#[derive(Copy)]struct Second{number:i32}"
+                       "fn main()->i32{let mut values=new::<First>();"
+                       "try_push(&mut values,Second{number:42});return 42;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
