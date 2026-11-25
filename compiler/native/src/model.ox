@@ -49,6 +49,8 @@ pub struct Record {
 pub struct Field { pub name: i32, pub ty: i32, pub public: bool }
 #[derive(Copy)]
 pub struct FieldPath { pub code: i64, pub depth: i32, pub ty: i32, pub pointer: i32 }
+#[derive(Copy)]
+pub struct RecordShape { pub width: i32, pub alignment: i32, pub dense: i32, pub leaves: i32 }
 
 pub struct Compiler {
     pub source: ByteBuf, pub source_path: ByteBuf, pub literals: ByteBuf, pub sources: Vec<SourceModule>, pub imports: Vec<Import>,
@@ -107,6 +109,9 @@ pub fn kind(c: &Compiler) -> i32 {
     let current = token(&*c, c.cursor);
     return current.kind;
 }
+
+pub fn source_byte_limit() -> i32 { return 524288; }
+pub fn source_token_limit() -> i32 { return 131072; }
 
 pub fn fail(c: &mut Compiler) -> () {
     if c.error == 0 {
@@ -414,8 +419,10 @@ pub fn is_vector_operation(binding: i32) -> bool {
     return binding <= vector_operation_binding(0) && binding >= vector_operation_binding(8);
 }
 pub fn vector_type(c: &Compiler, element: i32) -> i32 {
-    if element <= 0 || element >= len(&*c.vector_types) { return 0; }
-    let index = c.vector_types[element];
+    let mut slot = element;
+    if is_record(element) { slot = 8 + record_index(element); }
+    if slot <= 0 || slot >= len(&*c.vector_types) { return 0; }
+    let index = c.vector_types[slot];
     if index < 0 { return 0; }
     return record_type(index);
 }
@@ -424,14 +431,40 @@ pub fn vector_element(c: &Compiler, ty: i32) -> i32 {
     let row = c.records[record_index(ty)];
     return row.vector_element;
 }
-pub fn vector_scalar_tag(element: i32) -> i32 {
+pub fn vector_runtime_tag(element: i32) -> i32 {
+    if is_record(element) { return -2147483648 + record_index(element); }
     if element == 1 { return 7; }
     if element == 2 { return 1; }
     if element == 4 { return 4; }
     if element == 5 { return 9; }
     if element == 6 { return 15; }
     if element == 7 { return 8; }
+    if element == 3 { return 2; }
     return 0;
+}
+pub fn aligned_width(width: i32, alignment: i32) -> i32 {
+    return ((width + alignment - 1) / alignment) * alignment;
+}
+pub fn copy_record_shape(c: &Compiler, ty: i32) -> RecordShape {
+    if !is_record(ty) {
+        let mut width = 4;
+        if ty == 2 || ty == 3 || ty == 4 { width = 1; }
+        if ty == 5 { width = 8; }
+        return RecordShape { width: width, alignment: width, dense: width, leaves: 1 };
+    }
+    let row = c.records[record_index(ty)];
+    if row.field_count == 0 { return RecordShape { width: 1, alignment: 1, dense: 1, leaves: 1 }; }
+    let mut shape = RecordShape { width: 0, alignment: 1, dense: 0, leaves: 0 };
+    for index in 0..row.field_count {
+        let field = c.fields[row.first_field + index];
+        let child = copy_record_shape(&*c, field.ty);
+        shape.width = aligned_width(shape.width, child.alignment) + child.width;
+        if child.alignment > shape.alignment { shape.alignment = child.alignment; }
+        shape.dense = shape.dense + child.dense;
+        shape.leaves = shape.leaves + child.leaves;
+    }
+    shape.width = aligned_width(shape.width, shape.alignment);
+    return shape;
 }
 pub fn needs_drop(c: &Compiler, ty: i32) -> bool {
     if !is_record(ty) { return false; }

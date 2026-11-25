@@ -110,7 +110,7 @@ GENERIC_OWNED_VECTOR_REPLAY = 'scripts/verify_generic_owned_vector_compatibility
 GENERIC_OWNED_VECTOR_PARENT = '698043182916dda7276c363e20a98dfbb5b22ed3'
 WINDOWS_LOCAL_PACKAGE_REPLAY = 'scripts/verify_windows_local_package_compatibility.py'
 CURRENT_TYPED_POLICY = ('scripts/verify_current_typed_compatibility.py',
-    (11766, '11997c7ff5f92ce21f19bffa41e8eefdd3987c88f9d3db2bd65ef2f201329ba7'))
+    (11766, 'c1381c71e57ade3591971ffcf522c46b15941c3a65dfdc480216e685e9fab745'))
 WINDOWS_LOCAL_PACKAGE_PARENT = '1ed9a4b9c373b62d115f31ef9abf1b84debd2e3e'
 WINDOWS_LOCAL_PACKAGE_REVIEWED_HEAD = '4ec7cbdee35774e6112421736c7c921f398e5d3b'
 GENERIC_OWNED_VECTOR_POLICY = (GENERIC_OWNED_VECTOR_REPLAY,
@@ -1514,7 +1514,7 @@ exit 0
             '          python3 -B compiler/native/tests/verify.py \\\n'
             '            --compiler compiler/native/.oxid/bin/oxid-scalar-compiler \\\n'
             '            --clang "$OXID_LLVM_BIN/clang" --reference target/release/oxid \\\n'
-            '            --output "$RUNNER_TEMP/current-scalar-compiler"\n'))
+            '            --verify-rebuild --output "$RUNNER_TEMP/current-scalar-compiler"\n'))
         upload = re.findall(r'^      - name: Retain current native evidence\n'
                             r'(.*?)(?=^      - |\Z)', native, re.M | re.S)
         self.assertEqual(len(upload), 1)

@@ -3,6 +3,7 @@ mod delivery;
 mod lexer;
 mod headers;
 mod emit;
+mod vector_schema;
 mod parser;
 use crate::delivery::Input;
 

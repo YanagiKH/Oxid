@@ -13,6 +13,7 @@ use crate::model::grown;
 use crate::model::new_compiler;
 use crate::model::token;
 use crate::model::word;
+use crate::model::source_byte_limit;
 use std::env::arg_count;
 use std::env::arg_bytes;
 use std::env::ArgStatus;
@@ -67,7 +68,7 @@ pub fn load() -> Input {
         ArgStatus::Missing => { return Input::Failed(64); },
         ArgStatus::TooLong => { return Input::Failed(64); },
     }
-    let input = load_file(&path, 65536);
+    let input = load_file(&path, source_byte_limit());
     match input {
         FileInput::Loaded(bytes) => { return Input::Loaded(new_compiler(bytes, path, arm64, process_entry)); },
         FileInput::Failed(status_code) => { return Input::Failed(status_code); },
@@ -141,7 +142,7 @@ pub fn load_module(c: &mut Compiler, parent: i32, name: i32, public: bool) -> ()
         return;
     }
     let start = len(&*c.source);
-    let input = load_file(&path, 65536 - start);
+    let input = load_file(&path, source_byte_limit() - start);
     match input {
         FileInput::Failed(status_code) => { c.error = status_code; },
         FileInput::Loaded(bytes) => {

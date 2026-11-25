@@ -21,7 +21,7 @@ MEMBERS = (
     "compiler/native/src/main.ox", "compiler/native/src/model.ox",
     "compiler/native/src/lexer.ox", "compiler/native/src/headers.ox",
     "compiler/native/src/parser.ox", "compiler/native/src/emit.ox",
-    "compiler/native/src/delivery.ox",
+    "compiler/native/src/delivery.ox", "compiler/native/src/vector_schema.ox",
 )
 REJECT_NAMES = {
     "shift-bool-count",
@@ -304,7 +304,7 @@ class NativeCompilerRegistration(unittest.TestCase):
             checks, entries, members = verify_repo.source_plan(self.discover(), self.root)
         self.assertEqual(checks, [(self.root / PROJECT, True)])
         self.assertEqual(entries, [])
-        self.assertEqual(members, 7)
+        self.assertEqual(members, len(MEMBERS))
 
     def test_unlisted_source_and_fixture_neighbors_keep_ordinary_legacy_checks(self):
         neighbors = ("compiler/native/src/unregistered.ox", "compiler/native/tests/fixtures/extra.ox",
@@ -317,7 +317,7 @@ class NativeCompilerRegistration(unittest.TestCase):
             checks, entries, members = verify_repo.source_plan(self.discover(), self.root)
         self.assertEqual({path for path, typed in checks if not typed}, {self.root / name for name in neighbors})
         self.assertEqual([path for path, typed in checks if typed], [self.root / PROJECT])
-        self.assertEqual((entries, members), ([], 7))
+        self.assertEqual((entries, members), ([], len(MEMBERS)))
         self.assertFalse({path for path, _ in checks} & data.fixture_data_sources(self.root))
 
     def test_missing_project_members_and_complete_project_disappearance_are_denied(self):
