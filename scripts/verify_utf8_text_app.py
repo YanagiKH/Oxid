@@ -210,12 +210,49 @@ class TextOracle(Oracle):
         indexes.append(self.partial_write(label, argv, cwd, overrides))
         return indexes
 
+    def invalid_stream_prefix(self, label, argv, cwd, payload, overrides):
+        folder = self.output / "commands" / f"{len(self.commands):04d}-{label}"
+        folder.mkdir()
+        (folder / "stdin.bin").write_bytes(payload)
+        row = {"label": label, "argv": [str(path) for path in argv], "cwd": str(cwd),
+               "receipt": str(folder), "status": "running", "expected_status": 65,
+               "stdin_was_open_until_exit": True, "environment_overrides": overrides or {}}
+        self.commands.append(row)
+        try:
+            with (folder / "stdout.bin").open("wb") as out, (folder / "stderr.bin").open("wb") as err:
+                with subprocess.Popen(row["argv"], cwd=cwd, env={**self.environment, **(overrides or {})},
+                                      stdin=subprocess.PIPE, stdout=out, stderr=err) as child:
+                    try:
+                        child.stdin.write(payload)
+                        child.stdin.flush()
+                        row["exit_status"] = child.wait(timeout=10)
+                    finally:
+                        if child.poll() is None:
+                            child.kill()
+                            child.wait()
+            require(row["exit_status"] == 65 and not (folder / "stdout.bin").stat().st_size
+                    and not (folder / "stderr.bin").stat().st_size,
+                    label + ": malformed prefix must fail before the writer closes the pipe")
+            row["status"] = "passed"
+            return len(self.commands) - 1
+        except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+            row.update(status="failed", error=str(error))
+            raise
+        finally:
+            save(folder / "command.json", row)
+
     def streaming(self, label, argv, cwd, overrides=None):
         indexes = []
         for name, payload, status, output in streaming_cases():
             _, index = self.command(label + "-" + name, argv, cwd, payload, status, output,
                                     overrides=overrides)
             indexes.append(index)
+        for name, invalid in (
+                ("overlong-three", b"\xe0\x80"), ("overlong-four", b"\xf0\x80"),
+                ("surrogate", b"\xed\xa0"), ("out-of-range", b"\xf4\x90"),
+                ("invalid-third", b"\xf0\x9fA")):
+            indexes.append(self.invalid_stream_prefix(
+                label + "-open-pipe-" + name, argv, cwd, b"abc" + invalid, overrides))
         for name, options in (
                 ("directory-input", {"directory_stdin": True}),
                 ("full-output", {"payload": LONG_INPUT, "full_stdout": True})):
@@ -337,6 +374,47 @@ class TextOracle(Oracle):
                                        "sha256": digest(artifact), "bytes": len(body)})
         return artifact
 
+    def source_bundle(self, compiler, project, label):
+        archive = self.output / (label + ".oxpkg.tar")
+        result, index = self.command(label + "-package", [
+            compiler, "package", "--workspace", "--frozen", "--output", archive,
+            "--message-format=json",
+        ], project, overrides=self.no_tools())
+        [record] = records(result)
+        root = (Path("source") / APP).as_posix()
+        checksum = digest(archive)
+        require(record.get("success") is True and record.get("operation") == "create"
+                and record.get("root") == root and record.get("sha256") == checksum,
+                "unexpected UTF-8 source package identity")
+        return archive, checksum, index
+
+    def recover_bundle(self, compiler, label, package):
+        archive, checksum, created = package
+        destination = self.output / (label + "-unpacked")
+        _, verified = self.command(label + "-verify-package", [
+            compiler, "package", "--verify", archive, "--sha256", checksum,
+        ], self.output, overrides=self.no_tools())
+        _, extracted = self.command(label + "-extract-package", [
+            compiler, "package", "--extract", archive, "--sha256", checksum, "--output", destination,
+        ], self.output, overrides=self.no_tools())
+        project = destination / "source" / APP
+        result, checked = self.command(label + "-check-package", [
+            compiler, "check", "--workspace", "--frozen", "--message-format=json",
+        ], project, overrides=self.no_tools())
+        summary(records(result), "check", 2)
+        result, tested = self.command(label + "-test-package", [
+            compiler, "test", "--frozen", "--message-format=json",
+        ], project / "contracts", overrides=self.no_tools())
+        summary(records(result), "test", 1)
+        _, ran = self.command(label + "-run-package", [compiler, "run", "--frozen", "--", "--stream"],
+                              project / "app", LONG_INPUT, 0, expected(LONG_INPUT)[1],
+                              overrides=self.no_tools())
+        self.report["source_bundles"].append({
+            "path": str(archive), "sha256": checksum, "create": created, "verify": verified,
+            "extract": extracted, "check": checked, "test": tested, "run": ran,
+        })
+        return destination
+
     def controls(self, compiler, project, label, native):
         main = project / "app/src/main.ox"
         library = project / LOCATIONS[2] / "src/lib.ox"
@@ -407,7 +485,8 @@ def verify(args):
               "core_cases": len(CASES), "full_v1_qualification": False, "environment": environment,
               "sources": {str(path): tree_hashes(ROOT / path) for path in (APP, LIBRARY)},
               "controllers_sha256": {name: digest(ROOT / "scripts" / name) for name in CONTROLLERS},
-              "compilers": [], "tools": [], "locks": [], "builds": [], "controls": [], "deployments": []}
+              "compilers": [], "tools": [], "locks": [], "builds": [], "controls": [], "deployments": [],
+              "source_bundles": []}
     oracle = TextOracle(output, {**os.environ, **environment}, report)
     baseline = {}
     try:
@@ -471,6 +550,7 @@ def verify(args):
                     contract = oracle.build(retained, project, profile, label + "-api", member="contracts")
                     oracle.command(label + "-api-run", [contract], output, stdout=b"0\n")
                     deployed.append((profile, moved, contract))
+            bundle = oracle.source_bundle(retained, project, prefix)
             oracle.controls(retained, project, prefix, bool(llvm))
             require(tree_hashes(first_root) == source_hashes, "source/lock inputs changed")
             if moved_root.exists():
@@ -478,6 +558,14 @@ def verify(args):
             shutil.rmtree(first_root)
             if moved_root.exists():
                 shutil.rmtree(moved_root)
+            recovered = oracle.recover_bundle(retained, prefix, bundle)
+            if llvm:
+                rebuilt = oracle.build(retained, recovered / "source" / APP,
+                                       "release", prefix + "-package-release")
+                require(digest(rebuilt) == baseline["release"], "native rebuild from package changed executable")
+                report["source_bundles"][-1]["rebuilt_sha256"] = digest(rebuilt)
+            require(not oracle.marker.exists(), "offline package check invoked native tools")
+            shutil.rmtree(recovered)
             inherited = oracle.environment
             try:
                 oracle.environment = {}

@@ -38,6 +38,7 @@ match arms handle invalid UTF-8 and allocation errors.
 | Function | Behavior |
 | --- | --- |
 | `validate(&[u8])` | Accept UTF-8 or return the first invalid sequence's byte offset. |
+| `validate_prefix(&[u8])` | Check a stream chunk and tell whether its final character needs more bytes. |
 | `new_text()` | Create empty text. |
 | `from_bytes(ByteBuf)` | Move valid bytes into text; return the original buffer on invalid input. |
 | `from_utf8(&[u8])` | Validate and copy borrowed bytes into new text. |
@@ -58,8 +59,10 @@ match arms handle invalid UTF-8 and allocation errors.
 Append failures preserve the previous text. UTF-8 validation rejects overlong
 encodings, surrogate code points, values above U+10FFFF, and incomplete
 sequences. It accepts NUL, byte order marks, and Unicode noncharacters.
-The library does not normalize text or group grapheme clusters. Allocations
-share the runtime memory limit with other byte buffers.
+For streaming, `validate_prefix` returns `Complete`, `Incomplete(offset)`, or
+`Invalid(offset)`. Carry the bytes starting at an incomplete character's offset
+into the next read. Treat an incomplete character at end of input as an error.
+The library does not normalize text or group grapheme clusters. Allocations share the runtime memory limit with other byte buffers.
 
 `from_utf8` returns `FromUtf8::Ok(Text)`, `InvalidInput(byte_offset)`,
 `CapacityOverflow`, `AllocationFailed`, or `MemoryLimit`. It validates all input

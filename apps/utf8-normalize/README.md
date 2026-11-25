@@ -49,6 +49,22 @@ status before using the file.
 | 71 | Allocation failed or the memory limit was reached. |
 | 74 | Reading or writing failed, or a write made no progress. |
 
+To send the workspace and its library for an offline rebuild, run this from
+`apps/utf8-normalize` after creating the lock:
+
+```sh
+oxid package --workspace --frozen --output utf8-normalize.oxpkg.tar
+```
+
+Send the archive and the SHA-256 printed by Oxid. Use that checksum to unpack
+into a new directory and build with the same LLVM version:
+
+```sh
+oxid package --extract utf8-normalize.oxpkg.tar --sha256 "$checksum" --output unpacked
+cd unpacked/source/apps/utf8-normalize
+oxid build -p app --profile=release --frozen
+```
+
 The reusable [`utf8-text` library](../../packages/utf8_text/README.md) provides
 validation, owned text, Unicode scalar appends, and truncation at character
 boundaries. To run its API checks after creating the workspace lock:

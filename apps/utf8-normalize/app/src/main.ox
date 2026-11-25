@@ -13,10 +13,10 @@ use std::io::read_some;
 use std::io::write_some;
 use crate::text::Text;
 use crate::text::FromBytes;
-use crate::text::Validation;
+use crate::text::PrefixValidation;
 use crate::text::from_bytes;
 use crate::text::into_bytes;
-use crate::text::validate;
+use crate::text::validate_prefix;
 
 enum Loaded {
     Ok(ByteBuf), CapacityOverflow, AllocationFailed, MemoryLimit, IoError(i32)
@@ -140,21 +140,6 @@ fn stream_flag() -> bool {
     }
 }
 
-fn complete_prefix(input: &[u8]) -> i32 {
-    let checked = validate(&*input);
-    match checked {
-        Validation::Valid => { return input.len(); },
-        Validation::Invalid(offset) => {
-            let lead = input[offset];
-            let remaining = input.len() - offset;
-            if lead >= 194u8 && lead <= 223u8 && remaining < 2 { return offset; }
-            if lead >= 224u8 && lead <= 239u8 && remaining < 3 { return offset; }
-            if lead >= 240u8 && lead <= 244u8 && remaining < 4 { return offset; }
-            return -1;
-        },
-    }
-}
-
 fn write_chunk(input: &mut [u8], previous_cr: bool) -> i32 {
     let limit = input.len();
     let mut start = 0;
@@ -178,8 +163,13 @@ fn stream_chunks(buffer: &mut [u8]) -> i32 {
         match read {
             ReadSomeStatus::Data(count) => {
                 let extent = carry + count;
-                let prefix = complete_prefix(&*buffer[0..extent]);
-                if prefix < 0 { return 65; }
+                let checked = validate_prefix(&*buffer[0..extent]);
+                let mut prefix = extent;
+                match checked {
+                    PrefixValidation::Complete => {},
+                    PrefixValidation::Incomplete(offset) => { prefix = offset; },
+                    PrefixValidation::Invalid(offset) => { return 65; },
+                }
                 if prefix > 0 {
                     let last = buffer[prefix - 1];
                     let status = write_chunk(&mut *buffer[0..prefix], previous_cr);
