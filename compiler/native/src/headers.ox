@@ -33,6 +33,13 @@ use crate::model::file_status_binding;
 use crate::model::file_open_read_binding;
 use crate::model::file_read_binding;
 use crate::model::file_close_binding;
+use crate::model::file_create_binding;
+use crate::model::file_append_binding;
+use crate::model::file_write_binding;
+use crate::model::file_sync_binding;
+use crate::model::file_seek_binding;
+use crate::model::is_file_operation;
+use crate::model::file_open_operation;
 use crate::model::Token;
 use crate::model::function_visible;
 use crate::model::child_module;
@@ -331,12 +338,22 @@ fn file_import(c: &mut Compiler, item: Token) -> i32 {
     let open_read = b"open_read";
     let read_some = b"read_some";
     let close = b"close";
+    let create = b"create";
+    let append_name = b"open_append";
+    let write_some = b"write_some";
+    let sync_all = b"sync_all";
+    let seek_absolute = b"seek_absolute";
     if word(&*c.source, item.start, item.end, &file_type) { return file_owner_binding(); }
     if word(&*c.source, item.start, item.end, &open_result) { return file_open_result_binding(); }
     if word(&*c.source, item.start, item.end, &file_status) { return file_status_binding(); }
     if word(&*c.source, item.start, item.end, &open_read) { return file_open_read_binding(); }
     if word(&*c.source, item.start, item.end, &read_some) { return file_read_binding(); }
     if word(&*c.source, item.start, item.end, &close) { return file_close_binding(); }
+    if word(&*c.source, item.start, item.end, &create) { return file_create_binding(); }
+    if word(&*c.source, item.start, item.end, &append_name) { return file_append_binding(); }
+    if word(&*c.source, item.start, item.end, &write_some) { return file_write_binding(); }
+    if word(&*c.source, item.start, item.end, &sync_all) { return file_sync_binding(); }
+    if word(&*c.source, item.start, item.end, &seek_absolute) { return file_seek_binding(); }
     fail(&mut *c); return -1;
 }
 
@@ -463,10 +480,10 @@ fn register_file_types(c: &mut Compiler) -> () {
     for index in 0..len(&*c.imports) {
         let row = c.imports[index];
         let binding = row.path_start;
-        open = open || binding == file_open_read_binding() || binding == file_open_result_binding();
-        status = status || binding == file_close_binding() || binding == file_status_binding();
-        file = file || binding == file_owner_binding() || binding == file_read_binding()
-            || binding == file_close_binding();
+        open = open || file_open_operation(binding) >= 0 || binding == file_open_result_binding();
+        status = status || binding == file_close_binding() || binding == file_status_binding()
+            || binding == file_sync_binding() || binding == file_seek_binding();
+        file = file || binding == file_owner_binding() || is_file_operation(binding);
     }
     if file || open { c.file_owner = register_resource(&mut *c, file_owner_binding()); }
     if c.error == 0 && open { c.file_open_result = register_standard_status(&mut *c, file_open_result_binding()); }
@@ -485,7 +502,7 @@ fn register_standard_types(c: &mut Compiler) -> () {
         let binding = row.path_start;
         read = read || binding == read_some_binding() || binding == read_status_binding() || binding == file_read_binding();
         write = write || binding == write_some_binding() || binding == write_stderr_binding()
-            || binding == write_status_binding();
+            || binding == write_status_binding() || binding == file_write_binding();
         arguments = arguments || binding == argument_bytes_binding() || binding == argument_status_binding();
         buffers = buffers || binding == byte_buffer_binding() || is_byte_operation(binding);
         growth = growth || binding == growth_status_binding()

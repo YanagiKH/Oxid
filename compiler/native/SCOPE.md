@@ -54,6 +54,9 @@ Use `std::fs::open_read(&path)` with a byte path and match `OpenResult`.
 Call `std::fs::read_some(&mut file, &mut bytes)` to read data into a slice.
 The file closes when its owner goes out of scope. Use `std::fs::close`
 to close it earlier and check the result.
+Use `std::fs::create` to create or replace a file, or `open_append` to
+add to an existing file. Check how many bytes `write_some` wrote. Use
+`sync_all` to flush changes to storage and `seek_absolute` to change the byte offset.
 Use `for index in start..end { ... }` to iterate over matching integer bounds.
 The bounds evaluate once from left to right, and the end is excluded. The
 index is immutable and available inside the loop body.
@@ -157,8 +160,8 @@ Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-nested enums, other reference forms, generics, text strings, nested arrays,
-file writes and other integer types are unsupported.
+nested enums, other reference forms, generics, text strings, nested arrays
+and other integer types are unsupported.
 
 Declare `mod math;` in the entry file to load `math.ox`. Inside `math.ox`,
 `pub mod stats;` loads `math/stats.ox` and exposes it outside `math`.

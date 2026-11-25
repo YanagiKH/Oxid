@@ -379,6 +379,26 @@ pub fn file_status_binding() -> i32 { return -25; }
 pub fn file_open_read_binding() -> i32 { return -26; }
 pub fn file_read_binding() -> i32 { return -27; }
 pub fn file_close_binding() -> i32 { return -28; }
+pub fn file_create_binding() -> i32 { return -29; }
+pub fn file_append_binding() -> i32 { return -30; }
+pub fn file_write_binding() -> i32 { return -31; }
+pub fn file_sync_binding() -> i32 { return -32; }
+pub fn file_seek_binding() -> i32 { return -33; }
+pub fn is_file_operation(binding: i32) -> bool {
+    return binding >= file_seek_binding() && binding <= file_open_read_binding();
+}
+pub fn file_open_operation(binding: i32) -> i32 {
+    if binding == file_open_read_binding() { return 0; }
+    if binding == file_create_binding() { return 1; }
+    if binding == file_append_binding() { return 6; }
+    return -1;
+}
+pub fn file_transfer_operation(binding: i32) -> i32 {
+    if binding == file_read_binding() { return 2; }
+    if binding == file_write_binding() { return 3; }
+    if binding == file_sync_binding() { return 4; }
+    return 5;
+}
 pub fn is_file(c: &Compiler, ty: i32) -> bool {
     return c.file_owner >= 0 && ty == record_type(c.file_owner);
 }
