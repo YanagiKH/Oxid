@@ -29,6 +29,7 @@ LIBRARY = Path("packages/utf8_text")
 LOCATIONS = ("app", "contracts", "../../packages/utf8_text")
 CONTROLLERS = ("verify_utf8_text_app.py", "verify_owned_enum_app.py",
                "verify_typed_package_app.py", "verify_typed_package_lock.py")
+USAGE = b"Usage: utf8-normalize [--stream|--help] < input > output\n"
 LONG_INPUT = b"a\r\nb\r\x00" * 2049 + "\U0001f44b".encode()
 
 
@@ -210,13 +211,15 @@ class TextOracle(Oracle):
         indexes.append(self.partial_write(label, argv, cwd, overrides))
         return indexes
 
-    def invalid_stream_prefix(self, label, argv, cwd, payload, overrides):
+    def open_pipe(self, label, argv, cwd, payload, status, stdout, stderr, overrides):
         folder = self.output / "commands" / f"{len(self.commands):04d}-{label}"
         folder.mkdir()
         (folder / "stdin.bin").write_bytes(payload)
         row = {"label": label, "argv": [str(path) for path in argv], "cwd": str(cwd),
-               "receipt": str(folder), "status": "running", "expected_status": 65,
-               "stdin_was_open_until_exit": True, "environment_overrides": overrides or {}}
+               "receipt": str(folder), "status": "running", "expected_status": status,
+               "stdin_was_open_until_exit": True, "environment_overrides": overrides or {},
+               "expected_stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+               "expected_stderr_sha256": hashlib.sha256(stderr).hexdigest()}
         self.commands.append(row)
         try:
             with (folder / "stdout.bin").open("wb") as out, (folder / "stderr.bin").open("wb") as err:
@@ -230,9 +233,12 @@ class TextOracle(Oracle):
                         if child.poll() is None:
                             child.kill()
                             child.wait()
-            require(row["exit_status"] == 65 and not (folder / "stdout.bin").stat().st_size
-                    and not (folder / "stderr.bin").stat().st_size,
-                    label + ": malformed prefix must fail before the writer closes the pipe")
+            require(row["exit_status"] == status, label + ": process exit status differs")
+            for name, expected_bytes in (("stdout", stdout), ("stderr", stderr)):
+                path = folder / (name + ".bin")
+                require(path.stat().st_size == len(expected_bytes) and path.read_bytes() == expected_bytes,
+                        label + ": " + name + " differs")
+                row[name + "_sha256"] = digest(path)
             row["status"] = "passed"
             return len(self.commands) - 1
         except (OSError, ValueError, subprocess.TimeoutExpired) as error:
@@ -251,8 +257,8 @@ class TextOracle(Oracle):
                 ("overlong-three", b"\xe0\x80"), ("overlong-four", b"\xf0\x80"),
                 ("surrogate", b"\xed\xa0"), ("out-of-range", b"\xf4\x90"),
                 ("invalid-third", b"\xf0\x9fA")):
-            indexes.append(self.invalid_stream_prefix(
-                label + "-open-pipe-" + name, argv, cwd, b"abc" + invalid, overrides))
+            indexes.append(self.open_pipe(
+                label + "-open-pipe-" + name, argv, cwd, b"abc" + invalid, 65, b"", b"", overrides))
         for name, options in (
                 ("directory-input", {"directory_stdin": True}),
                 ("full-output", {"payload": LONG_INPUT, "full_stdout": True})):
@@ -260,6 +266,13 @@ class TextOracle(Oracle):
                                     overrides=overrides, **options)
             indexes.append(index)
         return indexes
+
+    def arguments(self, label, argv, cwd, overrides=None):
+        for name, args, status in (
+                ("help", ["--help"], 0), ("unknown", ["--unknown"], 64),
+                ("empty", [""], 64), ("extra", ["--stream", "--help"], 64)):
+            self.open_pipe(label + "-" + name, [*argv, *args], cwd, b"", status,
+                           USAGE if status == 0 else b"", USAGE if status else b"", overrides)
 
     def large_stream(self, binary, cwd):
         limit = 32 * 1024 * 1024
@@ -523,6 +536,8 @@ def verify(args):
                     and rows[0].get("name") == "utf8" and rows[0].get("stdout") == rows[0].get("stderr") == "",
                     "API checks did not pass through oxid test")
             oracle.cases(prefix + "-reference", [retained, "run", "--frozen"], project / "app", oracle.no_tools())
+            oracle.arguments(prefix + "-reference-args", [retained, "run", "--frozen", "--"],
+                             project / "app", oracle.no_tools())
             oracle.streaming(prefix + "-reference-stream", [retained, "run", "--frozen", "--", "--stream"],
                              project / "app", oracle.no_tools())
             require(not oracle.marker.exists(), "reference commands invoked native tools")
@@ -573,6 +588,7 @@ def verify(args):
                     empty = output / (prefix + "-" + profile + "-empty")
                     empty.mkdir()
                     indexes = oracle.cases(binary.name + "-deployed", [binary], empty, complete_unicode=True)
+                    oracle.arguments(binary.name + "-deployed-args", [binary], empty)
                     stream_indexes = oracle.streaming(binary.name + "-deployed-stream", [binary, "--stream"], empty)
                     large_stream = oracle.large_stream(binary, empty)
                     oracle.command(contract.name + "-deployed", [contract], empty, stdout=b"0\n")

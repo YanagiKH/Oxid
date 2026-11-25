@@ -16,7 +16,7 @@ oxid build -p app --profile=release --frozen
 app/.oxid/bin/utf8-normalize < input.txt > output.txt
 ```
 
-Native builds require Linux x86_64 and LLVM 19.1.7. Set `OXID_LLVM_BIN` to the
+Native builds require Linux x86_64 or ARM64 and LLVM 19.1.7. Set `OXID_LLVM_BIN` to the
 directory containing `clang`, `opt`, and `ld.lld` if needed. The executable can
 be copied elsewhere and run without Oxid or the application sources.
 
@@ -43,7 +43,8 @@ status before using the file.
 
 | Exit status | Meaning |
 | --- | --- |
-| 0 | All normalized text was written. |
+| 0 | All normalized text was written, or `--help` printed usage. |
+| 64 | An argument was unrecognized or extra arguments were supplied. |
 | 65 | The input is not valid UTF-8. |
 | 70 | Buffer capacity would overflow. |
 | 71 | Allocation failed or the memory limit was reached. |
