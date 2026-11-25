@@ -1,11 +1,15 @@
-# Self-hosting status and artifact round-trip
+# Build the compiler written in Oxid
 
-Oxid 0.9 does not independently compile its compiler. Release users can run the
-standalone Rust-built `oxid` executable without installing Rust; rebuilding that
-host implementation still requires Rust and a C/C++ compiler. These are separate
-capabilities.
+The compiler in `compiler/native` accepts a subset of Oxid and emits LLVM on
+Linux and macOS. Build it with the development version of `oxid`. Its offline
+kit can rebuild the same compiler with Python, Clang and LLD. See the
+[build commands and supported syntax](../compiler/native/SCOPE.md).
 
-## What the existing command verifies
+The published Oxid 0.9 executable uses the Rust implementation. Run the
+downloaded executable directly. Rebuilding that implementation requires Rust and
+a C/C++ compiler.
+
+## What `oxid bootstrap` verifies
 
 1. The Rust frontend parses `stdlib/frontend/bytecode.ox` and `compiler/main.ox`.
 2. Rust's OXBC writer serializes that AST to the file historically called stage 0.

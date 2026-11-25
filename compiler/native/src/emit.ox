@@ -1422,6 +1422,20 @@ fn time_preamble(c: &mut Compiler) -> () {
     return;
 }
 
+fn termination_scope_preamble(c: &mut Compiler) -> () {
+    let scope = b"declare i32 @__oxid_termination_scope_start()\ndeclare void @__oxid_termination_scope_end()\n";
+    append(&mut *c, 0, &scope);
+    return;
+}
+
+fn termination_operations_preamble(c: &mut Compiler) -> () {
+    let flags = b"declare i32 @__oxid_enable_termination_notifications()\ndeclare i32 @__oxid_termination_requested()\n";
+    let waits = b"declare i32 @__oxid_wait_for_termination(i32)\ndeclare i32 @__oxid_wait_for_stdin(i32)\n";
+    append(&mut *c, 0, &flags);
+    append(&mut *c, 0, &waits);
+    return;
+}
+
 pub fn clock_millis(c: &mut Compiler, wall_clock: bool) -> Value {
     let prefix = b"  %v";
     let monotonic = b" = call i64 @__oxid_monotonic_millis()\n";
@@ -1433,19 +1447,51 @@ pub fn clock_millis(c: &mut Compiler, wall_clock: bool) -> Value {
     return Value { ty: 5, id: id };
 }
 
-pub fn sleep_millis(c: &mut Compiler, duration: Value) -> Value {
+fn runtime_flag(c: &mut Compiler, status: i32) -> Value {
     let prefix = b"  %v";
-    let sleep = b" = call i32 @__oxid_sleep_millis(i32 ";
-    let suffix = b")\n";
     let compare = b" = icmp ne i32 %v";
     let zero = b", 0\n";
-    let status = fresh(&mut *c);
-    append(&mut *c, 2, &prefix); number(&mut *c, 2, status);
-    append(&mut *c, 2, &sleep); operand(&mut *c, 2, duration); append(&mut *c, 2, &suffix);
     let id = fresh(&mut *c);
     append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
     append(&mut *c, 2, &compare); number(&mut *c, 2, status); append(&mut *c, 2, &zero);
     return Value { ty: 2, id: id };
+}
+
+fn runtime_wait_call(c: &mut Compiler, function: &[u8], duration: Value) -> Value {
+    let prefix = b"  %v";
+    let suffix = b")\n";
+    let status = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, status);
+    append(&mut *c, 2, &*function); operand(&mut *c, 2, duration); append(&mut *c, 2, &suffix);
+    return runtime_flag(&mut *c, status);
+}
+
+pub fn sleep_millis(c: &mut Compiler, duration: Value) -> Value {
+    let sleep = b" = call i32 @__oxid_sleep_millis(i32 ";
+    return runtime_wait_call(&mut *c, &sleep, duration);
+}
+
+pub fn termination_wait(c: &mut Compiler, duration: Value, stdin: bool) -> Value {
+    if stdin {
+        let input = b" = call i32 @__oxid_wait_for_stdin(i32 ";
+        return runtime_wait_call(&mut *c, &input, duration);
+    }
+    let notice = b" = call i32 @__oxid_wait_for_termination(i32 ";
+    return runtime_wait_call(&mut *c, &notice, duration);
+}
+
+pub fn termination_flag(c: &mut Compiler, enable: bool) -> Value {
+    let prefix = b"  %v";
+    let status = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, status);
+    if enable {
+        let install = b" = call i32 @__oxid_enable_termination_notifications()\n";
+        append(&mut *c, 2, &install);
+    } else {
+        let requested = b" = call i32 @__oxid_termination_requested()\n";
+        append(&mut *c, 2, &requested);
+    }
+    return runtime_flag(&mut *c, status);
 }
 
 fn heap_lifetime_declarations(c: &mut Compiler) -> () {
@@ -1651,6 +1697,10 @@ fn preamble_resources(c: &mut Compiler) -> () {
     if c.uses_argument_bytes { argument_bytes_preamble(&mut *c); }
     if c.uses_binary_io { binary_io_preamble(&mut *c); }
     if c.uses_time { time_preamble(&mut *c); }
+    if c.uses_termination {
+        termination_scope_preamble(&mut *c);
+        termination_operations_preamble(&mut *c);
+    }
     if uses_heap(&*c) { heap_lifetime_declarations(&mut *c); }
     if c.byte_buffer >= 0 { byte_buffer_preamble(&mut *c); }
     if c.file_owner >= 0 { file_preamble(&mut *c); file_seek_preamble(&mut *c); }
@@ -1800,6 +1850,18 @@ fn process_setup(c: &mut Compiler) -> () {
     append(&mut *c, 0, &setup); append(&mut *c, 0, &edges);
     return;
 }
+fn termination_scope_start(c: &mut Compiler) -> () {
+    let start = b"%signal_status = call i32 @__oxid_termination_scope_start()\n  %signal_ready = icmp eq i32 %signal_status, 0\n";
+    let edges = b"  br i1 %signal_ready, label %signal_scope, label %setup_error\nsignal_scope:\n  ";
+    append(&mut *c, 0, &start);
+    append(&mut *c, 0, &edges);
+    return;
+}
+fn termination_scope_end(c: &mut Compiler) -> () {
+    let finish = b"  call void @__oxid_termination_scope_end()\n";
+    append(&mut *c, 0, &finish);
+    return;
+}
 fn process_exit(c: &mut Compiler) -> () {
     let check = b"  %accepted = icmp ule i32 %value, 255\n  br i1 %accepted, label %exit, label %bad_status\n";
     let failure = b"bad_status:\n  call void @__oxid_overflow(ptr @status_error, i64 44)\n  unreachable\n";
@@ -1827,29 +1889,35 @@ fn heap_lifetime(c: &mut Compiler, start: bool) -> () {
     }
     return;
 }
-pub fn wrapper(c: &mut Compiler) -> () {
+fn print_result(c: &mut Compiler, ty: i32) -> () {
     let print_long = b"  %status = call i32 @__oxid_print_i64(i64 %value)\n";
     let print_character = b"  %status = call i32 @__oxid_print_char(i32 %value)\n";
     let print_unsigned = b"  %wide = zext i32 %value to i64\n  %status = call i32 @__oxid_print_u64(i64 %wide)\n";
+    if ty == 1 { wrapper_text_5_0(&mut *c); }
+    if ty == 2 { wrapper_text_6_0(&mut *c); }
+    if ty == 3 { wrapper_text_7_0(&mut *c); }
+    if ty == 4 { wrapper_byte_result(&mut *c); }
+    if ty == 5 { append(&mut *c, 0, &print_long); }
+    if ty == 6 { append(&mut *c, 0, &print_character); }
+    if ty == 7 { append(&mut *c, 0, &print_unsigned); }
+    return;
+}
 
+pub fn wrapper(c: &mut Compiler) -> () {
     let entry = c.main;
     let f = c.functions[entry];
     wrapper_text_0_0(&mut *c);
     if c.process_entry { process_setup(&mut *c); }
+    if c.uses_termination { termination_scope_start(&mut *c); }
     if c.uses_argument_count { install_argument_count(&mut *c); }
     heap_lifetime(&mut *c, true);
     if f.result != 3 { wrapper_text_1_0(&mut *c); }
     wrapper_text_2_0(&mut *c); write_type(&mut *c, 0, f.result, true);
     wrapper_text_3_0(&mut *c); number(&mut *c, 0, entry); wrapper_text_4_0(&mut *c);
     heap_lifetime(&mut *c, false);
+    if c.uses_termination { termination_scope_end(&mut *c); }
     if c.process_entry { process_exit(&mut *c); return; }
-    if f.result == 1 { wrapper_text_5_0(&mut *c); }
-    if f.result == 2 { wrapper_text_6_0(&mut *c); }
-    if f.result == 3 { wrapper_text_7_0(&mut *c); }
-    if f.result == 4 { wrapper_byte_result(&mut *c); }
-    if f.result == 5 { append(&mut *c, 0, &print_long); }
-    if f.result == 6 { append(&mut *c, 0, &print_character); }
-    if f.result == 7 { append(&mut *c, 0, &print_unsigned); }
+    print_result(&mut *c, f.result);
     wrapper_text_8_0(&mut *c);
     return;
 }

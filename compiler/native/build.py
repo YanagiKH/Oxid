@@ -168,6 +168,8 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
             command.append("-fuse-ld=lld")
         if runtime == DEFAULT_RUNTIME and b"\ndeclare i64 @__oxid_monotonic_millis()\n" in module:
             command.append("-DOXID_SCALAR_TIME")
+        if runtime == DEFAULT_RUNTIME and b"\ndeclare i32 @__oxid_termination_scope_start()\n" in module:
+            command.append("-DOXID_SCALAR_TERMINATION")
         if runtime == DEFAULT_RUNTIME and b"\ndeclare void @__oxid_bytebuf_start()\n" in module:
             command.append("-DOXID_SCALAR_HEAP")
             if b"\n@__oxid_record_vector_schemas = " in module:
