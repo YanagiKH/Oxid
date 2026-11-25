@@ -516,6 +516,22 @@ impl Workspace {
     pub(super) fn execute(&self, options: &Options) -> Result<i32, String> {
         options.validate_lock_options()?;
         let selected = self.selected(options)?;
+        let documentation_version = if options.versioned_docs {
+            let [index] = selected.as_slice() else {
+                return Err("versioned docs require one package; select it with --package".into());
+            };
+            let version = documentation::version(&self.members[*index].snapshot.manifest)?;
+            if self.members.iter().enumerate().any(|(other, member)| {
+                other != *index && version.matches(&member.snapshot.manifest)
+            }) {
+                return Err(
+                    "two workspace members share this documentation name and version".into(),
+                );
+            }
+            Some(version)
+        } else {
+            None
+        };
         if options.command() == "test" {
             options.test_parallelism()?;
         }
@@ -685,7 +701,7 @@ impl Workspace {
                     &mut remaining,
                 )?);
             }
-            return documentation::publish(&self.root, &pages, options);
+            return documentation::publish(&self.root, &pages, documentation_version, options);
         }
         if test_child {
             let index = selected[0];

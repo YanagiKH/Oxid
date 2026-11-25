@@ -36,6 +36,7 @@ struct Options {
     frozen: bool,
     update: bool,
     workspace: bool,
+    versioned_docs: bool,
     package: Option<String>,
     workspace_option_error: Option<String>,
     lock_option_error: Option<String>,
@@ -164,6 +165,7 @@ impl Options {
                 "--frozen" => Some(&mut result.frozen),
                 "--update" => Some(&mut result.update),
                 "--workspace" => Some(&mut result.workspace),
+                "--versioned" if result.command() == "doc" => Some(&mut result.versioned_docs),
                 _ => None,
             };
             if let Some(flag) = flag {
@@ -295,6 +297,13 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             true,
         ));
     }
+    if options.edition.as_deref() == Some("legacy-0.9") && options.versioned_docs {
+        return Some(report_error(
+            &options,
+            "versioned docs require a typed project",
+            false,
+        ));
+    }
     if options.invalid || options.edition.as_deref() == Some("legacy-0.9") {
         return None;
     }
@@ -388,7 +397,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             // this request, including its JSON and process stderr contracts.
             return None;
         }
-        return if explicit {
+        return if explicit || options.versioned_docs {
             Some(report_error(
                 &options,
                 "typed-preview project commands require an oxid.toml manifest",
@@ -400,16 +409,21 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
     };
     if !explicit {
         match runtime::manifest_edition(&manifest_path) {
-            Ok(None) => return None,
-            Ok(Some(edition)) if edition == "legacy-0.9" => return None,
-            Ok(Some(edition)) if edition == "typed-preview" => {}
-            Ok(Some(edition)) => {
-                return Some(report_error(
-                    &options,
-                    &format!("unknown manifest edition `{edition}`; expected legacy-0.9 or typed-preview"),
-                    false,
-                ));
-            }
+            Ok(edition) => match edition.as_deref() {
+                None | Some("legacy-0.9") => {
+                    return options.versioned_docs.then(|| {
+                        report_error(&options, "versioned docs require a typed project", false)
+                    });
+                }
+                Some("typed-preview") => {}
+                Some(edition) => {
+                    return Some(report_error(
+                        &options,
+                        &format!("unknown manifest edition `{edition}`; expected legacy-0.9 or typed-preview"),
+                        false,
+                    ));
+                }
+            },
             Err(error) => return Some(report_error(&options, &error, false)),
         }
     }
