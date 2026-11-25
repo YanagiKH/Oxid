@@ -102,10 +102,14 @@ pub fn validate_prefix(input: &[u8]) -> PrefixValidation {
     let mut offset = 0;
     let length = input.len();
     while offset < length {
-        let width = scalar_width(&*input, offset);
-        if width == 0 { return PrefixValidation::Invalid(offset); }
-        if width < 0 { return PrefixValidation::Incomplete(offset); }
-        offset = offset + width;
+        if input[offset] < 128u8 {
+            offset = offset + 1;
+        } else {
+            let width = scalar_width(&*input, offset);
+            if width == 0 { return PrefixValidation::Invalid(offset); }
+            if width < 0 { return PrefixValidation::Incomplete(offset); }
+            offset = offset + width;
+        }
     }
     return PrefixValidation::Complete;
 }
