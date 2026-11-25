@@ -140,3 +140,27 @@ pub(in crate::frontend) fn supported_host() -> bool {
 pub(in crate::frontend) fn entry_supported_host() -> bool {
     supported_host() || crate::frontend::build_config::NativeBuildSettings::windows_msvc_host()
 }
+
+pub(super) fn termination_supported(
+    operation: crate::frontend::builtin_catalog::termination::Function,
+) -> bool {
+    use crate::frontend::builtin_catalog::termination::Function;
+
+    if operation == Function::WaitStdin {
+        supported_host()
+    } else {
+        entry_supported_host()
+    }
+}
+
+pub(super) fn termination_host_requirement(
+    operation: crate::frontend::builtin_catalog::termination::Function,
+) -> &'static str {
+    use crate::frontend::builtin_catalog::termination::Function;
+
+    if operation == Function::WaitStdin {
+        "standard input readiness requires Linux or macOS on x86_64 or ARM64"
+    } else {
+        "termination notifications require Linux or macOS on x86_64 or ARM64, or Windows MSVC x64"
+    }
+}

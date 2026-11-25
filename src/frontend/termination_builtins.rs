@@ -50,18 +50,6 @@ impl Function {
             _ => Ty::Bool,
         }
     }
-    pub fn supported_host(self) -> bool {
-        crate::frontend::oir::process::supported_host()
-            || (self != Self::WaitStdin
-                && super::super::build_config::NativeBuildSettings::windows_msvc_host())
-    }
-    pub fn host_requirement(self) -> &'static str {
-        if self == Self::WaitStdin {
-            "standard input readiness requires Linux or macOS on x86_64 or ARM64"
-        } else {
-            "termination notifications require Linux or macOS on x86_64 or ARM64, or Windows MSVC x64"
-        }
-    }
     pub fn operation(self) -> experimental::Function {
         match self {
             Self::Enable => experimental::Function::EnableTermination,
