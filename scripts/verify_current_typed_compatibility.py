@@ -15,9 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "369c451a1e2dbcd8759d2058c4bef81a4a0b2983"
-REVIEWED_PARENTS = ("a02d64b1e3b8913007b70028dd90d565bd6bf753",)
-REVIEWED_TREE = "de40f1ef505aa25bf1b29e0caf94185b8c6a6b6b"
+REVIEWED_SOURCE = "8ac405a3d282e4375a8d8b9cf6b8c7eb2bcc2c47"
+REVIEWED_PARENTS = ("369c451a1e2dbcd8759d2058c4bef81a4a0b2983",)
+REVIEWED_TREE = "52552face09806bfc43c3dd3a757175322d8f0c8"
 PUBLIC_TESTS = {
     "tests/file_open_append.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
@@ -74,11 +74,11 @@ def reviewed_delta(repo):
             "wrong reviewed integrated typed source")
     raw = git(repo, "diff", "--name-status", "--no-renames", "-z", PREDECESSOR, REVIEWED_SOURCE)
     words = raw.decode("utf-8").split("\0")
-    require(words[-1] == "" and len(words) == 311, "invalid reviewed compiler delta")
+    require(words[-1] == "" and len(words) == 315, "invalid reviewed compiler delta")
     rows = list(zip(words[:-1:2], words[1:-1:2]))
     added = {name for status, name in rows if status == "A"}
     modified = {name for status, name in rows if status == "M"}
-    require(len(added) == 28 and len(modified) == 127 and not added & modified,
+    require(len(added) == 28 and len(modified) == 129 and not added & modified,
             "wrong reviewed compiler delta membership")
     require(PUBLIC_TESTS <= added and PUBLIC_TEST_UPDATES | PUBLIC_VECTOR_UPDATES <= modified
             and all(name.startswith(("src/", "native/"))
