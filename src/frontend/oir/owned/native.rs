@@ -61,6 +61,7 @@ const MAX_COST: usize = 100_000;
 const MAX_NATIVE_BYTES: usize = 1024 * 1024;
 const MAX_DIAGNOSTIC_BYTES: usize = 16 * 1024 * 1024;
 const MAX_IR_BYTES: usize = 64 * 1024 * 1024;
+const MAX_HOSTED_IR_BYTES: usize = 128 * 1024 * 1024;
 
 fn reject(message: impl Into<String>, span: Option<Span>) -> Box<Diagnostic> {
     Diagnostic::new("E0700", "native-admission", message, span)
@@ -291,6 +292,7 @@ impl Limits {
                 blocks: super::super::native::MAX_HOSTED_BLOCKS,
                 inventory_items: MAX_HOSTED_NATIVE_INVENTORY_ITEMS,
                 owner_width: MAX_HOSTED_NATIVE_OWNER_WIDTH,
+                ir_bytes: MAX_HOSTED_IR_BYTES,
                 ..Self::DEFAULT
             }
         } else {
