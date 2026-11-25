@@ -323,6 +323,68 @@ fn workspace_selection_generates_one_page_and_later_errors_preserve_it() {
 }
 
 #[test]
+fn versioned_pages_keep_previous_releases_and_the_default_page() {
+    let p = Project::new();
+    p.library("", "math", "", "pub fn first() -> i32 { return 1; }");
+    success(p.run(&["lock"]));
+    success(p.run(&["doc", "--frozen"]));
+    let default_page = p.page();
+    let output = success(p.run(&["doc", "--versioned", "--frozen", "--message-format=json"]));
+    let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let old_path = p.0.join(".oxid/doc/versions/math/1.2.3/index.html");
+    assert_eq!(
+        PathBuf::from(summary["path"].as_str().unwrap())
+            .canonicalize()
+            .unwrap(),
+        old_path.canonicalize().unwrap()
+    );
+    let old_page = fs::read_to_string(&old_path).unwrap();
+    assert_eq!(old_page, default_page);
+
+    let manifest = p.0.join("oxid.toml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    fs::write(&manifest, original.replace("1.2.3", "2.0.0-rc.1")).unwrap();
+    p.write("src/lib.ox", "pub fn second() -> i32 { return 2; }");
+    success(p.run(&["lock", "--update"]));
+    success(p.run(&["doc", "--versioned", "--frozen"]));
+    let new_path = p.0.join(".oxid/doc/versions/math/2.0.0-rc.1/index.html");
+    let new_page = fs::read_to_string(&new_path).unwrap();
+    assert!(new_page.contains("math 2.0.0-rc.1") && new_page.contains("pub fn second"));
+    assert_eq!(fs::read_to_string(&old_path).unwrap(), old_page);
+    assert_eq!(p.page(), default_page);
+
+    fs::write(&manifest, original.replace("1.2.3", "1.2.3/escape")).unwrap();
+    failure(p.run(&["doc", "--versioned"]));
+    assert_eq!(fs::read_to_string(new_path).unwrap(), new_page);
+    assert_eq!(p.page(), default_page);
+    assert!(!p.0.join(".oxid/doc/versions/math/1.2.3/escape").exists());
+}
+
+#[test]
+fn versioned_workspace_docs_use_the_selected_package_identity() {
+    let p = Project::new();
+    p.write(
+        "oxid.toml",
+        "[workspace]\nedition=\"typed-preview\"\nmembers=[\"one\",\"two\"]\n",
+    );
+    p.library("one/", "one", "", "pub fn first() -> i32 { return 1; }");
+    p.library("two/", "two", "", "pub fn second() -> i32 { return 2; }");
+    failure(p.run(&["doc", "--versioned", "--workspace"]));
+    p.no_page();
+    success(p.run(&["doc", "--versioned", "--package", "two"]));
+    let page = fs::read_to_string(p.0.join(".oxid/doc/versions/two/1.2.3/index.html")).unwrap();
+    assert!(page.contains("two 1.2.3") && page.contains("pub fn second"));
+    assert!(!p.0.join(".oxid/doc/index.html").exists());
+    assert!(!p.0.join(".oxid/doc/versions/one").exists());
+    p.library("one/", "two", "", "pub fn first() -> i32 { return 1; }");
+    failure(p.run(&["doc", "--versioned", "--package", "one"]));
+    assert_eq!(
+        fs::read_to_string(p.0.join(".oxid/doc/versions/two/1.2.3/index.html")).unwrap(),
+        page
+    );
+}
+
+#[test]
 fn docs_never_run_the_program_or_overwrite_source_documentation() {
     let p = Project::new();
     p.write(

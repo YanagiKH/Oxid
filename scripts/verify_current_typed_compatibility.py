@@ -15,20 +15,22 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "8ac405a3d282e4375a8d8b9cf6b8c7eb2bcc2c47"
-REVIEWED_PARENTS = ("369c451a1e2dbcd8759d2058c4bef81a4a0b2983",)
-REVIEWED_TREE = "52552face09806bfc43c3dd3a757175322d8f0c8"
+REVIEWED_SOURCE = "cb29b3ee6a6597af68c6706c1ed97c9491d6599b"
+REVIEWED_PARENTS = ("c20ce6b0040f5c0a9dc0713081272c039e57bd8f",)
+REVIEWED_TREE = "d5e6646b4bfa6a1babb1d060c07063c36a902013"
 PUBLIC_TESTS = {
     "tests/file_open_append.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
     "tests/typed_owned_record_element_loans.rs", "tests/typed_registry_ranges.rs",
     "tests/windows_file_io.rs", "tests/windows_file_runtime.c",
 }
-PUBLIC_TEST_UPDATES = {"tests/typed_frontend.rs", "tests/typed_language_server.rs"}
+PUBLIC_TEST_UPDATES = {"tests/typed_frontend.rs", "tests/typed_language_server.rs",
+                       "tests/typed_documentation.rs"}
 PUBLIC_VECTOR_UPDATES = {
     "examples/owned-vector-results/src/main.ox",
     "packages/owned_vec/src/lib.ox",
 }
+PUBLIC_TEXT_UPDATES = {"packages/utf8_text/src/lib.ox"}
 SOURCE_ROOTS = ("src", "native")
 RESOURCE_ADAPTER = "scripts/process_termination_resource_adapter.py"
 RESOURCE_ADAPTER_PIN = (3196, "d6b3bcd1bd0c958e4a2164d66425a231c086ba1f767657ea9c6ac360473aad0d")
@@ -74,15 +76,16 @@ def reviewed_delta(repo):
             "wrong reviewed integrated typed source")
     raw = git(repo, "diff", "--name-status", "--no-renames", "-z", PREDECESSOR, REVIEWED_SOURCE)
     words = raw.decode("utf-8").split("\0")
-    require(words[-1] == "" and len(words) == 315, "invalid reviewed compiler delta")
+    require(words[-1] == "" and len(words) == 319, "invalid reviewed compiler delta")
     rows = list(zip(words[:-1:2], words[1:-1:2]))
     added = {name for status, name in rows if status == "A"}
     modified = {name for status, name in rows if status == "M"}
-    require(len(added) == 28 and len(modified) == 129 and not added & modified,
+    require(len(added) == 28 and len(modified) == 131 and not added & modified,
             "wrong reviewed compiler delta membership")
-    require(PUBLIC_TESTS <= added and PUBLIC_TEST_UPDATES | PUBLIC_VECTOR_UPDATES <= modified
+    updates = PUBLIC_TEST_UPDATES | PUBLIC_VECTOR_UPDATES | PUBLIC_TEXT_UPDATES
+    require(PUBLIC_TESTS <= added and updates <= modified
             and all(name.startswith(("src/", "native/"))
-                    for name in (added | modified) - PUBLIC_TESTS - PUBLIC_TEST_UPDATES - PUBLIC_VECTOR_UPDATES),
+                    for name in (added | modified) - PUBLIC_TESTS - updates),
             "unexpected reviewed compiler path")
     return added, modified
 

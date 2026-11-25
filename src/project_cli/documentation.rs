@@ -27,6 +27,54 @@ pub(super) fn fragment(
     Ok(fragment)
 }
 
+pub(super) struct Version<'a> {
+    name: &'a str,
+    version: &'a str,
+}
+
+impl Version<'_> {
+    pub(super) fn matches(&self, manifest: &runtime::ProjectManifest) -> bool {
+        manifest
+            .name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(self.name))
+            && manifest
+                .version
+                .as_deref()
+                .is_some_and(|version| version.eq_ignore_ascii_case(self.version))
+    }
+}
+
+pub(super) fn version(manifest: &runtime::ProjectManifest) -> Result<Version<'_>, String> {
+    let name = manifest
+        .name
+        .as_deref()
+        .filter(|name| {
+            !name.is_empty()
+                && name.len() <= 128
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+                && !frontend::NativeBuildSettings::windows_device_name(name)
+        })
+        .ok_or(
+            "versioned docs require a package name with letters, digits, underscores or hyphens",
+        )?;
+    let version = manifest
+        .version
+        .as_deref()
+        .filter(|version| {
+            version.len() <= 128
+                && version.as_bytes().first().is_some_and(u8::is_ascii_digit)
+                && !version.ends_with('.')
+                && version
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b".-+".contains(&byte))
+        })
+        .ok_or("versioned docs require a version such as 1.2.3 or 1.2.3-rc.1")?;
+    Ok(Version { name, version })
+}
+
 pub(super) fn command(
     root: &Path,
     snapshot: &runtime::ManifestSnapshot,
@@ -35,6 +83,10 @@ pub(super) fn command(
     if options.words.len() != 1 || options.entry_mode.is_some() || options.project_test.is_some() {
         return Err("typed doc accepts edition, message-format and locking options only".into());
     }
+    let version = options
+        .versioned_docs
+        .then(|| version(&snapshot.manifest))
+        .transpose()?;
     let (existing, graph) = project_operation_graph(
         root,
         snapshot,
@@ -49,7 +101,7 @@ pub(super) fn command(
     project_lock::verify(&lock_snapshot(&graph, &prepared)?, existing.as_ref())?;
     let mut capacity = remaining();
     let page = fragment(&prepared, &snapshot.manifest, &mut capacity)?;
-    publish(root, &[page], options)
+    publish(root, &[page], version, options)
 }
 
 fn directory(path: &Path) -> Result<(), String> {
@@ -74,7 +126,12 @@ impl Drop for Temporary {
     }
 }
 
-pub(super) fn publish(root: &Path, fragments: &[String], options: &Options) -> Result<i32, String> {
+pub(super) fn publish(
+    root: &Path,
+    fragments: &[String],
+    version: Option<Version<'_>>,
+    options: &Options,
+) -> Result<i32, String> {
     let length = fragments
         .iter()
         .try_fold(PREFIX.len() + SUFFIX.len(), |length, fragment| {
@@ -86,8 +143,14 @@ pub(super) fn publish(root: &Path, fragments: &[String], options: &Options) -> R
     }
     let base = root.join(".oxid");
     directory(&base)?;
-    let output = base.join("doc");
+    let mut output = base.join("doc");
     directory(&output)?;
+    if let Some(Version { name, version }) = version {
+        for component in ["versions", name, version] {
+            output.push(component);
+            directory(&output)?;
+        }
+    }
     let index = output.join("index.html");
     match fs::symlink_metadata(&index) {
         Ok(metadata) if metadata.file_type().is_file() => {}
