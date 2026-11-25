@@ -324,7 +324,7 @@ pub(super) fn editor_definition(
         }
     };
     let sources = prepared.project().sources();
-    let location = super::editor::navigation::definition(owner, sources, path, offset)
+    let location = super::editor::navigation::definition(owner, prepared.project(), path, offset)
         .map_err(|errors| super::editor::diagnostics(sources, &errors))?;
     Ok(super::editor::EditorDefinition {
         location,

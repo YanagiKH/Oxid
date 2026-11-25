@@ -134,9 +134,10 @@ resolved offline; prepare Git dependencies with ordinary project commands first.
 Manifests and lockfiles are read from disk. Diagnostics reflect editor source
 buffers and do not replace `oxid check --frozen` for saved-input verification.
 Use Go to Definition on a named type, a record or field in a constructor or
-destructuring pattern, or a variant in a constructor or `match` arm. Type
-arguments and type parameters also link to their declarations. Navigation follows
-visible imports and reads unsaved source. See the [language server contract](../rfcs/0065-typed-language-server.md)
+destructuring pattern, or a variant in a constructor or `match` arm. In a
+type-correct project, you can also jump to each field in a read or assignment
+such as `settings.display.width`. Type arguments and type parameters link to
+their declarations. Navigation follows visible imports and reads unsaved source. See the [language server contract](../rfcs/0065-typed-language-server.md)
 and [navigation scope](../rfcs/0066-editor-symbol-navigation.md).
 
 ## Generate API documentation

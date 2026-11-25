@@ -923,6 +923,82 @@ fn record_constructor_and_pattern_fields_navigate_to_their_visible_declarations(
     p.unchanged();
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn field_access_definitions_follow_typed_projections_and_unsaved_declarations() {
+    let p = Project::new();
+    let main = "mod shapes;use crate::shapes::Outer as Root;
+struct Other{value:i32}
+fn read(root:&Root)->i32{return root.inner.value;}
+fn main()->i32{let mut root=Root{inner:crate::shapes::Inner{value:0}};root.inner.value=42;return read(&root);}";
+    p.package("", "app", "", main);
+    let declared = "pub struct Inner{pub value:i32}\npub struct Outer{pub inner:Inner}\n";
+    p.write("src/shapes.ox", declared);
+    let path = p.uri("src/main.ox");
+    let library = p.uri("src/shapes.ox");
+    let mut c = Client::spawn(&p, false);
+    c.initialize(&p);
+    c.open(&path, main);
+    let unsaved = format!("\n{declared}").replace("pub value", "/* 🦀 */ pub value");
+    c.open(&library, &unsaved);
+    c.clean(&path);
+    for (needle, declaration, width) in [
+        ("inner.value;", "inner:Inner", 5),
+        ("value;", "value:i32", 5),
+        ("inner.value=42", "inner:Inner", 5),
+        ("value=42", "value:i32", 5),
+    ] {
+        let result = c.request(
+            "textDocument/definition",
+            json!({"textDocument":{"uri":path},"position":position_at(main,needle)}),
+        );
+        let start = position_at(&unsaved, declaration);
+        let mut end = start.clone();
+        end["character"] = json!(start["character"].as_u64().unwrap() + width);
+        assert_eq!(
+            result["result"],
+            json!([{"uri":library,"range":{"start":start,"end":end}}]),
+            "{needle}: {result}"
+        );
+    }
+    let hidden = unsaved.replace("pub value", "value");
+    c.change(&library, 2, json!([{"text":hidden}]));
+    let result = c.request(
+        "textDocument/definition",
+        json!({"textDocument":{"uri":path},"position":position_at(main,"value;")}),
+    );
+    assert!(result.get("error").is_none(), "{result}");
+    assert_eq!(result.get("result"), Some(&Value::Null));
+    c.finish();
+    p.unchanged();
+}
+
+#[test]
+fn field_access_definition_uses_original_generic_field_name() {
+    let p = Project::new();
+    let text = "struct Item<T>{value:T}\nfn get(item:&Item<i32>)->i32{return item.value;}\nfn main()->i32{let item=Item::<i32>{value:42};return get(&item);}";
+    p.write("main.ox", text);
+    let path = p.uri("main.ox");
+    let mut c = Client::spawn(&p, true);
+    c.initialize(&p);
+    c.open(&path, text);
+    c.clean(&path);
+    let result = c.request(
+        "textDocument/definition",
+        json!({"textDocument":{"uri":path},"position":position_at(text,"value;")}),
+    );
+    let start = position_at(text, "value:T");
+    let mut end = start.clone();
+    end["character"] = json!(start["character"].as_u64().unwrap() + 5);
+    assert_eq!(
+        result["result"],
+        json!([{"uri":path,"range":{"start":start,"end":end}}]),
+        "{result}"
+    );
+    c.finish();
+    p.unchanged();
+}
+
 #[test]
 fn variant_definitions_follow_generic_construction_and_match_patterns() {
     let p = Project::new();

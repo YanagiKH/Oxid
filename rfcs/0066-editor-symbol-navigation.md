@@ -21,7 +21,11 @@ function and lexical block. A local is available after its initializer. A range
 index is available inside its loop body. Type names in annotations, type
 parameters, and record names in constructors link to their declarations.
 Enum variant names in constructors and `match` arms link to the variant inside
-its declaring enum. Navigation also works with visible imports.
+its declaring enum. A field read or assignment resolves every segment of its
+dotted path against the checked receiver type. Generic record fields link to
+the original declaration. Field access navigation requires successful source
+type checking and honors field visibility. Navigation also works with visible
+imports.
 
 Definitions use UTF-16 ranges from the current buffers. Invalid positions and
 unsynchronized documents fail the request. A request retains one source session

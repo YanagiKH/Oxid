@@ -70,7 +70,7 @@
         "LSP, formatter, test runner, debugger integration, versioned documentation and profiling support the same ordinary project workflow."
       ],
       "remaining": [
-        "Typed project/workspace API generation uses checked sources, manifests and locks; live cross-file diagnostics, formatting, visible-name, qualified-module and monomorphic record-field completion use unsaved editor buffers. GDB inspection includes flat numeric Copy records. General receiver completion, type/member navigation, general aggregate debugging, versioned documentation delivery and profiling remain incomplete."
+        "Typed project/workspace API generation uses checked sources, manifests and locks; live cross-file diagnostics, formatting, visible-name, qualified-module and monomorphic record-field completion use unsaved editor buffers. GDB inspection includes flat numeric Copy records. Definitions for typed record reads and assignments link to the original field declarations. General receiver completion, navigation for other member uses, general aggregate debugging, versioned documentation delivery and profiling remain incomplete."
       ]
     },
     {
@@ -88,13 +88,13 @@
     {
       "id": "G8",
       "title": "Compiler self-hosting",
-      "status": "unmet",
+      "status": "in-progress",
       "required": [
         "A published Oxid seed rebuilds the specified compiler and standard library without Rust/Cargo or hidden Rust frontend fallback.",
         "Reproducible same-target C1/C2/C3 compiler rebuilds demonstrate a C2/C3 fixed point and compile other supported programs."
       ],
       "remaining": [
-        "Rust still owns parser, semantic, ownership, OIR and backend authority; component demos and AST serialization round-trips are not compiler rebuilds."
+        "The Oxid-authored native compiler reproducibly rebuilds its own Linux compiler source and can rebuild from an offline seed package. Rebuilding the complete Oxid toolchain and standard library and publishing and qualifying their seeds remain incomplete."
       ]
     },
     {

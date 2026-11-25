@@ -11,8 +11,9 @@ mod verify;
 pub(in crate::frontend) use owned::debug::{DebugField, DebugRecord, DebugRecords};
 pub(in crate::frontend) use owned::process;
 pub(super) use source::{
-    check_scalar_library, check_source, import_checked, import_produced, CheckedScalarLibrary,
-    CheckedSourceProgram, Imported, ProcessFailure, IMPORT_BYTES,
+    check_scalar_library, check_source, import_checked, import_produced,
+    record_projection_definition, CheckedScalarLibrary, CheckedSourceProgram, Imported,
+    ProcessFailure, IMPORT_BYTES,
 };
 
 use super::{
