@@ -2,6 +2,7 @@ use crate::model::Compiler;
 use crate::model::Value;
 use crate::model::grown;
 use crate::model::Binding;
+use crate::model::Record;
 use crate::model::Token;
 use crate::model::token;
 use crate::model::array_type;
@@ -18,7 +19,8 @@ use crate::model::read_some_binding;
 use crate::model::code;
 use crate::model::is_record;
 use crate::model::record_index;
-use crate::model::record_reference;
+use crate::model::is_byte_buffer;
+use crate::model::needs_drop;
 use alloc::vec::len as vector_len;
 use alloc::vec::Vec;
 use alloc::bytes::len;
@@ -469,14 +471,12 @@ pub fn borrow_record(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
     return Value { ty: ty, id: pointer };
 }
 
-pub fn byte_buffer_view(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
+pub fn byte_buffer_view(c: &mut Compiler, buffer: Value, ty: i32) -> Value {
     let prefix = b"  %v";
     let invocation = b" = call ptr @__oxid_scalar_bytebuf_view(ptr ";
     let extent = b", ptr %s";
     let end = b")\n";
     let output = slot(&mut *c, 1);
-    let pointer_type = record_reference(record_type(c.byte_buffer), false);
-    let buffer = borrow_record(&mut *c, binding, pointer_type);
     let pointer = fresh(&mut *c);
     append(&mut *c, 2, &prefix); number(&mut *c, 2, pointer); append(&mut *c, 2, &invocation);
     operand(&mut *c, 2, buffer); append(&mut *c, 2, &extent); number(&mut *c, 2, output);
@@ -485,10 +485,24 @@ pub fn byte_buffer_view(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
     return slice_value(&mut *c, ty, count, pointer, false);
 }
 
-pub fn drop_byte_buffer(c: &mut Compiler, slot_id: i32) -> () {
-    let invocation = b"  call void @__oxid_bytebuf_drop(ptr %s";
+fn drop_callee(c: &mut Compiler, destination: i32, ty: i32) -> () {
+    let buffer = b"@__oxid_bytebuf_drop";
+    let record = b"@drop_r";
+    if is_byte_buffer(&*c, ty) { append(&mut *c, destination, &buffer); }
+    else {
+        append(&mut *c, destination, &record);
+        number(&mut *c, destination, record_index(ty));
+    }
+    return;
+}
+
+pub fn drop_owner(c: &mut Compiler, ty: i32, slot_id: i32) -> () {
+    if !needs_drop(&*c, ty) { return; }
+    let invocation = b"  call void ";
+    let slot_prefix = b"(ptr %s";
     let end = b")\n";
-    append(&mut *c, 2, &invocation); number(&mut *c, 2, slot_id); append(&mut *c, 2, &end);
+    append(&mut *c, 2, &invocation); drop_callee(&mut *c, 2, ty);
+    append(&mut *c, 2, &slot_prefix); number(&mut *c, 2, slot_id); append(&mut *c, 2, &end);
     return;
 }
 
@@ -1084,6 +1098,82 @@ fn record_preamble(c: &mut Compiler) -> () {
     }
     return;
 }
+fn drop_record_field(c: &mut Compiler, ty: i32, tag: i32, field: i32, field_type: i32) -> () {
+    let prefix = b"  %field";
+    let address = b" = getelementptr inbounds ";
+    let position = b", ptr %owner, i32 0, i32 ";
+    let invocation = b"\n  call void ";
+    let parameter = b"(ptr %field";
+    let end = b")\n";
+    append(&mut *c, 0, &prefix); number(&mut *c, 0, tag); append(&mut *c, 0, &address);
+    write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &position);
+    number(&mut *c, 0, field); append(&mut *c, 0, &invocation);
+    drop_callee(&mut *c, 0, field_type); append(&mut *c, 0, &parameter);
+    number(&mut *c, 0, tag); append(&mut *c, 0, &end);
+    return;
+}
+
+fn drop_variant_switch(c: &mut Compiler, row: Record) -> () {
+    let head = b"  %tag = load i32, ptr %owner\n  switch i32 %tag, label %done [\n";
+    let entry = b"    i32 ";
+    let target = b", label %variant";
+    let line = b"\n";
+    let end = b"  ]\n";
+    append(&mut *c, 0, &head);
+    for index in 0..row.field_count {
+        let field = c.fields[row.first_field + index];
+        if needs_drop(&*c, field.ty) {
+            append(&mut *c, 0, &entry); number(&mut *c, 0, index); append(&mut *c, 0, &target);
+            number(&mut *c, 0, index); append(&mut *c, 0, &line);
+        }
+    }
+    append(&mut *c, 0, &end);
+    return;
+}
+
+fn drop_record_body(c: &mut Compiler, ty: i32, row: Record) -> () {
+    let label_name = b"variant";
+    let start = b":\n";
+    let done = b"  br label %done\n";
+    let exit_label = b"done:\n";
+    if row.tagged {
+        drop_variant_switch(&mut *c, row);
+        for index in 0..row.field_count {
+            let field = c.fields[row.first_field + index];
+            if needs_drop(&*c, field.ty) {
+                append(&mut *c, 0, &label_name); number(&mut *c, 0, index); append(&mut *c, 0, &start);
+                drop_record_field(&mut *c, ty, index, index + 1, field.ty);
+                append(&mut *c, 0, &done);
+            }
+        }
+        append(&mut *c, 0, &exit_label);
+    } else {
+        let mut remaining = row.field_count;
+        while remaining > 0 {
+            remaining = remaining - 1;
+            let member = c.fields[row.first_field + remaining];
+            if needs_drop(&*c, member.ty) { drop_record_field(&mut *c, ty, remaining, remaining, member.ty); }
+        }
+    }
+    return;
+}
+
+fn drop_record_functions(c: &mut Compiler) -> () {
+    let define = b"define internal void ";
+    let signature = b"(ptr %owner) {\nentry:\n";
+    let end = b"  ret void\n}\n";
+    for index in 0..vector_len(&*c.records) {
+        let row = c.records[index];
+        if row.needs_drop && index != c.byte_buffer {
+            let ty = record_type(index);
+            append(&mut *c, 0, &define); drop_callee(&mut *c, 0, ty);
+            append(&mut *c, 0, &signature);
+            drop_record_body(&mut *c, ty, row);
+            append(&mut *c, 0, &end);
+        }
+    }
+    return;
+}
 fn process_preamble(c: &mut Compiler) -> () {
     let mode = b"; entry mode = process\ndeclare i32 @__oxid_process_setup()\n";
     let message = b"@status_error = private constant [44 x i8] c\"process main must return a status in 0..255\\0A\"\n";
@@ -1210,6 +1300,7 @@ fn preamble_resources(c: &mut Compiler) -> () {
     if c.uses_binary_io { binary_io_preamble(&mut *c); }
     if c.byte_buffer >= 0 { byte_buffer_preamble(&mut *c); }
     record_preamble(&mut *c);
+    if c.byte_buffer >= 0 { drop_record_functions(&mut *c); }
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
     append(&mut *c, 0, &depth_error); append(&mut *c, 0, &int_error);

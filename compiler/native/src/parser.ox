@@ -17,6 +17,7 @@ use crate::model::argument_bytes_binding;
 use crate::model::byte_operation_binding;
 use crate::model::is_byte_operation;
 use crate::model::is_byte_buffer;
+use crate::model::needs_drop;
 use crate::model::record_reference;
 use crate::model::is_binary_io_binding;
 use crate::model::read_some_binding;
@@ -153,15 +154,27 @@ fn slice_owner_matches(c: &Compiler, binding: Binding, expected: i32, reborrow: 
         && (!exclusive || binding.writable);
 }
 fn slice_owner_view(c: &mut Compiler, binding: Binding, path: FieldPath, expected: i32) -> Value {
-    if path.depth > 0 { return crate::emit::borrow_array_field(&mut *c, path.pointer, path.ty, expected); }
+    if path.depth > 0 {
+        if is_byte_buffer(&*c, path.ty) {
+            let ptr_type = record_reference(path.ty, is_mutable_slice(expected));
+            return crate::emit::byte_buffer_view(&mut *c, Value { ty: ptr_type, id: path.pointer }, expected);
+        }
+        return crate::emit::borrow_array_field(&mut *c, path.pointer, path.ty, expected);
+    }
     if is_byte_buffer(&*c, record_value_type(binding.ty)) {
-        return crate::emit::byte_buffer_view(&mut *c, binding, expected);
+        let ptr_type = record_reference(record_value_type(binding.ty), is_mutable_slice(expected));
+        let buffer = crate::emit::borrow_record(&mut *c, binding, ptr_type);
+        return crate::emit::byte_buffer_view(&mut *c, buffer, expected);
     }
     if is_slice(binding.ty) {
         let loaded = crate::emit::load(&mut *c, binding.slot, binding.ty);
         return Value { ty: expected, id: loaded.id };
     }
     return crate::emit::borrow_array(&mut *c, binding, expected);
+}
+fn is_slice_field(c: &Compiler, ty: i32, expected: i32, exclusive: bool) -> bool {
+    if is_array(ty) { return slice_type(array_element(ty), exclusive) == expected; }
+    return is_byte_buffer(&*c, ty) && expected == slice_type(4, exclusive);
 }
 fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
     expect(&mut *c, 65);
@@ -184,7 +197,7 @@ fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
             fail(&mut *c); return invalid();
         }
         path = field_path(&mut *c, binding);
-        if c.error != 0 || !is_array(path.ty) || slice_type(array_element(path.ty), exclusive) != expected {
+        if c.error != 0 || !is_slice_field(&*c, path.ty, expected, exclusive) {
             fail(&mut *c); return invalid();
         }
     } else if !slice_owner_matches(&*c, binding, expected, reborrow) {
@@ -590,7 +603,7 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
         set_available(&mut *c, position, false);
     }
     let value = crate::emit::load(&mut *c, binding.slot, binding.ty);
-    if is_byte_buffer(&*c, binding.ty) {
+    if needs_drop(&*c, binding.ty) {
         crate::emit::store(&mut *c, binding.slot, Value { ty: binding.ty, id: -1 });
     }
     if kind(&*c) == 43 { return convert_binding(&mut *c, value); }
@@ -832,7 +845,7 @@ fn assigned(c: &mut Compiler) -> () {
         fail(&mut *c); return;
     }
     expect(&mut *c, 25);
-    if is_byte_buffer(&*c, binding.ty) { crate::emit::drop_byte_buffer(&mut *c, binding.slot); }
+    crate::emit::drop_owner(&mut *c, binding.ty, binding.slot);
     set_available(&mut *c, position, true);
     crate::emit::store(&mut *c, binding.slot, value);
     return;
@@ -1022,6 +1035,7 @@ fn match_statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32
         match_payload(&mut *c, aggregate, variant, payload.ty);
         expect(&mut *c, 64);
         block(&mut *c, break_to, continue_to, depth + 1);
+        drop_locals(&mut *c, locals);
         truncate(&mut *c.vars, locals);
         if c.live && c.error == 0 {
             if falls_through { intersect_availability(&mut *c, &outgoing); }
@@ -1105,15 +1119,15 @@ fn for_statement(c: &mut Compiler, depth: i32) -> () {
     c.loop_move_floor = previous_floor;
     return;
 }
-fn drop_byte_buffers(c: &mut Compiler, floor: i32) -> () {
+fn drop_locals(c: &mut Compiler, floor: i32) -> () {
     if c.byte_buffer < 0 || !c.live { return; }
     let mut index = len(&*c.vars);
     while index > floor {
         index = index - 1;
         let binding = c.vars[index];
-        // Moved slots hold empty descriptors. At a branch join a slot can
-        // still own a buffer on one path even if further reads are refused.
-        if is_byte_buffer(&*c, binding.ty) { crate::emit::drop_byte_buffer(&mut *c, binding.slot); }
+        // A moved slot holds zeroed fields even at a branch join where
+        // the same slot can still own an allocation on the other path.
+        crate::emit::drop_owner(&mut *c, binding.ty, binding.slot);
     }
     return;
 }
@@ -1131,7 +1145,7 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
         if break_to < 0 || continue_to < 0 { fail(&mut *c); return; }
         c.cursor = c.cursor + 1; expect(&mut *c, 25);
         let floor = c.loop_move_floor;
-        drop_byte_buffers(&mut *c, floor);
+        drop_locals(&mut *c, floor);
         if k == 10 { crate::emit::branch(&mut *c, break_to); }
         else { crate::emit::branch(&mut *c, continue_to); }
         c.live = false; return;
@@ -1147,7 +1161,7 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
             if c.error == 0 { c.cursor = value_start; }
             fail(&mut *c); return;
         }
-        drop_byte_buffers(&mut *c, 0);
+        drop_locals(&mut *c, 0);
         crate::emit::returned(&mut *c, value); return;
     }
     let next = token(&*c, c.cursor + 1);
@@ -1159,10 +1173,10 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
     }
     let value = expression(&mut *c, 1, 0);
     expect(&mut *c, 25);
-    if is_byte_buffer(&*c, value.ty) {
+    if needs_drop(&*c, value.ty) {
         let temporary = crate::emit::slot(&mut *c, value.ty);
         crate::emit::store(&mut *c, temporary, value);
-        crate::emit::drop_byte_buffer(&mut *c, temporary);
+        crate::emit::drop_owner(&mut *c, value.ty, temporary);
     }
     return;
 }
@@ -1175,7 +1189,7 @@ pub fn block(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
         statement(&mut *c, break_to, continue_to, depth);
     }
     expect(&mut *c, 23);
-    drop_byte_buffers(&mut *c, saved);
+    drop_locals(&mut *c, saved);
     truncate(&mut *c.vars, saved);
     return;
 }
@@ -1210,7 +1224,7 @@ pub fn bodies(c: &mut Compiler) -> () {
         if c.cursor != f.end { fail(&mut *c); return; }
         if c.live {
             if f.result != 3 { fail(&mut *c); return; }
-            drop_byte_buffers(&mut *c, 0);
+            drop_locals(&mut *c, 0);
             crate::emit::returned(&mut *c, Value { ty: 3, id: -1 });
         } else {
             if !c.terminated { crate::emit::append(&mut *c, 2, &literal_bytes_4); c.terminated = true; }

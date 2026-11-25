@@ -483,6 +483,26 @@ return empty+count(&h.bytes)+end(&mut h.bytes);}",
 }
 
 #[test]
+fn separate_nested_bytebuf_fields_can_be_exclusive_slice_arguments() {
+    accepted(
+        "struct Pair{left:ByteBuf,right:ByteBuf}struct Holder{pair:Pair}
+fn write(left:&mut [u8],right:&mut [u8])->i32{
+    left[0]=19u8;right[0]=23u8;let a=left[0];let b=right[0];return a.to_i32()+b.to_i32();
+}
+fn both(value:&mut Holder)->i32{
+    try_resize(&mut *value.pair.left,1,0u8);
+    try_resize(&mut *value.pair.right,1,0u8);
+    return write(&mut *value.pair.left,&mut *value.pair.right);
+}
+fn main()->i32{
+    let mut value=Holder{pair:Pair{left:new(),right:new()}};
+    return both(&mut value);
+}",
+        42,
+    );
+}
+
+#[test]
 fn bytebuf_source_reference_parameters_keep_authority_and_borrow_rejections() {
     for text in [
         "use alloc::bytes::len;struct ByteBuf{x:i32}fn fake(p:&ByteBuf)->i32{return len(&*p);}fn main()->i32{return 0;}",
