@@ -7,6 +7,7 @@ use the same SDK/environment and relative layout, separately for O0 and O2.
 """
 import linux_native_target as native_target
 import argparse
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -119,13 +120,20 @@ class Oracle:
         self.spy = output / "tools-spy"
         self.spy.mkdir()
         self.marker = output / "tool-invoked"
-        for tool in ("clang", "opt", "ld.lld"):
+        for tool in ("clang", "opt", "ld.lld", "ld64.lld"):
             path = self.spy / tool
             path.write_text('#!/bin/sh\nprintf invoked > "$OXID_APP_SPY_MARKER"\nexit 91\n')
             path.chmod(0o755)
 
     def input_capture_limit(self):
         return MAX_CAPTURE
+
+    def output_fault(self):
+        if sys.platform != "darwin":
+            return open("/dev/full", "wb")
+        reader, writer = os.pipe()
+        os.close(reader)
+        return os.fdopen(writer, "wb")
 
     def command(self, label, argv, cwd, payload=b"", status=0, stdout=None, stderr=b"",
                 overrides=None, closed_stdin=False, directory_stdin=False, full_stdout=False):
@@ -135,7 +143,8 @@ class Oracle:
         row = {"label": label, "argv": [str(value) for value in argv], "cwd": str(cwd),
                "environment_overrides": overrides or {}, "expected_status": status,
                "closed_stdin": closed_stdin, "directory_stdin": directory_stdin,
-               "stdout_sink": "/dev/full" if full_stdout else "capture",
+               "stdout_sink": ("closed-pipe" if sys.platform == "darwin" else "/dev/full")
+               if full_stdout else "capture",
                "receipt": str(folder), "status": "running"}
         if stdout is not None:
             row["expected_stdout_sha256"] = hashlib.sha256(stdout).hexdigest()
@@ -147,11 +156,12 @@ class Oracle:
             if directory_stdin:
                 directory_fd = os.open(cwd, os.O_RDONLY | os.O_DIRECTORY)
             with (folder / "stdin.bin").open("rb") as source, (folder / "stdout.bin").open("wb") as capture, \
-                    (folder / "stderr.bin").open("wb") as errors, open("/dev/full", "wb") as full:
+                    (folder / "stderr.bin").open("wb") as errors, \
+                    (self.output_fault() if full_stdout else nullcontext(capture)) as sink:
                 result = subprocess.run(row["argv"], cwd=cwd,
                                         env={**self.environment, **(overrides or {})},
                                         stdin=directory_fd if directory_stdin else source,
-                                        stdout=full if full_stdout else capture, stderr=errors,
+                                        stdout=sink, stderr=errors,
                                         preexec_fn=(lambda: os.close(0)) if closed_stdin else None,
                                         timeout=120)
             row["exit_status"] = result.returncode
