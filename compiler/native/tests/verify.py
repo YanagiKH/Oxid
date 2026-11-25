@@ -15,12 +15,16 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("scalar_build", ROOT / "build.py")
 driver = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(driver)
+PACKAGE_SPEC = importlib.util.spec_from_file_location("scalar_package", ROOT / "package.py")
+packager = importlib.util.module_from_spec(PACKAGE_SPEC)
+PACKAGE_SPEC.loader.exec_module(packager)
 INPUT_SPEC = importlib.util.spec_from_file_location(
     "scalar_compiler_fixture_data", ROOT.parents[1] / "scripts/verify_native_compiler_fixture_data.py")
 fixture_data = importlib.util.module_from_spec(INPUT_SPEC)
@@ -1722,6 +1726,47 @@ fn main()->i32{
     return rows
 
 
+def verify_bootstrap_bundle(seed: Path, source: Path, clang: Path, evidence: Path,
+                            environment: dict[str, str], expected: dict, timeout: int) -> dict:
+    target = driver.host_target()
+    archive_path = evidence / f"oxid-native-linux-{target.split('-', 1)[0]}.tar.gz"
+    bundle = packager.package(seed, archive_path, source)
+    require(bundle["target"] == target, "native compiler archive has the wrong target")
+    manifest_name = packager.MANIFEST.as_posix()
+    with tempfile.TemporaryDirectory(prefix="oxid-native-install-") as directory:
+        work = Path(directory)
+        repeated = packager.package(seed, work / "repeated.tar.gz", source)
+        require(repeated["archive_sha256"] == bundle["archive_sha256"], "native compiler archive changed")
+        installed = work / "native-kit"
+        installed.mkdir()
+        with tarfile.open(archive_path, "r:gz") as archive:
+            members = archive.getmembers()
+            expected_files = set(bundle["files"]) | {manifest_name}
+            require(len(members) == len(expected_files)
+                    and {member.name for member in members} == expected_files
+                    and all(member.isfile() for member in members), "native compiler archive members changed")
+            archive.extractall(installed, filter="data")
+        manifest = json.loads((installed / manifest_name).read_bytes())
+        require(manifest == {name: bundle[name] for name in ("compiler", "files", "target")},
+                "native compiler archive manifest changed")
+        for name, digest in manifest["files"].items():
+            require(hashlib.sha256((installed / name).read_bytes()).hexdigest() == digest,
+                    "native compiler archive checksum failed: " + name)
+
+        project = installed / packager.PROJECT
+        spec = importlib.util.spec_from_file_location("portable_native_build", project / "build.py")
+        installed_driver = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installed_driver)
+        installed_driver.host_target = driver.host_target
+        rebuilt = installed_driver.build(installed / manifest["compiler"], project / "src/main.ox",
+            clang, installed_driver.DEFAULT_RUNTIME, work / "rebuilt", "release", timeout,
+            evidence / "kit-rebuild", entry_mode="process", linker_environment=environment)
+        require(rebuilt["module_sha256"] == expected["module_sha256"]
+                and rebuilt["sha256"] == expected["sha256"], "unpacked compiler rebuilt different bytes")
+    return {"archive": bundle, "rebuilt_sha256": rebuilt["sha256"],
+            "module_sha256": rebuilt["module_sha256"]}
+
+
 def verify_native_rebuild(compiler: Path, clang: Path, runtime: Path,
                           output: Path, timeout: int) -> dict:
     evidence = output / "native-rebuild"
@@ -1753,6 +1798,9 @@ def verify_native_rebuild(compiler: Path, clang: Path, runtime: Path,
         for name, digest in files.items():
             require(hashlib.sha256((source / name).read_bytes()).hexdigest() == digest,
                     "rebuild changed compiler source: " + name)
+        kit = None
+        if runtime == driver.DEFAULT_RUNTIME:
+            kit = verify_bootstrap_bundle(second, source, clang, evidence, environment, c3, timeout)
         source.rename(evidence / "retained-source")
 
         deployed = evidence / "deployed"
@@ -1774,7 +1822,8 @@ def verify_native_rebuild(compiler: Path, clang: Path, runtime: Path,
             completed = run(command, deployed, timeout)
             check_native_behavior({"name": program.name, "kind": "value", "stdout": "42\n"}, completed)
             runs.append(record(evidence, program.name, command, completed))
-        return {"status": "passed", "source_sha256": files, "c2": c2, "c3": c3, "program_runs": runs}
+        return {"status": "passed", "source_sha256": files, "c2": c2, "c3": c3,
+                "program_runs": runs, "bootstrap_kit": kit}
 
 
 def verify(args) -> dict:
@@ -1797,14 +1846,9 @@ def verify(args) -> dict:
               "driver_sha256": hashlib.sha256((ROOT / "build.py").read_bytes()).hexdigest(),
               "cases_sha256": hashlib.sha256((ROOT / "tests/cases.json").read_bytes()).hexdigest()}
     if runtime == driver.DEFAULT_RUNTIME:
-        runtime_sources = (
-            "native/typed_preview.c", "native/typed_character.c", "native/typed_bytebuf.c",
-            "native/typed_vector.c", "native/experimental_bytebuf.c", "native/experimental_bytebuf.h",
-            "native/experimental_vector.c", "native/experimental_vector.h", "native/experimental_files.c",
-        )
         report["runtime_sources_sha256"] = {
             name: hashlib.sha256((ROOT.parents[1] / name).read_bytes()).hexdigest()
-            for name in runtime_sources
+            for name in packager.RUNTIME_FILES
         }
     (output / "retained-inputs").mkdir()
     try:

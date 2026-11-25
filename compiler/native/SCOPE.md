@@ -14,6 +14,9 @@ python3 compiler/native/build.py input.ox output --compiler compiler/native/.oxi
 To rebuild the compiler, pass `compiler/native/src/main.ox` as the input
 and add `--profile release --entry-mode process`. Use the resulting executable
 as `--compiler` to build another program or repeat the rebuild.
+When using an unpacked compiler kit, use `compiler/native/bin/oxid-scalar-compiler`
+for `--compiler`. The kit includes the Oxid source and C runtime. Rebuilding
+requires Python, Clang, LLD and the Linux development libraries.
 
 The project uses process entry mode: a successful compiler exits 0 and writes
 only one complete LLVM module to stdout, with no printed main return value.
