@@ -1405,6 +1405,114 @@ fn main()->i32{
     return rows
 
 
+def verify_file_writes(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                       output: Path, timeout: int) -> list[dict]:
+    evidence = output / "file-writes"
+    evidence.mkdir()
+    payload = evidence / "output.bin"
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::fs::OpenResult;
+use std::fs::FileStatus;
+use std::fs::create;
+use std::fs::open_append;
+use std::fs::open_read;
+use std::fs::write_some;
+use std::fs::read_some;
+use std::fs::sync_all;
+use std::fs::seek_absolute;
+use std::io::WriteSomeStatus;
+use std::io::ReadSomeStatus;
+fn success(status:FileStatus)->bool{
+    match status{FileStatus::Ok=>{return true;},FileStatus::Error(e)=>{return false;},}
+}
+fn writer(path:&[u8],append_only:bool)->OpenResult{
+    if append_only{return open_append(&*path);}
+    return create(&*path);
+}
+fn save(path:&[u8],bytes:&[u8],append_only:bool)->bool{
+    let opened=writer(&*path,append_only);
+    match opened{
+        OpenResult::Opened(file)=>{
+            let mut handle=file;
+            if !success(seek_absolute(&mut handle,0i64)){return false;}
+            let written=write_some(&mut handle,&*bytes);
+            match written{
+                WriteSomeStatus::Written(n)=>{if n!=bytes.len(){return false;}},
+                WriteSomeStatus::Error(e)=>{return false;},
+            }
+            return success(sync_all(&mut handle));
+        },
+        OpenResult::Error(e)=>{return false;},
+        OpenResult::MemoryLimit=>{return false;},OpenResult::AllocationFailed=>{return false;},
+    }
+}
+fn verify_file(path:&[u8])->i32{
+    let opened=open_read(&*path);
+    match opened{
+        OpenResult::Opened(file)=>{
+            let mut handle=file;
+            let invalid=seek_absolute(&mut handle,-1i64);
+            match invalid{FileStatus::Ok=>{return 4;},FileStatus::Error(e)=>{if e!=22{return 5;}},}
+            if !success(seek_absolute(&mut handle,1i64)){return 6;}
+            let mut tail=b"xxxx";
+            let read=read_some(&mut handle,&mut tail);
+            match read{
+                ReadSomeStatus::Data(n)=>{
+                    if n==2&&tail[0]==0u8&&tail[1]==13u8&&tail[2]==120u8{return 42;}
+                    return 7;
+                },
+                ReadSomeStatus::Eof=>{return 8;},ReadSomeStatus::Error(e)=>{return 9;},
+            }
+        },
+        OpenResult::Error(e)=>{return 10;},
+        OpenResult::MemoryLimit=>{return 11;},OpenResult::AllocationFailed=>{return 12;},
+    }
+}
+fn main()->i32{
+    let path=b"output.bin";
+    let beginning=b"\xff\x00";
+    let suffix=b"\r";
+    if !save(&path,&beginning,false){return 1;}
+    if !save(&path,&suffix,true){return 2;}
+    let invalid_path=b"output.bin\x00";
+    let bad_open=create(&invalid_path);
+    match bad_open{
+        OpenResult::Error(e)=>{if e!=22{return 3;}},
+        OpenResult::Opened(file)=>{return 3;},
+        OpenResult::MemoryLimit=>{return 3;},OpenResult::AllocationFailed=>{return 3;},
+    }
+    return verify_file(&path);
+}
+''', encoding="ascii")
+    rows = []
+    builds = []
+
+    def observe(name, command, mode, clear_env):
+        payload.write_bytes(b"older contents")
+        executed = run(command, evidence, timeout, clear_environment=clear_env)
+        rows.append(record(evidence, name, command, executed))
+        expected = (42, b"", b"") if mode == "process" else (0, b"42\n", b"")
+        require((executed.returncode, executed.stdout, executed.stderr) == expected,
+                name + ": file operations did not match")
+        require(payload.read_bytes() == b"\xff\x00\r", name + ": written bytes did not match")
+
+    for mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={mode}"]
+        observe(f"{mode}-reference", command, mode, False)
+        for profile in ("dev", "release"):
+            name = f"{mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=mode)
+            builds.append((mode, name))
+    source.unlink()
+    for mode, name in builds:
+        moved = evidence / ("moved-" + name)
+        (evidence / name).rename(moved)
+        observe(name, [str(moved)], mode, True)
+    return rows
+
+
 def verify(args) -> dict:
     target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
@@ -1513,6 +1621,8 @@ def verify(args) -> dict:
             report["binary_io"] = verify_binary_io(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
             report["file_reads"] = verify_file_reads(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["file_writes"] = verify_file_writes(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"

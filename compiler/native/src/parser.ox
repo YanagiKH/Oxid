@@ -19,9 +19,10 @@ use crate::model::is_byte_operation;
 use crate::model::is_byte_buffer;
 use crate::model::needs_drop;
 use crate::model::uses_heap;
-use crate::model::file_open_read_binding;
-use crate::model::file_read_binding;
-use crate::model::file_close_binding;
+use crate::model::file_seek_binding;
+use crate::model::file_open_operation;
+use crate::model::file_transfer_operation;
+use crate::model::is_file_operation;
 use crate::model::record_reference;
 use crate::model::is_binary_io_binding;
 use crate::model::read_some_binding;
@@ -294,28 +295,37 @@ fn byte_buffer_call(c: &mut Compiler, operation: i32, depth: i32) -> Value {
 fn file_call(c: &mut Compiler, target: i32, depth: i32) -> Value {
     let outer_loans = len(&*c.loans);
     expect(&mut *c, 20);
-    if target == file_open_read_binding() {
+    let opening = file_open_operation(target);
+    if opening >= 0 {
         let path = slice_argument(&mut *c, slice_type(4, false), depth);
         expect(&mut *c, 21);
         truncate(&mut *c.loans, outer_loans);
         if c.error != 0 { return invalid(); }
-        return crate::emit::open_read(&mut *c, path);
+        return crate::emit::file_open(&mut *c, opening, path);
     }
     let file_type = record_reference(record_type(c.file_owner), true);
     let file = record_argument(&mut *c, file_type);
-    let close_file = target == file_close_binding();
-    let mut destination = invalid();
-    if !close_file {
+    if target == file_seek_binding() {
         expect(&mut *c, 26);
-        destination = slice_argument(&mut *c, slice_type(4, true), depth);
+        let offset = expression(&mut *c, 1, depth + 1);
+        expect(&mut *c, 21);
+        truncate(&mut *c.loans, outer_loans);
+        if c.error != 0 || offset.ty != 5 { fail(&mut *c); return invalid(); }
+        return crate::emit::file_seek(&mut *c, file, offset);
+    }
+    let operation = file_transfer_operation(target);
+    let mut destination = invalid();
+    if operation == 2 || operation == 3 {
+        expect(&mut *c, 26);
+        destination = slice_argument(&mut *c, slice_type(4, operation == 2), depth);
     }
     expect(&mut *c, 21);
     truncate(&mut *c.loans, outer_loans);
     if c.error != 0 { return invalid(); }
-    return crate::emit::file_io(&mut *c, file, destination, close_file);
+    return crate::emit::file_io(&mut *c, operation, file, destination);
 }
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
-    if target == file_open_read_binding() || target == file_read_binding() || target == file_close_binding() {
+    if is_file_operation(target) {
         return file_call(&mut *c, target, depth);
     }
     if is_byte_operation(target) {

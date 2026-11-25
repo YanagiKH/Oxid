@@ -1232,9 +1232,14 @@ fn byte_buffer_preamble(c: &mut Compiler) -> () {
 }
 fn file_preamble(c: &mut Compiler) -> () {
     let drop = b"declare void @__oxid_file_drop(ptr)\n";
-    let open_api = b"declare i32 @__oxid_scalar_open_read(ptr, i32, ptr, ptr)\n";
+    let open_api = b"declare i32 @__oxid_scalar_file_open(i32, ptr, i32, ptr, ptr)\n";
     let io_api = b"declare i64 @__oxid_scalar_file_io(i32, ptr, ptr, i32)\n";
     append(&mut *c, 0, &drop); append(&mut *c, 0, &open_api); append(&mut *c, 0, &io_api);
+    return;
+}
+fn file_seek_preamble(c: &mut Compiler) -> () {
+    let seek_api = b"declare i64 @__oxid_scalar_file_seek(ptr, i64)\n";
+    append(&mut *c, 0, &seek_api);
     return;
 }
 
@@ -1277,13 +1282,17 @@ pub fn binary_io(c: &mut Compiler, binding: i32, view: Value, status: i32) -> Va
     let operation = read_some_binding() - binding;
     let selector = constant(&mut *c, 1, operation.to_i64());
     let pair = transfer_call(&mut *c, selector, view, false);
+    return binary_status(&mut *c, pair, status, operation == 0);
+}
+
+fn binary_status(c: &mut Compiler, pair: i32, status: i32, reading: bool) -> Value {
     let tag = transfer_word(&mut *c, pair, false);
     let payload = transfer_word(&mut *c, pair, true);
     let initial = Value { ty: record_type(status), id: -1 };
     let tagged = insert_field(&mut *c, initial, tag, 0);
     let value = insert_field(&mut *c, tagged, payload, 1);
     let mut error_field = 2;
-    if operation == 0 { error_field = 3; }
+    if reading { error_field = 3; }
     return insert_field(&mut *c, value, payload, error_field);
 }
 
@@ -1297,9 +1306,10 @@ pub fn argument_bytes(c: &mut Compiler, index: Value, view: Value) -> Value {
     return insert_field(&mut *c, copied, payload, 2);
 }
 
-pub fn open_read(c: &mut Compiler, path: Value) -> Value {
+pub fn file_open(c: &mut Compiler, operation: i32, path: Value) -> Value {
     let prefix = b"  %v";
-    let invocation = b" = call i32 @__oxid_scalar_open_read(ptr ";
+    let invocation = b" = call i32 @__oxid_scalar_file_open(i32 ";
+    let pointer = b", ptr ";
     let width = b", i32 ";
     let output = b", ptr %s";
     let end = b")\n";
@@ -1310,6 +1320,7 @@ pub fn open_read(c: &mut Compiler, path: Value) -> Value {
     let error_slot = slot(&mut *c, 1);
     let id = fresh(&mut *c);
     append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invocation);
+    number(&mut *c, 2, operation); append(&mut *c, 2, &pointer);
     operand(&mut *c, 2, bytes); append(&mut *c, 2, &width); operand(&mut *c, 2, count);
     append(&mut *c, 2, &output); number(&mut *c, 2, file_slot);
     append(&mut *c, 2, &output); number(&mut *c, 2, error_slot); append(&mut *c, 2, &end);
@@ -1321,41 +1332,58 @@ pub fn open_read(c: &mut Compiler, path: Value) -> Value {
     return insert_field(&mut *c, opened, error, 2);
 }
 
-pub fn file_io(c: &mut Compiler, file: Value, bytes: Value, close_handle: bool) -> Value {
+fn file_status(c: &mut Compiler, pair: i32) -> Value {
+    let tag = transfer_word(&mut *c, pair, false);
+    let payload = transfer_word(&mut *c, pair, true);
+    let status = Value { ty: record_type(c.file_status), id: -1 };
+    let tagged = insert_field(&mut *c, status, tag, 0);
+    return insert_field(&mut *c, tagged, payload, 2);
+}
+
+pub fn file_io(c: &mut Compiler, operation: i32, file: Value, bytes: Value) -> Value {
     let prefix = b"  %v";
-    let read_call = b" = call i64 @__oxid_scalar_file_io(i32 2, ptr ";
-    let close_call = b" = call i64 @__oxid_scalar_file_io(i32 5, ptr ";
+    let invocation = b" = call i64 @__oxid_scalar_file_io(i32 ";
     let empty = b", ptr null, i32 0";
     let pointer = b", ptr ";
     let size = b", i32 ";
     let end = b")\n";
     let mut address = Value { ty: 0, id: -1 };
     let mut count = Value { ty: 0, id: -1 };
-    if !close_handle {
+    let transfers = operation == 2 || operation == 3;
+    if transfers {
         address = extract_field(&mut *c, bytes, 0, 0);
         count = extract_field(&mut *c, bytes, 1, 1);
     }
     let id = fresh(&mut *c);
-    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
-    if close_handle { append(&mut *c, 2, &close_call); } else { append(&mut *c, 2, &read_call); }
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invocation);
+    number(&mut *c, 2, operation); append(&mut *c, 2, &pointer);
     operand(&mut *c, 2, file);
-    if close_handle { append(&mut *c, 2, &empty); }
-    else {
+    if transfers {
         append(&mut *c, 2, &pointer); operand(&mut *c, 2, address);
         append(&mut *c, 2, &size); operand(&mut *c, 2, count);
-    }
+    } else { append(&mut *c, 2, &empty); }
     append(&mut *c, 2, &end);
-    let tag = transfer_word(&mut *c, id, false);
-    let payload = transfer_word(&mut *c, id, true);
-    if close_handle {
-        let status = Value { ty: record_type(c.file_status), id: -1 };
-        let tagged_close = insert_field(&mut *c, status, tag, 0);
-        return insert_field(&mut *c, tagged_close, payload, 2);
+    if operation == 2 {
+        let read_type = c.read_status;
+        return binary_status(&mut *c, id, read_type, true);
     }
-    let result = Value { ty: record_type(c.read_status), id: -1 };
-    let tagged_read = insert_field(&mut *c, result, tag, 0);
-    let read = insert_field(&mut *c, tagged_read, payload, 1);
-    return insert_field(&mut *c, read, payload, 3);
+    if operation == 3 {
+        let write_type_index = c.write_status;
+        return binary_status(&mut *c, id, write_type_index, false);
+    }
+    return file_status(&mut *c, id);
+}
+
+pub fn file_seek(c: &mut Compiler, file: Value, offset: Value) -> Value {
+    let prefix = b"  %v";
+    let invocation = b" = call i64 @__oxid_scalar_file_seek(ptr ";
+    let number_type = b", i64 ";
+    let end = b")\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invocation);
+    operand(&mut *c, 2, file); append(&mut *c, 2, &number_type); operand(&mut *c, 2, offset);
+    append(&mut *c, 2, &end);
+    return file_status(&mut *c, id);
 }
 
 fn preamble_scalar_printing(c: &mut Compiler) -> () {
@@ -1374,7 +1402,7 @@ fn preamble_resources(c: &mut Compiler) -> () {
     if c.uses_binary_io { binary_io_preamble(&mut *c); }
     if uses_heap(&*c) { heap_lifetime_declarations(&mut *c); }
     if c.byte_buffer >= 0 { byte_buffer_preamble(&mut *c); }
-    if c.file_owner >= 0 { file_preamble(&mut *c); }
+    if c.file_owner >= 0 { file_preamble(&mut *c); file_seek_preamble(&mut *c); }
     record_preamble(&mut *c);
     if uses_heap(&*c) { drop_record_functions(&mut *c); }
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);

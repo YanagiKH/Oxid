@@ -78,10 +78,11 @@ void __oxid_scalar_heap_finish(void) {
     if (status != 0) invalid_heap_resource(status);
 }
 
-int32_t __oxid_scalar_open_read(uint8_t *path, int32_t length, oxid_file *file, int32_t *error) {
+int32_t __oxid_scalar_file_open(int32_t operation, uint8_t *path, int32_t length,
+    oxid_file *file, int32_t *error) {
     oxid_file_open_result opened = {0};
     uint64_t budget = 0;
-    int32_t status = __oxid_file_delivery_hosted(0, NULL, path, length, &budget, &opened, 0);
+    int32_t status = __oxid_file_delivery_hosted(operation, NULL, path, length, &budget, &opened, 0);
     if (status != 0) invalid_heap_resource(status);
     *file = (oxid_file){0, 0};
     *error = 0;
@@ -94,6 +95,14 @@ uint64_t __oxid_scalar_file_io(int32_t operation, oxid_file *file, uint8_t *byte
     oxid_binary_result result = {0};
     uint64_t budget = 0;
     int32_t status = __oxid_file_delivery_hosted(operation, file, bytes, length, &budget, &result, 0);
+    if (status != 0) invalid_heap_resource(status);
+    return ((uint64_t)(uint32_t)result.value << 32) | (uint32_t)result.tag;
+}
+
+uint64_t __oxid_scalar_file_seek(const oxid_file *file, int64_t offset) {
+    oxid_binary_result result = {0};
+    uint64_t budget = 0;
+    int32_t status = __oxid_file_seek_absolute_hosted(file, offset, &budget, &result, 0);
     if (status != 0) invalid_heap_resource(status);
     return ((uint64_t)(uint32_t)result.value << 32) | (uint32_t)result.tag;
 }
