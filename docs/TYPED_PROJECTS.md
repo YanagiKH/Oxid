@@ -368,6 +368,13 @@ author lock and the library's declared tests without running their bodies.
 Use dependencies from the same registry when publishing. The published library
 records the dependency versions from your lockfile.
 
+Find packages by name or prefix. The search lists the newest available version
+of each match and skips releases that have been yanked.
+
+```sh
+oxid registry search file:///home/me/oxid-registry math
+```
+
 Choose an alias, package name and version for each dependency.
 
 ```toml
