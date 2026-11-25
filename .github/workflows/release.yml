@@ -88,8 +88,8 @@ jobs:
       - name: Package runtime and checksum
         run: python scripts/package_release.py "${{ matrix.binary }}" "${{ matrix.asset }}"
 
-      - name: Install the archive and run an Oxid project
-        run: python -B scripts/verify_release_install.py "dist/${{ matrix.asset }}"
+      - name: Verify installation and offline upgrades of the release archive
+        run: python -B scripts/verify_release_install.py "dist/${{ matrix.asset }}" --published-previous auto
 
       - name: Sign archive build provenance
         id: provenance
