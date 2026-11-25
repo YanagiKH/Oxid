@@ -786,7 +786,8 @@ fn main() -> i32 {
     if !enable_termination_notifications() || wait_for_termination(-1)
         || wait_for_termination(0) || termination_requested() { return 81; }
     let ready = b"R";
-    match write_some(&ready) {
+    let written = write_some(&ready);
+    match written {
         WriteSomeStatus::Written(count) => { if count != 1 { return 82; } },
         WriteSomeStatus::Error(code) => { return 82; },
     }
