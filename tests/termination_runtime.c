@@ -68,6 +68,7 @@ int main(void) {
     assert(__oxid_enable_termination_notifications() == 0);
     assert(__oxid_termination_requested() == 0);
     assert(__oxid_wait_for_termination(2000000000) == 0);
+    assert(__oxid_wait_for_stdin(2000000000) == 0);
 
 #if defined(OXID_TERMINATION_FORCE_UNSUPPORTED)
     assert(__oxid_termination_scope_start() == -1);
@@ -101,10 +102,30 @@ int main(void) {
     int64_t elapsed_ns = (finished.tv_sec - started.tv_sec) * INT64_C(1000000000)
         + finished.tv_nsec - started.tv_nsec;
     assert(elapsed_ns >= 25 * INT64_C(1000000));
+    int saved_input = dup(STDIN_FILENO);
+    assert(saved_input >= 0);
+    int input_pipe[2];
+    assert(pipe(input_pipe) == 0);
+    assert(dup2(input_pipe[0], STDIN_FILENO) == STDIN_FILENO);
+    assert(close(input_pipe[0]) == 0);
+    assert(__oxid_wait_for_stdin(-1) == 0);
+    assert(__oxid_wait_for_stdin(0) == 0);
+    assert(__oxid_wait_for_stdin(12) == 0);
+    assert(write(input_pipe[1], "a", 1) == 1);
+    assert(__oxid_wait_for_stdin(0) == 1);
+    char input;
+    assert(read(STDIN_FILENO, &input, 1) == 1 && input == 'a');
+    assert(__oxid_wait_for_stdin(0) == 0);
+    assert(close(input_pipe[1]) == 0);
+    assert(__oxid_wait_for_stdin(0) == 1);
+    assert(read(STDIN_FILENO, &input, 1) == 0);
+    assert(dup2(saved_input, STDIN_FILENO) == STDIN_FILENO);
+    assert(close(saved_input) == 0);
     assert(raise(SIGINT) == 0);
     assert(__oxid_termination_requested() == 1);
     assert(__oxid_wait_for_termination(-1) == 0);
     assert(__oxid_wait_for_termination(0) == 1);
+    assert(__oxid_wait_for_stdin(0) == 0);
     assert(__oxid_wait_for_termination(2000000000) == 1);
     assert(__oxid_enable_termination_notifications() == 1);
     assert(__oxid_termination_requested() == 1);

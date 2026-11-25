@@ -514,7 +514,8 @@ class PublishedRegistrationTests(unittest.TestCase):
         checks, typed_entries, typed_members = verify_repo.source_plan(sources, root)
         compiler_data = verify_repo.native_compiler_fixture_data_sources(root)
         compiler_members = {root / name for name in verify_repo.TYPED_MANIFEST_PROJECTS["compiler/native"]}
-        self.assertEqual((len(compiler_data), len(compiler_members)), (11, 7))
+        self.assertEqual((len(compiler_data), len(compiler_members)), (11, 8))
+        self.assertIn(root / "compiler/native/src/vector_schema.ox", compiler_members)
         self.assertFalse(compiler_data & compiler_members)
         self.assertTrue(compiler_data | compiler_members <= set(sources))
         self.assertEqual([row for row in checks if row[0] == root / "compiler/native"],
@@ -1194,7 +1195,8 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertIn(f"fixture-data validation passed: {513 + len(vector_data) + len(OWNED_TEXT_DATA_SOURCES)} source-only files", output.getvalue())
         self.assertIn("no compiler checks, executions or feature claim", output.getvalue())
         additional_members = (ARTIFACT_ADDED_FILES + LEXER_ADDED_FILES + LEXER_CORE_ADDED_FILES
-                              + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES)
+                              + PARSER_ADMISSION_ADDED_FILES + PARSER_ADDED_FILES + STATIC_ADDED_FILES + STREAMING_FILES
+                              + ("compiler/native/src/vector_schema.ox",))
         application_members = len(verify_repo.TYPED_MANIFEST_PROJECTS["apps/byte-count"])
         core_member_count = sum(map(len, CORE_TYPE_PROJECTS.values()))
         self.assertIn(f"{146 + 1 + 1 + application_members + len(ENUM_MEMBERS) + len(BUFFER_MEMBERS) + len(TEXT_MEMBERS) + len(UNICODE_MEMBERS) + len(VECTOR_MEMBERS) + len(MATRIX_MEMBERS) + len(CPU_MEMBERS) + len(GROWABLE_VECTOR_MEMBERS) + len(OWNED_TEXT_MEMBERS) + len(additional_members) + len(V2_OVERLAY_FILES) + len(WIDE_FILES) + core_member_count} language sources, "

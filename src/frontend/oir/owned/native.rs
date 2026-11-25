@@ -1369,6 +1369,14 @@ fn runtime_storage_bytes<W: PlanWitness>(
             0
         },
     )?;
+    let runtime_bytes = add(
+        runtime_bytes,
+        if plan.has_stdin_wait() {
+            experimental::STDIN_WAIT_BYTES
+        } else {
+            0
+        },
+    )?;
     add(
         runtime_bytes,
         if policy.recursive() {
@@ -3979,6 +3987,10 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
     }
     if plan.has_termination_wait() {
         out.write_str("declare i32 @__oxid_wait_for_termination(i32)\n")
+            .unwrap();
+    }
+    if plan.has_stdin_wait() {
+        out.write_str("declare i32 @__oxid_wait_for_stdin(i32)\n")
             .unwrap();
     }
     if plan.uses_owned_vectors() {
