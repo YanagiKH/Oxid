@@ -15,9 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "491624503a3da42b84d34eae3ab97a55ddef353e"
-REVIEWED_PARENTS = ("71c1d18d38e5c11b890b299b1581508a547da8d3",)
-REVIEWED_TREE = "763a16d98c366e9426f1c36f9ea34104725c9e99"
+REVIEWED_SOURCE = "af4302dbe24e168096d6ff52a04c0f003137bdd4"
+REVIEWED_PARENTS = ("491624503a3da42b84d34eae3ab97a55ddef353e",)
+REVIEWED_TREE = "d2c96f0c197c7786f0ad5e0d23234e01486f12bf"
 PUBLIC_TESTS = {
     "tests/file_open_append.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
@@ -31,6 +31,7 @@ PUBLIC_VECTOR_UPDATES = {
     "packages/owned_vec/src/lib.ox",
 }
 PUBLIC_TEXT_UPDATES = {"packages/utf8_text/src/lib.ox"}
+PUBLIC_BUILD_UPDATES = {"build.rs"}
 SOURCE_ROOTS = ("src", "native")
 RESOURCE_ADAPTER = "scripts/process_termination_resource_adapter.py"
 RESOURCE_ADAPTER_PIN = (3196, "d6b3bcd1bd0c958e4a2164d66425a231c086ba1f767657ea9c6ac360473aad0d")
@@ -76,13 +77,13 @@ def reviewed_delta(repo):
             "wrong reviewed integrated typed source")
     raw = git(repo, "diff", "--name-status", "--no-renames", "-z", PREDECESSOR, REVIEWED_SOURCE)
     words = raw.decode("utf-8").split("\0")
-    require(words[-1] == "" and len(words) == 319, "invalid reviewed compiler delta")
+    require(words[-1] == "" and len(words) == 321, "invalid reviewed compiler delta")
     rows = list(zip(words[:-1:2], words[1:-1:2]))
     added = {name for status, name in rows if status == "A"}
     modified = {name for status, name in rows if status == "M"}
-    require(len(added) == 28 and len(modified) == 131 and not added & modified,
+    require(len(added) == 28 and len(modified) == 132 and not added & modified,
             "wrong reviewed compiler delta membership")
-    updates = PUBLIC_TEST_UPDATES | PUBLIC_VECTOR_UPDATES | PUBLIC_TEXT_UPDATES
+    updates = PUBLIC_TEST_UPDATES | PUBLIC_VECTOR_UPDATES | PUBLIC_TEXT_UPDATES | PUBLIC_BUILD_UPDATES
     require(PUBLIC_TESTS <= added and updates <= modified
             and all(name.startswith(("src/", "native/"))
                     for name in (added | modified) - PUBLIC_TESTS - updates),
