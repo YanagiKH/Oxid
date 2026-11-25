@@ -21,6 +21,11 @@ use crate::model::monotonic_millis_binding;
 use crate::model::unix_millis_binding;
 use crate::model::sleep_millis_binding;
 use crate::model::is_time_operation;
+use crate::model::enable_termination_binding;
+use crate::model::termination_requested_binding;
+use crate::model::wait_for_termination_binding;
+use crate::model::wait_for_stdin_binding;
+use crate::model::is_termination_operation;
 use crate::model::read_some_binding;
 use crate::model::write_some_binding;
 use crate::model::write_stderr_binding;
@@ -451,6 +456,32 @@ fn time_import(c: &mut Compiler, item: Token) -> i32 {
     fail(&mut *c); return -1;
 }
 
+fn process_import(c: &mut Compiler, item: Token) -> i32 {
+    let enable = b"enable_termination_notifications";
+    let requested = b"termination_requested";
+    let wait = b"wait_for_termination";
+    let stdin = b"wait_for_stdin";
+    if word(&*c.source, item.start, item.end, &enable) { return enable_termination_binding(); }
+    if word(&*c.source, item.start, item.end, &requested) { return termination_requested_binding(); }
+    if word(&*c.source, item.start, item.end, &wait) { return wait_for_termination_binding(); }
+    if word(&*c.source, item.start, item.end, &stdin) { return wait_for_stdin_binding(); }
+    fail(&mut *c); return -1;
+}
+
+fn stream_import(c: &mut Compiler, item: Token) -> i32 {
+    let read_name = b"read_some";
+    let write_name = b"write_some";
+    let stderr_name = b"write_stderr";
+    let read_type = b"ReadSomeStatus";
+    let write_type = b"WriteSomeStatus";
+    if word(&*c.source, item.start, item.end, &read_name) { return read_some_binding(); }
+    if word(&*c.source, item.start, item.end, &write_name) { return write_some_binding(); }
+    if word(&*c.source, item.start, item.end, &stderr_name) { return write_stderr_binding(); }
+    if word(&*c.source, item.start, item.end, &read_type) { return read_status_binding(); }
+    if word(&*c.source, item.start, item.end, &write_type) { return write_status_binding(); }
+    fail(&mut *c); return -1;
+}
+
 fn standard_import(c: &mut Compiler) -> i32 {
     let allocation = b"alloc";
     let root = token(&*c, c.cursor);
@@ -462,6 +493,7 @@ fn standard_import(c: &mut Compiler) -> i32 {
     let io_name = b"io";
     let fs_name = b"fs";
     let time_name = b"time";
+    let process_name = b"process";
     expect_name(&mut *c, &std_name); expect(&mut *c, 45);
     let namespace = token(&*c, c.cursor);
     expect(&mut *c, 1); expect(&mut *c, 45);
@@ -469,6 +501,8 @@ fn standard_import(c: &mut Compiler) -> i32 {
     expect(&mut *c, 1);
     if word(&*c.source, namespace.start, namespace.end, &fs_name) { return file_import(&mut *c, item); }
     if word(&*c.source, namespace.start, namespace.end, &time_name) { return time_import(&mut *c, item); }
+    if word(&*c.source, namespace.start, namespace.end, &process_name) { return process_import(&mut *c, item); }
+    if word(&*c.source, namespace.start, namespace.end, &io_name) { return stream_import(&mut *c, item); }
     if word(&*c.source, namespace.start, namespace.end, &env_name) {
         let count_name = b"arg_count";
         let bytes_name = b"arg_bytes";
@@ -476,18 +510,6 @@ fn standard_import(c: &mut Compiler) -> i32 {
         if word(&*c.source, item.start, item.end, &count_name) { return argument_count_binding(); }
         if word(&*c.source, item.start, item.end, &bytes_name) { return argument_bytes_binding(); }
         if word(&*c.source, item.start, item.end, &status_name) { return argument_status_binding(); }
-    }
-    if word(&*c.source, namespace.start, namespace.end, &io_name) {
-        let read_name = b"read_some";
-        let write_name = b"write_some";
-        let stderr_name = b"write_stderr";
-        let read_type = b"ReadSomeStatus";
-        let write_type = b"WriteSomeStatus";
-        if word(&*c.source, item.start, item.end, &read_name) { return read_some_binding(); }
-        if word(&*c.source, item.start, item.end, &write_name) { return write_some_binding(); }
-        if word(&*c.source, item.start, item.end, &stderr_name) { return write_stderr_binding(); }
-        if word(&*c.source, item.start, item.end, &read_type) { return read_status_binding(); }
-        if word(&*c.source, item.start, item.end, &write_type) { return write_status_binding(); }
     }
     fail(&mut *c); return -1;
 }
@@ -717,6 +739,10 @@ fn resolve_imports(c: &mut Compiler) -> () {
         row.target = target;
         c.imports[index] = row;
         if is_time_operation(target) { c.uses_time = true; }
+        if is_termination_operation(target) {
+            if !c.process_entry { fail(&mut *c); return; }
+            c.uses_termination = true;
+        }
         if target == argument_count_binding() { c.uses_argument_count = true; }
         if target == argument_bytes_binding() {
             c.uses_argument_count = true;

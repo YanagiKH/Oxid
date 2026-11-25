@@ -1,12 +1,19 @@
+#if (defined(OXID_SCALAR_TIME) || defined(OXID_SCALAR_TERMINATION)) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "../../native/typed_preview.c"
 #include "../../native/typed_character.c"
 #include <string.h>
 
-#ifdef OXID_SCALAR_TIME
+#if defined(OXID_SCALAR_TIME) || defined(OXID_SCALAR_TERMINATION)
+#ifndef OXID_SCALAR_TERMINATION
 #define OXID_TIME_ONLY
+#endif
+#ifdef OXID_SCALAR_TIME
 #define OXID_MONOTONIC_MILLIS
 #define OXID_UNIX_MILLIS
 #define OXID_SLEEP_MILLIS
+#endif
 #include "../../native/typed_termination.c"
 #endif
 

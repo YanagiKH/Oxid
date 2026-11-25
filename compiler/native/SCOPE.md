@@ -59,6 +59,12 @@ Both clocks return `i64` milliseconds. An unavailable monotonic clock returns
 `-1`. An unavailable Unix clock returns the smallest `i64` value. Sleep returns
 true on completion, including a zero duration, and false for a negative duration
 or failed wait.
+In a process entry, import `enable_termination_notifications`,
+`termination_requested`, `wait_for_termination` and `wait_for_stdin` from
+`std::process`. Enable notifications before waiting. SIGINT and SIGTERM then
+let your program return from `main` and release its owned resources. Waits
+take milliseconds. A zero wait checks immediately. Standard input readiness
+includes end of input.
 Use `alloc::bytes::new()` to create an empty `ByteBuf`. Use `try_resize`,
 `try_push` or `try_extend` to add bytes, and match `GrowStatus` to check
 whether the operation succeeded. Borrow the buffer as `&[u8]` or

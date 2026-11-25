@@ -63,6 +63,7 @@ pub struct Compiler {
     pub target: i32, pub process_entry: bool, pub uses_argument_count: bool,
     pub uses_argument_bytes: bool, pub argument_status: i32,
     pub uses_binary_io: bool, pub read_status: i32, pub write_status: i32, pub uses_time: bool,
+    pub uses_termination: bool,
     pub byte_buffer: i32, pub growth_status: i32,
     pub file_owner: i32, pub file_open_result: i32, pub file_status: i32,
     pub vector_types: Vec<i32>,
@@ -82,6 +83,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target: i32, process_
         next_slot: 0, target: target, process_entry: process_entry, uses_argument_count: false,
         uses_argument_bytes: false, argument_status: -1,
         uses_binary_io: false, read_status: -1, write_status: -1, uses_time: false,
+        uses_termination: false,
         byte_buffer: -1, growth_status: -1,
         file_owner: -1, file_open_result: -1, file_status: -1,
         vector_types: new::<i32>(),
@@ -435,6 +437,13 @@ pub fn unix_millis_binding() -> i32 { return -45; }
 pub fn sleep_millis_binding() -> i32 { return -46; }
 pub fn is_time_operation(binding: i32) -> bool {
     return binding >= sleep_millis_binding() && binding <= monotonic_millis_binding();
+}
+pub fn enable_termination_binding() -> i32 { return -47; }
+pub fn termination_requested_binding() -> i32 { return -48; }
+pub fn wait_for_termination_binding() -> i32 { return -49; }
+pub fn wait_for_stdin_binding() -> i32 { return -50; }
+pub fn is_termination_operation(binding: i32) -> bool {
+    return binding >= wait_for_stdin_binding() && binding <= enable_termination_binding();
 }
 pub fn vector_type(c: &Compiler, element: i32) -> i32 {
     let mut slot = element;

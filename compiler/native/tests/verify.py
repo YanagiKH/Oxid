@@ -13,7 +13,9 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import shutil
+import signal
 import subprocess
 import tarfile
 import tempfile
@@ -1827,6 +1829,115 @@ fn main() -> i64 {
     return rows
 
 
+def verify_termination(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                       output: Path, timeout: int) -> list[dict]:
+    evidence = output / "termination"
+    evidence.mkdir()
+    source = evidence / "process.ox"
+    source.write_text("""use std::process::enable_termination_notifications;
+use std::process::termination_requested;
+use std::process::wait_for_termination;
+use std::process::wait_for_stdin as input_ready;
+use std::io::read_some;
+use std::io::ReadSomeStatus;
+use std::io::write_some;
+use std::io::WriteSomeStatus;
+fn notify(bytes: &[u8]) -> bool {
+    let written = write_some(&*bytes);
+    match written {
+        WriteSomeStatus::Written(count) => { return count == 1; },
+        WriteSomeStatus::Error(code) => { return false; },
+    }
+}
+fn main() -> i32 {
+    if input_ready(0) || wait_for_termination(0) || termination_requested() { return 81; }
+    if !enable_termination_notifications() || input_ready(-1) || wait_for_termination(-1) { return 82; }
+    let ready = b"R";
+    if !notify(&ready) { return 83; }
+    if !input_ready(15000) {
+        if termination_requested() { return 44; }
+        return 84;
+    }
+    let mut input = b".";
+    let read = read_some(&mut input);
+    match read {
+        ReadSomeStatus::Data(count) => {
+            if count != 1 { return 85; }
+            if input[0] == 71u8 { return 42; }
+            let waiting = b"S";
+            if input[0] == 84u8 && notify(&waiting) && wait_for_termination(15000)
+                && termination_requested() { return 45; }
+            return 86;
+        },
+        ReadSomeStatus::Eof => { return 43; },
+        ReadSomeStatus::Error(code) => { return 87; },
+    }
+}
+""", encoding="utf-8")
+    rows = []
+
+    def observe(label, command, native):
+        for case, status in (("data", 42), ("eof", 43), ("readiness-cancel", 44), ("wait-cancel", 45)):
+            with subprocess.Popen(command, cwd=evidence, env={} if native else None,
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
+                markers = bytearray()
+
+                def marker(value):
+                    with selectors.DefaultSelector() as selector:
+                        selector.register(child.stdout, selectors.EVENT_READ)
+                        require(selector.select(20), label + ": process did not reach its wait")
+                        data = os.read(child.stdout.fileno(), 1)
+                    require(data == value, label + ": unexpected process marker")
+                    markers.extend(data)
+
+                try:
+                    marker(b"R")
+                    if case == "data":
+                        child.stdin.write(b"G")
+                        child.stdin.flush()
+                    elif case == "eof":
+                        child.stdin.close()
+                        child.stdin = None
+                    elif case == "readiness-cancel":
+                        child.send_signal(signal.SIGTERM)
+                    else:
+                        child.stdin.write(b"T")
+                        child.stdin.flush()
+                        marker(b"S")
+                        child.send_signal(signal.SIGINT)
+                    child.wait(timeout=20)
+                    stdout, stderr = child.communicate(timeout=20)
+                    result = subprocess.CompletedProcess(command, child.returncode, bytes(markers) + stdout, stderr)
+                    rows.append(record(evidence, label + "-" + case, command, result))
+                    require(child.returncode == status and not stdout and not stderr,
+                            label + "-" + case + ": wrong process status or output")
+                finally:
+                    if child.poll() is None:
+                        child.kill()
+                        child.communicate()
+
+    observe("reference", [str(reference), "run", str(source), "--edition=typed-preview",
+                          "--entry-mode=process"], False)
+    programs = []
+    for profile in ("dev", "release"):
+        binary = evidence / profile
+        driver.build(compiler, source, clang, runtime, binary, profile, timeout,
+                     evidence / (profile + "-build"), entry_mode="process")
+        programs.append((profile, binary))
+    source.rename(evidence / "retained-process.ox")
+    for profile, binary in programs:
+        observe(profile, [str(binary)], True)
+
+    rejected = evidence / "result-mode.ox"
+    rejected.write_text("use std::process::wait_for_stdin; fn main() -> i32 { return 42; }\n",
+                        encoding="utf-8")
+    command = driver.compiler_command(compiler, rejected, driver.host_target())
+    result = run(command, evidence, timeout)
+    check_source_rejection("termination import outside process entry", result, rejected)
+    rows.append(record(evidence, "result-mode", command, result))
+    return rows
+
+
 def verify_bootstrap_bundle(seed: Path, source: Path, clang: Path, evidence: Path,
                             environment: dict[str, str], expected: dict, timeout: int) -> dict:
     target = driver.host_target()
@@ -2040,6 +2151,8 @@ def verify(args) -> dict:
                 args.reference.resolve(strict=True), output, args.timeout)
             time_compiler = output / "native-rebuild/deployed/c3" if args.verify_rebuild else compiler
             report["time"] = verify_time(time_compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["termination"] = verify_termination(time_compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"
