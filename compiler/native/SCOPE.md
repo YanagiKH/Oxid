@@ -53,7 +53,8 @@ of the bytes. Use `take(&mut field)` to move a buffer out and leave it empty.
 Create a vector with `alloc::vec::new::<i32>()`. Vectors accept
 `i32`, `u8`, `i64`, `u32`, `bool` and `char` elements.
 Use `try_push` to add an element, `values[index]` to read or replace one,
-and `&values[start..end]` to borrow a slice.
+and `&values[start..end]` to borrow a slice. Use `values.len()` to get the
+current length. The same operations work on a vector stored in a struct.
 Use `std::fs::open_read(&path)` with a byte path and match `OpenResult`.
 Call `std::fs::read_some(&mut file, &mut bytes)` to read data into a slice.
 The file closes when its owner goes out of scope. Use `std::fs::close`

@@ -1091,6 +1091,40 @@ fn main()->i32{
             "main.ox": "use alloc::vec::Vec as Items;struct Items{number:i32}"
                        "fn main()->i32{return 42;}",
         }),
+        ("nested-vector-field-index-and-length", 0, True, {
+            "main.ox": '''
+use alloc::vec::Vec;
+use alloc::vec::new;
+use alloc::vec::try_push;
+struct Row{values:Vec<i32>,phase:i32}
+struct Table{row:Row}
+fn replacement(table:&mut Table)->i32{
+    table.row.phase=1;
+    return 42;
+}
+fn select(table:&Table)->i32{
+    if table.row.phase==1{return 0;}
+    return 9;
+}
+fn update(table:&mut Table)->i32{
+    try_push(&mut *table.row.values,7);
+    if table.row.values.len()!=1{return 1;}
+    table.row.values[select(&*table)]=replacement(&mut *table);
+    return table.row.values[0];
+}
+fn main()->i32{
+    let values=new::<i32>();
+    if values.len()!=0{return 2;}
+    let mut table=Table{row:Row{values:values,phase:0}};
+    return update(&mut table);
+}
+''',
+        }),
+        ("nested-vector-field-write-requires-exclusive-access", 65, True, {
+            "main.ox": "use alloc::vec::Vec;struct Row{values:Vec<i32>}"
+                       "fn replace(row:&Row)->(){row.values[0]=42;}"
+                       "fn main()->i32{return 42;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
