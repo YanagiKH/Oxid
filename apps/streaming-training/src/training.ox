@@ -13,11 +13,14 @@ use crate::reader::feature_count;
 use crate::reader::target_count;
 use crate::checkpoint::Progress;
 use crate::checkpoint::Saved;
+use std::process::termination_requested;
 pub struct Summary { pub epochs: i32, pub rows: i32, pub batches: u64, pub initial_loss: f64, pub final_loss: f64 }
 struct Measurement { loss: f64, digest: u32 }
 fn converted(problem: StreamError) -> Error { match problem { StreamError::Tensor(cause) => { return cause; }, StreamError::Io(code) => { return Error::IoError(code); }, StreamError::InvalidHeader => { return Error::InvalidStorage; }, StreamError::Truncated => { return Error::InvalidStorage; }, StreamError::TrailingData => { return Error::InvalidStorage; }, StreamError::InvalidBatchSize => { return Error::NegativeShape; }, StreamError::Poisoned => { return Error::InvalidStorage; }, StreamError::End => { return Error::InvalidStorage; }, StreamError::InvalidStartRow => { return Error::Bounds; }, } }
 fn create_model(path: &[u8], size: i32, start_row: i32) -> TensorResult<Model>{ let opened = open_at(&*path, size, start_row); match opened { StreamResult::Ok(reader) => { return crate::tensor::model::initialize(feature_count(&reader), 8, target_count(&reader), 42u32); }, StreamResult::Err(problem) => { return TensorResult::<Model>:: Err(converted(problem)); }, } }
 fn count_rows(path: &[u8], size: i32, start_row: i32) -> TensorResult<i32>{ let opened = open_at(&*path, size, start_row); match opened { StreamResult::Ok(reader) => { return TensorResult::Ok(remaining(&reader)); }, StreamResult::Err(problem) => { return TensorResult::<i32>:: Err(converted(problem)); }, } }
+fn interrupted() -> Error { return Error::IoError(4); }
+
 fn evaluate(options: &Options, expected_rows: i32, model: &Model) -> TensorResult<Measurement>{
     let opened = open_at(&*options.path, options.size, options.start_row);
     match opened {
@@ -27,6 +30,7 @@ fn evaluate(options: &Options, expected_rows: i32, model: &Model) -> TensorResul
             if options.checkpoint_mode != 0 { crate::reader::begin_checksum(&mut reader); }
             let mut weighted = 0.0;
             while remaining(&reader) > 0 {
+                if termination_requested() { return TensorResult::<Measurement>::Err(interrupted()); }
                 let loaded = next(&mut reader);
                 match loaded {
                     StreamResult::Ok(batch) => {
@@ -66,6 +70,7 @@ fn train_window(model: &mut Model, window: Batch, size: i32, seed: u32) -> Tenso
                     let mut sampler = value;
                     let batches = (crate::tensor::data::row_count(&data) - 1) / size + 1;
                     for index in 0..batches {
+                        if termination_requested() { return TensorResult::<()>::Err(interrupted()); }
                         let selected = crate::tensor::data::next_batch(&data, &mut sampler);
                         match selected {
                             TensorResult::Ok(batch) => {
@@ -109,6 +114,7 @@ fn epoch(options: &Options, progress: Progress, model: &mut Model, random: &mut 
             if remaining(&reader) != expected_rows { return TensorResult::<()>::Err(Error::ShapeMismatch); }
             if options.checkpoint_mode != 0 { crate::reader::begin_checksum(&mut reader); }
             while remaining(&reader) > 0 {
+                if termination_requested() { return TensorResult::<()>::Err(interrupted()); }
                 let loaded = next(&mut reader);
                 match loaded {
                     StreamResult::Ok(chunk) => {
@@ -131,6 +137,7 @@ fn epoch(options: &Options, progress: Progress, model: &mut Model, random: &mut 
 }
 
 fn save_slot(options: &Options, slot: i32, model: &Model, progress: Progress) -> TensorResult<()> {
+    if termination_requested() { return TensorResult::<()>::Err(interrupted()); }
     if slot == 0 { return crate::checkpoint::save(&*options.first, &*model, progress); }
     return crate::checkpoint::save(&*options.second, &*model, progress);
 }
@@ -141,6 +148,7 @@ fn fit(options: &Options, model: &mut Model, saved: Progress, first_slot: i32, i
     let mut slot = first_slot;
     let mut random = crate::tensor::model::random(progress.random_state);
     for index in 0..options.epochs {
+        if termination_requested() { return TensorResult::<Summary>::Err(interrupted()); }
         let trained = epoch(&*options, progress, &mut *model, &mut random);
         match trained {
             TensorResult::Ok(done) => {},

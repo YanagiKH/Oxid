@@ -55,12 +55,16 @@ class Verification:
     def save(self):
         (self.output/'result.json').write_text(json.dumps(self.report, indent=2, allow_nan=False)+'\n')
 
-    def command(self, name, argv, cwd, status=0, native=False):
-        folder = self.output/'commands'/name
-        folder.mkdir(parents=True)
+    def environment(self, native):
         environment = {} if native else dict(os.environ, OXID_LLVM_BIN=str(self.llvm),
                                              OXID_CACHE_DIR=str(self.output/'legacy-cache'))
         environment.pop('OXID_PATH', None)
+        return environment
+
+    def command(self, name, argv, cwd, status=0, native=False):
+        folder = self.output/'commands'/name
+        folder.mkdir(parents=True)
+        environment = self.environment(native)
         started = time.monotonic()
         completed = subprocess.run([str(part) for part in argv], cwd=cwd, env=environment,
                                    stdin=subprocess.DEVNULL, capture_output=True, timeout=300,
