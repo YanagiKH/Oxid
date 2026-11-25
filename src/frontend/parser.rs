@@ -1303,6 +1303,33 @@ impl Parser<'_> {
         };
         Ok(id)
     }
+
+    fn else_if_block(
+        &mut self,
+        blocks: &mut Vec<BodyBlock>,
+        depth: usize,
+    ) -> Result<BodyBlockId, Box<Diagnostic>> {
+        let start = self.peek().span;
+        let id = BodyBlockId(blocks.len());
+        self.candidate_reserve(blocks, 2 * MAX_NODES + 1, "syntax blocks", start)?;
+        blocks.push(BodyBlock {
+            body: Vec::new(),
+            span: start,
+            end: start,
+        });
+        let statement = self.statement(blocks, depth + 1)?;
+        let end = self.source.span(statement.span.end - 1, statement.span.end);
+        let mut body = Vec::new();
+        self.candidate_reserve(&mut body, MAX_NODES, "syntax statements", statement.span)?;
+        body.push(statement);
+        blocks[id.0] = BodyBlock {
+            body,
+            span: self.source.span(start.start, end.end),
+            end,
+        };
+        Ok(id)
+    }
+
     fn ty(&mut self) -> Result<TypeSyntax, Box<Diagnostic>> {
         self.ty_with_paths(true)
     }
@@ -1620,7 +1647,14 @@ impl Parser<'_> {
             }
             let then_block = self.block(blocks, depth, "expected if body `{`")?;
             let else_block = if self.take(Kind::Else).is_some() {
-                Some(self.block(blocks, depth, "expected else body `{`")?)
+                let block =
+                    if self.mode == SourceMode::ProjectCandidate && self.peek().kind == Kind::If {
+                        // Keep the existing lexical scope and control-flow semantics.
+                        self.else_if_block(blocks, depth)?
+                    } else {
+                        self.block(blocks, depth, "expected else body `{`")?
+                    };
+                Some(block)
             } else {
                 None
             };

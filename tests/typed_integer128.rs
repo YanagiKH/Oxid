@@ -5,20 +5,25 @@ use std::{
     process::{Command, Output},
     sync::atomic::{AtomicUsize, Ordering},
 };
-// Process diagnostics require the terminal setup described in RFC 0025.
-const PROCESS_TERMINAL: bool = cfg!(any(
-    all(
-        target_os = "linux",
-        target_pointer_width = "64",
-        target_endian = "little",
-        any(target_arch = "x86_64", target_arch = "aarch64")
-    ),
-    all(
+const WIDE_PROCESS: bool = cfg!(all(
+    any(target_os = "linux", target_os = "macos"),
+    target_pointer_width = "64",
+    target_endian = "little",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+));
+const PROCESS_TERMINAL: bool = WIDE_PROCESS
+    || cfg!(all(
         target_os = "macos",
         target_pointer_width = "64",
         any(target_arch = "x86_64", target_arch = "aarch64")
-    )
-));
+    ))
+    || cfg!(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ));
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 struct Project(PathBuf);
 impl Project {
@@ -243,12 +248,7 @@ fn process_entries_can_calculate_with_full_width_values_and_return_i32_status() 
             );
             continue;
         }
-        if cfg!(all(
-            any(target_os = "linux", target_os = "macos"),
-            target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
-        )) {
+        if WIDE_PROCESS {
             assert_eq!(
                 (result.status.code(), result.stdout, result.stderr),
                 (Some(255), Vec::new(), Vec::new())
@@ -328,16 +328,7 @@ fn mixed_types_invalid_literals_and_non_i32_process_entries_are_rejected() {
     }
     assert_eq!(result.status.code(), Some(1), "{result:?}");
     assert!(result.stdout.is_empty(), "{result:?}");
-    let expected = if cfg!(all(
-        any(target_os = "linux", target_os = "macos"),
-        target_pointer_width = "64",
-        target_endian = "little",
-        any(target_arch = "x86_64", target_arch = "aarch64")
-    )) {
-        "[E0600]"
-    } else {
-        "[E0608]"
-    };
+    let expected = if WIDE_PROCESS { "[E0600]" } else { "[E0608]" };
     assert!(
         String::from_utf8_lossy(&result.stderr).contains(expected),
         "{result:?}"

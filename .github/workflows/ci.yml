@@ -1148,6 +1148,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --test native_doctor --test typed_windows_native -- --include-ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows libraries from C, Rust and Python
+        run: |
+          cargo test --locked --test native_library actual_windows_library_is_called_by_c_rust_and_python -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Windows binary file programs
         run: |
           $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN
@@ -1695,6 +1699,18 @@ jobs:
             --llvm-bin "$OXID_LLVM_BIN" --native
       - name: Install and run a release archive on this host
         run: python3 -B scripts/verify_release_install.py --binary target/release/oxid
+      - name: Run the Oxid-authored compiler and its Linux ARM64 programs
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd compiler/native
+            "$GITHUB_WORKSPACE/target/release/oxid" build --profile=release
+          )
+          python3 -B compiler/native/tests/verify.py \
+            --compiler compiler/native/.oxid/bin/oxid-scalar-compiler \
+            --clang "$OXID_LLVM_BIN/clang" --reference target/release/oxid \
+            --output "$RUNNER_TEMP/linux-arm64-native/scalar-compiler"
       - name: Verify offline ARM64 exports rebuild and deploy with both compiler profiles
         shell: bash
         run: |

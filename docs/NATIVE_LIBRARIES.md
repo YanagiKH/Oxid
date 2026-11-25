@@ -1,10 +1,9 @@
 # Call Oxid from C, Rust and Python
 
 Oxid can build a shared library that runs inside another program. This
-experimental command supports x86_64 and ARM64 on Linux and macOS 11 or newer
-with LLVM 19.1.7. Exported
-functions take `i32` arguments and return `i32`; they report errors without
-terminating the caller.
+command supports x86_64 and ARM64 on Linux and macOS 11 or newer, and Windows
+MSVC x64, with LLVM 19.1.7. Exported functions take `i32` arguments and return
+`i32`. They report errors without terminating the caller.
 
 Save this as `pricing.ox`:
 
@@ -22,11 +21,11 @@ oxid --edition typed-preview library --export crate::line_total \
   --profile release --output dist/pricing-v1 pricing.ox
 ```
 
-The directory contains `liboxid_library.so` on Linux or
-`liboxid_library.dylib` on macOS, plus `oxid_library.h` and `metadata.json`.
-Keep these matching files together. An existing destination
-is never replaced; use a new directory for the next version. The compiled
-library needs neither Oxid nor the source files when called.
+The directory contains `liboxid_library.so` on Linux, `liboxid_library.dylib`
+on macOS or `oxid_library.dll` with `oxid_library.lib` on Windows. Every build
+includes `oxid_library.h` and `metadata.json`. Keep the matching files together.
+Use a fresh directory for each version. The compiled library runs independently
+of Oxid and its source files.
 
 ## C
 
@@ -56,6 +55,14 @@ cc -I dist/pricing-v1 client.c -L dist/pricing-v1 -loxid_library \
 ./c-client
 ```
 
+On Windows, run the build and client commands in the Visual Studio x64 Native
+Tools Command Prompt. Link the `.lib` file and place the client beside the DLL.
+
+```bat
+clang -I dist\pricing-v1 client.c dist\pricing-v1\oxid_library.lib -o dist\pricing-v1\c-client.exe
+dist\pricing-v1\c-client.exe
+```
+
 ## Rust
 
 Save as `client.rs`:
@@ -80,6 +87,13 @@ rustc --edition=2021 client.rs -L native=dist/pricing-v1 \
 ./rust-client
 ```
 
+On Windows, put the Rust executable beside the DLL as well.
+
+```bat
+rustc --edition=2021 client.rs -L native=dist\pricing-v1 -o dist\pricing-v1\rust-client.exe
+dist\pricing-v1\rust-client.exe
+```
+
 ## Python
 
 Save as `client.py` and run `python3 client.py`:
@@ -89,8 +103,10 @@ import ctypes
 import sys
 from pathlib import Path
 
-suffix = ".dylib" if sys.platform == "darwin" else ".so"
-library = ctypes.CDLL(Path("dist/pricing-v1") / f"liboxid_library{suffix}")
+name = {"win32": "oxid_library.dll", "darwin": "liboxid_library.dylib"}.get(
+    sys.platform, "liboxid_library.so"
+)
+library = ctypes.CDLL(str((Path("dist/pricing-v1") / name).resolve()))
 call = library.oxid_library_call_v1
 call.argtypes = [ctypes.c_int32, ctypes.c_int32, ctypes.c_int32,
                  ctypes.POINTER(ctypes.c_int32)]

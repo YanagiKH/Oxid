@@ -454,8 +454,9 @@ error contracts.
 ## Scalar native libraries
 
 `oxid --edition typed-preview library --export crate::NAME --output NEW_DIRECTORY SOURCE`
-builds a Linux x86_64/ARM64 shared library. The selected root function must be
-explicitly public, take only `i32` parameters and return `i32`. The generated
+builds a shared library on Linux or macOS x86_64/ARM64 and Windows MSVC x64.
+The selected root function must be public, take only `i32` parameters and return
+`i32`. The generated
 header exposes a fixed status-returning C ABI with caller-owned output storage.
 Arithmetic errors and execution exhaustion return to the host without changing
 that output. Every invocation owns its bounded execution allowance.
@@ -470,12 +471,14 @@ on success, and an existing destination is never replaced. See the
 
 ## Program arguments
 
-On Linux and macOS x86_64/ARM64, `std::env::arg_count()` includes the executable at index 0.
+`std::env::arg_count()` includes the executable at index 0 on Linux and macOS
+x86_64/ARM64 and Windows MSVC x64.
 `std::env::arg_bytes(index, &mut bytes)` returns `ArgStatus::Copied(length)`,
-`TooSmall(required)`, `Missing` or `TooLong`. It preserves raw OS bytes and
-empty arguments. Only a successful copy modifies the destination's prefix;
-all other statuses leave it unchanged. User arguments start at index 1 in
-both reference and native execution.
+`TooSmall(required)`, `Missing` or `TooLong`. Linux and macOS preserve raw OS
+bytes. Windows encodes arguments in UTF-8 and replaces unpaired UTF-16
+surrogates with `U+FFFD`. Empty arguments return `Copied(0)`. Only a successful
+copy modifies the destination prefix. User arguments start at index 1 in both
+reference and native execution.
 
 Pass them with `oxid run -- ARGUMENTS`, or `oxid run SOURCE --edition=typed-preview
 -- ARGUMENTS`. Native executables accept arguments directly. See the
@@ -989,10 +992,10 @@ native compile require an original zero-argument scalar `main` declared in root;
 an imported or child `main` never supplies the entry. Check requires no main.
 
 Declared-child filesystem loading is implemented on Linux and macOS, and on
-Windows x86_64 with 64-bit little-endian pointers and a local NTFS volume. On
-Windows, source-entry `check` and pure Result `run` share the checked module graph;
-native builds, package/workspace commands, process I/O and source bundles remain
-unsupported. Module paths require exact case and regular files under the
+Windows x86_64 with 64-bit little-endian pointers and a local NTFS volume. The
+Windows compiler can run and build bounded projects using the types and operations
+listed in [Windows native programs](../docs/windows-native.md). Module paths
+require exact case and regular files under the
 canonical root. Child symbolic links, junctions, other reparse points, network
 paths and non-NTFS volumes are rejected. The inspected Windows handles are retained
 through source reads. Actual Windows execution qualification is separate from
@@ -1188,9 +1191,10 @@ statement      := "let" "mut"? name (":" value_type)? "=" expression ";"
                 | expression ";"
                 | "return" expression? ";"
                 | "break" ";" | "continue" ";"
-                | "if" expression block ("else" block)?
+                | if_statement
                 | "while" expression block
                 | "match" name "{" match_arm ("," match_arm)* ","? "}"
+if_statement   := "if" expression block ("else" (block | if_statement))?
 expression     := logical_or
 logical_or     := logical_and ("||" logical_and)*
 logical_and    := comparison ("&&" comparison)*
@@ -1271,8 +1275,9 @@ zero-argument main returning bool/i32/unit.
   after a return or an if with two returning arms are rejected
 - An if condition must be bool. Both arms are checked even for literal conditions.
   A missing else leaves a reachable empty false path. Empty arms are legal. An if
-  is a statement with no value or trailing semicolon; else requires braces, so
-  else-if, if-expressions and naked block statements are unavailable
+  is a statement with no value or trailing semicolon. Typed projects can chain
+  conditions with `else if`. Each condition must be bool, and only the first
+  matching arm runs. An optional final `else` handles the remaining case
 - Expression statements may discard any supported type
 
 Example:

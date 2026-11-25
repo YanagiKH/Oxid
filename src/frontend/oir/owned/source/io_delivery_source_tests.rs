@@ -332,11 +332,20 @@ fn main()->i32{{let a=[byte(65)];return write_score(failing(&a));}}"
 #[test]
 fn binary_delivery_native_ir_is_canonical_and_has_no_late_return_guard() {
     use crate::frontend::builtin_catalog::experimental::Function;
-    let project = super::project(&format!(
-        "{IMPORTS}{IO}
+    let windows = crate::frontend::build_config::NativeBuildSettings::windows_msvc_host();
+    let source = if windows {
+        format!(
+            "{IO}fn main()->i32{{let mut b=b\"ccc\";read_some(&mut b[3..3]);
+return read_score(read_wrap(&mut b))+write_score(write_wrap(&b));}}"
+        )
+    } else {
+        format!(
+            "{IMPORTS}{IO}
 fn main()->i32{{let mut b=new();try_resize(&mut b,3,byte(99));
 read_some(&mut b[3..3]);return read_score(read_wrap(&mut b))+write_score(write_wrap(&b));}}"
-    ));
+        )
+    };
+    let project = super::project(&source);
     let (program, entry) = check_enum_source(SourceOwner::project(&project)).unwrap();
     let plan = super::super::super::super::plan::ExecutionPlan::build(&program.witness).unwrap();
     let module = program
@@ -373,7 +382,8 @@ read_some(&mut b[3..3]);return read_score(read_wrap(&mut b))+write_score(write_w
     for function in program.witness.functions().iter().take(5) {
         assert!(plan.binary_delivery_cost(function.id).is_none());
     }
-    for id in [hir::DefId(3), hir::DefId(4)] {
+    let read_wrapper = if windows { 2 } else { 3 };
+    for id in [hir::DefId(read_wrapper), hir::DefId(read_wrapper + 1)] {
         let (_, body) = module
             .split_once(&format!("define internal void @__oxid_owned_fn_{}(", id.0))
             .unwrap();

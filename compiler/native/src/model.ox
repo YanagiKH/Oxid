@@ -21,7 +21,8 @@ pub struct SourceModule {
 }
 #[derive(Copy)]
 pub struct Import {
-    pub scope: i32, pub path_start: i32, pub name: i32, pub alias: i32, pub target: i32
+    pub scope: i32, pub path_start: i32, pub name: i32, pub alias: i32,
+    pub target: i32, pub record_target: i32
 }
 #[derive(Copy)]
 pub struct Function {
@@ -33,16 +34,19 @@ pub struct Binding {
     pub name: i32, pub ty: i32, pub slot: i32, pub writable: bool, pub available: bool
 }
 #[derive(Copy)]
-pub struct Loan { pub binding: i32, pub exclusive: bool }
+pub struct Loan { pub binding: i32, pub path: i64, pub depth: i32, pub exclusive: bool }
 #[derive(Copy)]
 pub struct Value { pub ty: i32, pub id: i32 }
 #[derive(Copy)]
 pub struct Record {
     pub name: i32, pub source_module: i32, pub first_field: i32, pub field_count: i32,
-    pub start: i32, pub end: i32, pub copy: bool, pub tagged: bool
+    pub start: i32, pub end: i32, pub cells: i32, pub depth: i32,
+    pub copy: bool, pub tagged: bool, pub public: bool
 }
 #[derive(Copy)]
-pub struct Field { pub name: i32, pub ty: i32 }
+pub struct Field { pub name: i32, pub ty: i32, pub public: bool }
+#[derive(Copy)]
+pub struct FieldPath { pub code: i64, pub depth: i32, pub ty: i32, pub pointer: i32 }
 
 pub struct Compiler {
     pub source: ByteBuf, pub source_path: ByteBuf, pub literals: ByteBuf, pub sources: Vec<SourceModule>, pub imports: Vec<Import>,
@@ -52,10 +56,11 @@ pub struct Compiler {
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
     pub cursor: i32, pub current: i32, pub main: i32,
     pub next_value: i32, pub next_label: i32, pub next_slot: i32,
+    pub target_arm64: bool,
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
 
-pub fn new_compiler(source: ByteBuf, source_path: ByteBuf) -> Compiler {
+pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool) -> Compiler {
     return Compiler {
         source: source, source_path: source_path, literals: bytes_new(), sources: new::<SourceModule>(), imports: new::<Import>(),
         tokens: new::<Token>(), params: new::<Parameter>(),
@@ -64,7 +69,8 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf) -> Compiler {
         loop_move_floor: 0, call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
-        next_slot: 0, live: true, terminated: false, error: 0, error_start: 0, error_module: 0
+        next_slot: 0, target_arm64: target_arm64,
+        live: true, terminated: false, error: 0, error_start: 0, error_module: 0
     };
 }
 
@@ -172,6 +178,33 @@ pub fn slice_type(element: i32, exclusive: bool) -> i32 {
 pub fn is_mutable_slice(ty: i32) -> bool { return ty > 9010 && ty <= 9017; }
 pub fn is_slice(ty: i32) -> bool { return (ty > 9000 && ty <= 9007) || is_mutable_slice(ty); }
 pub fn slice_element(ty: i32) -> i32 { return ty % 10; }
+pub fn record_reference(ty: i32, exclusive: bool) -> i32 {
+    let index = record_index(ty);
+    if exclusive { return 9228 + index; }
+    return 9100 + index;
+}
+pub fn is_record_reference(ty: i32) -> bool { return ty >= 9100 && ty < 9356; }
+pub fn is_mutable_record_reference(ty: i32) -> bool { return ty >= 9228 && ty < 9356; }
+pub fn referent_record(ty: i32) -> i32 {
+    return record_type((ty - 9100) % 128);
+}
+pub fn record_value_type(ty: i32) -> i32 {
+    if is_record_reference(ty) { return referent_record(ty); }
+    return ty;
+}
+
+pub fn value_cells(c: &Compiler, ty: i32) -> i32 {
+    if is_record(ty) {
+        let row = c.records[record_index(ty)];
+        return row.cells;
+    }
+    if is_slice(ty) { return 2; }
+    if is_array(ty) {
+        let cells = (array_bytes(ty) + 7) / 8;
+        if cells > 0 { return cells; }
+    }
+    return 1;
+}
 
 pub fn record(c: &Compiler, source_module: i32, name: i32) -> i32 {
     let mut index = 0;
@@ -213,6 +246,31 @@ fn within(c: &Compiler, module: i32, ancestor: i32) -> bool {
     return false;
 }
 
+pub fn record_visible(c: &Compiler, requester: i32, index: i32) -> bool {
+    if index < 0 { return false; }
+    let row = c.records[index];
+    return row.public || within(&*c, requester, row.source_module);
+}
+
+pub fn record_binding(c: &Compiler, source_module: i32, name: i32) -> i32 {
+    let declared = record(&*c, source_module, name);
+    if declared >= 0 { return declared; }
+    for index in 0..len(&*c.imports) {
+        let imported = c.imports[index];
+        if imported.scope == source_module && imported.record_target >= 0
+            && same_name(&*c, imported.alias, name) { return imported.record_target; }
+    }
+    return -1;
+}
+
+pub fn visible_field(c: &Compiler, requester: i32, row: Record, name: i32) -> i32 {
+    let position = record_field(&*c, row, name);
+    if position < 0 { return -1; }
+    let field = c.fields[row.first_field + position];
+    if field.public || within(&*c, requester, row.source_module) { return position; }
+    return -1;
+}
+
 pub fn function_visible(c: &Compiler, source_module: i32, target: i32) -> bool {
     if target < 0 { return false; }
     let selected = c.functions[target];
@@ -225,7 +283,8 @@ pub fn function_binding(c: &Compiler, source_module: i32, name: i32) -> i32 {
     let mut index = 0;
     while index < len(&*c.imports) {
         let imported = c.imports[index];
-        if imported.scope == source_module && same_name(&*c, imported.alias, name) { return imported.target; }
+        if imported.scope == source_module && imported.target >= 0
+            && same_name(&*c, imported.alias, name) { return imported.target; }
         index = index + 1;
     }
     return -1;

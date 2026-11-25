@@ -189,6 +189,7 @@ def source_for(case: dict) -> bytes:
 
 def actual_protocol(compiler: Path, clang: Path, runtime: Path,
                     output: Path, timeout: int) -> list[dict]:
+    target = driver.host_target()
     evidence = output / "actual-protocol"
     evidence.mkdir()
     source = evidence / "valid.ox"
@@ -206,12 +207,24 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
             and sentinel.stat().st_ino == original.st_ino,
             "existing output bytes/inode changed")
 
+    rows = []
+    for selected in (driver.DEFAULT_TARGET, driver.ARM64_TARGET):
+        command = [str(compiler), str(source), f"--target={selected}"]
+        result = run(command, evidence, timeout)
+        driver.module_from_result(result, selected)
+        rows.append(record(evidence, selected, command, result))
+    command = [str(compiler), str(source), "--target=unknown"]
+    result = run(command, evidence, timeout)
+    require(result.returncode == 64 and result.stdout == b"" and result.stderr.startswith(b"usage: "),
+            "unsupported targets must fail before writing LLVM")
+    rows.append(record(evidence, "invalid-target", command, result))
+
     missing = evidence / "absent.ox"
-    missing_command = [str(compiler), str(missing)]
+    missing_command = driver.compiler_command(compiler, missing, target)
     absent = run(missing_command, evidence, timeout)
     require((absent.returncode, absent.stdout, absent.stderr) == (66, b"", INPUT_ERROR),
             "missing input must report its error without LLVM")
-    rows = [record(evidence, "missing-input", missing_command, absent)]
+    rows.append(record(evidence, "missing-input", missing_command, absent))
 
     # This uses the real compiler and real Clang, but an invalid C runtime input
     # deliberately forces linking/compilation failure after accepted LLVM.
@@ -232,7 +245,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     # report success, or terminate with SIGPIPE.
     reader, writer = os.pipe()
     os.close(reader)
-    command = [str(compiler), str(source)]
+    command = driver.compiler_command(compiler, source, target)
     try:
         child = subprocess.Popen(command, cwd=evidence, stdin=subprocess.DEVNULL,
                                  stdout=writer, stderr=subprocess.PIPE, env={})
@@ -245,7 +258,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
 
     too_large = evidence / "too-large.ox"
     too_large.write_bytes(b" " * 65537)
-    large_command = [str(compiler), str(too_large)]
+    large_command = driver.compiler_command(compiler, too_large, target)
     large_result = run(large_command, evidence, timeout)
     require((large_result.returncode, large_result.stdout, large_result.stderr) == (68, b"", RESOURCE_ERROR),
             "input byte limit was not enforced")
@@ -258,7 +271,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     (nested / "outer.ox").write_text("mod inner;\n")
     (nested / "outer").mkdir()
     inner = nested / "outer/inner.ox"
-    command = [str(compiler), str(nested_entry)]
+    command = driver.compiler_command(compiler, nested_entry, target)
     for name, code, position in (
         ("nested-lexical-error", "// 雪\r\n  @\n", b"2:3"),
         ("nested-type-error", "fn read()->i32{\n  return true;\n}\n", b"2:10"),
@@ -330,7 +343,8 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
                 row = record(evidence, f'{name}-{receipt["profile"]}', command, result)
                 rows.append({**row, "build": receipt})
                 require((result.returncode, result.stdout, result.stderr) == expected,
-                        f'{name}: wrong result at {receipt["profile"]}')
+                        f'{name}: wrong result at {receipt["profile"]}, '
+                        f'exit={result.returncode}, stderr={result.stderr[:256]!r}')
     source = evidence / "full-record-frame.ox"
     source.write_text(record_frame + "return copy62.x63;}", encoding="ascii")
     receipts = []
@@ -391,7 +405,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     ):
         source = evidence / (name + ".ox")
         source.write_text(code, encoding="ascii")
-        command = [str(compiler), str(source)]
+        command = driver.compiler_command(compiler, source, target)
         outcome = run(command, evidence, timeout)
         require((outcome.returncode, outcome.stdout, outcome.stderr) == (68, b"", RESOURCE_ERROR),
                 name + ": oversized input did not fail before emitting LLVM")
@@ -402,7 +416,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
             ("utf8-truncated", b"\xf0\x9f\xa6")):
         source = evidence / (name + ".ox")
         source.write_bytes(b"fn main()->i32{return 42;}\n// " + malformed)
-        command = [str(compiler), str(source)]
+        command = driver.compiler_command(compiler, source, target)
         outcome = run(command, evidence, timeout)
         check_source_rejection(name, outcome, source)
         require(outcome.stderr == os.fsencode(source) + b":2:4" + SOURCE_ERROR,
@@ -413,9 +427,16 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
 
 def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                    output: Path, timeout: int) -> list[dict]:
+    target = driver.host_target()
     evidence = output / "modules"
     evidence.mkdir()
     cases = (
+        ("else-if-chain", 0, True, {
+            "main.ox": "mod score;fn main()->i32{return crate::score::value(2);}",
+            "score.ox": "fn skipped()->bool{let zero=0;return 1/zero==0;}"
+                        "pub fn value(n:i32)->i32{if n==1{return 0;}else if n==2{return 42;}"
+                        "else if skipped(){return 1;}else{return 2;}}",
+        }),
         ("sibling-modules", 0, True, {
             "main.ox": "mod a;fn base()->i32{return 40;}mod b;"
                        "fn main()->i32{return crate::a::value()+crate::b::value();}",
@@ -522,6 +543,273 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             "main.ox": "mod data;fn main()->i32{let value=Row{value:42};return value.value;}",
             "data.ox": "#[derive(Copy)]struct Row{value:i32}",
         }),
+        ("public-copy-records", 0, True, {
+            "main.ox": "mod data;fn get(value:crate::data::Row)->i32{return value.number;}"
+                       "fn main()->i32{let mut row:crate::data::Row=crate::data::Row{number:1};"
+                       "row.number=2;let other=crate::data::open();return get(row)+other.number;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{pub number:i32}"
+                       "pub fn open()->Row{return Row{number:40};}",
+        }),
+        ("public-owned-record", 0, True, {
+            "main.ox": "mod data;fn identity(row:crate::data::Row)->crate::data::Row{return row;}"
+                       "fn main()->i32{let row=identity(crate::data::open());return row.number;}",
+            "data.ox": "pub struct Row{pub number:i32,bytes:[u8;2]}"
+                       "pub fn open()->Row{return Row{number:42,bytes:[1u8,2u8]};}",
+        }),
+        ("aliased-record-import", 0, True, {
+            "main.ox": "use crate::data::Row as Entry;mod data;"
+                       "fn id(row:Entry)->Entry{return row;}"
+                       "fn main()->i32{let Entry{number:answer}=id(Entry{number:42});return answer;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{pub number:i32}",
+        }),
+        ("cross-module-record-borrows", 0, True, {
+            "main.ox": "mod data;use crate::data::Row as Entry;"
+                       "fn update(row:&mut Entry)->(){crate::data::add(&mut *row,40);return;}"
+                       "fn main()->i32{let mut row=crate::data::open();update(&mut row);"
+                       "return crate::data::read(&row);}",
+            "data.ox": "pub struct Row{number:i32,bytes:[u8;2]}"
+                       "pub fn open()->Row{return Row{number:2,bytes:[1u8,2u8]};}"
+                       "pub fn read(row:&crate::data::Row)->i32{return row.number;}"
+                       "pub fn add(row:&mut Row,change:i32)->(){row.number=read(&*row)+change;return;}",
+        }),
+        ("repeated-shared-record-borrows", 0, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn total(a:&Row,b:&Row)->i32{return a.value+b.value;}"
+                       "fn main()->i32{let a=Row{value:14};let previous=total(&a,&a);"
+                       "let renamed=a;return previous+renamed.value;}",
+        }),
+        ("duplicate-mutable-record-borrow", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn total(a:&mut Row,b:&mut Row)->i32{return a.value+b.value;}"
+                       "fn main()->i32{let mut a=Row{value:21};return total(&mut a,&mut a);}",
+        }),
+        ("record-shared-borrow-cannot-write", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn update(row:&Row)->(){row.value=42;return;}"
+                       "fn main()->i32{let row=Row{value:0};update(&row);return row.value;}",
+        }),
+        ("record-shared-borrow-cannot-upgrade", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn update(row:&mut Row)->(){row.value=42;return;}"
+                       "fn wrap(row:&Row)->(){update(&mut *row);return;}"
+                       "fn main()->i32{let row=Row{value:0};wrap(&row);return row.value;}",
+        }),
+        ("record-move-while-borrowed", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn take(row:Row)->i32{return row.value;}"
+                       "fn total(row:&Row,amount:i32)->i32{return row.value+amount;}"
+                       "fn main()->i32{let row=Row{value:21};return total(&row,take(row));}",
+        }),
+        ("record-borrow-return", 65, True, {
+            "main.ox": "struct Row{value:i32}"
+                       "fn escape(row:&Row)->&Row{return row;}fn main()->i32{return 42;}",
+        }),
+        ("private-field-through-record-borrow", 65, True, {
+            "main.ox": "mod data;fn read(row:&crate::data::Row)->i32{return row.hidden;}"
+                       "fn main()->i32{let row=crate::data::open();return read(&row);}",
+            "data.ox": "pub struct Row{hidden:i32}pub fn open()->Row{return Row{hidden:42};}",
+        }),
+        ("disjoint-array-field-borrows", 0, True, {
+            "main.ox": "struct Pair{left:[i32;2],number:i32,right:[i32;2]}"
+                       "fn write(left:&mut [i32],right:&mut [i32],amount:i32)->i32{"
+                       "left[0]=left[0]+amount;right[0]=right[0]+1;return left[0]+right[0];}"
+                       "fn main()->i32{let mut row=Pair{left:[0,10],number:20,right:[11,0]};"
+                       "return write(&mut row.left[1..2],&mut row.right[0..1],row.number);}",
+        }),
+        ("array-field-through-borrowed-record", 0, True, {
+            "main.ox": "mod rows;fn main()->i32{return crate::rows::answer();}",
+            "rows.ox": "struct Row{before:i64,values:[i32;3],after:bool}"
+                       "fn write(values:&mut [i32])->(){values[0]=42;return;}"
+                       "fn first(values:&[i32])->i32{return values[0];}"
+                       "fn update(row:&mut Row)->(){write(&mut *row.values[1..2]);return;}"
+                       "fn read(row:&Row)->i32{return first(&*row.values[1..3]);}"
+                       "pub fn answer()->i32{let mut row=Row{before:11i64,values:[3,2,1],after:true};"
+                       "update(&mut row);if row.before!=11i64||!row.after{return 0;}return read(&row);}",
+        }),
+        ("overlapping-array-field-borrows", 65, True, {
+            "main.ox": "struct Pair{left:[i32;2],right:[i32;2]}"
+                       "fn total(a:&mut [i32],b:&[i32])->i32{return a[0]+b[0];}"
+                       "fn main()->i32{let mut row=Pair{left:[21,0],right:[0,21]};"
+                       "return total(&mut row.left[0..1],&row.left);}",
+        }),
+        ("array-field-borrow-overlaps-record", 65, True, {
+            "main.ox": "struct Row{values:[i32;1],number:i32}"
+                       "fn total(values:&mut [i32],row:&Row)->i32{return values[0]+row.number;}"
+                       "fn main()->i32{let mut row=Row{values:[21],number:21};"
+                       "return total(&mut row.values,&row);}",
+        }),
+        ("private-array-field-borrow", 65, True, {
+            "main.ox": "mod rows;fn first(values:&[i32])->i32{return values[0];}"
+                       "fn main()->i32{let row=crate::rows::open();return first(&row.values);}",
+            "rows.ox": "pub struct Row{values:[i32;1]}pub fn open()->Row{return Row{values:[42]};}",
+        }),
+        ("owned-struct-composition", 0, True, {
+            "main.ox": "mod rows;use crate::rows::Batch;"
+                       "fn consume(batch:Batch)->i32 {let Batch{pad:extra,row:item}=batch;"
+                       "return crate::rows::amount(item)+extra;}"
+                       "fn main()->i32{return consume(crate::rows::open());}",
+            "rows.ox": "pub struct Row{count:i32,chunk:[u8;2]}"
+                       "pub struct Batch{pub pad:i32,pub row:Row}"
+                       "pub fn open()->Batch{return Batch{pad:2,row:Row{count:40,chunk:[1u8,2u8]}};}"
+                       "pub fn amount(row:Row)->i32{return row.count;}",
+        }),
+        ("copy-struct-composition", 0, True, {
+            "main.ox": "#[derive(Copy)]struct Row{number:i32}"
+                       "#[derive(Copy)]struct Batch{row:Row}"
+                       "fn read(batch:Batch)->i32{let Batch{row:item}=batch;return item.number;}"
+                       "fn main()->i32{let item=Batch{row:Row{number:21}};return read(item)+read(item);}",
+        }),
+        ("composed-struct-enum-payload", 0, True, {
+            "main.ox": "struct Inner{number:i32}struct Outer{inner:Inner}"
+                       "enum Message{Empty,Data(Outer)}fn main()->i32{"
+                       "let message=Message::Data(Outer{inner:Inner{number:42}});"
+                       "match message{Message::Empty=>{return 0;},Message::Data(data)=>{"
+                       "let Outer{inner:item}=data;return item.number;},}}",
+        }),
+        ("copy-struct-cannot-contain-owned-struct", 65, True, {
+            "main.ox": "struct Inner{number:i32}#[derive(Copy)]struct Outer{inner:Inner}"
+                       "fn main()->i32{return 42;}",
+        }),
+        ("composed-struct-opaque-field", 0, True, {
+            "main.ox": "mod rows;fn main()->i32{return crate::rows::read(crate::rows::open());}",
+            "rows.ox": "struct Internal{number:i32}pub struct Public{detail:Internal}"
+                       "pub fn open()->Public{return Public{detail:Internal{number:42}};}"
+                       "pub fn read(row:Public)->i32{let Public{detail:item}=row;return item.number;}",
+        }),
+        ("composed-struct-private-type-exposure", 65, True, {
+            "main.ox": "mod rows;use crate::rows::Public;"
+                       "fn main()->i32{let Public{detail:item}=crate::rows::open();return 42;}",
+            "rows.ox": "struct Internal{number:i32}pub struct Public{pub detail:Internal}"
+                       "pub fn open()->Public{return Public{detail:Internal{number:42}};}",
+        }),
+        ("composed-struct-private-inner-field", 65, True, {
+            "main.ox": "mod rows;use crate::rows::Public;"
+                       "fn main()->i32{let Public{detail:item}=crate::rows::open();return item.number;}",
+            "rows.ox": "pub struct Internal{number:i32}pub struct Public{pub detail:Internal}"
+                       "pub fn open()->Public{return Public{detail:Internal{number:42}};}",
+        }),
+        ("composed-struct-depth-limit", 68, False, {
+            "main.ox": "struct Part0{number:i32}"
+                       + "".join(f"struct Part{n}{{inner:Part{n-1}}}" for n in range(1, 9))
+                       + "fn main()->i32{return 42;}",
+        }),
+        ("composed-struct-extent-limit", 68, False, {
+            "main.ox": "struct Chunk{data:[i64;1024]}"
+                       "struct Pair{first:Chunk,second:Chunk}"
+                       "struct Batch{a:Pair,b:Pair,c:Pair}fn main()->i32{return 42;}",
+        }),
+        ("empty-owned-struct-transfers", 0, True, {
+            "main.ox": "struct Empty{}struct Pair{a:Empty,b:Empty}"
+                       "fn take(value:Empty)->i32{let Empty{}=value;return 21;}"
+                       "fn main()->i32{let pair=Pair{a:Empty{},b:Empty{}};"
+                       "let Pair{a:first,b:second}=pair;return take(first)+take(second);}",
+        }),
+        ("empty-copy-struct-retains-identity", 0, True, {
+            "main.ox": "mod data;use crate::data::Marker;"
+                       "fn main()->i32{let mark=Marker{};return crate::data::count(mark)+crate::data::count(mark);}",
+            "data.ox": "#[derive(Copy)]pub struct Marker{}"
+                       "pub fn count(marker:Marker)->i32{let Marker{}=marker;return 21;}",
+        }),
+        ("empty-struct-as-enum-payload", 0, True, {
+            "main.ox": "struct Empty{}enum Choice{None,Some(Empty)}"
+                       "fn main()->i32{let result=Choice::Some(Empty{});"
+                       "match result{Choice::None=>{return 0;},Choice::Some(item)=>{let Empty{}=item;return 42;},}}",
+        }),
+        ("empty-struct-is-still-owned", 65, True, {
+            "main.ox": "struct Empty{}fn main()->i32{let value=Empty{};"
+                       "let Empty{}=value;let Empty{}=value;return 42;}",
+        }),
+        ("empty-struct-types-are-distinct", 65, True, {
+            "main.ox": "struct First{}struct Second{}"
+                       "fn number(mark:First)->i32{return 42;}fn main()->i32{return number(Second{});}",
+        }),
+        ("nested-scalar-fields-through-owner-and-borrow", 0, True, {
+            "main.ox": "struct Leaf{prefix:u8,number:i32}"
+                       "struct Mid{wide:i64,leaf:Leaf}struct Whole{mid:Mid,tail:bool}"
+                       "fn add(value:&mut Whole)->(){value.mid.leaf.number=value.mid.leaf.number+1;return;}"
+                       "fn main()->i32{let mut whole=Whole{mid:Mid{wide:23i64,leaf:Leaf{prefix:7u8,number:1}},tail:true};"
+                       "whole.mid.leaf.number=41;add(&mut whole);if !whole.tail||whole.mid.wide!=23i64"
+                       "||whole.mid.leaf.prefix!=7u8{return 0;}return whole.mid.leaf.number;}",
+        }),
+        ("nested-field-access-with-disjoint-array-borrow", 0, True, {
+            "main.ox": "struct Detail{amount:i32}struct Product{numbers:[i32;2],detail:Detail}"
+                       "fn fill(numbers:&mut [i32],amount:i32)->i32{numbers[0]=amount;return numbers[0];}"
+                       "fn main()->i32{let mut product=Product{numbers:[0,0],detail:Detail{amount:42}};"
+                       "return fill(&mut product.numbers,product.detail.amount);}",
+        }),
+        ("nested-private-scalar-field", 65, True, {
+            "main.ox": "mod types;fn main()->i32{let row=crate::types::open();return row.part.number;}",
+            "types.ox": "pub struct Part{number:i32}pub struct Row{pub part:Part}"
+                        "pub fn open()->Row{return Row{part:Part{number:42}};}",
+        }),
+        ("nested-field-cannot-write-through-shared-borrow", 65, True, {
+            "main.ox": "struct Part{number:i32}struct Row{part:Part}"
+                       "fn set(row:&Row)->(){row.part.number=42;return;}"
+                       "fn main()->i32{let row=Row{part:Part{number:0}};set(&row);return 42;}",
+        }),
+        ("nested-field-owner-moved-on-assignment", 65, True, {
+            "main.ox": "struct Part{number:i32}struct Row{part:Part}"
+                       "fn take(row:Row)->i32{return row.part.number;}"
+                       "fn main()->i32{let mut row=Row{part:Part{number:42}};"
+                       "row.part.number=take(row);return 42;}",
+        }),
+        ("disjoint-nested-record-borrows", 0, True, {
+            "main.ox": "struct Item{value:i32}struct Pair{left:Item,right:Item}struct Row{pair:Pair}"
+                       "fn change(left:&mut Item,right:&mut Item)->i32{"
+                       "left.value=left.value+10;right.value=right.value+20;return left.value+right.value;}"
+                       "fn relay(row:&mut Row)->i32{return change(&mut *row.pair.left,&mut *row.pair.right);}"
+                       "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:5},right:Item{value:7}}};"
+                       "return relay(&mut row);}",
+        }),
+        ("disjoint-nested-array-projections", 0, True, {
+            "main.ox": "struct Samples{values:[i32;3],other:[i32;2]}struct Data{samples:Samples}"
+                       "fn mutate(values:&mut [i32],other:&mut [i32])->i32{"
+                       "values[0]=values[0]+1;other[0]=other[0]+2;return values[0]+other[0];}"
+                       "fn relay(data:&mut Data)->i32{return mutate(&mut *data.samples.values[1..2],"
+                       "&mut *data.samples.other[0..1]);}"
+                       "fn main()->i32{let mut data=Data{samples:Samples{values:[0,19,0],other:[20,0]}};"
+                       "return relay(&mut data);}",
+        }),
+        ("nested-record-loan-overlaps-parent", 65, True, {
+            "main.ox": "struct Item{value:i32}struct Pair{left:Item,right:Item}struct Row{pair:Pair}"
+                       "fn evaluate(whole:&Pair,part:&mut Item)->i32{return whole.left.value+part.value;}"
+                       "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:21},right:Item{value:21}}};"
+                       "return evaluate(&row.pair,&mut row.pair.left);}",
+        }),
+        ("nested-record-loan-overlaps-later-parent", 65, True, {
+            "main.ox": "struct Item{value:i32}struct Pair{left:Item,right:Item}struct Row{pair:Pair}"
+                       "fn evaluate(part:&mut Item,whole:&Pair)->i32{return part.value+whole.left.value;}"
+                       "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:21},right:Item{value:21}}};"
+                       "return evaluate(&mut row.pair.left,&row.pair);}",
+        }),
+        ("nested-loan-overlaps-later-field-read", 65, True, {
+            "main.ox": "struct Item{value:i32}struct Pair{left:Item,right:Item}struct Row{pair:Pair}"
+                       "fn evaluate(part:&mut Item,old:i32)->i32{return part.value+old;}"
+                       "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:21},right:Item{value:21}}};"
+                       "return evaluate(&mut row.pair.left,row.pair.left.value);}",
+        }),
+        ("private-record-import", 65, True, {
+            "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
+            "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
+        }),
+        ("private-qualified-record-type", 65, True, {
+            "main.ox": "mod data;fn read(value:crate::data::Row)->i32{return 0;}fn main()->i32{return 42;}",
+            "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
+        }),
+        ("private-record-field-read", 65, True, {
+            "main.ox": "mod data;fn main()->i32{let row=crate::data::open();return row.hidden;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{hidden:i32}"
+                       "pub fn open()->Row{return Row{hidden:42};}",
+        }),
+        ("private-record-field-write", 65, True, {
+            "main.ox": "mod data;fn main()->i32{let mut row=crate::data::open();row.hidden=2;return 42;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{hidden:i32}"
+                       "pub fn open()->Row{return Row{hidden:42};}",
+        }),
+        ("private-record-field-construction", 65, True, {
+            "main.ox": "mod data;fn main()->i32{let row=crate::data::Row{hidden:42};return 42;}",
+            "data.ox": "#[derive(Copy)]pub struct Row{hidden:i32}",
+        }),
         ("utf8-module-source", 0, True, {
             "main.ox": "mod data;fn main()->i32{return crate::data::value();}",
             "data.ox": "// 雪\npub fn value()->i32{if '雪'<'🦀'{return 42;}return 0;}",
@@ -536,7 +824,7 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             source_file.parent.mkdir(parents=True, exist_ok=True)
             source_file.write_text(code, encoding="utf-8")
         source = project / "main.ox"
-        command = [str(compiler), str(source)]
+        command = driver.compiler_command(compiler, source, target)
         compiled = run(command, evidence, timeout)
         row = {"name": name, "compiler": record(project, "compiler", command, compiled), "profiles": []}
         require(compiled.returncode == expected, name + ": unexpected module status")
@@ -558,7 +846,7 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
             require(compiled.stdout == b"", name + ": rejected modules emitted LLVM")
             rows.append(row)
             continue
-        driver.module_from_result(compiled)
+        driver.module_from_result(compiled, target)
         for profile in ("dev", "release"):
             binary = evidence / f"{name}-{profile}"
             receipt = driver.build(compiler, source, clang, runtime, binary,
@@ -578,6 +866,7 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
 
 
 def verify(args) -> dict:
+    target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
     output = args.output.resolve()
     require(not output.exists(), "evidence directory must be new")
@@ -590,7 +879,7 @@ def verify(args) -> dict:
     require(os.access(compiler, os.X_OK), "copied compiler is not executable")
     clang = args.clang.resolve(strict=True)
     runtime = args.runtime.resolve(strict=True)
-    report = {"status": "running", "self_hosting": False, "cases": [],
+    report = {"status": "running", "self_hosting": False, "target": target, "cases": [],
               "compiler_sha256": hashlib.sha256(compiler.read_bytes()).hexdigest(),
               "runtime_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
               "driver_sha256": hashlib.sha256((ROOT / "build.py").read_bytes()).hexdigest(),
@@ -620,7 +909,7 @@ def verify(args) -> dict:
             row = {"name": case["name"], "kind": case["kind"],
                    "source_sha256": hashlib.sha256(source_bytes).hexdigest(), "profiles": []}
 
-            command = [str(compiler), str(source)]
+            command = driver.compiler_command(compiler, source, target)
             compiled = run(command, work, args.timeout)
             row["compiler"] = record(evidence, "compiler", command, compiled)
             if case["kind"] == "reject":
@@ -634,7 +923,7 @@ def verify(args) -> dict:
                     raise RuntimeError(case["name"] + ": invalid source built")
                 require(not os.path.lexists(rejected_destination), "rejected source published an artifact")
             else:
-                driver.module_from_result(compiled)
+                driver.module_from_result(compiled, target)
                 for profile in ("dev", "release"):
                     binary = deploy / (case["name"] + "-" + profile)
                     receipt = driver.build(compiler, source, clang, runtime, binary,

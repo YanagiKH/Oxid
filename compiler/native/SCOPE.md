@@ -15,7 +15,8 @@ The project uses process entry mode: a successful compiler exits 0 and writes
 only one complete LLVM module to stdout, with no printed main return value.
 The driver rejects failed status, stderr diagnostics, missing framing, partial
 output or any bytes after the module footer. It never strips a printed `0` or
-other lines. LLVM/Clang and the scalar C I/O adapter are explicit dependencies;
+other lines. The driver selects the current Linux target on x86-64 or ARM64.
+LLVM/Clang and the scalar C I/O adapter are explicit dependencies;
 they do not parse or check Oxid source. Existing output paths are refused.
 
 Supported input uses ASCII identifiers, i32/i64/u8/u32/bool/char/unit, named functions
@@ -79,12 +80,39 @@ Declare `#[derive(Copy)] struct Point { x: i32, y: i32 }` to group scalar
 fields. Construct it with `Point { y: 2, x: 40 }` and read a field with
 `point.x`. Use a `mut` binding to replace a field. Copies and function
 arguments hold independent values. These structs are private to their
-module and have 1–64 fields of type `i32`, `i64`, `u8`, `u32`, `bool` or `char`.
+module by default and have up to 64 fields of type `i32`, `i64`, `u8`, `u32`,
+`bool` or `char`. Declare `pub struct` to use a record in another module.
+Refer to it by its `crate::module::Type` path or import it with `use`.
+Declare fields with `pub` to allow other modules to read, write or initialize them.
 
 Declare `struct Row { id: i32, bytes: [u8; 2] }` to group scalars and fixed
 arrays in an owned value. Passing or assigning the value moves it. Use
 `let Row { id: row_id, bytes: data } = row;` to take all its fields. To replace
 an array field, assign a new value to the whole mutable struct.
+
+Struct fields can use earlier declared struct types. For example, use
+`struct Batch { item: Row }`, then `let Batch { item: row } = batch;` to take
+the nested value. Construction accepts up to eight levels of struct nesting.
+All nested fields of a `Copy` struct must also be `Copy`.
+Read a nested scalar with `batch.item.id`. A mutable binding or an `&mut`
+parameter can assign to the same field path.
+Use `struct Empty {}` for a type with zero fields. Construct it with `Empty {}`
+and consume an owned value with `let Empty {} = value;`.
+
+Use `row: &Row` to read scalar fields during a call. Use `row: &mut Row` to
+change those fields. Pass `&row` or `&mut row` from the owner, or pass `&*row`
+and `&mut *row` from a borrowed parameter. The same struct can fill multiple
+shared parameters in one call. An exclusive borrow reserves the owner until
+the call returns.
+
+Pass a fixed array field as a slice with `&row.bytes` or a range with
+`&mut row.bytes[start..end]`. A borrowed record can pass its field with
+`&*row.bytes` or `&mut *row.bytes`. Separate fields can be borrowed mutably
+in the same call.
+
+Borrow a nested struct with `&row.section.item` or `&mut row.section.item`.
+Separate nested fields can be borrowed mutably together. A borrow of an
+entire struct overlaps any borrow of its fields.
 
 Declare `enum Value { Empty, Count(i64) }` and construct `Value::Count(42i64)`.
 A variant can carry one scalar, fixed array or struct declared above the enum.
@@ -104,7 +132,7 @@ Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-nested structs and enums, other reference forms, generics, text strings, nested arrays,
+nested enums, other reference forms, generics, text strings, nested arrays,
 I/O in compiled input and other integer types are unsupported. The compiler
 itself uses ByteBuf, File and Copy vectors.
 

@@ -38,12 +38,7 @@ pub(super) fn admit_delivery(
     return_cost: usize,
     fuel: &mut usize,
 ) -> std::result::Result<(), Failure> {
-    if !cfg!(all(
-        any(target_os = "linux", target_os = "macos"),
-        target_pointer_width = "64",
-        target_endian = "little",
-        any(target_arch = "x86_64", target_arch = "aarch64")
-    )) {
+    if !super::process::entry_supported_host() {
         return Err(Failure::Host);
     }
     i32::try_from(length).map_err(|_| Failure::Bounds)?;
@@ -86,11 +81,30 @@ impl Transport for Stdio {
                 Ok(result as usize)
             }
         }
-        #[cfg(not(all(
-            any(target_os = "linux", target_os = "macos"),
+        #[cfg(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
             target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
+            target_endian = "little"
+        ))]
+        {
+            super::process::windows_io::read(bytes)
+        }
+        #[cfg(not(any(
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
+            all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
         )))]
         {
             let _ = bytes;
@@ -98,7 +112,6 @@ impl Transport for Stdio {
         }
     }
     fn write(&mut self, bytes: &[u8]) -> std::result::Result<usize, i32> {
-        let descriptor = if self.to_stderr { 2 } else { 1 };
         #[cfg(test)]
         if let Some(result) = testing::write(bytes, self.to_stderr) {
             return result;
@@ -111,6 +124,7 @@ impl Transport for Stdio {
         ))]
         {
             // SAFETY: Exactly the borrowed initialized extent is readable.
+            let descriptor = if self.to_stderr { 2 } else { 1 };
             let result = unsafe { libc::write(descriptor, bytes.as_ptr().cast(), bytes.len()) };
             if result < 0 {
                 Err(std::io::Error::last_os_error().raw_os_error().unwrap_or(5))
@@ -118,14 +132,33 @@ impl Transport for Stdio {
                 Ok(result as usize)
             }
         }
-        #[cfg(not(all(
-            any(target_os = "linux", target_os = "macos"),
+        #[cfg(all(
+            target_os = "windows",
+            target_env = "msvc",
+            target_arch = "x86_64",
             target_pointer_width = "64",
-            target_endian = "little",
-            any(target_arch = "x86_64", target_arch = "aarch64")
+            target_endian = "little"
+        ))]
+        {
+            super::process::windows_io::write(bytes, self.to_stderr)
+        }
+        #[cfg(not(any(
+            all(
+                any(target_os = "linux", target_os = "macos"),
+                target_pointer_width = "64",
+                target_endian = "little",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ),
+            all(
+                target_os = "windows",
+                target_env = "msvc",
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                target_endian = "little"
+            )
         )))]
         {
-            let _ = (bytes, descriptor);
+            let _ = (bytes, self.to_stderr);
             Err(38)
         }
     }

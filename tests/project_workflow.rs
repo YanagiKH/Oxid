@@ -421,7 +421,10 @@ fn invalid_options_do_not_create_projects_or_build_artifacts() {
         "unsupported",
     );
     let duplicate = project.run(&["build", "--entry-mode=process", "--entry-mode=result"]);
-    if PROCESS_HOST || cfg!(all(target_os = "macos", target_pointer_width = "64")) {
+    if PROCESS_HOST
+        || WINDOWS_NATIVE_HOST
+        || cfg!(all(target_os = "macos", target_pointer_width = "64"))
+    {
         assert_eq!(duplicate.status.code(), Some(1));
         failure(duplicate, "once");
     } else {

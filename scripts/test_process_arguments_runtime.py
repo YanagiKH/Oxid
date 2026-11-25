@@ -18,12 +18,14 @@ class ProcessArguments(unittest.TestCase):
         if compiler is None:
             self.skipTest("C compiler unavailable")
         with tempfile.TemporaryDirectory(prefix="oxid-arguments-runtime-") as directory:
-            for optimization in ("O0", "O2"):
-                with self.subTest(optimization=optimization):
-                    binary = Path(directory) / optimization
+            for optimization, wide in (("O0", False), ("O2", False), ("O0", True), ("O2", True)):
+                with self.subTest(optimization=optimization, wide=wide):
+                    binary = Path(directory) / f"{optimization}-{wide}"
                     command = [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
                                "-" + optimization, str(ROOT / "tests/process_arguments_runtime.c"),
                                "-o", str(binary)]
+                    if wide:
+                        command[1:1] = ["-DOXID_ARGUMENTS_UTF16"]
                     if os.environ.get("OXID_BYTEBUF_SANITIZE") == "1":
                         command[1:1] = ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
                     built = subprocess.run(command, capture_output=True, timeout=120)

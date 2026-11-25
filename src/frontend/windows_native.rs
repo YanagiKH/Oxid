@@ -8,16 +8,12 @@ use super::{
     source::SourceFile,
 };
 
-pub(super) fn preflight(
+fn preflight(
     project: &ProjectSources,
-    process: bool,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<(), Box<Diagnostic>> {
-    if !NativeBuildSettings::windows_msvc_host() {
-        return Ok(());
-    }
     let execution = settings.map_or(ExecutionPolicy::Bounded, |settings| settings.execution());
-    if process || execution.hosted() || settings.is_some_and(|settings| settings.debug_info()) {
+    if execution.hosted() || settings.is_some_and(|settings| settings.debug_info()) {
         return Err(reject());
     }
     // All modules and unused declarations participate. These bounded parser
@@ -30,16 +26,25 @@ pub(super) fn preflight(
 }
 
 /// The native consumer verifies the complete type and operation inventory
-/// for checked programs using File or time operations.
+/// for checked programs using byte I/O, arguments or time operations.
 pub(super) fn preflight_checked(
     project: &ProjectSources,
     checked: &super::oir::CheckedSourceProgram<'_>,
     process: bool,
     settings: Option<&NativeBuildSettings>,
 ) -> Result<(), Box<Diagnostic>> {
-    if NativeBuildSettings::windows_msvc_host() && checked.windows_file_or_time_candidate() {
+    if !NativeBuildSettings::windows_msvc_host() {
+        return Ok(());
+    }
+    let binary_streams = checked.windows_binary_io_candidate();
+    let arguments = checked.windows_arguments_candidate();
+    if binary_streams || arguments || checked.windows_file_or_time_candidate() {
         let execution = settings.map_or(ExecutionPolicy::Bounded, |settings| settings.execution());
-        if process || execution.hosted() || settings.is_some_and(|settings| settings.debug_info()) {
+        if (binary_streams && !process)
+            || (process && !binary_streams && !arguments)
+            || execution.hosted()
+            || settings.is_some_and(|settings| settings.debug_info())
+        {
             return Err(reject());
         }
         // Reuse the existing complete module walk. This narrower parser fact
@@ -50,11 +55,11 @@ pub(super) fn preflight_checked(
         }
         Ok(())
     } else {
-        preflight(project, process, settings)
+        preflight(project, settings)
     }
 }
 
-/// Additional borrowed routing roles, paid only by the Windows File and time consumer.
+/// Additional borrowed routing roles, paid only by the Windows resource consumer.
 /// No source owner, parser arena, witness or retained permit is copied.
 #[allow(dead_code)]
 #[cfg(any(
@@ -74,10 +79,10 @@ struct FileRoutingCarriers {
         bool,
         Option<&'static NativeBuildSettings>,
     ),
-    candidate_arguments: [&'static super::oir::CheckedSourceProgram<'static>; 2],
+    candidate_arguments: [&'static super::oir::CheckedSourceProgram<'static>; 3],
     selected_body: &'static (),
     candidate_inventory: super::builtin_catalog::termination::Inventory,
-    candidate_returns: [bool; 5],
+    candidate_returns: [bool; 6],
     execution: ExecutionPolicy,
     scope_arguments: (&'static ProjectSources, bool),
     scope_iterator: std::slice::Iter<'static, super::project::ModuleHeader>,
@@ -157,7 +162,7 @@ fn outside_scalar_scope(program: &Program, source: &SourceFile) -> bool {
 fn reject() -> Box<Diagnostic> {
     Diagnostic::new(
         "E0700", "native-admission",
-        "Windows native builds require bounded bool/i32/unit result entry. File byte I/O and std::time are supported. Generics, other owned types, process I/O and debug information are unavailable",
+        "Windows native builds support bounded bool/i32/unit functions with result or process entry. Binary streams use process entry. Arguments, file byte I/O and std::time can use result entry. Generics, other owned types and debug information are unavailable",
         None,
     )
 }

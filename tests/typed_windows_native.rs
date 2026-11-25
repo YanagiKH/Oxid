@@ -8,8 +8,9 @@
 ))]
 use std::{
     fs,
+    io::Write,
     path::PathBuf,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -108,7 +109,19 @@ fn unsupported_execution_and_debug_settings_do_not_create_managed_outputs() {
         ]));
         fixture.clean();
     }
-    let fixture = Fixture::new("fn main()->i32{return 0;}");
+}
+
+#[test]
+fn scalar_process_entry_runs_and_reaches_native_tool_selection() {
+    let fixture = Fixture::new("fn main()->i32{return 42;}");
+    let run = fixture.invoke(&[
+        "run",
+        "main.ox",
+        "--edition=typed-preview",
+        "--entry-mode=process",
+    ]);
+    assert_eq!(run.status.code(), Some(42), "{run:?}");
+    assert!(run.stdout.is_empty() && run.stderr.is_empty(), "{run:?}");
     let output = fixture.invoke(&[
         "compile",
         "main.ox",
@@ -121,13 +134,7 @@ fn unsupported_execution_and_debug_settings_do_not_create_managed_outputs() {
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
     let text = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        text.contains("\"code\":\"E0608\",\"stage\":\"oir-run\"")
-            && text.contains(
-                "\"message\":\"process execution requires Linux or macOS on x86_64 or ARM64\""
-            ),
-        "{text}"
-    );
+    assert!(text.contains("\"code\":\"E0701\""), "{text}");
     assert!(
         text.contains(
             "\"kind\":\"compile-summary\",\"success\":false,\"errors\":1,\"output\":null"
@@ -135,10 +142,296 @@ fn unsupported_execution_and_debug_settings_do_not_create_managed_outputs() {
         "{text}"
     );
     assert!(
-        !text.contains("E0700") && !text.contains("E0701") && !text.contains("E0500"),
+        !text.contains("E0700") && !text.contains("E0608") && !text.contains("E0500"),
         "{text}"
     );
     fixture.clean();
+}
+
+#[test]
+#[ignore = "requires the Windows MSVC x64 LLVM 19.1.7 toolchain"]
+fn windows_native_process_entry_retains_status_and_stderr_after_relocation() {
+    fn check_process(output: Output, status: i32, diagnostic: &str) {
+        assert_eq!(output.status.code(), Some(status), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        if diagnostic.is_empty() {
+            assert!(output.stderr.is_empty(), "{output:?}");
+        } else {
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains(diagnostic),
+                "{output:?}"
+            );
+        }
+    }
+
+    for profile in ["dev", "release"] {
+        for (source, status, diagnostic) in [
+            ("fn main()->i32{return 42;}", 42, ""),
+            (
+                "fn main()->i32{return 256;}",
+                1,
+                "process main must return a status in 0..255",
+            ),
+            ("fn main()->i32{let n=0;return 7/n;}", 1, "division by zero"),
+        ] {
+            let fixture = Fixture::new(source);
+            let arguments = [
+                "run",
+                "main.ox",
+                "--edition=typed-preview",
+                "--entry-mode=process",
+            ];
+            check_process(fixture.invoke(&arguments), status, diagnostic);
+            if !diagnostic.is_empty() {
+                let (read, write) = std::io::pipe().unwrap();
+                drop(read);
+                let failed = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                    .current_dir(&fixture.0)
+                    .args(arguments)
+                    .stderr(Stdio::from(write))
+                    .output()
+                    .unwrap();
+                check_process(failed, 74, "");
+            }
+
+            fs::write(fixture.0.join("oxid.toml"), "[project]\nname=\"process-test\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"process\"\n").unwrap();
+            let built = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .current_dir(&fixture.0)
+                .args(["build", "--profile", profile])
+                .output()
+                .unwrap();
+            assert!(built.status.success(), "{built:?}");
+            let original = fixture.0.join(".oxid/bin/process-test.exe");
+            let deployment = fixture.0.join("relocated.exe");
+            fs::rename(original, &deployment).unwrap();
+            fs::remove_file(fixture.0.join("main.ox")).unwrap();
+            fs::remove_file(fixture.0.join("oxid.toml")).unwrap();
+            fs::remove_dir_all(fixture.0.join(".oxid")).unwrap();
+            let native = Command::new(&deployment)
+                .current_dir(&fixture.0)
+                .output()
+                .unwrap();
+            check_process(native, status, diagnostic);
+            if !diagnostic.is_empty() {
+                let (read, write) = std::io::pipe().unwrap();
+                drop(read);
+                let failed = Command::new(&deployment)
+                    .current_dir(&fixture.0)
+                    .stderr(Stdio::from(write))
+                    .output()
+                    .unwrap();
+                check_process(failed, 74, "");
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the Windows MSVC x64 LLVM 19.1.7 toolchain"]
+fn windows_binary_streams_preserve_bytes_and_closed_pipe_errors() {
+    const SOURCE: &str = r#"
+use std::io::ReadSomeStatus;
+use std::io::WriteSomeStatus;
+use std::io::read_some;
+use std::io::write_some;
+use std::io::write_stderr;
+fn main()->i32 {
+    let mut bytes=b"xxxx";
+    let empty=read_some(&mut bytes[0..0]);
+    match empty {
+        ReadSomeStatus::Data(size)=>{if size!=0{return 2;}},
+        ReadSomeStatus::Eof=>{return 3;},
+        ReadSomeStatus::Error(code)=>{return 4;},
+    }
+    let input=read_some(&mut bytes);
+    match input {
+        ReadSomeStatus::Data(size)=>{if size!=3||bytes[3]!=120u8{return 5;}},
+        ReadSomeStatus::Eof=>{return 6;},
+        ReadSomeStatus::Error(code)=>{return 7;},
+    }
+    let sent=write_some(&bytes[0..3]);
+    match sent {
+        WriteSomeStatus::Written(size)=>{if size!=3{return 8;}},
+        WriteSomeStatus::Error(code)=>{return 9;},
+    }
+    let drained=read_some(&mut bytes);
+    match drained {
+        ReadSomeStatus::Eof=>{},
+        ReadSomeStatus::Data(size)=>{return 10;},
+        ReadSomeStatus::Error(code)=>{return 11;},
+    }
+    let diagnostic=b"err\x00\xff\r\n";
+    let emitted=write_stderr(&diagnostic);
+    match emitted {
+        WriteSomeStatus::Written(size)=>{if size!=7{return 12;}},
+        WriteSomeStatus::Error(code)=>{if code<=0{return 13;}return 74;},
+    }
+    return 42;
+}
+"#;
+    fn check(mut command: Command, closed: bool) {
+        command.stdin(Stdio::piped()).stdout(Stdio::piped());
+        if closed {
+            let (read, write) = std::io::pipe().unwrap();
+            drop(read);
+            command.stderr(Stdio::from(write));
+        } else {
+            command.stderr(Stdio::piped());
+        }
+        let mut child = command.spawn().unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"\x00\xff\r")
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(if closed { 74 } else { 42 }),
+            "{output:?}"
+        );
+        assert_eq!(output.stdout, b"\x00\xff\r", "{output:?}");
+        if closed {
+            assert!(output.stderr.is_empty(), "{output:?}");
+        } else {
+            assert_eq!(output.stderr, b"err\x00\xff\r\n", "{output:?}");
+        }
+    }
+
+    let fixture = Fixture::new(SOURCE);
+    fs::write(fixture.0.join("oxid.toml"), "[project]\nname=\"binary-streams\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"process\"\n").unwrap();
+    for closed in [false, true] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_oxid"));
+        command.current_dir(&fixture.0).arg("run");
+        check(command, closed);
+    }
+    for profile in ["dev", "release"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+            .current_dir(&fixture.0)
+            .args(["build", "--profile", profile])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        fs::rename(
+            fixture.0.join(".oxid/bin/binary-streams.exe"),
+            fixture.0.join(format!("{profile}.exe")),
+        )
+        .unwrap();
+    }
+    fs::remove_file(fixture.0.join("main.ox")).unwrap();
+    fs::remove_file(fixture.0.join("oxid.toml")).unwrap();
+    fs::remove_dir_all(fixture.0.join(".oxid")).unwrap();
+    for profile in ["dev", "release"] {
+        for closed in [false, true] {
+            let mut command = Command::new(fixture.0.join(format!("{profile}.exe")));
+            command.current_dir(&fixture.0);
+            check(command, closed);
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the Windows MSVC x64 LLVM 19.1.7 toolchain"]
+fn windows_arguments_use_utf8_in_reference_and_relocated_native_programs() {
+    use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+
+    fn verify(output: Output, status: i32, stdout: &str) {
+        assert_eq!(output.status.code(), Some(status), "{output:?}");
+        assert_eq!(output.stdout, stdout.as_bytes(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+
+    const SOURCE: &str = r#"
+use std::env::ArgStatus;
+use std::env::arg_bytes;
+use std::env::arg_count;
+fn main()->i32 {
+    if arg_count()!=4{return 1;}
+    let mut bytes=b"xxxxxxxxxxxxxxxx";
+    let expected=b"Oxid \xc2\xa2\xf0\x9f\xa6\x80\x5c\x22";
+    let short=arg_bytes(1,&mut bytes[0..2]);
+    match short {
+        ArgStatus::TooSmall(length)=>{if length!=13||bytes[0]!=120u8{return 2;}},
+        ArgStatus::Copied(length)=>{return 3;},
+        ArgStatus::Missing=>{return 4;},
+        ArgStatus::TooLong=>{return 5;},
+    }
+    let first=arg_bytes(1,&mut bytes);
+    match first {
+        ArgStatus::Copied(length)=>{if length!=13{return 6;}},
+        ArgStatus::TooSmall(required)=>{return 7;},
+        ArgStatus::Missing=>{return 8;},
+        ArgStatus::TooLong=>{return 9;},
+    }
+    let mut i=0;
+    while i<13 {
+        if bytes[i]!=expected[i]{return 10;}
+        i=i+1;
+    }
+    let empty=arg_bytes(2,&mut bytes[0..0]);
+    match empty {
+        ArgStatus::Copied(length)=>{if length!=0{return 11;}},
+        ArgStatus::TooSmall(required)=>{return 12;},
+        ArgStatus::Missing=>{return 13;},
+        ArgStatus::TooLong=>{return 14;},
+    }
+    let last=arg_bytes(3,&mut bytes);
+    match last {
+        ArgStatus::Copied(length)=>{if length!=3{return 15;}},
+        ArgStatus::TooSmall(required)=>{return 16;},
+        ArgStatus::Missing=>{return 17;},
+        ArgStatus::TooLong=>{return 18;},
+    }
+    if bytes[0]!=239u8||bytes[1]!=191u8||bytes[2]!=189u8||bytes[3]!=100u8||bytes[13]!=120u8{return 19;}
+    return 42;
+}
+"#;
+    let arguments = [
+        OsString::from("Oxid ¢🦀\\\""),
+        OsString::new(),
+        OsString::from_wide(&[0xd800]),
+    ];
+    for mode in ["process", "result"] {
+        let fixture = Fixture::new(SOURCE);
+        fs::write(fixture.0.join("oxid.toml"), format!("[project]\nname=\"arguments\"\nedition=\"typed-preview\"\nentry=\"main.ox\"\n[build]\nentry-mode=\"{mode}\"\n")).unwrap();
+        let (status, stdout) = if mode == "process" {
+            (42, "")
+        } else {
+            (0, "42\n")
+        };
+        let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+            .current_dir(&fixture.0)
+            .args(["run", "--"])
+            .args(&arguments)
+            .output()
+            .unwrap();
+        verify(output, status, stdout);
+        for profile in ["dev", "release"] {
+            let output = Command::new(env!("CARGO_BIN_EXE_oxid"))
+                .current_dir(&fixture.0)
+                .args(["build", "--profile", profile])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            fs::rename(
+                fixture.0.join(".oxid/bin/arguments.exe"),
+                fixture.0.join(format!("{profile}.exe")),
+            )
+            .unwrap();
+        }
+        fs::remove_file(fixture.0.join("main.ox")).unwrap();
+        fs::remove_file(fixture.0.join("oxid.toml")).unwrap();
+        fs::remove_dir_all(fixture.0.join(".oxid")).unwrap();
+        for profile in ["dev", "release"] {
+            let output = Command::new(fixture.0.join(format!("{profile}.exe")))
+                .current_dir(&fixture.0)
+                .args(&arguments)
+                .output()
+                .unwrap();
+            verify(output, status, stdout);
+        }
+    }
 }
 
 #[test]
@@ -398,10 +691,10 @@ fn the_pure_test_adapter_cannot_be_selected_by_forged_general_run_options() {
         );
         fixture.clean();
     }
-    // A general process run keeps its unchanged unsupported-host behavior.
-    fs::write(fixture.0.join("main.ox"), "fn main()->i32{return 0;}").unwrap();
+    // A normal process run selects the program entry, not the declared test.
+    fs::write(fixture.0.join("main.ox"), "fn main()->i32{return 42;}").unwrap();
     let output = fixture.invoke(&["run", "--entry-mode=process"]);
-    assert_eq!(output.status.code(), Some(74), "{output:?}");
+    assert_eq!(output.status.code(), Some(42), "{output:?}");
     assert!(
         output.stdout.is_empty() && output.stderr.is_empty(),
         "{output:?}"

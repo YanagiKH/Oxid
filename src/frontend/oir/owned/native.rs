@@ -889,8 +889,12 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         target_pointer_width = "64",
         target_endian = "little"
     ))]
-    let windows_file_or_time =
-        plan.has_file_delivery() || plan.has_clock() || plan.has_unix_clock() || plan.has_sleep();
+    let windows_resources = plan.has_file_delivery()
+        || plan.has_binary_delivery()
+        || plan.has_program_arguments()
+        || plan.has_clock()
+        || plan.has_unix_clock()
+        || plan.has_sleep();
     #[cfg(all(
         target_os = "windows",
         target_env = "msvc",
@@ -898,7 +902,7 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         target_pointer_width = "64",
         target_endian = "little"
     ))]
-    let emitter_transient = if windows_file_or_time {
+    let emitter_transient = if windows_resources {
         add(emitter_transient, windows_file::control_bytes())?
     } else {
         emitter_transient
@@ -931,9 +935,9 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
         target_pointer_width = "64",
         target_endian = "little"
     ))]
-    if windows_file_or_time && !windows_file::allowed(witness, id) {
+    if windows_resources && !windows_file::allowed(witness, id) {
         return Err(reject(
-            "Windows native std::time programs support bool, i32, i64 and unit. File byte I/O also supports u8, byte arrays and slices, and standard File status enums.",
+            "Windows native byte I/O supports u8 arrays and slices and the standard status enums. std::time also supports i64.",
             None,
         ));
     }
@@ -4115,7 +4119,8 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
         unreachable!("entry gate")
     };
     if plan.has_program_arguments() {
-        out.write_str("\ndefine i32 @main(i32 %argc, ptr %argv) {\nentry:\n  call void @__oxid_arguments_start(i32 %argc, ptr %argv)\n").unwrap();
+        let entry_name = if cfg!(windows) { "wmain" } else { "main" };
+        write!(out, "\ndefine i32 @{entry_name}(i32 %argc, ptr %argv) {{\nentry:\n  call void @__oxid_arguments_start(i32 %argc, ptr %argv)\n").unwrap();
     } else {
         out.write_str("\ndefine i32 @main() {\nentry:\n").unwrap();
     }

@@ -38,7 +38,7 @@ pub(in crate::frontend) fn setup() -> bool {
     )
 )))]
 pub(in crate::frontend) fn setup() -> bool {
-    false
+    crate::frontend::build_config::NativeBuildSettings::windows_msvc_host()
 }
 
 /// Terminal text after successful setup. Diagnostic retries do not execute
@@ -86,13 +86,48 @@ pub(in crate::frontend) fn diagnostic(message: &[u8]) -> i32 {
         target_os = "macos",
         target_pointer_width = "64",
         any(target_arch = "x86_64", target_arch = "aarch64")
+    ),
+    all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
     )
 )))]
 pub(in crate::frontend) fn diagnostic(_message: &[u8]) -> i32 {
     74
 }
 
-/// Source process execution uses the supported 64-bit POSIX host ABIs.
+#[cfg(all(
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+))]
+#[path = "process_windows_io.rs"]
+pub(super) mod windows_io;
+
+#[cfg(all(
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+))]
+pub(in crate::frontend) fn diagnostic(mut message: &[u8]) -> i32 {
+    while !message.is_empty() {
+        let length = message.len().min(u32::MAX as usize);
+        match windows_io::write(&message[..length], true) {
+            Ok(written) if written != 0 => message = &message[written..],
+            _ => return 74,
+        }
+    }
+    1
+}
+
+/// POSIX facilities for signals and the existing process I/O providers.
 pub(in crate::frontend) fn supported_host() -> bool {
     cfg!(all(
         any(target_os = "linux", target_os = "macos"),
@@ -100,4 +135,8 @@ pub(in crate::frontend) fn supported_host() -> bool {
         target_endian = "little",
         any(target_arch = "x86_64", target_arch = "aarch64")
     ))
+}
+
+pub(in crate::frontend) fn entry_supported_host() -> bool {
+    supported_host() || crate::frontend::build_config::NativeBuildSettings::windows_msvc_host()
 }

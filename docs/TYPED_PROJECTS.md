@@ -2,7 +2,8 @@
 
 Use Oxid's typed mode to check code, test local packages and build native
 executables. Native project builds target Linux and macOS on x86_64 and ARM64.
-Windows MSVC x64 supports bounded result programs with binary file I/O.
+Windows MSVC x64 supports bounded process entry with binary streams and binary
+file I/O in result programs.
 Native builds require LLVM, Clang and LLD 19.1.7 for the build host;
 Oxid selects that host's native target automatically.
 
@@ -176,7 +177,7 @@ smoke = "tests/smoke.ox"
 A process entry is `fn main() -> i32`; return zero for success.
 `reproducible = true` uses project-relative paths in native error messages.
 
-On Linux and macOS, use `std::io::write_stderr(&bytes)` to write messages to
+Use `std::io::write_stderr(&bytes)` to write messages to
 standard error. It returns `WriteSomeStatus::Written(count)` or
 `WriteSomeStatus::Error(code)`. Handle short writes by passing the remaining
 bytes in the next call. `std::io::write_some` writes to standard output.
@@ -617,7 +618,9 @@ oxid run -- input.bin output.bin
 ```
 
 Import `arg_count`, `arg_bytes` and `ArgStatus` from `std::env` to read them.
-Index 0 is the executable name; user arguments start at 1. `arg_bytes` copies
-raw bytes into a mutable byte slice and reports the required length when that
-slice is too short. Arguments after `--` are literal program input.
+Index 0 is the executable name. User arguments start at 1. `arg_bytes` copies
+bytes into a mutable byte slice and reports the required length when that slice
+is too short. Linux and macOS preserve the original bytes. Windows provides
+UTF-8 and replaces unpaired UTF-16 surrogates with `U+FFFD`. Arguments after
+`--` are passed to the program as given.
 See the [argument API](../rfcs/0049-program-arguments.md) for status handling.

@@ -15,16 +15,16 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "14dc95b20884e58a82f6e0dd85208cc18febb4ff"
-REVIEWED_PARENTS = ("2a3bd39d75b5981391d5e60117b14570a791025b",)
-REVIEWED_TREE = "d854df01dd45dc47b3ebe8f029ac99ff0f238627"
+REVIEWED_SOURCE = "2bc91632de07c02cc3c9c850d4753d6cea8d5911"
+REVIEWED_PARENTS = ("b861458614eb9251c22dcfac34fbddfe271de719",)
+REVIEWED_TREE = "4bec09d5457c66cf8c023f4edeadd5cf7b8a1844"
 PUBLIC_TESTS = {
     "tests/file_open_append.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
     "tests/typed_owned_record_element_loans.rs", "tests/typed_registry_ranges.rs",
     "tests/windows_file_io.rs", "tests/windows_file_runtime.c",
 }
-PUBLIC_TEST_UPDATES = {"tests/typed_language_server.rs"}
+PUBLIC_TEST_UPDATES = {"tests/typed_frontend.rs", "tests/typed_language_server.rs"}
 PUBLIC_VECTOR_UPDATES = {
     "examples/owned-vector-results/src/main.ox",
     "packages/owned_vec/src/lib.ox",
@@ -74,11 +74,11 @@ def reviewed_delta(repo):
             "wrong reviewed integrated typed source")
     raw = git(repo, "diff", "--name-status", "--no-renames", "-z", PREDECESSOR, REVIEWED_SOURCE)
     words = raw.decode("utf-8").split("\0")
-    require(words[-1] == "" and len(words) == 289, "invalid reviewed compiler delta")
+    require(words[-1] == "" and len(words) == 307, "invalid reviewed compiler delta")
     rows = list(zip(words[:-1:2], words[1:-1:2]))
     added = {name for status, name in rows if status == "A"}
     modified = {name for status, name in rows if status == "M"}
-    require(len(added) == 27 and len(modified) == 117 and not added & modified,
+    require(len(added) == 28 and len(modified) == 125 and not added & modified,
             "wrong reviewed compiler delta membership")
     require(PUBLIC_TESTS <= added and PUBLIC_TEST_UPDATES | PUBLIC_VECTOR_UPDATES <= modified
             and all(name.startswith(("src/", "native/"))
@@ -105,7 +105,7 @@ def capture_sources(repo, baseline, parent):
                 path = Path(directory) / name
                 require(not path.is_symlink(), "symlink compiler input")
                 (directories if name in dirs else actual).add(path.relative_to(repo).as_posix())
-    require(actual == compiler and directories == expected_dirs and len(compiler) == 520,
+    require(actual == compiler and directories == expected_dirs and len(compiler) == 521,
             "wrong compiler source membership")
     inputs = {name: regular(repo, name) for name in sorted(expected)}
     for name, body in inputs.items():
@@ -190,7 +190,7 @@ def run(args):
             retained = json.loads(body)
             require(retained.get("status") == ("prepared" if args.prepare_only else "passed")
                     and retained.get("semantic_pass") is (not args.prepare_only)
-                    and retained.get("current_input_members") == 630
+                    and retained.get("current_input_members") == 631
                     and retained.get("historical_results_apply_to_current") is False
                     and context.get("output") == delegated.output, "incomplete retained compiler results")
             if not args.prepare_only:

@@ -14,7 +14,15 @@ const QUALIFIED: bool = cfg!(all(
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ));
+const WINDOWS_SCALAR: bool = cfg!(all(
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64",
+    target_pointer_width = "64",
+    target_endian = "little"
+));
 const TERMINAL: bool = QUALIFIED
+    || WINDOWS_SCALAR
     || cfg!(all(
         target_os = "macos",
         target_pointer_width = "64",
@@ -251,7 +259,11 @@ fn process_compile_json_is_a_build_report_without_source_effects() {
     assert_eq!(out.status.code(), Some(1), "{out:?}");
     assert!(out.stderr.is_empty(), "{out:?}");
     let text = String::from_utf8(out.stdout).unwrap();
-    let code = if QUALIFIED { "E0300" } else { "E0608" };
+    let code = if QUALIFIED || WINDOWS_SCALAR {
+        "E0300"
+    } else {
+        "E0608"
+    };
     assert!(text.contains(&format!("\"code\":\"{code}\"")), "{text}");
     assert!(
         text.contains("\"kind\":\"compile-summary\",\"success\":false"),
@@ -263,7 +275,7 @@ fn process_compile_json_is_a_build_report_without_source_effects() {
 
 #[test]
 fn unsupported_process_host_is_rejected_before_source_and_output_access() {
-    if QUALIFIED {
+    if QUALIFIED || WINDOWS_SCALAR {
         return;
     }
     let fixture = Fixture::new("invalid source must not load");
@@ -276,7 +288,7 @@ fn unsupported_process_host_is_rejected_before_source_and_output_access() {
     if TERMINAL {
         assert_eq!(
             process_error(out, "E0608", "oir-run"),
-            "error[E0608] (oir-run): process execution requires Linux or macOS on x86_64 or ARM64\n"
+            "error[E0608] (oir-run): process execution supports Linux and macOS on x86_64 or ARM64, and Windows MSVC x64\n"
         );
     } else {
         assert_eq!(out.status.code(), Some(74));

@@ -146,7 +146,7 @@ impl OwnedRunFailure {
             Self::ProcessHost => Diagnostic::new(
                 "E0608",
                 "oir-owned-run",
-                "process execution requires Linux or macOS on x86_64 or ARM64",
+                "process execution requires Linux or macOS on x86_64 or ARM64, or Windows MSVC x64",
                 None,
             ),
             // Process drivers must intercept this and exit 74 silently. This
@@ -4555,7 +4555,7 @@ fn checked_entry_policy<W: PlanWitness>(
     }
     for operation in crate::frontend::builtin_catalog::experimental::Function::ALL {
         if ((operation.is_file() && !byte_buffer::file_supported_host())
-            || (operation.is_arguments() && !input::supported_host()))
+            || (operation.is_arguments() && !crate::program_arguments::supported_host()))
             && witness.experimental_function(operation).is_some()
         {
             return Err(OwnedRunFailure::BinaryHost(
@@ -4569,7 +4569,7 @@ fn checked_entry_policy<W: PlanWitness>(
             if policy == EntryPolicy::Result {
                 return Err(OwnedRunFailure::BinaryEntry(span));
             }
-            if !input::supported_host() {
+            if !process::entry_supported_host() {
                 return Err(OwnedRunFailure::BinaryHost(span));
             }
         }
@@ -4589,7 +4589,7 @@ fn checked_entry_policy<W: PlanWitness>(
                 witness.functions()[function.0].span,
             ));
         }
-        if policy == EntryPolicy::Process {
+        if policy == EntryPolicy::Process && !process::entry_supported_host() {
             return Err(OwnedRunFailure::ProcessHost);
         }
     }
@@ -5231,7 +5231,7 @@ fn run_process_policy<W: PlanWitness>(
 ) -> Result<Scalar> {
     // This host-only check intentionally precedes setup and does not validate
     // the entry, inspect source cells, allocate a plan or debit source fuel.
-    if !output::supported_host() {
+    if !process::entry_supported_host() {
         return Err(OwnedRunFailure::ProcessHost);
     }
     if !process::setup() {
