@@ -59,7 +59,10 @@ pub(super) enum OwnedRunFailure {
     BinaryEntry(Span),
     BinaryHost(Span),
     TerminationEntry(Span),
-    TerminationHost(Span),
+    TerminationHost(
+        Span,
+        crate::frontend::builtin_catalog::termination::Function,
+    ),
     ProcessHost,
     ProcessSetup,
     ProcessEntry(Span),
@@ -94,10 +97,10 @@ impl OwnedRunFailure {
                 "termination notifications require process entry mode",
                 Some(*span).filter(|span| sources.is_valid_span(*span)),
             ),
-            Self::TerminationHost(span) => Diagnostic::new(
+            Self::TerminationHost(span, operation) => Diagnostic::new(
                 "E0608",
                 "oir-owned-run",
-                "termination notifications require Linux or macOS on x86_64 or ARM64",
+                operation.host_requirement(),
                 Some(*span).filter(|span| sources.is_valid_span(*span)),
             ),
             Self::BinaryEntry(span) => Diagnostic::new(
@@ -4548,8 +4551,8 @@ fn checked_entry_policy<W: PlanWitness>(
                 if policy != EntryPolicy::Process {
                     return Err(OwnedRunFailure::TerminationEntry(span));
                 }
-                if !process::supported_host() {
-                    return Err(OwnedRunFailure::TerminationHost(span));
+                if !operation.supported_host() {
+                    return Err(OwnedRunFailure::TerminationHost(span, operation));
                 }
             }
         }

@@ -706,11 +706,8 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
                         None,
                     ));
                 }
-                if !super::process::supported_host() {
-                    return Err(reject(
-                        "termination notifications require Linux or macOS on x86_64 or ARM64",
-                        None,
-                    ));
+                if !operation.supported_host() {
+                    return Err(reject(operation.host_requirement(), None));
                 }
             }
         }
