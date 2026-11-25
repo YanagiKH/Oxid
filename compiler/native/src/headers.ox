@@ -27,6 +27,13 @@ use crate::model::byte_buffer_binding;
 use crate::model::growth_status_binding;
 use crate::model::byte_operation_binding;
 use crate::model::is_byte_operation;
+use crate::model::file_owner_binding;
+use crate::model::file_open_result_binding;
+use crate::model::file_status_binding;
+use crate::model::file_open_read_binding;
+use crate::model::file_read_binding;
+use crate::model::file_close_binding;
+use crate::model::Token;
 use crate::model::function_visible;
 use crate::model::child_module;
 use crate::model::path_module;
@@ -317,6 +324,22 @@ fn byte_import(c: &mut Compiler) -> i32 {
     fail(&mut *c); return -1;
 }
 
+fn file_import(c: &mut Compiler, item: Token) -> i32 {
+    let file_type = b"File";
+    let open_result = b"OpenResult";
+    let file_status = b"FileStatus";
+    let open_read = b"open_read";
+    let read_some = b"read_some";
+    let close = b"close";
+    if word(&*c.source, item.start, item.end, &file_type) { return file_owner_binding(); }
+    if word(&*c.source, item.start, item.end, &open_result) { return file_open_result_binding(); }
+    if word(&*c.source, item.start, item.end, &file_status) { return file_status_binding(); }
+    if word(&*c.source, item.start, item.end, &open_read) { return file_open_read_binding(); }
+    if word(&*c.source, item.start, item.end, &read_some) { return file_read_binding(); }
+    if word(&*c.source, item.start, item.end, &close) { return file_close_binding(); }
+    fail(&mut *c); return -1;
+}
+
 fn standard_import(c: &mut Compiler) -> i32 {
     let allocation = b"alloc";
     let root = token(&*c, c.cursor);
@@ -327,11 +350,13 @@ fn standard_import(c: &mut Compiler) -> i32 {
     let std_name = b"std";
     let env_name = b"env";
     let io_name = b"io";
+    let fs_name = b"fs";
     expect_name(&mut *c, &std_name); expect(&mut *c, 45);
     let namespace = token(&*c, c.cursor);
     expect(&mut *c, 1); expect(&mut *c, 45);
     let item = token(&*c, c.cursor);
     expect(&mut *c, 1);
+    if word(&*c.source, namespace.start, namespace.end, &fs_name) { return file_import(&mut *c, item); }
     if word(&*c.source, namespace.start, namespace.end, &env_name) {
         let count_name = b"arg_count";
         let bytes_name = b"arg_bytes";
@@ -389,7 +414,15 @@ fn register_standard_status(c: &mut Compiler, binding: i32) -> i32 {
     if index >= 128 { c.error = 68; return -1; }
     let first = len(&*c.fields);
     let mut count = 2;
-    if binding == growth_status_binding() {
+    let owns_file = binding == file_open_result_binding();
+    if owns_file {
+        count = 4;
+        let file_ty = record_type(c.file_owner);
+        if !status_field(&mut *c, -13, file_ty) || !status_field(&mut *c, -3, 1)
+            || !status_field(&mut *c, -12, 3) || !status_field(&mut *c, -11, 3) { return -1; }
+    } else if binding == file_status_binding() {
+        if !status_field(&mut *c, -9, 3) || !status_field(&mut *c, -3, 1) { return -1; }
+    } else if binding == growth_status_binding() {
         count = 4;
         if !status_field(&mut *c, -9, 3) || !status_field(&mut *c, -10, 3)
             || !status_field(&mut *c, -11, 3) || !status_field(&mut *c, -12, 3) { return -1; }
@@ -404,21 +437,41 @@ fn register_standard_status(c: &mut Compiler, binding: i32) -> i32 {
     } else {
         if !status_field(&mut *c, -4, 1) || !status_field(&mut *c, -3, 1) { return -1; }
     }
+    let mut cells = count + 1;
+    if owns_file { cells = cells + 1; }
     let row = Record { name: binding, source_module: -1, first_field: first, field_count: count,
-        start: 0, body: 0, end: 0, cells: count + 1, depth: 1, layout_state: 2,
-        copy: false, tagged: true, public: true, needs_drop: false };
+        start: 0, body: 0, end: 0, cells: cells, depth: 1, layout_state: 2,
+        copy: false, tagged: true, public: true, needs_drop: owns_file };
     if !grown(try_push(&mut *c.records, row)) { c.error = 68; return -1; }
     return index;
 }
 
-fn register_byte_buffer(c: &mut Compiler) -> i32 {
+fn register_resource(c: &mut Compiler, binding: i32) -> i32 {
     let index = len(&*c.records);
     if index >= 128 { c.error = 68; return -1; }
-    let row = Record { name: byte_buffer_binding(), source_module: -1, first_field: 0, field_count: 0,
+    let row = Record { name: binding, source_module: -1, first_field: 0, field_count: 0,
         start: 0, body: 0, end: 0, cells: 2, depth: 1, layout_state: 2,
         copy: false, tagged: false, public: true, needs_drop: true };
     if !grown(try_push(&mut *c.records, row)) { c.error = 68; return -1; }
     return index;
+}
+
+fn register_file_types(c: &mut Compiler) -> () {
+    let mut file = false;
+    let mut open = false;
+    let mut status = false;
+    for index in 0..len(&*c.imports) {
+        let row = c.imports[index];
+        let binding = row.path_start;
+        open = open || binding == file_open_read_binding() || binding == file_open_result_binding();
+        status = status || binding == file_close_binding() || binding == file_status_binding();
+        file = file || binding == file_owner_binding() || binding == file_read_binding()
+            || binding == file_close_binding();
+    }
+    if file || open { c.file_owner = register_resource(&mut *c, file_owner_binding()); }
+    if c.error == 0 && open { c.file_open_result = register_standard_status(&mut *c, file_open_result_binding()); }
+    if c.error == 0 && status { c.file_status = register_standard_status(&mut *c, file_status_binding()); }
+    return;
 }
 
 fn register_standard_types(c: &mut Compiler) -> () {
@@ -430,7 +483,7 @@ fn register_standard_types(c: &mut Compiler) -> () {
     for index in 0..len(&*c.imports) {
         let row = c.imports[index];
         let binding = row.path_start;
-        read = read || binding == read_some_binding() || binding == read_status_binding();
+        read = read || binding == read_some_binding() || binding == read_status_binding() || binding == file_read_binding();
         write = write || binding == write_some_binding() || binding == write_stderr_binding()
             || binding == write_status_binding();
         arguments = arguments || binding == argument_bytes_binding() || binding == argument_status_binding();
@@ -441,8 +494,9 @@ fn register_standard_types(c: &mut Compiler) -> () {
     if read { c.read_status = register_standard_status(&mut *c, read_status_binding()); }
     if c.error == 0 && write { c.write_status = register_standard_status(&mut *c, write_status_binding()); }
     if c.error == 0 && arguments { c.argument_status = register_standard_status(&mut *c, argument_status_binding()); }
-    if c.error == 0 && buffers { c.byte_buffer = register_byte_buffer(&mut *c); }
+    if c.error == 0 && buffers { c.byte_buffer = register_resource(&mut *c, byte_buffer_binding()); }
     if c.error == 0 && growth { c.growth_status = register_standard_status(&mut *c, growth_status_binding()); }
+    if c.error == 0 { register_file_types(&mut *c); }
     return;
 }
 
@@ -455,6 +509,9 @@ fn resolve_record_imports(c: &mut Compiler) -> () {
         else if row.path_start == argument_status_binding() { target = c.argument_status; }
         else if row.path_start == byte_buffer_binding() { target = c.byte_buffer; }
         else if row.path_start == growth_status_binding() { target = c.growth_status; }
+        else if row.path_start == file_owner_binding() { target = c.file_owner; }
+        else if row.path_start == file_open_result_binding() { target = c.file_open_result; }
+        else if row.path_start == file_status_binding() { target = c.file_status; }
         else if row.path_start >= 0 {
             let module = path_module(&*c, row.path_start, row.name, row.scope);
             target = record(&*c, module, row.name);

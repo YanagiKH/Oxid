@@ -129,7 +129,7 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
         command = [str(clang), "--no-default-config", f"--target={target}",
                    "-O0" if profile == "dev" else "-O2", "-Werror", "-fuse-ld=lld"]
         if runtime == DEFAULT_RUNTIME and b"\ndeclare void @__oxid_bytebuf_start()\n" in module:
-            command.append("-DOXID_SCALAR_BYTEBUF")
+            command.append("-DOXID_SCALAR_HEAP")
         command.extend([str(module_path), str(runtime), "-o", str(binary)])
         linked = invoke(command, timeout, staging)
         if evidence is not None:

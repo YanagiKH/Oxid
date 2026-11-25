@@ -61,6 +61,7 @@ pub struct Compiler {
     pub uses_argument_bytes: bool, pub argument_status: i32,
     pub uses_binary_io: bool, pub read_status: i32, pub write_status: i32,
     pub byte_buffer: i32, pub growth_status: i32,
+    pub file_owner: i32, pub file_open_result: i32, pub file_status: i32,
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
 
@@ -77,6 +78,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool, p
         uses_argument_bytes: false, argument_status: -1,
         uses_binary_io: false, read_status: -1, write_status: -1,
         byte_buffer: -1, growth_status: -1,
+        file_owner: -1, file_open_result: -1, file_status: -1,
         live: true, terminated: false, error: 0, error_start: 0, error_module: 0
     };
 }
@@ -281,8 +283,12 @@ fn standard_variant(c: &Compiler, variant_id: i32, name: i32) -> bool {
         let allocation = b"AllocationFailed";
         return word(&*c.source, spelling.start, spelling.end, &allocation);
     }
-    let memory = b"MemoryLimit";
-    return variant_id == -12 && word(&*c.source, spelling.start, spelling.end, &memory);
+    if variant_id == -12 {
+        let memory = b"MemoryLimit";
+        return word(&*c.source, spelling.start, spelling.end, &memory);
+    }
+    let opened = b"Opened";
+    return variant_id == -13 && word(&*c.source, spelling.start, spelling.end, &opened);
 }
 
 pub fn function(c: &Compiler, source_module: i32, name: i32) -> i32 {
@@ -367,6 +373,16 @@ pub fn is_byte_operation(binding: i32) -> bool {
 pub fn is_byte_buffer(c: &Compiler, ty: i32) -> bool {
     return c.byte_buffer >= 0 && ty == record_type(c.byte_buffer);
 }
+pub fn file_owner_binding() -> i32 { return -23; }
+pub fn file_open_result_binding() -> i32 { return -24; }
+pub fn file_status_binding() -> i32 { return -25; }
+pub fn file_open_read_binding() -> i32 { return -26; }
+pub fn file_read_binding() -> i32 { return -27; }
+pub fn file_close_binding() -> i32 { return -28; }
+pub fn is_file(c: &Compiler, ty: i32) -> bool {
+    return c.file_owner >= 0 && ty == record_type(c.file_owner);
+}
+pub fn uses_heap(c: &Compiler) -> bool { return c.byte_buffer >= 0 || c.file_owner >= 0; }
 pub fn needs_drop(c: &Compiler, ty: i32) -> bool {
     if !is_record(ty) { return false; }
     let row = c.records[record_index(ty)];
