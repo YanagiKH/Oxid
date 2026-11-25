@@ -11,6 +11,7 @@ use std::io::ReadSomeStatus;
 use std::io::WriteSomeStatus;
 use std::io::read_some;
 use std::io::write_some;
+use std::io::write_stderr;
 use crate::text::Text;
 use crate::text::FromBytes;
 use crate::text::PrefixValidation;
@@ -22,6 +23,7 @@ enum Loaded {
     Ok(ByteBuf), CapacityOverflow, AllocationFailed, MemoryLimit, IoError(i32)
 }
 enum WrittenAll { Ok, Error(i32), WriteZero }
+enum Mode { Whole, Stream, Help, Invalid }
 
 fn read_all() -> Loaded {
     let mut bytes = new();
@@ -55,11 +57,16 @@ fn read_all() -> Loaded {
     return Loaded::IoError(5);
 }
 
-fn write_all(bytes: &[u8]) -> WrittenAll {
+fn deliver(bytes: &[u8], errors: bool) -> WriteSomeStatus {
+    if errors { return write_stderr(&*bytes); }
+    return write_some(&*bytes);
+}
+
+fn write_all(bytes: &[u8], errors: bool) -> WrittenAll {
     let mut offset = 0;
     let length = bytes.len();
     while offset < length {
-        let written = write_some(&*bytes[offset..length]);
+        let written = deliver(&*bytes[offset..length], errors);
         match written {
             WriteSomeStatus::Written(count) => {
                 if count == 0 { return WrittenAll::WriteZero; }
@@ -105,7 +112,7 @@ fn normalize_bytes(input: &mut [u8]) -> i32 {
 
 fn emit(document: Text) -> i32 {
     let output = normalize(document);
-    let written = write_all(&output);
+    let written = write_all(&output, false);
     match written {
         WrittenAll::Ok => { return 0; },
         WrittenAll::Error(code) => { return 74; },
@@ -121,22 +128,44 @@ fn convert(input: ByteBuf) -> i32 {
     }
 }
 
-fn stream_flag() -> bool {
-    if arg_count() != 2 { return false; }
-    let flag = b"--stream";
+fn is_flag(input: &[u8], flag: &[u8]) -> bool {
+    if input.len() != flag.len() { return false; }
+    for index in 0..flag.len() {
+        if input[index] != flag[index] { return false; }
+    }
+    return true;
+}
+
+fn mode() -> Mode {
+    let argc = arg_count();
+    if argc == 1 { return Mode::Whole; }
+    if argc != 2 { return Mode::Invalid; }
     let mut received = b"        ";
     let copied = arg_bytes(1, &mut received);
     match copied {
         ArgStatus::Copied(count) => {
-            if count != flag.len() { return false; }
-            for index in 0..flag.len() {
-                if received[index] != flag[index] { return false; }
-            }
-            return true;
+            let stream_flag = b"--stream";
+            let help_flag = b"--help";
+            if is_flag(&received[0..count], &stream_flag) { return Mode::Stream; }
+            if is_flag(&received[0..count], &help_flag) { return Mode::Help; }
         },
-        ArgStatus::Missing => { return false; },
-        ArgStatus::TooSmall(required) => { return false; },
-        ArgStatus::TooLong => { return false; },
+        ArgStatus::Missing => {},
+        ArgStatus::TooSmall(required) => {},
+        ArgStatus::TooLong => {},
+    }
+    return Mode::Invalid;
+}
+
+fn usage(errors: bool) -> i32 {
+    let words = b"Usage: utf8-normalize [--stream|--help] < input > output\n";
+    let written = write_all(&words, errors);
+    match written {
+        WrittenAll::Ok => {
+            if errors { return 64; }
+            return 0;
+        },
+        WrittenAll::Error(code) => { return 74; },
+        WrittenAll::WriteZero => { return 74; },
     }
 }
 
@@ -146,7 +175,7 @@ fn write_chunk(input: &mut [u8], previous_cr: bool) -> i32 {
     if previous_cr && input[0] == 10u8 { start = 1; }
     let length = normalize_bytes(&mut *input[start..limit]);
     let end = start + length;
-    let written = write_all(&*input[start..end]);
+    let written = write_all(&*input[start..end], false);
     match written {
         WrittenAll::Ok => { return 0; },
         WrittenAll::Error(code) => { return 74; },
@@ -206,7 +235,13 @@ fn stream() -> i32 {
 }
 
 fn main() -> i32 {
-    if stream_flag() { return stream(); }
+    let selected = mode();
+    match selected {
+        Mode::Whole => {},
+        Mode::Stream => { return stream(); },
+        Mode::Help => { return usage(false); },
+        Mode::Invalid => { return usage(true); },
+    }
     let loaded = read_all();
     match loaded {
         Loaded::Ok(input) => { return convert(input); },
