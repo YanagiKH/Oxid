@@ -95,9 +95,15 @@ pub fn ty(c: &mut Compiler, source_module: i32) -> i32 {
             return record_reference(target, exclusive);
         }
         expect(&mut *c, 51);
-        let element = scalar_type(kind(&*c));
-        if element == 0 { fail(&mut *c); return 0; }
-        c.cursor = c.cursor + 1;
+        let mut element = scalar_type(kind(&*c));
+        if element != 0 { c.cursor = c.cursor + 1; }
+        else {
+            element = named_type(&mut *c, source_module);
+            if !is_record(element) { fail(&mut *c); return 0; }
+            let row = c.records[record_index(element)];
+            if !row.copy { fail(&mut *c); return 0; }
+            c.uses_record_slices = true;
+        }
         expect(&mut *c, 52);
         return slice_type(element, exclusive);
     }

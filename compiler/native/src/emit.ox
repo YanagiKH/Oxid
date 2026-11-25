@@ -381,7 +381,26 @@ pub fn array_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
     let pointer = array_address(&mut *c, binding, index);
     return load_element(&mut *c, pointer, array_element(binding.ty));
 }
+fn record_slice_address(c: &mut Compiler, view: Value, index: Value, element: i32) -> i32 {
+    let prefix = b"  %v";
+    let address = b" = getelementptr inbounds i8, ptr ";
+    let displacement = b", i64 ";
+    let end = b"\n";
+    let shape = copy_record_shape(&*c, element);
+    let width = shape.dense;
+    let scale = constant(&mut *c, 5, width.to_i64());
+    let extended = widen(&mut *c, index, 5);
+    let offset = binary(&mut *c, 31, extended, scale);
+    let base = extract_field(&mut *c, view, 0, 0);
+    let pointer = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, pointer);
+    append(&mut *c, 2, &address); operand(&mut *c, 2, base);
+    append(&mut *c, 2, &displacement); operand(&mut *c, 2, offset); append(&mut *c, 2, &end);
+    return pointer;
+}
 fn slice_address(c: &mut Compiler, view: Value, index: Value) -> i32 {
+    let element_type = slice_element(view.ty);
+    if is_record(element_type) { return record_slice_address(&mut *c, view, index, element_type); }
     let name = b"  %v";
     let element = b" = getelementptr inbounds ";
     let pointer_operand = b", ptr ";
@@ -389,7 +408,6 @@ fn slice_address(c: &mut Compiler, view: Value, index: Value) -> i32 {
     let line = b"\n";
     let base = extract_field(&mut *c, view, 0, 0);
     let pointer = fresh(&mut *c);
-    let element_type = slice_element(view.ty);
     append(&mut *c, 2, &name); number(&mut *c, 2, pointer); append(&mut *c, 2, &element);
     write_scalar_type(&mut *c, 2, element_type, false);
     append(&mut *c, 2, &pointer_operand); operand(&mut *c, 2, base);
@@ -405,7 +423,7 @@ fn checked_slice_address(c: &mut Compiler, binding: Binding, index: Value) -> i3
 }
 pub fn slice_index(c: &mut Compiler, binding: Binding, index: Value) -> Value {
     let pointer = checked_slice_address(&mut *c, binding, index);
-    return load_element(&mut *c, pointer, slice_element(binding.ty));
+    return vector_load(&mut *c, pointer, slice_element(binding.ty));
 }
 fn slice_value(c: &mut Compiler, ty: i32, length: Value, pointer: i32, stack_slot: bool) -> Value {
     let name = b"  %v";
@@ -458,7 +476,8 @@ pub fn array_store(c: &mut Compiler, binding: Binding, index: Value, value: Valu
 }
 pub fn slice_store(c: &mut Compiler, binding: Binding, index: Value, value: Value) -> () {
     let pointer = checked_slice_address(&mut *c, binding, index);
-    store_element(&mut *c, pointer, value);
+    if is_record(value.ty) { vector_store(&mut *c, pointer, value); }
+    else { store_element(&mut *c, pointer, value); }
     return;
 }
 pub fn borrow_record(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
@@ -959,7 +978,7 @@ pub fn binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
     return wide_binary(&mut *c, op, left, right);
 }
 
-pub fn call(c: &mut Compiler, function: i32, args: &Vec<Value>, result: i32) -> Value {
+pub fn call(c: &mut Compiler, function: i32, args: &[Value], result: i32) -> Value {
     let literal_bytes_0 = b"  ";
     let literal_bytes_1 = b"%v";
     let literal_bytes_2 = b" = ";
@@ -1591,8 +1610,11 @@ fn preamble_resources(c: &mut Compiler) -> () {
     if uses_heap(&*c) { heap_lifetime_declarations(&mut *c); }
     if c.byte_buffer >= 0 { byte_buffer_preamble(&mut *c); }
     if c.file_owner >= 0 { file_preamble(&mut *c); file_seek_preamble(&mut *c); }
-    if vector_len(&*c.vector_types) > 0 {
+    let vectors = vector_len(&*c.vector_types) > 0;
+    if vectors {
         vector_preamble(&mut *c); vector_operation_preamble(&mut *c);
+    }
+    if vectors || c.uses_record_slices {
         record_vector_preamble(&mut *c);
         crate::vector_schema::write(&mut *c);
     }

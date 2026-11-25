@@ -66,6 +66,7 @@ pub struct Compiler {
     pub byte_buffer: i32, pub growth_status: i32,
     pub file_owner: i32, pub file_open_result: i32, pub file_status: i32,
     pub vector_types: Vec<i32>,
+    pub uses_record_slices: bool,
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
 
@@ -84,6 +85,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool, p
         byte_buffer: -1, growth_status: -1,
         file_owner: -1, file_open_result: -1, file_status: -1,
         vector_types: new::<i32>(),
+        uses_record_slices: false,
         live: true, terminated: false, error: 0, error_start: 0, error_module: 0
     };
 }
@@ -189,12 +191,22 @@ pub fn record_type(index: i32) -> i32 { return 8199 + index; }
 pub fn is_record(ty: i32) -> bool { return ty >= 8199 && ty < 8327; }
 pub fn record_index(ty: i32) -> i32 { return ty - 8199; }
 pub fn slice_type(element: i32, exclusive: bool) -> i32 {
+    if is_record(element) {
+        if exclusive { return 9528 + record_index(element); }
+        return 9400 + record_index(element);
+    }
     if exclusive { return 9010 + element; }
     return 9000 + element;
 }
-pub fn is_mutable_slice(ty: i32) -> bool { return ty > 9010 && ty <= 9017; }
-pub fn is_slice(ty: i32) -> bool { return (ty > 9000 && ty <= 9007) || is_mutable_slice(ty); }
-pub fn slice_element(ty: i32) -> i32 { return ty % 10; }
+pub fn is_mutable_slice(ty: i32) -> bool {
+    return (ty > 9010 && ty <= 9017) || (ty >= 9528 && ty < 9656);
+}
+pub fn is_record_slice(ty: i32) -> bool { return ty >= 9400 && ty < 9656; }
+pub fn is_slice(ty: i32) -> bool { return (ty > 9000 && ty <= 9007) || is_mutable_slice(ty) || is_record_slice(ty); }
+pub fn slice_element(ty: i32) -> i32 {
+    if is_record_slice(ty) { return record_type((ty - 9400) % 128); }
+    return ty % 10;
+}
 pub fn record_reference(ty: i32, exclusive: bool) -> i32 {
     let index = record_index(ty);
     if exclusive { return 9228 + index; }
@@ -411,7 +423,7 @@ pub fn is_file(c: &Compiler, ty: i32) -> bool {
     return c.file_owner >= 0 && ty == record_type(c.file_owner);
 }
 pub fn uses_heap(c: &Compiler) -> bool {
-    return c.byte_buffer >= 0 || c.file_owner >= 0 || len(&*c.vector_types) > 0;
+    return c.byte_buffer >= 0 || c.file_owner >= 0 || len(&*c.vector_types) > 0 || c.uses_record_slices;
 }
 pub fn vector_type_binding() -> i32 { return -34; }
 pub fn vector_operation_binding(operation: i32) -> i32 { return -35 - operation; }
