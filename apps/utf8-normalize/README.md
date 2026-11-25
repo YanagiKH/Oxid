@@ -74,3 +74,12 @@ boundaries. To run its API checks after creating the workspace lock:
 cd contracts
 oxid test --frozen
 ```
+
+From the repository root, compare the streaming build with an equivalent Rust
+program on the same inputs. The comparison checks the output bytes before
+recording timings.
+
+```sh
+python3 scripts/benchmark_utf8_application.py --oxid "$(command -v oxid)" \
+  --llvm-bin "$OXID_LLVM_BIN" --output utf8-benchmark.json
+```
