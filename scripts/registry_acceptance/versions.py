@@ -236,6 +236,12 @@ def verify(args):
             runner.command("publish-first-" + version, ["publish", "--registry", uri_first], author)
             if version == "1.2.0":
                 runner.command("publish-second-1.2.0", ["publish", "--registry", uri_second], author)
+        published = inventory(registries)
+        runner.command("find-latest-release", ["registry", "search", uri_first, "num"],
+                       output, expected_stdout=b"numbers 1.3.0\n")
+        runner.command("find-second-registry-release", ["registry", "search", uri_second],
+                       output, expected_stdout=b"numbers 1.2.0\n")
+        require(inventory(registries) == published, "search changed published releases")
         a = first / "packages/numbers/1.2.0/artifact.tar"
         b = second / "packages/numbers/1.2.0/artifact.tar"
         require(a.is_file() and b.is_file() and a.stat().st_size == b.stat().st_size and sha(a) == sha(b),
