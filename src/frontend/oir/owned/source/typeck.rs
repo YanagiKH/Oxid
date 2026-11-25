@@ -248,6 +248,69 @@ impl TypedOwnedProgram<'_> {
                 }
             })
     }
+    /// Read the declaration for a field token from the ordinary typed
+    /// projection, including intermediate fields in a dotted path.
+    pub(in crate::frontend::oir) fn projection_definition(
+        &self,
+        path: Span,
+        offset: usize,
+    ) -> Result<Option<Span>, Box<Diagnostic>> {
+        let mut target = None;
+        for function in self.functions() {
+            self.work().debit(1, path, "editor projection function")?;
+            let hir = function.hir();
+            if hir.end.file != path.file
+                || path.start < function.signature().span.start
+                || path.end > hir.end.end
+            {
+                continue;
+            }
+            let mut projection = None;
+            for (ordinal, expression) in hir.expressions.iter().enumerate() {
+                self.work().debit(1, path, "editor projection expression")?;
+                if matches!(expression.kind, ExprKind::FieldRead { field_span, .. } if field_span == path)
+                {
+                    projection = function.expression_projection(ExprId(ordinal));
+                    break;
+                }
+            }
+            if projection.is_none() {
+                'blocks: for (block_id, block) in hir.blocks.iter().enumerate() {
+                    self.work().debit(1, path, "editor projection block")?;
+                    for (ordinal, statement) in block.body.iter().enumerate() {
+                        self.work().debit(1, path, "editor projection statement")?;
+                        if matches!(statement.kind, StmtKind::FieldAssign { field_span, .. } if field_span == path)
+                        {
+                            projection =
+                                function.statement_projection(BodyBlockId(block_id), ordinal);
+                            break 'blocks;
+                        }
+                    }
+                }
+            }
+            let Some(projection) = projection else {
+                continue;
+            };
+            let module = self.program.requester(hir.id)?;
+            let syntax = self.index().sources().ast(module)?;
+            let first = syntax.tokens.partition_point(projection_start(path.start));
+            let tokens =
+                projection_identifiers(projection_window(&syntax.tokens[first..], path.end));
+            for (token, field) in tokens.zip(&projection.path) {
+                self.work().debit(1, path, "editor projection segment")?;
+                if token.span.start <= offset && offset < token.span.end {
+                    let declaration = self.records()[field.record.0].fields[field.index].name_span;
+                    if target.is_some_and(|prior| prior != declaration) {
+                        return Ok(None);
+                    }
+                    target = Some(declaration);
+                    break;
+                }
+            }
+        }
+        Ok(target)
+    }
+
     pub(super) fn validate_function_signatures(&self) -> Result<(), Box<Diagnostic>> {
         if self.bodies.len() != self.index().source_function_count() {
             return Err(paid_state(self.index().sources().eof()));
