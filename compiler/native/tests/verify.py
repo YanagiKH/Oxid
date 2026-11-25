@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("scalar_build", ROOT / "build.py")
@@ -1729,51 +1730,51 @@ def verify_native_rebuild(compiler: Path, clang: Path, runtime: Path,
     shutil.copytree(ROOT / "src", source)
     files = {path.relative_to(source).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
              for path in sorted(source.rglob("*.ox"))}
-    tools = evidence / "tools"
-    tools.mkdir()
-    llvm_bin = Path(os.environ.get("OXID_LLVM_BIN", clang.parent))
-    linker = (llvm_bin / "ld.lld").resolve(strict=True)
-    require(os.access(linker, os.X_OK), "LLVM linker is not executable")
-    (tools / "ld.lld").symlink_to(linker)
-    environment = {"PATH": str(tools)}
-    if "LD_LIBRARY_PATH" in os.environ:
-        environment["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    with tempfile.TemporaryDirectory(prefix="oxid-native-llvm-tools-") as directory:
+        tools = Path(directory)
+        llvm_bin = Path(os.environ.get("OXID_LLVM_BIN", clang.parent))
+        linker = (llvm_bin / "ld.lld").resolve(strict=True)
+        require(os.access(linker, os.X_OK), "LLVM linker is not executable")
+        (tools / "ld.lld").symlink_to(linker)
+        environment = {"PATH": str(tools)}
+        if "LD_LIBRARY_PATH" in os.environ:
+            environment["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
 
-    first = evidence / "c2"
-    second = evidence / "c3"
-    c2 = driver.build(compiler, source / "main.ox", clang, runtime, first, "release",
-                      timeout, evidence / "c2-build", entry_mode="process",
-                      linker_environment=environment)
-    c3 = driver.build(first, source / "main.ox", clang, runtime, second, "release",
-                      timeout, evidence / "c3-build", entry_mode="process",
-                      linker_environment=environment)
-    require(c2["module_sha256"] == c3["module_sha256"] and c2["sha256"] == c3["sha256"],
-            "Linux native compiler rebuild changed the LLVM or binary")
-    for name, digest in files.items():
-        require(hashlib.sha256((source / name).read_bytes()).hexdigest() == digest,
-                "rebuild changed compiler source: " + name)
-    source.rename(evidence / "retained-source")
+        first = evidence / "c2"
+        second = evidence / "c3"
+        c2 = driver.build(compiler, source / "main.ox", clang, runtime, first, "release",
+                          timeout, evidence / "c2-build", entry_mode="process",
+                          linker_environment=environment)
+        c3 = driver.build(first, source / "main.ox", clang, runtime, second, "release",
+                          timeout, evidence / "c3-build", entry_mode="process",
+                          linker_environment=environment)
+        require(c2["module_sha256"] == c3["module_sha256"] and c2["sha256"] == c3["sha256"],
+                "Linux native compiler rebuild changed the LLVM or binary")
+        for name, digest in files.items():
+            require(hashlib.sha256((source / name).read_bytes()).hexdigest() == digest,
+                    "rebuild changed compiler source: " + name)
+        source.rename(evidence / "retained-source")
 
-    deployed = evidence / "deployed"
-    deployed.mkdir()
-    probe = evidence / "main.ox"
-    probe.write_text("fn main()->i32{let index=3;return 9*(index+2)-3;}\n", encoding="ascii")
-    runs = []
-    programs = []
-    for generation, binary in (("c2", first), ("c3", second)):
-        relocated = deployed / generation
-        binary.rename(relocated)
-        program = deployed / (generation + "-program")
-        driver.build(relocated, probe, clang, runtime, program, "release", timeout,
-                     evidence / (generation + "-probe"), linker_environment=environment)
-        programs.append(program)
-    probe.unlink()
-    for program in programs:
-        command = [str(program)]
-        completed = run(command, deployed, timeout)
-        check_native_behavior({"name": program.name, "kind": "value", "stdout": "42\n"}, completed)
-        runs.append(record(evidence, program.name, command, completed))
-    return {"status": "passed", "source_sha256": files, "c2": c2, "c3": c3, "program_runs": runs}
+        deployed = evidence / "deployed"
+        deployed.mkdir()
+        probe = evidence / "main.ox"
+        probe.write_text("fn main()->i32{let index=3;return 9*(index+2)-3;}\n", encoding="ascii")
+        runs = []
+        programs = []
+        for generation, binary in (("c2", first), ("c3", second)):
+            relocated = deployed / generation
+            binary.rename(relocated)
+            program = deployed / (generation + "-program")
+            driver.build(relocated, probe, clang, runtime, program, "release", timeout,
+                         evidence / (generation + "-probe"), linker_environment=environment)
+            programs.append(program)
+        probe.unlink()
+        for program in programs:
+            command = [str(program)]
+            completed = run(command, deployed, timeout)
+            check_native_behavior({"name": program.name, "kind": "value", "stdout": "42\n"}, completed)
+            runs.append(record(evidence, program.name, command, completed))
+        return {"status": "passed", "source_sha256": files, "c2": c2, "c3": c3, "program_runs": runs}
 
 
 def verify(args) -> dict:
