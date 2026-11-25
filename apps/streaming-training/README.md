@@ -80,6 +80,11 @@ Add `--checkpoint` with a new filename prefix to save the initial model and each
 
 Keep both `run.a` and `run.b`. They alternate between saves. If the newest file is incomplete or corrupt, training resumes from the latest valid file. Each save includes the model, completed epoch count, shuffle state and a checksum of the selected rows. Use one trainer per prefix and keep the dataset unchanged. The summary reports cumulative epochs and batches, with initial loss measured at the start of that invocation.
 
+On Linux and macOS, press Ctrl+C or send SIGTERM to stop between training
+batches. The program exits with status 130. To continue, run the same
+`--resume` command with the number of additional epochs you want. Resume starts
+from the most recent valid checkpoint.
+
 ## Use the reader in Oxid
 
 Add the [reader package](reader/README.md) and [tensor package](../cpu-training/tensor/README.md) as path dependencies. `reader::open(path, batch_size)` returns a reader; `next(&mut reader)` returns owned input and target tensors for the next batch. The final batch may contain fewer rows.

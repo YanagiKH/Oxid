@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import selectors
 import shutil
+import signal
 import struct
 import subprocess
 import threading
@@ -188,6 +189,70 @@ def checkpoint_cases(check, label, command, directory, native):
     check.save()
 
 
+def interrupted_checkpoint(check, label, command, directory, native):
+    directory.mkdir(parents=True)
+    source = directory / "input.oxds"
+    source.write_bytes(oracle.encode(oracle.SHUFFLE_ROWS))
+    prefix = directory / "interrupted"
+    flags = ["2", "--shuffle", "42"]
+    args = [*command, str(source), "1000000", *flags, "--checkpoint", str(prefix)]
+    folder = check.output / "commands" / label
+    folder.mkdir(parents=True)
+
+    def latest(base):
+        candidates = []
+        for suffix in ("a", "b"):
+            path = base.with_suffix("." + suffix)
+            if not path.exists():
+                continue
+            raw = path.read_bytes()
+            if (len(raw) >= 44 and raw.startswith(b"OXSTR001")
+                    and zlib.crc32(raw[:-4]) == struct.unpack_from("<I", raw, len(raw) - 4)[0]):
+                candidates.append((struct.unpack_from("<I", raw, 8)[0], raw))
+        return max(candidates, default=None)
+
+    with subprocess.Popen(args, cwd=directory, env=check.environment(native),
+                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          preexec_fn=native_limits if native else None) as child:
+        try:
+            deadline = time.monotonic() + 30
+            saved = latest(prefix)
+            while (saved is None or saved[0] == 0) and child.poll() is None:
+                require(time.monotonic() < deadline, label + ": no completed epoch before cancellation")
+                time.sleep(0.005)
+                saved = latest(prefix)
+            require(child.poll() is None, label + ": worker ended before cancellation")
+            child.send_signal(signal.SIGTERM)
+            stdout, stderr = child.communicate(timeout=20)
+            (folder / "stdout").write_bytes(stdout)
+            (folder / "stderr").write_bytes(stderr)
+            require(child.returncode == 130 and not stdout and not stderr,
+                    label + ": interrupted training did not exit cleanly")
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.communicate()
+    saved = latest(prefix)
+    require(saved is not None and saved[0] > 0, label + ": cancellation erased the last completed epoch")
+    completed = saved[0]
+    resumed = check.command(label + "-resume", [
+        *command, str(source), "1", *flags, "--resume", str(prefix),
+    ], directory, native=native)
+    whole = directory / "uninterrupted"
+    baseline = check.command(label + "-baseline", [
+        *command, str(source), str(completed + 1), *flags, "--checkpoint", str(whole),
+    ], directory, native=native)
+    require(resumed.stdout.splitlines()[-1] == baseline.stdout.splitlines()[-1]
+            and latest(prefix) == latest(whole),
+            label + ": resumed checkpoint differs from uninterrupted training")
+    check.report["cases"].append({
+        "name": label, "native": native, "exit_status": 130, "signal": "SIGTERM",
+        "saved_epochs": completed, "resumed_epochs": completed + 1,
+        "checkpoint_sha256": hashlib.sha256(latest(prefix)[1]).hexdigest(),
+    })
+    check.save()
+
+
 def verify(args):
     check = Verification(args, ['verify_streaming_training.py', 'streaming_training_oracle.py',
                                'data_pipeline_verification.py', 'linux_native_target.py'],
@@ -231,6 +296,8 @@ def verify(args):
                     'distinct seeds produced the same measured training result')
             checkpoint_cases(check, prefix+'-checkpoint-reference', [compiler, 'run', '--'],
                              project/'checkpoint-test', False)
+            interrupted_checkpoint(check, prefix+'-interrupt-reference', [compiler, 'run', '--'],
+                                   project/'interrupt-test', False)
             binaries = []
             for profile in ['dev', 'release']:
                 check.command(f'{prefix}-{profile}-build', [compiler, 'build', '--profile', profile,
@@ -329,6 +396,7 @@ def verify(args):
                 repeated = app_case(check, f'{label}-shuffle-repeated', [binary], directory, 5, 2, True, (2, 42))
                 require(repeated == shuffled[5, 2, 2, 42], 'identical seeds changed shuffled training')
                 checkpoint_cases(check, label+'-checkpoint', [binary], directory/'checkpoint-test', True)
+                interrupted_checkpoint(check, label+'-interrupt', [binary], directory/'interrupt-test', True)
                 for number, arguments in enumerate([[], ['--help'], ['-h']]):
                     result = check.command(f'{label}-help-{number}', [binary, *arguments], directory, native=True)
                     require(b'streaming-training <dataset> <epochs> <batch-size>' in result.stdout, 'missing usage')
