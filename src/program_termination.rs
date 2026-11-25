@@ -514,11 +514,98 @@ mod platform {
     }
 }
 
-#[cfg(not(all(
-    any(target_os = "linux", target_os = "macos"),
-    target_pointer_width = "64",
-    target_endian = "little",
-    any(target_arch = "x86_64", target_arch = "aarch64")
+#[cfg(all(target_os = "windows", target_env = "msvc", target_arch = "x86_64"))]
+mod platform {
+    use std::{cell::Cell, marker::PhantomData, rc::Rc};
+
+    unsafe extern "C" {
+        fn __oxid_termination_scope_start() -> i32;
+        fn __oxid_termination_scope_end();
+        fn __oxid_enable_termination_notifications() -> i32;
+        fn __oxid_termination_requested() -> i32;
+        fn __oxid_wait_for_termination(timeout_ms: i32) -> i32;
+    }
+
+    thread_local! {
+        static ACTIVE: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub(crate) struct Scope(PhantomData<Rc<()>>);
+    impl Scope {
+        pub(crate) fn enter() -> Result<Self, ()> {
+            // SAFETY: the C adapter atomically claims the process without
+            // installing a handler until `enable` is called from this thread.
+            if unsafe { __oxid_termination_scope_start() } != 0 {
+                return Err(());
+            }
+            ACTIVE.set(true);
+            Ok(Self(PhantomData))
+        }
+    }
+
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            // SAFETY: Scope is unique and cannot move to another thread.
+            unsafe { __oxid_termination_scope_end() };
+            ACTIVE.set(false);
+        }
+    }
+
+    pub(crate) fn enable() -> bool {
+        // SAFETY: only the thread owning the scope may change the handler.
+        ACTIVE.get() && unsafe { __oxid_enable_termination_notifications() != 0 }
+    }
+
+    pub(crate) fn requested() -> bool {
+        // SAFETY: the adapter reads the scalar console notification atomically.
+        ACTIVE.get() && unsafe { __oxid_termination_requested() != 0 }
+    }
+
+    pub(crate) fn wait(timeout_ms: i32) -> bool {
+        // SAFETY: the bounded wait reads only the adapter's process state.
+        ACTIVE.get() && unsafe { __oxid_wait_for_termination(timeout_ms) != 0 }
+    }
+
+    pub(crate) fn wait_for_stdin(_: i32) -> bool {
+        false
+    }
+
+    pub(crate) const fn stdin_wait_bytes() -> usize {
+        0
+    }
+
+    pub(crate) const fn wait_bytes() -> usize {
+        // Two clock readings, the duration, the remaining delay and the query.
+        2 * std::mem::size_of::<u64>() + 3 * std::mem::size_of::<i32>()
+    }
+
+    pub(crate) const fn control_bytes() -> usize {
+        // The console state, atomic installation/restoration temporaries,
+        // callback argument, thread ownership and its Rust scope carrier.
+        8 * std::mem::size_of::<i32>()
+            + std::mem::size_of::<Cell<bool>>()
+            + std::mem::size_of::<Option<Scope>>()
+            + std::mem::size_of::<Result<Scope, ()>>()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset_observation() {}
+    #[cfg(test)]
+    pub(crate) fn observation() -> (usize, usize) {
+        (0, 0)
+    }
+    #[cfg(test)]
+    pub(crate) fn delivered() {}
+}
+
+#[cfg(not(any(
+    all(
+        any(target_os = "linux", target_os = "macos"),
+        target_pointer_width = "64",
+        target_endian = "little",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ),
+    all(target_os = "windows", target_env = "msvc", target_arch = "x86_64")
 )))]
 mod platform {
     pub(crate) struct Scope;
