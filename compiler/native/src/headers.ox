@@ -41,6 +41,10 @@ use crate::model::file_seek_binding;
 use crate::model::is_file_operation;
 use crate::model::file_open_operation;
 use crate::model::Token;
+use crate::model::vector_type_binding;
+use crate::model::vector_operation_binding;
+use crate::model::is_vector_operation;
+use crate::model::vector_type;
 use crate::model::function_visible;
 use crate::model::child_module;
 use crate::model::path_module;
@@ -113,6 +117,31 @@ pub fn ty(c: &mut Compiler, source_module: i32) -> i32 {
     return named_type(&mut *c, source_module);
 }
 
+fn vector_alias(c: &Compiler, source_module: i32, name: i32) -> bool {
+    for index in 0..len(&*c.imports) {
+        let row = c.imports[index];
+        if row.scope == source_module && row.path_start == vector_type_binding()
+            && same_name(&*c, row.alias, name) { return true; }
+    }
+    return false;
+}
+
+pub fn vector_type_argument(c: &mut Compiler) -> i32 {
+    expect(&mut *c, 37);
+    let element = scalar_type(kind(&*c));
+    let result = vector_type(&*c, element);
+    if result == 0 { fail(&mut *c); return 0; }
+    c.cursor = c.cursor + 1;
+    if kind(&*c) == 40 {
+        // A type annotation can end immediately before its initializer's "=".
+        let mut assignment = token(&*c, c.cursor);
+        assignment.kind = 28;
+        assignment.start = assignment.start + 1;
+        c.tokens[c.cursor] = assignment;
+    } else { expect(&mut *c, 39); }
+    return result;
+}
+
 fn named_type(c: &mut Compiler, source_module: i32) -> i32 {
     let k = kind(&*c);
     if k == 44 {
@@ -124,6 +153,10 @@ fn named_type(c: &mut Compiler, source_module: i32) -> i32 {
         if record_visible(&*c, source_module, index) { return record_type(index); }
     }
     if k == 1 {
+        if vector_alias(&*c, source_module, c.cursor) {
+            expect(&mut *c, 1);
+            return vector_type_argument(&mut *c);
+        }
         let index = record_binding(&*c, source_module, c.cursor);
         if index >= 0 {
             c.cursor = c.cursor + 1;
@@ -173,7 +206,7 @@ fn discover_nominal(c: &mut Compiler, source_module: i32) -> () {
         c.cursor = c.cursor + 1;
     }
     let row = Record { name: name, source_module: source_module, first_field: 0, field_count: 0,
-        start: start, body: body, end: c.cursor, cells: 0, depth: 1, layout_state: 0,
+        start: start, body: body, end: c.cursor, cells: 0, depth: 1, layout_state: 0, vector_element: 0,
         copy: copy_record, tagged: tagged, public: public, needs_drop: false };
     if c.error == 0 && !grown(try_push(&mut *c.records, row)) { c.error = 68; }
     return;
@@ -357,12 +390,48 @@ fn file_import(c: &mut Compiler, item: Token) -> i32 {
     fail(&mut *c); return -1;
 }
 
+fn vector_import(c: &mut Compiler) -> i32 {
+    expect(&mut *c, 1); expect(&mut *c, 45);
+    let item = token(&*c, c.cursor);
+    expect(&mut *c, 1);
+    let type_name = b"Vec";
+    let growth = b"GrowStatus";
+    let create = b"new";
+    let length = b"len";
+    let capacity = b"capacity";
+    let reserve = b"try_reserve";
+    let push = b"try_push";
+    let extend = b"try_extend";
+    let resize = b"try_resize";
+    let shrink = b"truncate";
+    let transfer = b"take";
+    if word(&*c.source, item.start, item.end, &type_name) { return vector_type_binding(); }
+    if word(&*c.source, item.start, item.end, &growth) { return growth_status_binding(); }
+    if word(&*c.source, item.start, item.end, &create) { return vector_operation_binding(0); }
+    if word(&*c.source, item.start, item.end, &length) { return vector_operation_binding(1); }
+    if word(&*c.source, item.start, item.end, &capacity) { return vector_operation_binding(2); }
+    if word(&*c.source, item.start, item.end, &reserve) { return vector_operation_binding(3); }
+    if word(&*c.source, item.start, item.end, &push) { return vector_operation_binding(4); }
+    if word(&*c.source, item.start, item.end, &extend) { return vector_operation_binding(5); }
+    if word(&*c.source, item.start, item.end, &resize) { return vector_operation_binding(6); }
+    if word(&*c.source, item.start, item.end, &shrink) { return vector_operation_binding(7); }
+    if word(&*c.source, item.start, item.end, &transfer) { return vector_operation_binding(8); }
+    fail(&mut *c); return -1;
+}
+
+fn allocation_import(c: &mut Compiler) -> i32 {
+    expect(&mut *c, 1); expect(&mut *c, 45);
+    let vector = b"vec";
+    let namespace = token(&*c, c.cursor);
+    if word(&*c.source, namespace.start, namespace.end, &vector) { return vector_import(&mut *c); }
+    return byte_import(&mut *c);
+}
+
 fn standard_import(c: &mut Compiler) -> i32 {
     let allocation = b"alloc";
     let root = token(&*c, c.cursor);
     if word(&*c.source, root.start, root.end, &allocation) {
-        expect(&mut *c, 1); expect(&mut *c, 45);
-        return byte_import(&mut *c);
+        return allocation_import(&mut *c);
     }
     let std_name = b"std";
     let env_name = b"env";
@@ -457,17 +526,17 @@ fn register_standard_status(c: &mut Compiler, binding: i32) -> i32 {
     let mut cells = count + 1;
     if owns_file { cells = cells + 1; }
     let row = Record { name: binding, source_module: -1, first_field: first, field_count: count,
-        start: 0, body: 0, end: 0, cells: cells, depth: 1, layout_state: 2,
+        start: 0, body: 0, end: 0, cells: cells, depth: 1, layout_state: 2, vector_element: 0,
         copy: false, tagged: true, public: true, needs_drop: owns_file };
     if !grown(try_push(&mut *c.records, row)) { c.error = 68; return -1; }
     return index;
 }
 
-fn register_resource(c: &mut Compiler, binding: i32) -> i32 {
+fn register_resource(c: &mut Compiler, binding: i32, element: i32) -> i32 {
     let index = len(&*c.records);
     if index >= 128 { c.error = 68; return -1; }
     let row = Record { name: binding, source_module: -1, first_field: 0, field_count: 0,
-        start: 0, body: 0, end: 0, cells: 2, depth: 1, layout_state: 2,
+        start: 0, body: 0, end: 0, cells: 2, depth: 1, layout_state: 2, vector_element: element,
         copy: false, tagged: false, public: true, needs_drop: true };
     if !grown(try_push(&mut *c.records, row)) { c.error = 68; return -1; }
     return index;
@@ -485,9 +554,19 @@ fn register_file_types(c: &mut Compiler) -> () {
             || binding == file_sync_binding() || binding == file_seek_binding();
         file = file || binding == file_owner_binding() || is_file_operation(binding);
     }
-    if file || open { c.file_owner = register_resource(&mut *c, file_owner_binding()); }
+    if file || open { c.file_owner = register_resource(&mut *c, file_owner_binding(), 0); }
     if c.error == 0 && open { c.file_open_result = register_standard_status(&mut *c, file_open_result_binding()); }
     if c.error == 0 && status { c.file_status = register_standard_status(&mut *c, file_status_binding()); }
+    return;
+}
+
+fn register_vector_types(c: &mut Compiler) -> () {
+    for element in 0..8 {
+        let mut index = -1;
+        if is_value_scalar(element) { index = register_resource(&mut *c, vector_type_binding(), element); }
+        if c.error != 0 { return; }
+        if !grown(try_push(&mut *c.vector_types, index)) { c.error = 68; return; }
+    }
     return;
 }
 
@@ -497,6 +576,7 @@ fn register_standard_types(c: &mut Compiler) -> () {
     let mut arguments = false;
     let mut buffers = false;
     let mut growth = false;
+    let mut vectors = false;
     for index in 0..len(&*c.imports) {
         let row = c.imports[index];
         let binding = row.path_start;
@@ -506,20 +586,39 @@ fn register_standard_types(c: &mut Compiler) -> () {
         arguments = arguments || binding == argument_bytes_binding() || binding == argument_status_binding();
         buffers = buffers || binding == byte_buffer_binding() || is_byte_operation(binding);
         growth = growth || binding == growth_status_binding()
-            || (binding >= byte_operation_binding(6) && binding <= byte_operation_binding(3));
+            || (binding >= byte_operation_binding(6) && binding <= byte_operation_binding(3))
+            || (binding >= vector_operation_binding(6) && binding <= vector_operation_binding(3));
+        vectors = vectors || binding == vector_type_binding() || is_vector_operation(binding);
     }
     if read { c.read_status = register_standard_status(&mut *c, read_status_binding()); }
     if c.error == 0 && write { c.write_status = register_standard_status(&mut *c, write_status_binding()); }
     if c.error == 0 && arguments { c.argument_status = register_standard_status(&mut *c, argument_status_binding()); }
-    if c.error == 0 && buffers { c.byte_buffer = register_resource(&mut *c, byte_buffer_binding()); }
+    if c.error == 0 && buffers { c.byte_buffer = register_resource(&mut *c, byte_buffer_binding(), 0); }
     if c.error == 0 && growth { c.growth_status = register_standard_status(&mut *c, growth_status_binding()); }
     if c.error == 0 { register_file_types(&mut *c); }
+    if c.error == 0 && vectors { register_vector_types(&mut *c); }
+    return;
+}
+
+fn validate_vector_alias(c: &mut Compiler, row: Import, index: i32) -> () {
+    c.error_module = row.scope;
+    c.cursor = row.alias;
+    if record_binding(&*c, row.scope, row.alias) >= 0 { fail(&mut *c); return; }
+    for previous in 0..index {
+        let old = c.imports[previous];
+        if old.scope == row.scope && old.path_start == vector_type_binding() { fail(&mut *c); return; }
+    }
     return;
 }
 
 fn resolve_record_imports(c: &mut Compiler) -> () {
     for index in 0..len(&*c.imports) {
         let mut row = c.imports[index];
+        if row.path_start == vector_type_binding() {
+            validate_vector_alias(&mut *c, row, index);
+            if c.error != 0 { return; }
+            continue;
+        }
         let mut target = -1;
         if row.path_start == read_status_binding() { target = c.read_status; }
         else if row.path_start == write_status_binding() { target = c.write_status; }
@@ -536,7 +635,9 @@ fn resolve_record_imports(c: &mut Compiler) -> () {
         if !record_visible(&*c, row.scope, target) { continue; }
         c.error_module = row.scope;
         c.cursor = row.alias;
-        if record_binding(&*c, row.scope, row.alias) >= 0 { fail(&mut *c); return; }
+        if record_binding(&*c, row.scope, row.alias) >= 0 || vector_alias(&*c, row.scope, row.alias) {
+            fail(&mut *c); return;
+        }
         for previous in 0..index {
             let old = c.imports[previous];
             if old.scope == row.scope && old.record_target == target { fail(&mut *c); return; }
@@ -554,6 +655,7 @@ fn resolve_imports(c: &mut Compiler) -> () {
         c.error_module = row.scope;
         c.cursor = row.alias;
         let mut target = row.path_start;
+        if target == vector_type_binding() { index = index + 1; continue; }
         if target < 0 && row.record_target >= 0 { index = index + 1; continue; }
         if row.path_start >= 0 {
             let target_module = path_module(&*c, row.path_start, row.name, row.scope);

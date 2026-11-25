@@ -106,4 +106,35 @@ uint64_t __oxid_scalar_file_seek(const oxid_file *file, int64_t offset) {
     if (status != 0) invalid_heap_resource(status);
     return ((uint64_t)(uint32_t)result.value << 32) | (uint32_t)result.tag;
 }
+
+int32_t __oxid_scalar_vector_operation(int32_t operation, uint32_t element,
+    oxid_vector *vector, int32_t count, const uint8_t *scalar,
+    const uint8_t *source, int32_t source_count) {
+    union { uint64_t wide; int32_t tag; } result;
+    uint64_t budget = 0;
+    int32_t status = __oxid_vector_operation_hosted(operation, element, vector, count, scalar,
+        source, source_count, &budget, &result, 0);
+    if (status != 0) invalid_heap_resource(status);
+    if (operation == 1 || operation == 2) return (int32_t)result.wide;
+    return operation == 7 ? 0 : result.tag;
+}
+
+uint8_t *__oxid_scalar_vector_index(const oxid_vector *vector, uint32_t element, int32_t index) {
+    uint8_t *bytes;
+    int32_t status = __oxid_vector_index(vector, element, index, &bytes);
+    if (status == OXID_BUFFER_BOUNDS) {
+        static const char message[] = "vector index out of bounds\n";
+        __oxid_bytebuf_cleanup();
+        __oxid_overflow(message, sizeof(message) - 1);
+    }
+    if (status != 0) invalid_heap_resource(status);
+    return bytes;
+}
+
+uint8_t *__oxid_scalar_vector_view(const oxid_vector *vector, uint32_t element, int32_t *length) {
+    uint8_t *bytes;
+    int32_t status = __oxid_vector_view(vector, element, 0, 0, 0, &bytes, length);
+    if (status != 0) invalid_heap_resource(status);
+    return bytes;
+}
 #endif

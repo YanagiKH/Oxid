@@ -23,6 +23,9 @@ use crate::model::file_seek_binding;
 use crate::model::file_open_operation;
 use crate::model::file_transfer_operation;
 use crate::model::is_file_operation;
+use crate::model::vector_operation_binding;
+use crate::model::is_vector_operation;
+use crate::model::vector_element;
 use crate::model::record_reference;
 use crate::model::is_binary_io_binding;
 use crate::model::read_some_binding;
@@ -53,6 +56,7 @@ use crate::model::visible_field;
 use crate::model::word;
 use crate::headers::ty as parse_type;
 use crate::headers::path_name;
+use crate::headers::vector_type_argument;
 use alloc::vec::Vec;
 use alloc::vec::new;
 use alloc::vec::len;
@@ -143,13 +147,18 @@ fn access_allowed(c: &Compiler, position: i32, path: i64, depth: i32, exclusive:
     }
     return true;
 }
+fn collection_slice_element(c: &Compiler, ty: i32) -> i32 {
+    if is_byte_buffer(&*c, ty) { return 4; }
+    return vector_element(&*c, ty);
+}
 fn slice_owner_matches(c: &Compiler, binding: Binding, expected: i32, reborrow: bool) -> bool {
     let exclusive = is_mutable_slice(expected);
-    if is_byte_buffer(&*c, record_value_type(binding.ty)) {
+    let element = collection_slice_element(&*c, record_value_type(binding.ty));
+    if element != 0 {
         let reference = is_record_reference(binding.ty);
         let mut writable = binding.writable;
         if reference { writable = is_mutable_record_reference(binding.ty); }
-        return expected == slice_type(4, exclusive) && reborrow == reference && (!exclusive || writable);
+        return expected == slice_type(element, exclusive) && reborrow == reference && (!exclusive || writable);
     }
     if reborrow {
         return is_slice(binding.ty) && slice_element(binding.ty) == slice_element(expected)
@@ -158,18 +167,23 @@ fn slice_owner_matches(c: &Compiler, binding: Binding, expected: i32, reborrow: 
     return is_array(binding.ty) && slice_type(array_element(binding.ty), exclusive) == expected
         && (!exclusive || binding.writable);
 }
+fn collection_view(c: &mut Compiler, buffer: Value, expected: i32) -> Value {
+    let element = vector_element(&*c, referent_record(buffer.ty));
+    if element > 0 { return crate::emit::vector_view(&mut *c, buffer, element, expected); }
+    return crate::emit::byte_buffer_view(&mut *c, buffer, expected);
+}
 fn slice_owner_view(c: &mut Compiler, binding: Binding, path: FieldPath, expected: i32) -> Value {
     if path.depth > 0 {
-        if is_byte_buffer(&*c, path.ty) {
+        if collection_slice_element(&*c, path.ty) != 0 {
             let ptr_type = record_reference(path.ty, is_mutable_slice(expected));
-            return crate::emit::byte_buffer_view(&mut *c, Value { ty: ptr_type, id: path.pointer }, expected);
+            return collection_view(&mut *c, Value { ty: ptr_type, id: path.pointer }, expected);
         }
         return crate::emit::borrow_array_field(&mut *c, path.pointer, path.ty, expected);
     }
-    if is_byte_buffer(&*c, record_value_type(binding.ty)) {
+    if collection_slice_element(&*c, record_value_type(binding.ty)) != 0 {
         let ptr_type = record_reference(record_value_type(binding.ty), is_mutable_slice(expected));
         let buffer = crate::emit::borrow_record(&mut *c, binding, ptr_type);
-        return crate::emit::byte_buffer_view(&mut *c, buffer, expected);
+        return collection_view(&mut *c, buffer, expected);
     }
     if is_slice(binding.ty) {
         let loaded = crate::emit::load(&mut *c, binding.slot, binding.ty);
@@ -179,7 +193,8 @@ fn slice_owner_view(c: &mut Compiler, binding: Binding, path: FieldPath, expecte
 }
 fn is_slice_field(c: &Compiler, ty: i32, expected: i32, exclusive: bool) -> bool {
     if is_array(ty) { return slice_type(array_element(ty), exclusive) == expected; }
-    return is_byte_buffer(&*c, ty) && expected == slice_type(4, exclusive);
+    let element = collection_slice_element(&*c, ty);
+    return element > 0 && expected == slice_type(element, exclusive);
 }
 fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
     expect(&mut *c, 65);
@@ -230,11 +245,11 @@ fn slice_argument(c: &mut Compiler, expected: i32, depth: i32) -> Value {
     if projected { return crate::emit::project_slice(&mut *c, view, start, end); }
     return view;
 }
-fn record_argument(c: &mut Compiler, expected: i32) -> Value {
+fn record_argument_type(c: &mut Compiler, expected: i32, needs_exclusive: bool) -> Value {
     expect(&mut *c, 65);
     let exclusive = kind(&*c) == 5;
     if exclusive { expect(&mut *c, 5); }
-    if exclusive != is_mutable_record_reference(expected) { fail(&mut *c); return invalid(); }
+    if exclusive != needs_exclusive { fail(&mut *c); return invalid(); }
     let reborrow = kind(&*c) == 31;
     if reborrow { expect(&mut *c, 31); }
     let position = local(&*c, c.cursor);
@@ -250,15 +265,57 @@ fn record_argument(c: &mut Compiler, expected: i32) -> Value {
     }
     let mut path = FieldPath { code: 1i64, depth: 0, ty: root, pointer: -1 };
     if kind(&*c) == 43 { path = field_path(&mut *c, binding); }
-    if c.error != 0 || path.ty != referent_record(expected) || !binding.available
+    let mut correct_type = path.ty == expected;
+    if expected == 0 { correct_type = vector_element(&*c, path.ty) > 0; }
+    if c.error != 0 || !correct_type || !binding.available
         || !access_allowed(&*c, position, path.code, path.depth, exclusive) {
         fail(&mut *c); return invalid();
     }
     if !grown(try_push(&mut *c.loans, Loan { binding: position, path: path.code, depth: path.depth, exclusive: exclusive })) {
         c.error = 68; return invalid();
     }
-    if path.depth > 0 { return Value { ty: expected, id: path.pointer }; }
-    return crate::emit::borrow_record(&mut *c, binding, expected);
+    let borrow_type = record_reference(path.ty, exclusive);
+    if path.depth > 0 { return Value { ty: borrow_type, id: path.pointer }; }
+    return crate::emit::borrow_record(&mut *c, binding, borrow_type);
+}
+fn record_argument(c: &mut Compiler, expected: i32) -> Value {
+    return record_argument_type(&mut *c, referent_record(expected), is_mutable_record_reference(expected));
+}
+fn vector_constructor(c: &mut Compiler) -> Value {
+    expect(&mut *c, 45);
+    let ty = vector_type_argument(&mut *c);
+    expect(&mut *c, 20); expect(&mut *c, 21);
+    if c.error != 0 { return invalid(); }
+    return Value { ty: ty, id: -1 };
+}
+fn vector_call(c: &mut Compiler, operation: i32, depth: i32) -> Value {
+    if operation == 0 { fail(&mut *c); return invalid(); }
+    expect(&mut *c, 20);
+    let outer_loans = len(&*c.loans);
+    let buffer = record_argument_type(&mut *c, 0, operation >= 3);
+    if c.error != 0 { return invalid(); }
+    let element = vector_element(&*c, referent_record(buffer.ty));
+    let mut count = invalid();
+    let mut item = invalid();
+    let mut view = invalid();
+    if operation == 3 || operation == 6 || operation == 7 {
+        expect(&mut *c, 26);
+        count = expression(&mut *c, 1, depth + 1);
+        if count.ty != 1 { fail(&mut *c); return invalid(); }
+    }
+    if operation == 4 || operation == 6 {
+        expect(&mut *c, 26);
+        item = expression(&mut *c, 1, depth + 1);
+        if item.ty != element { fail(&mut *c); return invalid(); }
+    }
+    if operation == 5 {
+        expect(&mut *c, 26);
+        view = slice_argument(&mut *c, slice_type(element, false), depth);
+    }
+    expect(&mut *c, 21);
+    truncate(&mut *c.loans, outer_loans);
+    if c.error != 0 { return invalid(); }
+    return crate::emit::vector_operation(&mut *c, operation, buffer, count, item, view);
 }
 fn byte_buffer_call(c: &mut Compiler, operation: i32, depth: i32) -> Value {
     expect(&mut *c, 20);
@@ -325,6 +382,9 @@ fn file_call(c: &mut Compiler, target: i32, depth: i32) -> Value {
     return crate::emit::file_io(&mut *c, operation, file, destination);
 }
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
+    if is_vector_operation(target) {
+        return vector_call(&mut *c, vector_operation_binding(0) - target, depth);
+    }
     if is_file_operation(target) {
         return file_call(&mut *c, target, depth);
     }
@@ -525,7 +585,9 @@ fn enum_value(c: &mut Compiler, index: i32, name: i32, depth: i32) -> Value {
 fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
     let row = c.records[index];
     let owner = c.functions[c.current];
-    if row.tagged || index == c.byte_buffer || index == c.file_owner { fail(&mut *c); return invalid(); }
+    if row.tagged || row.vector_element != 0 || index == c.byte_buffer || index == c.file_owner {
+        fail(&mut *c); return invalid();
+    }
     let mut seen = new::<bool>();
     while len(&seen) < row.field_count {
         if !grown(try_push(&mut seen, false)) { c.error = 68; return invalid(); }
@@ -593,11 +655,18 @@ fn moves_on_read(c: &Compiler, ty: i32) -> bool {
     }
     return false;
 }
+fn vector_binding_index(c: &mut Compiler, binding: Binding, index: Value, element: i32) -> i32 {
+    let pointer_type = record_reference(record_value_type(binding.ty), false);
+    let buffer = crate::emit::borrow_record(&mut *c, binding, pointer_type);
+    return crate::emit::vector_index(&mut *c, buffer, index, element);
+}
 fn named_value(c: &mut Compiler, depth: i32) -> Value {
     let name = c.cursor;
     c.cursor = c.cursor + 1;
     let owner = c.functions[c.current];
     if kind(&*c) == 45 {
+        let function_id = function_binding(&*c, owner.source_module, name);
+        if function_id == vector_operation_binding(0) { return vector_constructor(&mut *c); }
         let index = record_binding(&*c, owner.source_module, name);
         return enum_literal(&mut *c, index, depth);
     }
@@ -621,12 +690,19 @@ fn named_value(c: &mut Compiler, depth: i32) -> Value {
     }
     if !access_allowed(&*c, position, 1i64, 0, false) { fail(&mut *c); return invalid(); }
     if kind(&*c) == 51 {
-        if !is_array(binding.ty) && !is_slice(binding.ty) { fail(&mut *c); return invalid(); }
+        let vector_item = vector_element(&*c, record_value_type(binding.ty));
+        if vector_item == 0 && !is_array(binding.ty) && !is_slice(binding.ty) {
+            fail(&mut *c); return invalid();
+        }
         expect(&mut *c, 51);
         let index = expression(&mut *c, 1, depth + 1);
         expect(&mut *c, 52);
         let target = c.vars[position];
         if index.ty != 1 || !target.available { fail(&mut *c); return invalid(); }
+        if vector_item != 0 {
+            let selected = vector_binding_index(&mut *c, binding, index, vector_item);
+            return crate::emit::load_element(&mut *c, selected, vector_item);
+        }
         if is_slice(binding.ty) { return crate::emit::slice_index(&mut *c, binding, index); }
         return crate::emit::array_index(&mut *c, binding, index);
     }
@@ -809,7 +885,9 @@ fn destructure(c: &mut Compiler) -> () {
     let index = record_binding(&*c, owner.source_module, c.cursor);
     if index < 0 { fail(&mut *c); return; }
     let row = c.records[index];
-    if row.tagged || index == c.byte_buffer || index == c.file_owner { fail(&mut *c); return; }
+    if row.tagged || row.vector_element != 0 || index == c.byte_buffer || index == c.file_owner {
+        fail(&mut *c); return;
+    }
     expect(&mut *c, 1);
     expect(&mut *c, 22);
     let mut destinations = new::<i32>();
@@ -941,8 +1019,15 @@ fn index_assignment(c: &mut Compiler, end: i32) -> () {
     if position < 0 { fail(&mut *c); return; }
     let binding = c.vars[position];
     let view = is_mutable_slice(binding.ty);
+    let vector_item = vector_element(&*c, record_value_type(binding.ty));
     let mut element = 0;
     if view { element = slice_element(binding.ty); }
+    else if vector_item != 0 {
+        let mut writable = binding.writable;
+        if is_record_reference(binding.ty) { writable = is_mutable_record_reference(binding.ty); }
+        if !writable { fail(&mut *c); return; }
+        element = vector_item;
+    }
     else {
         if !binding.writable || !is_array(binding.ty) { fail(&mut *c); return; }
         element = array_element(binding.ty);
@@ -961,7 +1046,10 @@ fn index_assignment(c: &mut Compiler, end: i32) -> () {
     c.cursor = continuation;
     let target = c.vars[position];
     if !target.available || !access_allowed(&*c, position, 1i64, 0, true) { fail(&mut *c); return; }
-    if view { crate::emit::slice_store(&mut *c, binding, index, value); }
+    if vector_item != 0 {
+        let pointer = vector_binding_index(&mut *c, binding, index, vector_item);
+        crate::emit::vector_store(&mut *c, pointer, value);
+    } else if view { crate::emit::slice_store(&mut *c, binding, index, value); }
     else { crate::emit::array_store(&mut *c, binding, index, value); }
     return;
 }

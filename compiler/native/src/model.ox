@@ -42,6 +42,7 @@ pub struct Record {
     pub name: i32, pub source_module: i32, pub first_field: i32, pub field_count: i32,
     pub start: i32, pub body: i32, pub end: i32, pub cells: i32, pub depth: i32,
     pub layout_state: i32,
+    pub vector_element: i32,
     pub copy: bool, pub tagged: bool, pub public: bool, pub needs_drop: bool
 }
 #[derive(Copy)]
@@ -62,6 +63,7 @@ pub struct Compiler {
     pub uses_binary_io: bool, pub read_status: i32, pub write_status: i32,
     pub byte_buffer: i32, pub growth_status: i32,
     pub file_owner: i32, pub file_open_result: i32, pub file_status: i32,
+    pub vector_types: Vec<i32>,
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
 
@@ -79,6 +81,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool, p
         uses_binary_io: false, read_status: -1, write_status: -1,
         byte_buffer: -1, growth_status: -1,
         file_owner: -1, file_open_result: -1, file_status: -1,
+        vector_types: new::<i32>(),
         live: true, terminated: false, error: 0, error_start: 0, error_module: 0
     };
 }
@@ -402,7 +405,34 @@ pub fn file_transfer_operation(binding: i32) -> i32 {
 pub fn is_file(c: &Compiler, ty: i32) -> bool {
     return c.file_owner >= 0 && ty == record_type(c.file_owner);
 }
-pub fn uses_heap(c: &Compiler) -> bool { return c.byte_buffer >= 0 || c.file_owner >= 0; }
+pub fn uses_heap(c: &Compiler) -> bool {
+    return c.byte_buffer >= 0 || c.file_owner >= 0 || len(&*c.vector_types) > 0;
+}
+pub fn vector_type_binding() -> i32 { return -34; }
+pub fn vector_operation_binding(operation: i32) -> i32 { return -35 - operation; }
+pub fn is_vector_operation(binding: i32) -> bool {
+    return binding <= vector_operation_binding(0) && binding >= vector_operation_binding(8);
+}
+pub fn vector_type(c: &Compiler, element: i32) -> i32 {
+    if element <= 0 || element >= len(&*c.vector_types) { return 0; }
+    let index = c.vector_types[element];
+    if index < 0 { return 0; }
+    return record_type(index);
+}
+pub fn vector_element(c: &Compiler, ty: i32) -> i32 {
+    if !is_record(ty) { return 0; }
+    let row = c.records[record_index(ty)];
+    return row.vector_element;
+}
+pub fn vector_scalar_tag(element: i32) -> i32 {
+    if element == 1 { return 7; }
+    if element == 2 { return 1; }
+    if element == 4 { return 4; }
+    if element == 5 { return 9; }
+    if element == 6 { return 15; }
+    if element == 7 { return 8; }
+    return 0;
+}
 pub fn needs_drop(c: &Compiler, ty: i32) -> bool {
     if !is_record(ty) { return false; }
     let row = c.records[record_index(ty)];
