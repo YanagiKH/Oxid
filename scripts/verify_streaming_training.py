@@ -253,6 +253,56 @@ def interrupted_checkpoint(check, label, command, directory, native):
     check.save()
 
 
+def create_package(check, label, compiler, project):
+    archive = check.output / (label + '.oxpkg.tar')
+    check.command(label + '-lock', [compiler, 'lock', '--offline'], project)
+    result = check.command(label + '-create', [
+        compiler, 'package', '--frozen', '--output', archive, '--message-format=json',
+    ], project)
+    metadata = json.loads(result.stdout)
+    digest = sha(archive)
+    require(metadata['operation'] == 'create' and metadata['success'] is True
+            and metadata['sha256'] == digest and metadata['root'] == 'source/streaming-training',
+            label + ': incorrect package metadata')
+    return archive, digest
+
+
+def verify_package(check, label, compiler, archive, digest, release, expected):
+    destination = check.output / (label + '-extracted')
+    check.command(label + '-verify', [compiler, 'package', '--verify', archive, '--sha256', digest],
+                  check.output)
+    check.command(label + '-extract', [compiler, 'package', '--extract', archive, '--sha256', digest,
+                                       '--output', destination], check.output)
+    project = destination / 'source' / 'streaming-training'
+    check.command(label + '-check', [compiler, 'check', '--frozen'], project)
+    tested = check.command(label + '-test', [compiler, 'test', '--frozen', '--message-format=json'], project)
+    results = [json.loads(row) for row in tested.stdout.splitlines()]
+    require([(row['name'], row['success'], row['exit_status']) for row in results
+             if row.get('kind') == 'test-result'] == [('reader', True, 0)],
+            label + ': packaged reader test did not pass')
+    sample = project / 'data' / 'sample.oxds'
+    require(sample.read_bytes() == oracle.encode(oracle.SAMPLE), label + ': sample dataset changed')
+    check.command(label + '-build', [compiler, 'build', '--profile', 'release', '--frozen',
+                                    '--reproducible'], project)
+    binary = check.deploy(project / '.oxid/bin/streaming-training', label, 'release')
+    require(sha(binary) == sha(release), label + ': packaged release binary differs')
+    retained = check.output / ('retained-' + destination.name)
+    destination.rename(retained)
+    require(not destination.exists(), label + ': extracted sources remain at build paths')
+    directory = check.output / 'runs' / label
+    directory.mkdir(parents=True)
+    shutil.copyfile(retained / sample.relative_to(destination), directory / 'input.oxds')
+    actual = app_case(check, label + '-run', [binary], directory, 3, 3, True)
+    require(actual == expected, label + ': installed training output differs')
+    checkpoint_cases(check, label + '-checkpoint', [binary], directory / 'checkpoint-test', True)
+    check.deployed(binary, label, 'release')
+    check.report['source_moves'].append({'from': str(destination), 'to': str(retained),
+                                         'restoration': 'Rename the retained directory to its original path.'})
+    check.report['source_packages'].append({'path': str(archive), 'sha256': digest,
+                                            'release_sha256': sha(binary)})
+    check.save()
+
+
 def verify(args):
     check = Verification(args, ['verify_streaming_training.py', 'streaming_training_oracle.py',
                                'data_pipeline_verification.py', 'linux_native_target.py'],
@@ -348,12 +398,18 @@ def verify(args):
                     binary = check.deploy(probe/'.oxid/bin/reader-probe', prefix+'-reader-'+str(limit), profile)
                     readers.append((limit, profile, binary))
                 shutil.copy2(probe/'oxid.toml', probe/f'manifest-{limit}.toml')
+            archive, digest = create_package(check, prefix + '-package', compiler, project)
+            if index:
+                require(digest == check.report['source_packages'][0]['sha256'],
+                        'compiler profiles produced different source packages')
             retained = check.output/('retained-'+prefix)
             snapshot.rename(retained)
             require(not snapshot.exists(), 'build source paths remain available')
             check.report.setdefault('source_moves', []).append({'from': str(snapshot), 'to': str(retained),
                                                                  'restoration': 'Rename the retained directory to its original path.'})
             check.save()
+            verify_package(check, prefix + '-package', compiler, archive, digest,
+                           dict(binaries)['release'], reference[3, 3])
             for limit, profile, binary in readers:
                 label = f'{prefix}-reader-{limit}-{profile}'
                 cases = oracle.reader_cases() if limit == 16384 else [('heap-limit', oracle.grid(5), 8, 0, 2)]

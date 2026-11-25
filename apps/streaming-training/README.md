@@ -85,6 +85,29 @@ batches. The program exits with status 130. To continue, run the same
 `--resume` command with the number of additional epochs you want. Resume starts
 from the most recent valid checkpoint.
 
+## Build on another machine
+
+Create a source archive from the project directory.
+
+```sh
+oxid lock --offline
+oxid package --frozen --output streaming-training.oxpkg.tar
+```
+
+Copy the archive and record the SHA-256 printed by `oxid package`. On the
+destination machine, use that checksum to extract and build the project offline.
+
+```sh
+oxid package --extract streaming-training.oxpkg.tar --sha256 "$checksum" --output unpacked
+cd unpacked/source/streaming-training
+oxid test --frozen
+oxid build --frozen --profile release
+.oxid/bin/streaming-training data/sample.oxds 30 4
+```
+
+Set `checksum` to the recorded SHA-256 before running these commands. To resume
+an existing run, transfer your dataset and both checkpoint files separately.
+
 ## Use the reader in Oxid
 
 Add the [reader package](reader/README.md) and [tensor package](../cpu-training/tensor/README.md) as path dependencies. `reader::open(path, batch_size)` returns a reader; `next(&mut reader)` returns owned input and target tensors for the next batch. The final batch may contain fewer rows.
