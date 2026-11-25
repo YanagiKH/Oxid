@@ -91,7 +91,7 @@ fn catalog(c: &mut Compiler, count: i32) -> () {
 }
 
 pub fn write(c: &mut Compiler) -> () {
-    let mut needed = false;
+    let mut needed = c.uses_record_slices;
     for index in 8..len(&*c.vector_types) {
         if c.vector_types[index] >= 0 { needed = true; }
     }

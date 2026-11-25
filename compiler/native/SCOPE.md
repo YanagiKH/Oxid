@@ -62,8 +62,8 @@ Create a vector with `alloc::vec::new::<i32>()`. Vectors accept
 Use `try_push` to add an element, `values[index]` to read or replace one,
 and `&values[start..end]` to borrow a slice. Use `values.len()` to get the
 current length. The same operations work on a vector stored in a struct.
-Vectors of `#[derive(Copy)]` structs support adding, reading and replacing
-elements by index.
+Vectors of `#[derive(Copy)]` structs support indexing and borrowing slices.
+Use `try_extend` to copy elements from a slice of the same type.
 Use `std::fs::open_read(&path)` with a byte path and match `OpenResult`.
 Call `std::fs::read_some(&mut file, &mut bytes)` to read data into a slice.
 The file closes when its owner goes out of scope. Use `std::fs::close`

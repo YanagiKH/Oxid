@@ -152,9 +152,7 @@ fn access_allowed(c: &Compiler, position: i32, path: i64, depth: i32, exclusive:
 }
 fn collection_slice_element(c: &Compiler, ty: i32) -> i32 {
     if is_byte_buffer(&*c, ty) { return 4; }
-    let element = vector_element(&*c, ty);
-    if is_record(element) { return 0; }
-    return element;
+    return vector_element(&*c, ty);
 }
 fn slice_owner_matches(c: &Compiler, binding: Binding, expected: i32, reborrow: bool) -> bool {
     let exclusive = is_mutable_slice(expected);
@@ -315,7 +313,6 @@ fn vector_call(c: &mut Compiler, operation: i32, depth: i32) -> Value {
         if item.ty != element { fail(&mut *c); return invalid(); }
     }
     if operation == 5 {
-        if is_record(element) { fail(&mut *c); return invalid(); }
         expect(&mut *c, 26);
         view = slice_argument(&mut *c, slice_type(element, false), depth);
     }

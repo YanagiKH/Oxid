@@ -1236,6 +1236,50 @@ fn main()->i32{
                        "fn main()->i32{let mut values=new::<First>();"
                        "try_push(&mut values,Second{number:42});return 42;}",
         }),
+        ("copy-record-slices-project-mutate-and-extend", 0, True, {
+            "main.ox": '''
+use alloc::vec::new;
+use alloc::vec::try_push;
+use alloc::vec::try_extend;
+#[derive(Copy)]struct Row{active:bool,number:i64,code:u8}
+fn read(view:&[Row])->i32{
+    if view.len()!=1{return 1;}
+    let chosen=view[0];
+    if !chosen.active{return 2;}
+    let number=chosen.number;
+    let code=chosen.code;
+    return number.to_i32_checked()+code.to_i32();
+}
+fn length(view:&[Row])->i32{return view.len();}
+fn update(view:&mut [Row])->i32{
+    view[0]=Row{active:true,number:40i64,code:2u8};
+    return read(&*view[0..1]);
+}
+fn main()->i32{
+    let mut source=new::<Row>();
+    let row=Row{active:false,number:1i64,code:0u8};
+    try_push(&mut source,row);
+    try_push(&mut source,row);
+    try_push(&mut source,row);
+    if update(&mut source[1..3])!=42{return 3;}
+    if length(&source[3..3])!=0{return 4;}
+    let mut copied=new::<Row>();
+    try_extend(&mut copied,&source[1..2]);
+    return read(&copied);
+}
+''',
+        }),
+        ("copy-record-slice-signature-without-vector-imports", 0, True, {
+            "main.ox": "#[derive(Copy)]struct Row{number:i32}"
+                       "fn read(view:&[Row])->i32{let first=view[0];return first.number;}"
+                       "fn main()->i32{return 42;}",
+        }),
+        ("copy-record-slices-preserve-nominal-type", 65, True, {
+            "main.ox": "use alloc::vec::new;#[derive(Copy)]struct First{number:i32}"
+                       "#[derive(Copy)]struct Second{number:i32}"
+                       "fn read(view:&[Second])->i32{return view.len();}"
+                       "fn main()->i32{let values=new::<First>();return read(&values);}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
