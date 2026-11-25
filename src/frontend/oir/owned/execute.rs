@@ -4540,14 +4540,10 @@ fn checked_entry_policy<W: PlanWitness>(
     policy: EntryPolicy,
 ) -> Result<hir::DefId> {
     if witness.raw_program().builtins.process().has_signals() {
-        for operation in [
-            crate::frontend::builtin_catalog::experimental::Function::EnableTermination,
-            crate::frontend::builtin_catalog::experimental::Function::TerminationRequested,
-            crate::frontend::builtin_catalog::experimental::Function::WaitForTermination,
-        ] {
+        for operation in crate::frontend::builtin_catalog::termination::Function::SIGNALS {
             #[cfg(test)]
             super::termination_queries::vm_catalog_row();
-            if let Some(function) = witness.experimental_function(operation) {
+            if let Some(function) = witness.experimental_function(operation.operation()) {
                 let span = witness.functions()[function.0].span;
                 if policy != EntryPolicy::Process {
                     return Err(OwnedRunFailure::TerminationEntry(span));
