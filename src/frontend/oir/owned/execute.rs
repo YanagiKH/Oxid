@@ -5145,6 +5145,12 @@ fn execute_plan_policy_with_process_delivery<V: StoredValue, W: PlanWitness>(
             crate::program_termination::wait_bytes(),
         )?;
     }
+    if plan.has_stdin_wait() {
+        machine.header_bytes = plan::add(
+            machine.header_bytes,
+            crate::program_termination::stdin_wait_bytes(),
+        )?;
+    }
     let mut termination_scope = None;
     let mut result = (|| {
         machine.activation_preflight(

@@ -135,14 +135,17 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             }
             Function::UnixMillis => V::from_wide(crate::program_termination::unix_millis())
                 .expect("sealed i64 clock storage"),
-            Function::WaitForTermination | Function::SleepMillis => {
+            Function::WaitForTermination | Function::WaitForStdin | Function::SleepMillis => {
                 let Scalar::I32(timeout_ms) = self.experimental_scalar(frame, 0, span)? else {
                     return Err(bad("process timeout type", span));
                 };
-                let completed = if operation == Function::WaitForTermination {
-                    crate::program_termination::wait(timeout_ms)
-                } else {
-                    crate::program_termination::sleep_millis(timeout_ms)
+                let completed = match operation {
+                    Function::WaitForTermination => crate::program_termination::wait(timeout_ms),
+                    Function::WaitForStdin => {
+                        crate::program_termination::wait_for_stdin(timeout_ms)
+                    }
+                    Function::SleepMillis => crate::program_termination::sleep_millis(timeout_ms),
+                    _ => unreachable!("checked timed operation"),
                 };
                 Scalar::Bool(completed).into()
             }
@@ -168,6 +171,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 Function::EnableTermination
                     | Function::TerminationRequested
                     | Function::WaitForTermination
+                    | Function::WaitForStdin
             ) {
                 crate::program_termination::delivered();
             }

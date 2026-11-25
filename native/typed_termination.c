@@ -8,12 +8,14 @@
     (defined(__x86_64__) || defined(__aarch64__)) && UINTPTR_MAX == UINT64_MAX && \
     defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #include <errno.h>
+#include <poll.h>
 #include <signal.h>
 #include <stddef.h>
 #include <time.h>
 #include <unistd.h>
 
 _Static_assert(sizeof(struct timespec) == 2 * sizeof(int64_t), "termination wait timespec layout");
+_Static_assert(sizeof(struct pollfd) == 8, "stdin readiness poll descriptor layout");
 
 static volatile sig_atomic_t termination_flag;
 static int termination_active;
@@ -100,6 +102,35 @@ int32_t __oxid_wait_for_termination(int32_t timeout_ms) {
     return __oxid_termination_requested();
 }
 
+int32_t __oxid_wait_for_stdin(int32_t timeout_ms) {
+    if (timeout_ms < 0 || !termination_active || !termination_enabled) return 0;
+    struct pollfd input = {STDIN_FILENO, POLLIN, 0};
+    struct timespec started;
+    if (timeout_ms > 0 && clock_gettime(CLOCK_MONOTONIC, &started) != 0) return 0;
+    const int64_t duration = (int64_t)timeout_ms * 1000000;
+    int32_t remaining_ms = timeout_ms;
+    while (!__oxid_termination_requested()) {
+        // POSIX may deliver a process signal to another unblocked thread.
+        // Limit each kernel wait so cancellation never depends on EINTR.
+        const int wait_ms = remaining_ms < 10 ? remaining_ms : 10;
+        const int ready = poll(&input, 1, wait_ms);
+        if (__oxid_termination_requested()) return 0;
+        if (ready > 0) {
+            return !(input.revents & POLLNVAL)
+                && (input.revents & (POLLIN | POLLHUP | POLLERR)) != 0;
+        }
+        if (timeout_ms == 0 || (ready < 0 && errno != EINTR)) return 0;
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < started.tv_sec) return 0;
+        const uint64_t seconds = (uint64_t)now.tv_sec - (uint64_t)started.tv_sec;
+        if (seconds > (uint64_t)timeout_ms / 1000 + 1) return 0;
+        const int64_t elapsed = (int64_t)seconds * 1000000000 + now.tv_nsec - started.tv_nsec;
+        if (elapsed < 0 || elapsed >= duration) return 0;
+        remaining_ms = (int32_t)((duration - elapsed + 999999) / 1000000);
+    }
+    return 0;
+}
+
 void __oxid_termination_scope_end(void) {
     if (!termination_active) return;
     if (termination_enabled) {
@@ -118,6 +149,7 @@ int32_t __oxid_termination_scope_start(void) { return -1; }
 int32_t __oxid_enable_termination_notifications(void) { return 0; }
 int32_t __oxid_termination_requested(void) { return 0; }
 int32_t __oxid_wait_for_termination(int32_t timeout_ms) { (void)timeout_ms; return 0; }
+int32_t __oxid_wait_for_stdin(int32_t timeout_ms) { (void)timeout_ms; return 0; }
 void __oxid_termination_scope_end(void) {}
 #endif
 #endif

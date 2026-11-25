@@ -23,6 +23,42 @@ const SUPPORTED: bool = cfg!(all(
 ));
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 const CLOCK_SUPPORTED: bool = SUPPORTED || cfg!(all(windows, target_arch = "x86_64"));
+#[cfg(unix)]
+const STDIN_WAIT_SOURCE: &str = r#"
+use std::process::enable_termination_notifications;
+use std::process::termination_requested;
+use std::process::wait_for_stdin;
+use std::time::monotonic_millis;
+use std::io::read_some;use std::io::ReadSomeStatus;
+use std::io::write_some;use std::io::WriteSomeStatus;
+
+fn main() -> i32 {
+    if wait_for_stdin(0) { return 81; }
+    if !enable_termination_notifications() || wait_for_stdin(-1) { return 82; }
+    let start = monotonic_millis();
+    if wait_for_stdin(25) || monotonic_millis() - start < 25i64 { return 83; }
+    let ready = b"R";
+    let sent = write_some(&ready);
+    match sent {
+        WriteSomeStatus::Written(count) => { if count != 1 { return 84; } },
+        WriteSomeStatus::Error(code) => { return 84; },
+    }
+    if !wait_for_stdin(20000) {
+        if termination_requested() { return 44; }
+        return 85;
+    }
+    let mut byte = b".";
+    let received = read_some(&mut byte);
+    match received {
+        ReadSomeStatus::Data(count) => {
+            if count == 1 && byte[0] == 71u8 { return 42; }
+            return 86;
+        },
+        ReadSomeStatus::Eof => { return 43; },
+        ReadSomeStatus::Error(code) => { return 87; },
+    }
+}
+"#;
 const CLOCK_SOURCE: &str = r#"
 use std::time::monotonic_millis as clock;
 use std::io::read_some;
@@ -204,6 +240,101 @@ impl Drop for ChildGuard {
         if let Some(child) = &mut self.0 {
             let _ = child.kill();
             let _ = child.wait();
+        }
+    }
+}
+
+#[cfg(unix)]
+fn exercise_stdin_readiness(command: &mut Command, outcome: i32) {
+    let mut guard = ChildGuard(Some(command.stdin(Stdio::piped()).spawn().unwrap()));
+    let child = guard.0.as_mut().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let (send, receive) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut byte = [0];
+        let result = stdout.read_exact(&mut byte).map(|()| byte);
+        let _ = send.send(result);
+    });
+    assert_eq!(
+        receive
+            .recv_timeout(Duration::from_secs(30))
+            .unwrap()
+            .unwrap(),
+        *b"R"
+    );
+    reader.join().unwrap();
+    match outcome {
+        42 => child.stdin.as_mut().unwrap().write_all(b"G").unwrap(),
+        43 => drop(child.stdin.take()),
+        44 => {
+            // SAFETY: This is the live, guarded child whose ready byte we read.
+            assert_eq!(
+                unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM) },
+                0
+            );
+        }
+        _ => unreachable!("unknown readiness test outcome"),
+    }
+    let deadline = Instant::now() + Duration::from_secs(6);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "stdin wait did not finish");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let mut errors = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut errors)
+        .unwrap();
+    assert_eq!(status.code(), Some(outcome), "{errors}");
+    assert!(errors.is_empty(), "{errors}");
+    drop(guard.0.take());
+}
+
+#[cfg(unix)]
+#[test]
+fn typed_stdin_wait_observes_data_eof_and_cancellation() {
+    if !SUPPORTED {
+        return;
+    }
+    let fixture = Fixture::with_entry(STDIN_WAIT_SOURCE, "process", "hosted");
+    for outcome in [42, 43, 44] {
+        exercise_stdin_readiness(&mut fixture.command(&["run"]), outcome);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires LLVM 19.1.7 and a supported POSIX target"]
+fn native_stdin_wait_observes_data_eof_and_cancellation() {
+    if !SUPPORTED {
+        return;
+    }
+    let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
+    for profile in ["dev", "release"] {
+        let fixture = Fixture::with_entry(STDIN_WAIT_SOURCE, "process", "hosted");
+        let output = fixture
+            .command(&["build", "--profile", profile])
+            .env("OXID_LLVM_BIN", &llvm)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{profile}: {output:?}");
+        let deployment = Fixture::fresh("stdin-wait-deployment");
+        let binary = deployment.0.join("worker");
+        fs::copy(fixture.0.join(".oxid/bin/worker"), &binary).unwrap();
+        drop(fixture);
+        for outcome in [42, 43, 44] {
+            let mut command = Command::new(&binary);
+            command
+                .current_dir(&deployment.0)
+                .env_clear()
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            exercise_stdin_readiness(&mut command, outcome);
         }
     }
 }

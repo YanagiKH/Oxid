@@ -228,6 +228,68 @@ mod platform {
         true
     }
 
+    pub(crate) fn wait_for_stdin(timeout_ms: i32) -> bool {
+        let Ok(milliseconds) = u64::try_from(timeout_ms) else {
+            return false;
+        };
+        if !CURRENT.with(|current| {
+            current
+                .try_borrow()
+                .is_ok_and(|context| context.active && context.enabled)
+        }) {
+            return false;
+        }
+        let timeout = Duration::from_millis(milliseconds);
+        let started = Instant::now();
+        let mut input = libc::pollfd {
+            fd: libc::STDIN_FILENO,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        while !REQUESTED.load(Ordering::Relaxed) {
+            let remaining = timeout.saturating_sub(started.elapsed());
+            // A different unblocked thread can receive the notification.
+            let slice = remaining.min(Duration::from_millis(10));
+            let wait_ms = slice.as_nanos().div_ceil(1_000_000) as i32;
+            // SAFETY: input describes exactly one live pollfd for this call.
+            // The kernel reports readiness without taking descriptor ownership.
+            let ready = unsafe { libc::poll(&mut input, 1, wait_ms) };
+            if REQUESTED.load(Ordering::Relaxed) {
+                return false;
+            }
+            if ready > 0 {
+                return input.revents & libc::POLLNVAL == 0
+                    && input.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0;
+            }
+            if ready < 0
+                && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted
+            {
+                return false;
+            }
+            if started.elapsed() >= timeout {
+                return false;
+            }
+        }
+        false
+    }
+
+    #[allow(dead_code)]
+    struct StdinWaitControl {
+        deadline: Instant,
+        durations: [Duration; 3],
+        milliseconds: u64,
+        descriptor: libc::pollfd,
+        wait_ms: i32,
+        ready: i32,
+        error: std::io::Error,
+        enabled: bool,
+        canceled: bool,
+    }
+
+    pub(crate) const fn stdin_wait_bytes() -> usize {
+        size_of::<StdinWaitControl>()
+    }
+
     #[allow(dead_code)]
     struct WaitControl {
         start: Instant,
@@ -474,6 +536,12 @@ mod platform {
     pub(crate) fn wait(_: i32) -> bool {
         false
     }
+    pub(crate) fn wait_for_stdin(_: i32) -> bool {
+        false
+    }
+    pub(crate) const fn stdin_wait_bytes() -> usize {
+        0
+    }
     pub(crate) const fn wait_bytes() -> usize {
         0
     }
@@ -490,7 +558,9 @@ mod platform {
     pub(crate) fn delivered() {}
 }
 
-pub(crate) use platform::{control_bytes, enable, requested, wait, wait_bytes, Scope};
+pub(crate) use platform::{
+    control_bytes, enable, requested, stdin_wait_bytes, wait, wait_bytes, wait_for_stdin, Scope,
+};
 #[cfg(test)]
 pub(crate) use platform::{delivered, observation, reset_observation};
 

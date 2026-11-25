@@ -351,6 +351,14 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
                 .experimental_function(Function::WaitForTermination)
                 .is_some()
     }
+    pub(super) fn has_stdin_wait(&self) -> bool {
+        use crate::frontend::builtin_catalog::termination::Function;
+        self.witness
+            .raw_program()
+            .builtins
+            .process()
+            .contains(Function::WaitStdin)
+    }
     pub(super) fn process_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
         if !self.has_process_delivery() {
             return None;

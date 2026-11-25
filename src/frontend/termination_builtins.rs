@@ -10,22 +10,25 @@ pub(in crate::frontend) enum Function {
     MonotonicMillis,
     SleepMillis,
     UnixMillis,
+    WaitStdin,
 }
 impl Function {
-    pub const SIGNALS: [Self; 3] = [Self::Enable, Self::Requested, Self::Wait];
-    pub const ALL: [Self; 6] = [
+    pub const SIGNALS: [Self; 4] = [Self::Enable, Self::Requested, Self::Wait, Self::WaitStdin];
+    pub const ALL: [Self; 7] = [
         Self::Enable,
         Self::Requested,
         Self::Wait,
         Self::MonotonicMillis,
         Self::SleepMillis,
         Self::UnixMillis,
+        Self::WaitStdin,
     ];
     pub fn name(self) -> &'static str {
         match self {
             Self::Enable => "enable_termination_notifications",
             Self::Requested => "termination_requested",
             Self::Wait => "wait_for_termination",
+            Self::WaitStdin => "wait_for_stdin",
             Self::MonotonicMillis => "monotonic_millis",
             Self::SleepMillis => "sleep_millis",
             Self::UnixMillis => "unix_millis",
@@ -39,7 +42,7 @@ impl Function {
         ["std", module, self.name()]
     }
     pub fn takes_millis(self) -> bool {
-        matches!(self, Self::Wait | Self::SleepMillis)
+        matches!(self, Self::Wait | Self::SleepMillis | Self::WaitStdin)
     }
     pub fn result_ty(self) -> Ty {
         match self {
@@ -52,6 +55,7 @@ impl Function {
             Self::Enable => experimental::Function::EnableTermination,
             Self::Requested => experimental::Function::TerminationRequested,
             Self::Wait => experimental::Function::WaitForTermination,
+            Self::WaitStdin => experimental::Function::WaitForStdin,
             Self::MonotonicMillis => experimental::Function::MonotonicMillis,
             Self::SleepMillis => experimental::Function::SleepMillis,
             Self::UnixMillis => experimental::Function::UnixMillis,
@@ -82,7 +86,11 @@ impl Inventory {
         self.0 == 0
     }
     pub fn has_signals(self) -> bool {
-        self.0 & ((1 << Function::SIGNALS.len()) - 1) != 0
+        const SIGNAL_MASK: u8 = (1 << Function::Enable as u8)
+            | (1 << Function::Requested as u8)
+            | (1 << Function::Wait as u8)
+            | (1 << Function::WaitStdin as u8);
+        self.0 & SIGNAL_MASK != 0
     }
     pub fn rank(self, item: Function) -> Option<usize> {
         self.contains(item).then(|| {
@@ -233,6 +241,19 @@ mod tests {
             }
             assert_eq!(old_set.process().count(), 0);
         }
+        let combined = empty
+            .admit(BuiltinItem::Process(Function::WaitStdin))
+            .admit(BuiltinItem::Experimental(experimental::Item::OpenAppend))
+            .admit(BuiltinItem::Experimental(experimental::Item::WriteStderr));
+        assert_eq!(combined.process().count(), 1);
+        assert!(combined.process().has_signals());
+        assert_eq!(combined.process().at(0), Some(Function::WaitStdin));
+        assert!(combined
+            .experimental()
+            .contains(experimental::Item::OpenAppend));
+        assert!(combined
+            .experimental()
+            .contains(experimental::Item::WriteStderr));
         for old in super::super::vector::Item::ALL {
             let old_set = empty.admit(BuiltinItem::Vector(old));
             assert_eq!(old_set.process().count(), 0);

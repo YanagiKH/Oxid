@@ -42,6 +42,7 @@ pub(in crate::frontend) enum Item {
     UnixMillis,
     OpenAppend,
     WriteStderr,
+    WaitForStdin,
 }
 impl Item {
     pub const ALL: [Self; 30] = [
@@ -111,6 +112,7 @@ impl Item {
             Self::EnableTermination => "enable_termination_notifications",
             Self::TerminationRequested => "termination_requested",
             Self::WaitForTermination => "wait_for_termination",
+            Self::WaitForStdin => "wait_for_stdin",
             Self::MonotonicMillis => "monotonic_millis",
             Self::SleepMillis => "sleep_millis",
             Self::UnixMillis => "unix_millis",
@@ -132,7 +134,10 @@ impl Item {
             | Self::SeekAbsolute
             | Self::OpenAppend => 3,
             Self::ArgStatus | Self::ArgCount | Self::ArgBytes => 4,
-            Self::EnableTermination | Self::TerminationRequested | Self::WaitForTermination => 5,
+            Self::EnableTermination
+            | Self::TerminationRequested
+            | Self::WaitForTermination
+            | Self::WaitForStdin => 5,
             Self::MonotonicMillis | Self::SleepMillis | Self::UnixMillis => 6,
             _ => 0,
         }
@@ -174,6 +179,7 @@ impl Item {
             Self::EnableTermination => Function::EnableTermination,
             Self::TerminationRequested => Function::TerminationRequested,
             Self::WaitForTermination => Function::WaitForTermination,
+            Self::WaitForStdin => Function::WaitForStdin,
             Self::MonotonicMillis => Function::MonotonicMillis,
             Self::SleepMillis => Function::SleepMillis,
             Self::UnixMillis => Function::UnixMillis,
@@ -280,6 +286,7 @@ pub(in crate::frontend) enum Function {
     UnixMillis,
     OpenAppend,
     WriteStderr,
+    WaitForStdin,
 }
 impl Function {
     pub const PROCESS_IO: [Self; 3] = [Self::ReadSome, Self::WriteSome, Self::WriteStderr];
@@ -301,6 +308,7 @@ impl Function {
             Self::EnableTermination => Some(super::termination::Function::Enable),
             Self::TerminationRequested => Some(super::termination::Function::Requested),
             Self::WaitForTermination => Some(super::termination::Function::Wait),
+            Self::WaitForStdin => Some(super::termination::Function::WaitStdin),
             Self::MonotonicMillis => Some(super::termination::Function::MonotonicMillis),
             Self::SleepMillis => Some(super::termination::Function::SleepMillis),
             Self::UnixMillis => Some(super::termination::Function::UnixMillis),
@@ -364,6 +372,7 @@ impl Function {
             Self::EnableTermination => Item::EnableTermination,
             Self::TerminationRequested => Item::TerminationRequested,
             Self::WaitForTermination => Item::WaitForTermination,
+            Self::WaitForStdin => Item::WaitForStdin,
             Self::MonotonicMillis => Item::MonotonicMillis,
             Self::SleepMillis => Item::SleepMillis,
             Self::UnixMillis => Item::UnixMillis,
@@ -404,7 +413,7 @@ impl Function {
         let (parameters, count) = match self {
             New | ArgCount | EnableTermination | TerminationRequested | MonotonicMillis
             | UnixMillis => ([unit; 3], 0),
-            WaitForTermination | SleepMillis => ([scalar(Ty::I32), unit, unit], 1),
+            WaitForTermination | WaitForStdin | SleepMillis => ([scalar(Ty::I32), unit, unit], 1),
             Take => ([exclusive, unit, unit], 1),
             Len | Capacity => ([shared, unit, unit], 1),
             Reserve | Truncate => ([exclusive, scalar(Ty::I32), unit], 2),
@@ -426,9 +435,8 @@ impl Function {
             Len | Capacity | ArgCount => ValueTy::Scalar(Ty::I32),
             MonotonicMillis | UnixMillis => ValueTy::Scalar(Ty::I64),
             Truncate => ValueTy::Scalar(Ty::Unit),
-            EnableTermination | TerminationRequested | WaitForTermination | SleepMillis => {
-                ValueTy::Scalar(Ty::Bool)
-            }
+            EnableTermination | TerminationRequested | WaitForTermination | WaitForStdin
+            | SleepMillis => ValueTy::Scalar(Ty::Bool),
             _ => ValueTy::Owned(AggregateTy::Enum(enumeration(
                 self.result_enum().expect("enum result"),
             ))),
@@ -483,6 +491,7 @@ const OWNED_VECTOR_ITEM_START: usize = 38;
 const PROCESS_ITEM_START: usize = 40;
 const FILE_APPEND_ITEM_BIT: usize = 46;
 const STDERR_ITEM_BIT: usize = 47;
+const STDIN_WAIT_ITEM_BIT: usize = 48;
 impl Item {
     const fn inventory_bit(self) -> usize {
         match self {
@@ -492,6 +501,7 @@ impl Item {
             Self::EnableTermination => PROCESS_ITEM_START,
             Self::TerminationRequested => PROCESS_ITEM_START + 1,
             Self::WaitForTermination => PROCESS_ITEM_START + 2,
+            Self::WaitForStdin => STDIN_WAIT_ITEM_BIT,
             Self::MonotonicMillis => PROCESS_ITEM_START + 3,
             Self::SleepMillis => PROCESS_ITEM_START + 4,
             Self::UnixMillis => PROCESS_ITEM_START + 5,
@@ -502,10 +512,16 @@ impl Item {
 impl Inventory {
     pub(in crate::frontend) fn process(self) -> super::termination::Inventory {
         use super::termination::Inventory;
-        Inventory::from_bits(((self.bits() >> PROCESS_ITEM_START) as u8) & Inventory::MASK)
+        let original = (self.bits() >> PROCESS_ITEM_START) as u8
+            & ((1 << (FILE_APPEND_ITEM_BIT - PROCESS_ITEM_START)) - 1);
+        let stdin_wait = ((self.bits() >> STDIN_WAIT_ITEM_BIT) & 1) as u8;
+        Inventory::from_bits(
+            original | (stdin_wait << super::termination::Function::WaitStdin as u8),
+        )
     }
     pub(in crate::frontend) fn admit_process(self, item: super::termination::Function) -> Self {
-        Self((self.bits() | (1u64 << (PROCESS_ITEM_START + item as usize))).to_le_bytes())
+        let bit = item.operation().item().inventory_bit();
+        Self((self.bits() | (1u64 << bit)).to_le_bytes())
     }
     pub(in crate::frontend) fn contains_owned_vector(
         self,
@@ -564,10 +580,13 @@ impl Inventory {
                     <= PROCESS_ITEM_START
             );
             assert!(
-                PROCESS_ITEM_START + super::termination::Function::ALL.len()
+                PROCESS_ITEM_START + super::termination::Function::WaitStdin as usize
                     <= FILE_APPEND_ITEM_BIT
             );
-            assert!(FILE_APPEND_ITEM_BIT < STDERR_ITEM_BIT && STDERR_ITEM_BIT < 60);
+            assert!(
+                FILE_APPEND_ITEM_BIT < STDERR_ITEM_BIT && STDERR_ITEM_BIT < STDIN_WAIT_ITEM_BIT
+            );
+            assert!(STDIN_WAIT_ITEM_BIT < 60);
         }
         debug_assert!(legacy < 9);
         ((self.bits() << 4) | u64::from(legacy)).to_le_bytes()
@@ -582,6 +601,7 @@ impl Inventory {
             Item::EnableTermination
                 | Item::TerminationRequested
                 | Item::WaitForTermination
+                | Item::WaitForStdin
                 | Item::MonotonicMillis
                 | Item::SleepMillis
                 | Item::UnixMillis
@@ -669,6 +689,7 @@ impl Inventory {
             Item::EnableTermination
                 | Item::TerminationRequested
                 | Item::WaitForTermination
+                | Item::WaitForStdin
                 | Item::MonotonicMillis
                 | Item::SleepMillis
                 | Item::UnixMillis

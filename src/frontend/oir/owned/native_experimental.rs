@@ -21,6 +21,17 @@ struct TerminationWaitFrame {
 }
 pub(super) const TERMINATION_WAIT_BYTES: usize = size_of::<TerminationWaitFrame>();
 
+#[allow(dead_code)]
+#[repr(C)]
+struct StdinWaitFrame {
+    deadline: TerminationWaitFrame,
+    input: (i32, i16, i16),
+    remaining_ms: i32,
+    wait_ms: i32,
+    ready: i32,
+}
+pub(super) const STDIN_WAIT_BYTES: usize = size_of::<StdinWaitFrame>();
+
 // Conservative named C call roles for the one active synchronous file attempt.
 // The caller's result and resource payload storage are already paid separately.
 #[allow(dead_code)]
@@ -345,11 +356,12 @@ pub(super) fn operation<W: PlanWitness>(
                 "  %{name}_process_status = call i32 @__oxid_termination_requested()"
             )
             .unwrap(),
-            Process::Wait | Process::SleepMillis => {
-                let runtime_function = if process == Process::Wait {
-                    "__oxid_wait_for_termination"
-                } else {
-                    "__oxid_sleep_millis"
+            operation @ (Process::Wait | Process::WaitStdin | Process::SleepMillis) => {
+                let runtime_function = match operation {
+                    Process::Wait => "__oxid_wait_for_termination",
+                    Process::WaitStdin => "__oxid_wait_for_stdin",
+                    Process::SleepMillis => "__oxid_sleep_millis",
+                    _ => unreachable!("checked timed operation"),
                 };
                 writeln!(out, "  %{name}_timeout = load i32, ptr %s0, align 4").unwrap();
                 writeln!(
