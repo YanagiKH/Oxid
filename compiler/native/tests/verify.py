@@ -1322,6 +1322,89 @@ fn main()->i32{
     return rows
 
 
+def verify_file_reads(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                      output: Path, timeout: int) -> list[dict]:
+    evidence = output / "file-reads"
+    evidence.mkdir()
+    payload = evidence / "input.bin"
+    content = b"\xff\x00\r"
+    payload.write_bytes(content)
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::fs::File;
+use std::fs::OpenResult;
+use std::fs::FileStatus;
+use std::fs::open_read;
+use std::fs::read_some as file_read;
+use std::fs::close;
+use std::io::ReadSomeStatus;
+fn count(file:&mut File,bytes:&mut [u8])->i32{
+    let status=file_read(&mut *file,&mut *bytes);
+    match status{
+        ReadSomeStatus::Data(n)=>{return n;},
+        ReadSomeStatus::Eof=>{return -1;},
+        ReadSomeStatus::Error(e)=>{return -e;},
+    }
+}
+fn inspect(file:&mut File)->i32{
+    let mut buffer=b"xxxx";
+    if count(&mut *file,&mut buffer[0..0])!=0{return 1;}
+    if count(&mut *file,&mut buffer)!=3{return 2;}
+    if buffer[0]!=255u8||buffer[1]!=0u8||buffer[2]!=13u8||buffer[3]!=120u8{return 3;}
+    if count(&mut *file,&mut buffer)!=-1{return 4;}
+    let closed=close(&mut *file);
+    match closed{FileStatus::Ok=>{},FileStatus::Error(e)=>{return 5;},}
+    if count(&mut *file,&mut buffer)!=-9{return 6;}
+    return 42;
+}
+fn errno_for(path:&[u8])->i32{
+    let opened=open_read(&*path);
+    match opened{
+        OpenResult::Opened(file)=>{return 0;},OpenResult::Error(e)=>{return e;},
+        OpenResult::MemoryLimit=>{return -1;},OpenResult::AllocationFailed=>{return -2;},
+    }
+}
+fn main()->i32{
+    let path=b"input.bin";
+    let missing=b"missing.bin";
+    let invalid=b"bad\x00path";
+    if errno_for(&missing)!=2||errno_for(&invalid)!=22{return 7;}
+    for attempt in 0..16{open_read(&path);}
+    let opened=open_read(&path);
+    match opened{
+        OpenResult::Opened(file)=>{let mut handle=file;return inspect(&mut handle);},
+        OpenResult::Error(e)=>{return 8;},
+        OpenResult::MemoryLimit=>{return 9;},OpenResult::AllocationFailed=>{return 10;},
+    }
+}
+''', encoding="ascii")
+    rows = []
+    builds = []
+
+    def observe(name, command, mode, clear_env):
+        executed = run(command, evidence, timeout, clear_environment=clear_env)
+        rows.append(record(evidence, name, command, executed))
+        expected = (42, b"", b"") if mode == "process" else (0, b"42\n", b"")
+        require((executed.returncode, executed.stdout, executed.stderr) == expected,
+                name + ": file behavior did not match")
+        require(payload.read_bytes() == content, name + ": reading modified the file")
+
+    for mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={mode}"]
+        observe(f"{mode}-reference", command, mode, False)
+        for profile in ("dev", "release"):
+            name = f"{mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=mode)
+            builds.append((mode, name))
+    source.unlink()
+    for mode, name in builds:
+        moved = evidence / ("moved-" + name)
+        (evidence / name).rename(moved)
+        observe(name, [str(moved)], mode, True)
+    return rows
+
+
 def verify(args) -> dict:
     target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
@@ -1428,6 +1511,8 @@ def verify(args) -> dict:
             report["argument_bytes"] = verify_argument_bytes(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
             report["binary_io"] = verify_binary_io(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["file_reads"] = verify_file_reads(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"

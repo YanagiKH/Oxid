@@ -18,6 +18,10 @@ use crate::model::byte_operation_binding;
 use crate::model::is_byte_operation;
 use crate::model::is_byte_buffer;
 use crate::model::needs_drop;
+use crate::model::uses_heap;
+use crate::model::file_open_read_binding;
+use crate::model::file_read_binding;
+use crate::model::file_close_binding;
 use crate::model::record_reference;
 use crate::model::is_binary_io_binding;
 use crate::model::read_some_binding;
@@ -287,7 +291,33 @@ fn byte_buffer_call(c: &mut Compiler, operation: i32, depth: i32) -> Value {
     if c.error != 0 { return invalid(); }
     return crate::emit::byte_buffer_operation(&mut *c, operation, buffer, size, fill, view);
 }
+fn file_call(c: &mut Compiler, target: i32, depth: i32) -> Value {
+    let outer_loans = len(&*c.loans);
+    expect(&mut *c, 20);
+    if target == file_open_read_binding() {
+        let path = slice_argument(&mut *c, slice_type(4, false), depth);
+        expect(&mut *c, 21);
+        truncate(&mut *c.loans, outer_loans);
+        if c.error != 0 { return invalid(); }
+        return crate::emit::open_read(&mut *c, path);
+    }
+    let file_type = record_reference(record_type(c.file_owner), true);
+    let file = record_argument(&mut *c, file_type);
+    let close_file = target == file_close_binding();
+    let mut destination = invalid();
+    if !close_file {
+        expect(&mut *c, 26);
+        destination = slice_argument(&mut *c, slice_type(4, true), depth);
+    }
+    expect(&mut *c, 21);
+    truncate(&mut *c.loans, outer_loans);
+    if c.error != 0 { return invalid(); }
+    return crate::emit::file_io(&mut *c, file, destination, close_file);
+}
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
+    if target == file_open_read_binding() || target == file_read_binding() || target == file_close_binding() {
+        return file_call(&mut *c, target, depth);
+    }
     if is_byte_operation(target) {
         return byte_buffer_call(&mut *c, byte_operation_binding(0) - target, depth);
     }
@@ -485,7 +515,7 @@ fn enum_value(c: &mut Compiler, index: i32, name: i32, depth: i32) -> Value {
 fn record_literal(c: &mut Compiler, index: i32, depth: i32) -> Value {
     let row = c.records[index];
     let owner = c.functions[c.current];
-    if row.tagged || index == c.byte_buffer { fail(&mut *c); return invalid(); }
+    if row.tagged || index == c.byte_buffer || index == c.file_owner { fail(&mut *c); return invalid(); }
     let mut seen = new::<bool>();
     while len(&seen) < row.field_count {
         if !grown(try_push(&mut seen, false)) { c.error = 68; return invalid(); }
@@ -769,7 +799,7 @@ fn destructure(c: &mut Compiler) -> () {
     let index = record_binding(&*c, owner.source_module, c.cursor);
     if index < 0 { fail(&mut *c); return; }
     let row = c.records[index];
-    if row.tagged || index == c.byte_buffer { fail(&mut *c); return; }
+    if row.tagged || index == c.byte_buffer || index == c.file_owner { fail(&mut *c); return; }
     expect(&mut *c, 1);
     expect(&mut *c, 22);
     let mut destinations = new::<i32>();
@@ -1120,7 +1150,7 @@ fn for_statement(c: &mut Compiler, depth: i32) -> () {
     return;
 }
 fn drop_locals(c: &mut Compiler, floor: i32) -> () {
-    if c.byte_buffer < 0 || !c.live { return; }
+    if !uses_heap(&*c) || !c.live { return; }
     let mut index = len(&*c.vars);
     while index > floor {
         index = index - 1;

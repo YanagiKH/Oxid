@@ -50,6 +50,10 @@ whether the operation succeeded. Borrow the buffer as `&[u8]` or
 move between functions and free their storage when their owner goes out of scope.
 Store a buffer in a struct field or enum variant to give that value ownership
 of the bytes. Use `take(&mut field)` to move a buffer out and leave it empty.
+Use `std::fs::open_read(&path)` with a byte path and match `OpenResult`.
+Call `std::fs::read_some(&mut file, &mut bytes)` to read data into a slice.
+The file closes when its owner goes out of scope. Use `std::fs::close`
+to close it earlier and check the result.
 Use `for index in start..end { ... }` to iterate over matching integer bounds.
 The bounds evaluate once from left to right, and the end is excluded. The
 index is immutable and available inside the loop body.
@@ -154,8 +158,7 @@ calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
 nested enums, other reference forms, generics, text strings, nested arrays,
-File I/O and other integer types are unsupported. The compiler
-itself uses ByteBuf, File and Copy vectors.
+file writes and other integer types are unsupported.
 
 Declare `mod math;` in the entry file to load `math.ox`. Inside `math.ox`,
 `pub mod stats;` loads `math/stats.ox` and exposes it outside `math`.

@@ -42,16 +42,16 @@ uint64_t __oxid_scalar_arg_bytes(int32_t index, uint8_t *bytes, int32_t capacity
     return payload;
 }
 
-#ifdef OXID_SCALAR_BYTEBUF
+#ifdef OXID_SCALAR_HEAP
 #include "../../native/typed_bytebuf.c"
 
-static _Noreturn void invalid_byte_buffer(int32_t status) {
+static _Noreturn void invalid_heap_resource(int32_t status) {
     __oxid_bytebuf_cleanup();
     if (status == OXID_BUFFER_BOUNDS) {
         static const char message[] = "byte buffer index or range is out of bounds\n";
         __oxid_overflow(message, sizeof(message) - 1);
     }
-    static const char message[] = "invalid byte buffer ownership\n";
+    static const char message[] = "invalid resource ownership\n";
     __oxid_overflow(message, sizeof(message) - 1);
 }
 
@@ -61,7 +61,7 @@ int32_t __oxid_scalar_bytebuf_operation(int32_t operation, oxid_bytebuf *buffer,
     uint64_t budget = 0;
     int32_t status = __oxid_bytebuf_operation_hosted(operation, buffer, size, fill,
         source, length, &budget, &result);
-    if (status != 0) invalid_byte_buffer(status);
+    if (status != 0) invalid_heap_resource(status);
     if (operation == 1 || operation == 2) return (int32_t)result.wide;
     return operation == 7 ? 0 : result.tag;
 }
@@ -69,12 +69,32 @@ int32_t __oxid_scalar_bytebuf_operation(int32_t operation, oxid_bytebuf *buffer,
 uint8_t *__oxid_scalar_bytebuf_view(const oxid_bytebuf *value, int32_t *length) {
     uint8_t *bytes;
     int32_t status = __oxid_bytebuf_view(value, 0, 0, 0, &bytes, length);
-    if (status != 0) invalid_byte_buffer(status);
+    if (status != 0) invalid_heap_resource(status);
     return bytes;
 }
 
-void __oxid_scalar_bytebuf_finish(void) {
+void __oxid_scalar_heap_finish(void) {
     int32_t status = __oxid_bytebuf_finish();
-    if (status != 0) invalid_byte_buffer(status);
+    if (status != 0) invalid_heap_resource(status);
+}
+
+int32_t __oxid_scalar_open_read(uint8_t *path, int32_t length, oxid_file *file, int32_t *error) {
+    oxid_file_open_result opened = {0};
+    uint64_t budget = 0;
+    int32_t status = __oxid_file_delivery_hosted(0, NULL, path, length, &budget, &opened, 0);
+    if (status != 0) invalid_heap_resource(status);
+    *file = (oxid_file){0, 0};
+    *error = 0;
+    if (opened.tag == 0) *file = opened.value.file;
+    if (opened.tag == 1) *error = opened.value.error;
+    return opened.tag;
+}
+
+uint64_t __oxid_scalar_file_io(int32_t operation, oxid_file *file, uint8_t *bytes, int32_t length) {
+    oxid_binary_result result = {0};
+    uint64_t budget = 0;
+    int32_t status = __oxid_file_delivery_hosted(operation, file, bytes, length, &budget, &result, 0);
+    if (status != 0) invalid_heap_resource(status);
+    return ((uint64_t)(uint32_t)result.value << 32) | (uint32_t)result.tag;
 }
 #endif
