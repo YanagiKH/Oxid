@@ -59,8 +59,7 @@ fn hosted_size_caps_keep_all_other_budgets_and_clamp_requests() {
                 limits.bytes,
                 limits.live_bytes,
                 limits.diagnostic_bytes,
-                limits.metadata_bytes,
-                limits.ir_bytes
+                limits.metadata_bytes
             ),
             (
                 d.parameters,
@@ -70,14 +69,13 @@ fn hosted_size_caps_keep_all_other_budgets_and_clamp_requests() {
                 d.bytes,
                 d.live_bytes,
                 d.diagnostic_bytes,
-                d.metadata_bytes,
-                d.ir_bytes
+                d.metadata_bytes
             )
         );
         let expected = if policy.hosted() {
-            (1024, 32768, 16384, 65536, 65536)
+            (1024, 32768, 16384, 65536, 65536, 128 * 1024 * 1024)
         } else {
-            (256, 8192, 4096, 8192, 8192)
+            (256, 8192, 4096, 8192, 8192, 64 * 1024 * 1024)
         };
         assert_eq!(
             (
@@ -85,7 +83,8 @@ fn hosted_size_caps_keep_all_other_budgets_and_clamp_requests() {
                 limits.scalar_slots,
                 limits.blocks,
                 limits.inventory_items,
-                limits.owner_width
+                limits.owner_width,
+                limits.ir_bytes
             ),
             expected
         );
@@ -95,6 +94,7 @@ fn hosted_size_caps_keep_all_other_budgets_and_clamp_requests() {
             blocks: usize::MAX,
             inventory_items: usize::MAX,
             owner_width: usize::MAX,
+            ir_bytes: usize::MAX,
             ..limits
         }
         .bounded_for(policy);
@@ -104,7 +104,8 @@ fn hosted_size_caps_keep_all_other_budgets_and_clamp_requests() {
                 requested.scalar_slots,
                 requested.blocks,
                 requested.inventory_items,
-                requested.owner_width
+                requested.owner_width,
+                requested.ir_bytes
             ),
             expected
         );
