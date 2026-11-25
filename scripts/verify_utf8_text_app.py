@@ -23,12 +23,13 @@ import tomllib
 
 from verify_owned_enum_app import Oracle, ROOT, MAX_CAPTURE, digest, require, save, tree_hashes
 from verify_typed_package_lock import framed, reference_source_checksum
+from verify_macos_native import macho
 
 APP = Path("apps/utf8-normalize")
 LIBRARY = Path("packages/utf8_text")
 LOCATIONS = ("app", "contracts", "../../packages/utf8_text")
 CONTROLLERS = ("verify_utf8_text_app.py", "verify_owned_enum_app.py",
-               "verify_typed_package_app.py", "verify_typed_package_lock.py")
+               "verify_typed_package_app.py", "verify_typed_package_lock.py", "verify_macos_native.py")
 USAGE = b"Usage: utf8-normalize [--stream|--help] < input > output\n"
 LONG_INPUT = b"a\r\nb\r\x00" * 2049 + "\U0001f44b".encode()
 
@@ -75,6 +76,7 @@ def cases():
 
 
 CASES = cases()
+MACOS_CPU = {"x86_64": 0x1000007, "arm64": 0x100000C, "aarch64": 0x100000C}
 
 
 def streaming_cases():
@@ -208,7 +210,8 @@ class TextOracle(Oracle):
             _, index = self.command(label + "-" + name, argv, cwd, payload, status, b"",
                                     overrides=overrides, full_stdout=True)
             indexes.append(index)
-        indexes.append(self.partial_write(label, argv, cwd, overrides))
+        if sys.platform.startswith("linux"):
+            indexes.append(self.partial_write(label, argv, cwd, overrides))
         return indexes
 
     def open_pipe(self, label, argv, cwd, payload, status, stdout, stderr, overrides):
@@ -276,6 +279,9 @@ class TextOracle(Oracle):
 
     def large_stream(self, binary, cwd):
         limit = 32 * 1024 * 1024
+        memory_limit = limit if sys.platform.startswith("linux") else None
+        def limit_child():
+            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
         sample = b"A" * 4095 + "\r\n🦀\0雪\r".encode()
         normalized = expected(sample)[1]
         repeats = 10000
@@ -292,7 +298,7 @@ class TextOracle(Oracle):
         with source.open("rb") as stdin, capture.open("xb") as stdout:
             result = subprocess.run(
                 command, cwd=cwd, env=self.environment, stdin=stdin, stdout=stdout, stderr=subprocess.PIPE,
-                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_AS, (limit, limit)), timeout=120)
+                preexec_fn=limit_child if memory_limit is not None else None, timeout=120)
         with source.open("rb") as stream:
             input_hash = hashlib.file_digest(stream, "sha256").hexdigest()
         with capture.open("rb") as stream:
@@ -301,7 +307,7 @@ class TextOracle(Oracle):
         require(source.stat().st_size == len(sample) * repeats > limit
                 and capture.stat().st_size == len(normalized) * repeats
                 and output_hash == expected_hash.hexdigest(), "large streaming conversion produced incorrect bytes")
-        return {"command": command, "address_space_bytes": limit, "input": str(source),
+        return {"command": command, "address_space_bytes": memory_limit, "input": str(source),
                 "input_bytes": source.stat().st_size, "input_sha256": input_hash,
                 "output": str(capture), "output_bytes": capture.stat().st_size,
                 "output_sha256": output_hash}
@@ -377,8 +383,11 @@ class TextOracle(Oracle):
         shutil.copyfile(project / member / ".oxid/bin" / binary_name, artifact)
         artifact.chmod(0o555)
         body = artifact.read_bytes()
-        require(body[:7] == b"\x7fELF\x02\x01\x01" and body[16:20] == native_target.elf_identity(3),
-                "expected a host PIE ELF")
+        if sys.platform == "darwin":
+            macho(body, MACOS_CPU[platform.machine()])
+        else:
+            require(body[:7] == b"\x7fELF\x02\x01\x01" and body[16:20] == native_target.elf_identity(3),
+                    "expected a host PIE ELF")
         require(str(project).encode() not in body and str(self.output).encode() not in body,
                 "reproducible output contains an absolute project path")
         self.report["builds"].append({"label": label, "member": member, "profile": profile,
@@ -477,7 +486,8 @@ class TextOracle(Oracle):
 
 
 def verify(args):
-    require(native_target.host() is not None, "requires Linux x86_64 or ARM64")
+    macos = sys.platform == "darwin" and platform.machine() in MACOS_CPU
+    require(native_target.host() is not None or macos, "requires Linux or macOS x86_64 or ARM64")
     output = args.output.resolve()
     require(not output.exists() and not args.output.is_symlink() and ROOT not in output.parents and output != ROOT,
             "output must be a new directory outside the repository")
@@ -491,6 +501,10 @@ def verify(args):
                    "LC_ALL": "C.UTF-8", "TZ": "UTC", "SOURCE_DATE_EPOCH": "0", "TMPDIR": str(output / "scratch")}
     if llvm:
         environment["OXID_LLVM_BIN"] = str(llvm)
+        if macos:
+            sdk = os.environ.get("SDKROOT")
+            require(sdk and Path(sdk).is_dir(), "set SDKROOT to the xcrun macOS SDK path")
+            environment["SDKROOT"] = sdk
     if "LD_LIBRARY_PATH" in os.environ:
         environment["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
     report = {"schema": "oxid-utf8-text-application-v1", "status": "running",
@@ -504,12 +518,14 @@ def verify(args):
     baseline = {}
     try:
         if llvm:
-            for name in ("clang", "opt", "ld.lld"):
+            for name in ("clang", "opt", "ld64.lld" if macos else "ld.lld"):
                 tool = (llvm / name).resolve(strict=True)
                 identity_before = digest(tool)
                 result, index = oracle.command("version-" + name, [llvm / name, "--version"], output)
                 with tool.open("rb") as stream:
-                    require(stream.read(4) == b"\x7fELF", "native cache checks need original ELF tools")
+                    formats = (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf") \
+                        if macos else (b"\x7fELF",)
+                    require(stream.read(4) in formats, "native cache checks need original platform tools")
                 require(b"19.1.7" in result.stdout and digest(tool) == identity_before, "wrong LLVM tool/version")
                 report["tools"].append({"name": name, "path": str(tool), "sha256": identity_before, "command": index})
         for number, compiler in enumerate(compilers):
@@ -557,7 +573,7 @@ def verify(args):
                     warm = oracle.build(retained, project, profile, label + "-warm", "hit")
                     moved = oracle.build(retained, moved_root / APP, profile, label + "-relocated")
                     require(clean.read_bytes() == cold.read_bytes() == warm.read_bytes() == moved.read_bytes(),
-                            "raw ELF differs across clean/cache/relocation in " + profile)
+                            "native executable differs across clean/cache/relocation in " + profile)
                     require(digest(clean) == baseline.setdefault(profile, digest(clean)), "Rust compiler profile changed output")
                     status, value = expected(LONG_INPUT)
                     for binary in (cold, warm, moved):

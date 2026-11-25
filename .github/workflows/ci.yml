@@ -921,6 +921,10 @@ jobs:
             --output "$RUNNER_TEMP/current-macos-native/copy-records" --llvm-bin "$OXID_LLVM_BIN"
           python3 -B scripts/verify_copy_record_vectors.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-macos-native/copy-record-vectors" --llvm-bin "$OXID_LLVM_BIN"
+      - name: Verify the UTF-8 streaming application on macOS
+        run: |
+          python3 -B scripts/verify_utf8_text_app.py target/release/oxid \
+            --output "$RUNNER_TEMP/current-macos-native/utf8-application" --llvm-bin "$OXID_LLVM_BIN"
       - name: Rebuild and run the Oxid compiler on macOS
         shell: bash
         run: |
