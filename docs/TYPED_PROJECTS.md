@@ -157,6 +157,11 @@ the workspace root. Locking options such as `--frozen` also apply. All selected
 packages are checked before replacing a page; checking or file publication
 failures preserve the previous page. The command generates documentation without running the program.
 
+Use `oxid doc --versioned --frozen` to keep a separate HTML page for the
+package version in `oxid.toml`. For a workspace member, run
+`oxid doc --versioned --package math --frozen`. Open or share
+`.oxid/doc/versions/math/1.2.3/index.html`, using your package name and version.
+
 ## Project settings
 
 ```toml
