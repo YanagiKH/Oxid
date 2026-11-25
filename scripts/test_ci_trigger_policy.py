@@ -925,13 +925,13 @@ class CiTriggerPolicyTests(unittest.TestCase):
     def test_current_native_hosts_install_a_release_archive(self):
         name = 'Install and run a release archive on this host'
         posix_run = '        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid'
-        posix_upgrade = posix_run + ' --published-previous 0.8.0'
+        posix_upgrade = posix_run + ' --published-previous auto'
         windows_run = ('        run: |\n'
-                       '          python -B scripts/verify_release_install.py --binary target/release/oxid.exe --published-previous 0.8.0\n'
+                       '          python -B scripts/verify_release_install.py --binary target/release/oxid.exe --published-previous auto\n'
                        '          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }')
         for job, build, run in (
             ('native-projects', 'Run public native tests in both compiler profiles', posix_upgrade),
-            ('linux-arm64-native', 'Verify native ARM64 builds and source-free execution', posix_run),
+            ('linux-arm64-native', 'Verify native ARM64 builds and source-free execution', posix_upgrade),
             ('macos-native', 'Build both current compiler profiles', posix_upgrade),
             ('current-windows-native', 'Build both compiler profiles', windows_run),
         ):
@@ -955,12 +955,18 @@ class CiTriggerPolicyTests(unittest.TestCase):
             'oxid-macos-x86_64.tar.gz': '9da4e0c07bedc485149ab9a5643562ce57ebe9760e14f40e51ee39ef5d5bfdb3',
             'oxid-windows-x86_64.zip': '4772e3524d10ffeec62df841074149b3b844ae60c410204e5cfabf0ce88e2cf9',
         })
+        self.assertEqual(pins['0.9.0'], {
+            'oxid-linux-x86_64.tar.gz': '73359497b72e367353ad80a913880c582701c88a18e4a52fd188427f7c940aed',
+            'oxid-macos-aarch64.tar.gz': '3cdc70ee46d458e8a4691277e4edfdd2bec34c3b0e56a4b87bf93173b69b3097',
+            'oxid-macos-x86_64.tar.gz': '3708d3931903aadc97590cde4fa2ceaf0323440bffaacef957a7e16d35c1839a',
+            'oxid-windows-x86_64.zip': '86d1354c02e79f56dcf8eb03ad2123789472098483fb6da46cbf96fd35bbb1ed',
+        })
 
     def test_release_checks_the_installed_archive_before_upload(self):
         package = block(self.release, 'package', 2)
         step = (
-            '      - name: Install the archive and run an Oxid project\n'
-            '        run: python -B scripts/verify_release_install.py "dist/${{ matrix.asset }}"\n\n'
+            '      - name: Verify installation and offline upgrades of the release archive\n'
+            '        run: python -B scripts/verify_release_install.py "dist/${{ matrix.asset }}" --published-previous auto\n\n'
         )
         self.assertEqual(package.count(step), 1)
         self.assertLess(package.index('      - name: Package runtime and checksum'), package.index(step))

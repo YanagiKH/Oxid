@@ -899,7 +899,7 @@ jobs:
           cargo build --locked
           cargo build --release --locked
       - name: Install and run a release archive on this host
-        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid --published-previous 0.8.0
+        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid --published-previous auto
       - name: Verify native diagnosis on the actual host
         run: cargo test --locked --test native_doctor -- --include-ignored --test-threads=1
       - name: Verify native file lifetime and failure contracts
@@ -1156,7 +1156,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install and run a release archive on this host
         run: |
-          python -B scripts/verify_release_install.py --binary target/release/oxid.exe --published-previous 0.8.0
+          python -B scripts/verify_release_install.py --binary target/release/oxid.exe --published-previous auto
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Windows diagnosis, capture limits and source admission
         run: |
@@ -1480,7 +1480,7 @@ jobs:
           cargo test --locked --test native_library actual_same_library -- --ignored --nocapture
           cargo test --release --locked --test native_library actual_same_library -- --ignored --nocapture
       - name: Install and run a release archive on this host
-        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid --published-previous 0.8.0
+        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid --published-previous auto
       - name: Verify source-free file copies larger than the process memory limit
         run: |
           python3 -B scripts/verify_native_files.py target/debug/oxid target/release/oxid \
@@ -1718,7 +1718,7 @@ jobs:
           python3 -B scripts/verify_utf8_text_app.py target/release/oxid \
             --output "$RUNNER_TEMP/linux-arm64-native/utf8-application" --llvm-bin "$OXID_LLVM_BIN"
       - name: Install and run a release archive on this host
-        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid
+        run: python3 -B scripts/verify_release_install.py --binary target/release/oxid --published-previous auto
       - name: Run the Oxid-authored compiler and its Linux ARM64 programs
         shell: bash
         run: |
