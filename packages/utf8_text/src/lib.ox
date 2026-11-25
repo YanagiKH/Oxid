@@ -28,6 +28,12 @@ pub enum Validation {
     Invalid(i32)
 }
 
+pub enum PrefixValidation {
+    Complete,
+    Incomplete(i32),
+    Invalid(i32)
+}
+
 pub enum FromBytes {
     Ok(Text),
     Invalid(ByteBuf)
@@ -61,81 +67,56 @@ fn continuation(value: i32) -> bool {
     return value >= 128 && value <= 191;
 }
 
+// Width 0 is invalid. Width -1 is a valid prefix of a multibyte scalar.
 fn scalar_width(input: &[u8], offset: i32) -> i32 {
     let lead_byte = input[offset];
     let lead = lead_byte.to_i32();
+    if lead <= 127 { return 1; }
+    if lead < 194 || lead > 244 { return 0; }
+
     let remaining = input.len() - offset;
-    if lead <= 127 {
-        return 1;
-    }
-    if lead < 194 {
-        return 0;
-    }
-    if lead <= 223 {
-        if remaining < 2 {
-            return 0;
-        }
-        let second_two_byte = input[offset + 1];
-        let second_two = second_two_byte.to_i32();
-        if !continuation(second_two) {
-            return 0;
-        }
-        return 2;
-    }
-    if lead <= 239 {
-        if remaining < 3 {
-            return 0;
-        }
-        let second_three_byte = input[offset + 1];
-        let second_three = second_three_byte.to_i32();
-        let third_three_byte = input[offset + 2];
-        let third_three = third_three_byte.to_i32();
-        if !continuation(second_three) || !continuation(third_three) {
-            return 0;
-        }
-        if lead == 224 && second_three < 160 {
-            return 0;
-        }
-        if lead == 237 && second_three > 159 {
-            return 0;
-        }
-        return 3;
-    }
-    if lead <= 244 {
-        if remaining < 4 {
-            return 0;
-        }
-        let second_four_byte = input[offset + 1];
-        let second_four = second_four_byte.to_i32();
-        let third_four_byte = input[offset + 2];
-        let third_four = third_four_byte.to_i32();
-        let fourth_four_byte = input[offset + 3];
-        let fourth_four = fourth_four_byte.to_i32();
-        if !continuation(second_four) || !continuation(third_four) || !continuation(fourth_four) {
-            return 0;
-        }
-        if lead == 240 && second_four < 144 {
-            return 0;
-        }
-        if lead == 244 && second_four > 143 {
-            return 0;
-        }
-        return 4;
-    }
-    return 0;
+    if remaining < 2 { return -1; }
+    let second_byte = input[offset + 1];
+    let second = second_byte.to_i32();
+    if !continuation(second) { return 0; }
+    if lead <= 223 { return 2; }
+    if lead == 224 && second < 160 { return 0; }
+    if lead == 237 && second > 159 { return 0; }
+    if lead == 240 && second < 144 { return 0; }
+    if lead == 244 && second > 143 { return 0; }
+
+    if remaining < 3 { return -1; }
+    let third_byte = input[offset + 2];
+    let third = third_byte.to_i32();
+    if !continuation(third) { return 0; }
+    if lead <= 239 { return 3; }
+
+    if remaining < 4 { return -1; }
+    let fourth_byte = input[offset + 3];
+    let fourth = fourth_byte.to_i32();
+    if !continuation(fourth) { return 0; }
+    return 4;
 }
 
-pub fn validate(input: &[u8]) -> Validation {
+pub fn validate_prefix(input: &[u8]) -> PrefixValidation {
     let mut offset = 0;
     let length = input.len();
     while offset < length {
         let width = scalar_width(&*input, offset);
-        if width == 0 {
-            return Validation::Invalid(offset);
-        }
+        if width == 0 { return PrefixValidation::Invalid(offset); }
+        if width < 0 { return PrefixValidation::Incomplete(offset); }
         offset = offset + width;
     }
-    return Validation::Valid;
+    return PrefixValidation::Complete;
+}
+
+pub fn validate(input: &[u8]) -> Validation {
+    let checked = validate_prefix(&*input);
+    match checked {
+        PrefixValidation::Complete => { return Validation::Valid; },
+        PrefixValidation::Incomplete(offset) => { return Validation::Invalid(offset); },
+        PrefixValidation::Invalid(offset) => { return Validation::Invalid(offset); },
+    }
 }
 
 pub fn new_text() -> Text {
@@ -314,7 +295,7 @@ fn read_character(input: &[u8], offset: i32) -> CharacterRead {
         return CharacterRead::End;
     }
     let width = scalar_width(&*input, offset);
-    if width == 0 {
+    if width <= 0 {
         return CharacterRead::InvalidOffset;
     }
     let lead_byte = input[offset];
