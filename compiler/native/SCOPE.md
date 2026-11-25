@@ -2,7 +2,7 @@
 
 This experimental compiler reads an Oxid source file and emits LLVM. Its lexer,
 parser, name/type checks, control-flow lowering and emitter are written in Oxid.
-The Linux native compiler can rebuild itself from source with Clang.
+The native compiler can rebuild its Linux or macOS executable from source with Clang.
 
 Build and use it from the repository root:
 
@@ -16,13 +16,15 @@ and add `--profile release --entry-mode process`. Use the resulting executable
 as `--compiler` to build another program or repeat the rebuild.
 When using an unpacked compiler kit, use `compiler/native/bin/oxid-scalar-compiler`
 for `--compiler`. The kit includes the Oxid source and C runtime. Rebuilding
-requires Python, Clang, LLD and the Linux development libraries.
+requires Python, Clang 19.1.7 and LLD 19.1.7. On Linux, install the system
+development libraries. On macOS, install the Command Line Tools or Xcode SDK.
+Set `OXID_LLVM_BIN` to the directory containing `clang` and `ld64.lld`.
 
 The project uses process entry mode: a successful compiler exits 0 and writes
 only one complete LLVM module to stdout, with no printed main return value.
 The driver rejects failed status, stderr diagnostics, missing framing, partial
 output or any bytes after the module footer. It never strips a printed `0` or
-other lines. The driver selects the current Linux target on x86-64 or ARM64.
+other lines. The driver selects the host target on Linux and macOS with x86-64 or ARM64.
 LLVM/Clang and the scalar C I/O adapter are explicit dependencies;
 they do not parse or check Oxid source. Existing output paths are refused.
 

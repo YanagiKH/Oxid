@@ -2,7 +2,7 @@
 """Run actual scalar-compiler, Clang, differential and deployment acceptance.
 
 The reference compiler is an offline oracle. An optional two-generation
-rebuild runs the Linux Oxid compiler and LLVM tools separately.
+rebuild runs the Oxid compiler and LLVM tools separately.
 """
 from __future__ import annotations
 
@@ -214,7 +214,7 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
             "existing output bytes/inode changed")
 
     rows = []
-    for selected in (driver.DEFAULT_TARGET, driver.ARM64_TARGET):
+    for selected in driver.TARGETS.values():
         command = [str(compiler), str(source), f"--target={selected}"]
         result = run(command, evidence, timeout)
         driver.module_from_result(result, selected)
@@ -1773,7 +1773,8 @@ fn main()->i32{
 def verify_bootstrap_bundle(seed: Path, source: Path, clang: Path, evidence: Path,
                             environment: dict[str, str], expected: dict, timeout: int) -> dict:
     target = driver.host_target()
-    archive_path = evidence / f"oxid-native-linux-{target.split('-', 1)[0]}.tar.gz"
+    system = "macos" if target in driver.MACOS_TARGETS else "linux"
+    archive_path = evidence / f"oxid-native-{system}-{target.split('-', 1)[0]}.tar.gz"
     bundle = packager.package(seed, archive_path, source)
     require(bundle["target"] == target, "native compiler archive has the wrong target")
     manifest_name = packager.MANIFEST.as_posix()
@@ -1822,9 +1823,10 @@ def verify_native_rebuild(compiler: Path, clang: Path, runtime: Path,
     with tempfile.TemporaryDirectory(prefix="oxid-native-llvm-tools-") as directory:
         tools = Path(directory)
         llvm_bin = Path(os.environ.get("OXID_LLVM_BIN", clang.parent))
-        linker = (llvm_bin / "ld.lld").resolve(strict=True)
+        linker_name = driver.linker_name(driver.host_target())
+        linker = (llvm_bin / linker_name).resolve(strict=True)
         require(os.access(linker, os.X_OK), "LLVM linker is not executable")
-        (tools / "ld.lld").symlink_to(linker)
+        (tools / linker_name).symlink_to(linker)
         environment = {"PATH": str(tools)}
         if "LD_LIBRARY_PATH" in os.environ:
             environment["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
@@ -1838,7 +1840,7 @@ def verify_native_rebuild(compiler: Path, clang: Path, runtime: Path,
                           timeout, evidence / "c3-build", entry_mode="process",
                           linker_environment=environment)
         require(c2["module_sha256"] == c3["module_sha256"] and c2["sha256"] == c3["sha256"],
-                "Linux native compiler rebuild changed the LLVM or binary")
+                "native compiler rebuild changed the LLVM or binary")
         for name, digest in files.items():
             require(hashlib.sha256((source / name).read_bytes()).hexdigest() == digest,
                     "rebuild changed compiler source: " + name)
@@ -1998,7 +2000,7 @@ def main() -> int:
                         help="offline differential oracle; never invoked by the compiler or build driver")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--verify-rebuild", action="store_true",
-                        help="rebuild the Linux native compiler twice and compare both outputs")
+                        help="rebuild the native compiler twice and compare both outputs")
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
     try:

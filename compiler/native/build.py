@@ -13,14 +13,20 @@ import json
 import os
 from pathlib import Path
 import platform
+import shutil
 import stat
 import subprocess
 import tempfile
 
 DEFAULT_TARGET = "x86_64-unknown-linux-gnu"
 ARM64_TARGET = "aarch64-unknown-linux-gnu"
-TARGETS = {"x86_64": DEFAULT_TARGET, "AMD64": DEFAULT_TARGET,
-           "aarch64": ARM64_TARGET, "arm64": ARM64_TARGET}
+MACOS_X64_TARGET = "x86_64-apple-macosx11.0.0"
+MACOS_ARM64_TARGET = "arm64-apple-macosx11.0.0"
+TARGETS = {
+    ("Linux", "x86_64"): DEFAULT_TARGET, ("Linux", "arm64"): ARM64_TARGET,
+    ("Darwin", "x86_64"): MACOS_X64_TARGET, ("Darwin", "arm64"): MACOS_ARM64_TARGET,
+}
+MACOS_TARGETS = (MACOS_X64_TARGET, MACOS_ARM64_TARGET)
 SUFFIX = b'; Oxid scalar compiler end\n'
 MAX_MODULE_BYTES = 8 * 1024 * 1024
 DEFAULT_RUNTIME = Path(__file__).resolve().with_name("runtime.c")
@@ -36,10 +42,38 @@ def require(condition: bool, message: str) -> None:
 
 
 def host_target() -> str:
-    target = TARGETS.get(platform.machine())
-    if platform.system() != "Linux" or target is None:
-        raise BuildError("this compiler requires Linux x86-64 or ARM64")
+    machine = platform.machine().lower()
+    arch = {"amd64": "x86_64", "aarch64": "arm64"}.get(machine, machine)
+    target = TARGETS.get((platform.system(), arch))
+    if target is None:
+        raise BuildError("this compiler requires Linux or macOS on x86-64 or ARM64")
     return target
+
+
+def linker_name(target: str) -> str:
+    return "ld64.lld" if target in MACOS_TARGETS else "ld.lld"
+
+
+def macos_link_flags(clang: Path, cwd: Path, timeout: int,
+                     environment: dict[str, str] | None) -> list[str]:
+    sdk_setting = (environment or {}).get("SDKROOT") or os.environ.get("SDKROOT")
+    if sdk_setting:
+        sdk = Path(sdk_setting)
+    else:
+        selected = invoke(["/usr/bin/xcrun", "--sdk", "macosx", "--show-sdk-path"], timeout, cwd)
+        require(selected.returncode == 0 and not selected.stderr, "xcrun could not select the macOS SDK")
+        sdk = Path(os.fsdecode(selected.stdout.rstrip(b"\r\n")))
+    require(sdk.is_absolute() and (sdk / "usr/lib/libSystem.tbd").is_file(),
+            "set SDKROOT to a macOS SDK containing usr/lib/libSystem.tbd")
+    linker = None
+    if environment is not None and "PATH" in environment:
+        linker = shutil.which("ld64.lld", path=environment["PATH"])
+    if linker is None:
+        linker = Path(os.environ.get("OXID_LLVM_BIN", clang.parent)) / "ld64.lld"
+    linker = Path(linker)
+    require(linker.is_absolute() and linker.is_file() and os.access(linker, os.X_OK),
+            "LLVM ld64.lld is required alongside Clang or in OXID_LLVM_BIN")
+    return ["-isysroot", str(sdk), f"--ld-path={linker}", "-Wl,-pie", "-Wl,-oso_prefix,."]
 
 
 def module_prefix(target: str, entry_mode: str = "result") -> bytes:
@@ -127,7 +161,11 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
         binary = staging / "program"
         module_path.write_bytes(module)
         command = [str(clang), "--no-default-config", f"--target={target}",
-                   "-O0" if profile == "dev" else "-O2", "-Werror", "-fuse-ld=lld"]
+                   "-O0" if profile == "dev" else "-O2", "-Werror"]
+        if target in MACOS_TARGETS:
+            command.extend(macos_link_flags(clang, staging, timeout, linker_environment))
+        else:
+            command.append("-fuse-ld=lld")
         if runtime == DEFAULT_RUNTIME and b"\ndeclare void @__oxid_bytebuf_start()\n" in module:
             command.append("-DOXID_SCALAR_HEAP")
             if b"\n@__oxid_record_vector_schemas = " in module:
@@ -155,11 +193,12 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
             os.link(binary, destination, follow_symlinks=False)
         except FileExistsError as error:
             raise BuildError("output appeared during compilation; it was preserved") from error
-        directory_fd = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        if target not in MACOS_TARGETS:
+            directory_fd = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     return {"output": str(destination), "sha256": digest, "profile": profile, "target": target,
             "entry_mode": entry_mode,
             "module_sha256": hashlib.sha256(module).hexdigest(),

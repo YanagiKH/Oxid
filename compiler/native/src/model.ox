@@ -60,7 +60,7 @@ pub struct Compiler {
     pub module: ByteBuf, pub slots: ByteBuf, pub body: ByteBuf,
     pub cursor: i32, pub current: i32, pub main: i32,
     pub next_value: i32, pub next_label: i32, pub next_slot: i32,
-    pub target_arm64: bool, pub process_entry: bool, pub uses_argument_count: bool,
+    pub target: i32, pub process_entry: bool, pub uses_argument_count: bool,
     pub uses_argument_bytes: bool, pub argument_status: i32,
     pub uses_binary_io: bool, pub read_status: i32, pub write_status: i32,
     pub byte_buffer: i32, pub growth_status: i32,
@@ -70,7 +70,7 @@ pub struct Compiler {
     pub live: bool, pub terminated: bool, pub error: i32, pub error_start: i32, pub error_module: i32
 }
 
-pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool, process_entry: bool) -> Compiler {
+pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target: i32, process_entry: bool) -> Compiler {
     return Compiler {
         source: source, source_path: source_path, literals: bytes_new(), sources: new::<SourceModule>(), imports: new::<Import>(),
         tokens: new::<Token>(), params: new::<Parameter>(),
@@ -79,7 +79,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target_arm64: bool, p
         loop_move_floor: 0, call_sites: 0,
         module: bytes_new(), slots: bytes_new(), body: bytes_new(),
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
-        next_slot: 0, target_arm64: target_arm64, process_entry: process_entry, uses_argument_count: false,
+        next_slot: 0, target: target, process_entry: process_entry, uses_argument_count: false,
         uses_argument_bytes: false, argument_status: -1,
         uses_binary_io: false, read_status: -1, write_status: -1,
         byte_buffer: -1, growth_status: -1,
