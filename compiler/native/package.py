@@ -18,7 +18,7 @@ PROJECT = Path("compiler/native")
 BINARY = PROJECT / "bin/oxid-scalar-compiler"
 MANIFEST = PROJECT / "manifest.json"
 RUNTIME_FILES = (
-    "native/typed_preview.c", "native/typed_character.c", "native/typed_bytebuf.c",
+    "native/typed_preview.c", "native/typed_character.c", "native/typed_bytebuf.c", "native/typed_termination.c",
     "native/typed_vector.c", "native/experimental_bytebuf.c", "native/experimental_bytebuf.h",
     "native/experimental_vector.c", "native/experimental_vector.h", "native/experimental_files.c",
 )

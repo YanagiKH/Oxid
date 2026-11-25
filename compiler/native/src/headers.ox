@@ -17,6 +17,10 @@ use crate::model::function_binding;
 use crate::model::argument_count_binding;
 use crate::model::argument_bytes_binding;
 use crate::model::argument_status_binding;
+use crate::model::monotonic_millis_binding;
+use crate::model::unix_millis_binding;
+use crate::model::sleep_millis_binding;
+use crate::model::is_time_operation;
 use crate::model::read_some_binding;
 use crate::model::write_some_binding;
 use crate::model::write_stderr_binding;
@@ -437,6 +441,16 @@ fn allocation_import(c: &mut Compiler) -> i32 {
     return byte_import(&mut *c);
 }
 
+fn time_import(c: &mut Compiler, item: Token) -> i32 {
+    let monotonic = b"monotonic_millis";
+    let unix = b"unix_millis";
+    let sleep = b"sleep_millis";
+    if word(&*c.source, item.start, item.end, &monotonic) { return monotonic_millis_binding(); }
+    if word(&*c.source, item.start, item.end, &unix) { return unix_millis_binding(); }
+    if word(&*c.source, item.start, item.end, &sleep) { return sleep_millis_binding(); }
+    fail(&mut *c); return -1;
+}
+
 fn standard_import(c: &mut Compiler) -> i32 {
     let allocation = b"alloc";
     let root = token(&*c, c.cursor);
@@ -447,12 +461,14 @@ fn standard_import(c: &mut Compiler) -> i32 {
     let env_name = b"env";
     let io_name = b"io";
     let fs_name = b"fs";
+    let time_name = b"time";
     expect_name(&mut *c, &std_name); expect(&mut *c, 45);
     let namespace = token(&*c, c.cursor);
     expect(&mut *c, 1); expect(&mut *c, 45);
     let item = token(&*c, c.cursor);
     expect(&mut *c, 1);
     if word(&*c.source, namespace.start, namespace.end, &fs_name) { return file_import(&mut *c, item); }
+    if word(&*c.source, namespace.start, namespace.end, &time_name) { return time_import(&mut *c, item); }
     if word(&*c.source, namespace.start, namespace.end, &env_name) {
         let count_name = b"arg_count";
         let bytes_name = b"arg_bytes";
@@ -700,6 +716,7 @@ fn resolve_imports(c: &mut Compiler) -> () {
         }
         row.target = target;
         c.imports[index] = row;
+        if is_time_operation(target) { c.uses_time = true; }
         if target == argument_count_binding() { c.uses_argument_count = true; }
         if target == argument_bytes_binding() {
             c.uses_argument_count = true;

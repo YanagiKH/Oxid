@@ -52,6 +52,13 @@ In process mode, `std::io::read_some(&mut bytes)` reads from stdin.
 `write_some(&bytes)` writes to stdout, and `write_stderr(&bytes)` writes to
 stderr. Match `ReadSomeStatus` or `WriteSomeStatus` for the transferred byte
 count, end of input or an operating system error.
+Use `std::time::monotonic_millis()` to measure elapsed time and
+`std::time::unix_millis()` for a Unix timestamp. Use `std::time::sleep_millis(ms)`
+to pause the current thread. These functions work in result and process mode.
+Both clocks return `i64` milliseconds. An unavailable monotonic clock returns
+`-1`. An unavailable Unix clock returns the smallest `i64` value. Sleep returns
+true on completion, including a zero duration, and false for a negative duration
+or failed wait.
 Use `alloc::bytes::new()` to create an empty `ByteBuf`. Use `try_resize`,
 `try_push` or `try_extend` to add bytes, and match `GrowStatus` to check
 whether the operation succeeded. Borrow the buffer as `&[u8]` or

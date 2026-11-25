@@ -62,7 +62,7 @@ pub struct Compiler {
     pub next_value: i32, pub next_label: i32, pub next_slot: i32,
     pub target: i32, pub process_entry: bool, pub uses_argument_count: bool,
     pub uses_argument_bytes: bool, pub argument_status: i32,
-    pub uses_binary_io: bool, pub read_status: i32, pub write_status: i32,
+    pub uses_binary_io: bool, pub read_status: i32, pub write_status: i32, pub uses_time: bool,
     pub byte_buffer: i32, pub growth_status: i32,
     pub file_owner: i32, pub file_open_result: i32, pub file_status: i32,
     pub vector_types: Vec<i32>,
@@ -81,7 +81,7 @@ pub fn new_compiler(source: ByteBuf, source_path: ByteBuf, target: i32, process_
         cursor: 0, current: 0, main: -1, next_value: 0, next_label: 0,
         next_slot: 0, target: target, process_entry: process_entry, uses_argument_count: false,
         uses_argument_bytes: false, argument_status: -1,
-        uses_binary_io: false, read_status: -1, write_status: -1,
+        uses_binary_io: false, read_status: -1, write_status: -1, uses_time: false,
         byte_buffer: -1, growth_status: -1,
         file_owner: -1, file_open_result: -1, file_status: -1,
         vector_types: new::<i32>(),
@@ -429,6 +429,12 @@ pub fn vector_type_binding() -> i32 { return -34; }
 pub fn vector_operation_binding(operation: i32) -> i32 { return -35 - operation; }
 pub fn is_vector_operation(binding: i32) -> bool {
     return binding <= vector_operation_binding(0) && binding >= vector_operation_binding(8);
+}
+pub fn monotonic_millis_binding() -> i32 { return -44; }
+pub fn unix_millis_binding() -> i32 { return -45; }
+pub fn sleep_millis_binding() -> i32 { return -46; }
+pub fn is_time_operation(binding: i32) -> bool {
+    return binding >= sleep_millis_binding() && binding <= monotonic_millis_binding();
 }
 pub fn vector_type(c: &Compiler, element: i32) -> i32 {
     let mut slot = element;
