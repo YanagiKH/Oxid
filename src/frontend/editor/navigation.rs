@@ -184,12 +184,35 @@ fn value_use(syntax: &ast::Program, offset: usize) -> Option<ValueUse> {
         })
 }
 
+fn projection_use(syntax: &ast::Program, offset: usize) -> Option<Span> {
+    let field_read = syntax.expressions.iter().find_map(|expression| {
+        if let ast::ExprKind::FieldRead { field, .. } = expression.kind {
+            return contains(field, offset).then_some(field);
+        }
+        None
+    });
+    field_read.or_else(|| {
+        syntax
+            .functions
+            .iter()
+            .flat_map(|function| &function.blocks)
+            .flat_map(|block| &block.body)
+            .find_map(|statement| {
+                if let ast::StmtKind::FieldAssign { field, .. } = statement.kind {
+                    return contains(field, offset).then_some(field);
+                }
+                None
+            })
+    })
+}
+
 pub(in crate::frontend) fn definition(
     owner: SourceOwner<'_>,
-    sources: &SourceMap,
+    project: &crate::frontend::project::ProjectSources,
     path: &Path,
     offset: usize,
 ) -> Result<Option<EditorLocation>, Vec<Diagnostic>> {
+    let sources = project.sources();
     let found = (0..owner.count()).find_map(|ordinal| {
         let module = ModuleId(ordinal);
         let source = owner.file(module).ok()?;
@@ -209,6 +232,21 @@ pub(in crate::frontend) fn definition(
         if let Some(span) = local_definition(source, syntax, function, offset) {
             return Ok(location(sources, span));
         }
+    }
+    if let Some(path) = projection_use(syntax, offset) {
+        return match crate::frontend::oir::record_projection_definition(
+            project, owner, path, offset,
+        ) {
+            Ok(target) => Ok(target.and_then(|span| location(sources, span))),
+            Err(errors)
+                if errors
+                    .iter()
+                    .any(|error| matches!(error.code, "E0400" | "E0500")) =>
+            {
+                Err(errors)
+            }
+            Err(_) => Ok(None),
+        };
     }
     let selected_type = type_use(syntax, offset);
     if let Some((ast::ItemPath::Unqualified(name), declaration)) = selected_type {

@@ -17,7 +17,9 @@ pub(in crate::frontend::oir) use sealed::{
     check_package_executable, check_project_candidate, check_project_executable_candidate,
 };
 pub(in crate::frontend) use sealed::{check_scalar_library, CheckedScalarLibrary};
-pub(in crate::frontend) use sealed::{check_source, CheckedSourceProgram, ProcessFailure};
+pub(in crate::frontend) use sealed::{
+    check_source, record_projection_definition, CheckedSourceProgram, ProcessFailure,
+};
 
 #[cfg(test)]
 mod tests {

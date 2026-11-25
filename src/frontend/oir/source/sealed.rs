@@ -269,12 +269,14 @@ pub(in crate::frontend) fn check_source<'s>(
 enum CheckDepth {
     Types,
     Executable,
+    FieldDefinition { path: Span, offset: usize },
 }
 // This allocation-free result contains the same already-accounted inline witness.
 #[allow(clippy::large_enum_variant)]
 enum Checked<'s> {
     Types(CheckedProjectTypes),
     Executable(CheckedSourceProgram<'s>),
+    FieldDefinition(Option<Span>),
 }
 
 /// Failure-only routing owns no retained permit. All full return/carrier roles
@@ -472,6 +474,12 @@ fn owned_vector_fallback<'s>(
             entry,
         )));
     }
+    if let CheckDepth::FieldDefinition { path, offset } = depth {
+        return typed
+            .projection_definition(path, offset)
+            .map(Checked::FieldDefinition)
+            .map_err(|error| vec![*error]);
+    }
     let body = match owned::source::check_owned_vector_candidate_typed(&typed)? {
         owned::source::CandidateSourceProgram::Legacy(program) => CheckedBody::Owned(program),
         owned::source::CandidateSourceProgram::OwnedVector(program) => {
@@ -503,7 +511,7 @@ pub(in crate::frontend::oir) fn check_project_candidate(
 ) -> Result<CheckedProjectTypes, Vec<Diagnostic>> {
     match check_project(project, limits, work, allocator, CheckDepth::Types)? {
         Checked::Types(checked) => Ok(checked),
-        Checked::Executable(_) => Err(vec![*association::bad()]),
+        _ => Err(vec![*association::bad()]),
     }
 }
 pub(in crate::frontend::oir) fn check_project_executable_candidate<'s>(
@@ -514,7 +522,7 @@ pub(in crate::frontend::oir) fn check_project_executable_candidate<'s>(
 ) -> Result<CheckedSourceProgram<'s>, Vec<Diagnostic>> {
     match check_project(project, limits, work, allocator, CheckDepth::Executable)? {
         Checked::Executable(checked) => Ok(checked),
-        Checked::Types(_) => Err(vec![*association::bad()]),
+        _ => Err(vec![*association::bad()]),
     }
 }
 fn check_project<'s>(
@@ -543,7 +551,26 @@ pub(in crate::frontend::oir) fn check_package_executable<'s>(
         CheckDepth::Executable,
     )? {
         Checked::Executable(checked) => Ok(checked),
-        Checked::Types(_) => Err(vec![*association::bad()]),
+        _ => Err(vec![*association::bad()]),
+    }
+}
+
+pub(in crate::frontend) fn record_projection_definition(
+    project: &ProjectSources,
+    sources: SourceOwner<'_>,
+    path: Span,
+    offset: usize,
+) -> Result<Option<Span>, Vec<Diagnostic>> {
+    match check_project_owner(
+        project,
+        sources,
+        IndexLimits::default(),
+        &WorkMeter::default(),
+        &mut Allocator::default(),
+        CheckDepth::FieldDefinition { path, offset },
+    )? {
+        Checked::FieldDefinition(location) => Ok(location),
+        _ => Err(vec![*association::bad()]),
     }
 }
 
@@ -626,6 +653,9 @@ fn check_project_owner<'s>(
             if matches!(depth, CheckDepth::Types) {
                 return Ok(Checked::Types(summary()));
             }
+            if matches!(depth, CheckDepth::FieldDefinition { .. }) {
+                return Ok(Checked::FieldDefinition(None));
+            }
             let raw = lower::lower(&typed).map_err(|e| vec![*e.diagnostic(project.sources())])?;
             let associated = association::authenticate_scalar(
                 raw,
@@ -647,6 +677,12 @@ fn check_project_owner<'s>(
             };
             if matches!(depth, CheckDepth::Types) {
                 return Ok(Checked::Types(summary()));
+            }
+            if let CheckDepth::FieldDefinition { path, offset } = depth {
+                return typed
+                    .projection_definition(path, offset)
+                    .map(Checked::FieldDefinition)
+                    .map_err(|error| vec![*error]);
             }
             if typed.entry() != entry {
                 return Err(vec![*association::bad()]);
