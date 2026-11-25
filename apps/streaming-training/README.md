@@ -9,7 +9,7 @@ oxid run -- data/sample.oxds 30 4
 
 The sample has eight rows. Thirty epochs with batches of four produce 60 updates and reduce mean squared error from about 3.68 to 0.0121.
 
-Build a native executable:
+Build a native executable on Linux or macOS:
 
 ```sh
 oxid build --profile release
@@ -80,8 +80,9 @@ Add `--checkpoint` with a new filename prefix to save the initial model and each
 
 Keep both `run.a` and `run.b`. They alternate between saves. If the newest file is incomplete or corrupt, training resumes from the latest valid file. Each save includes the model, completed epoch count, shuffle state and a checksum of the selected rows. Use one trainer per prefix and keep the dataset unchanged. The summary reports cumulative epochs and batches, with initial loss measured at the start of that invocation.
 
-On Linux and macOS, press Ctrl+C or send SIGTERM to stop between training
-batches. The program exits with status 130. To continue, run the same
+Press Ctrl+C to stop between training batches. On Linux and macOS, SIGTERM
+also requests a stop. In a Windows console, Ctrl+Break also works.
+The program exits with status 130. To continue, run the same
 `--resume` command with the number of additional epochs you want. Resume starts
 from the most recent valid checkpoint.
 

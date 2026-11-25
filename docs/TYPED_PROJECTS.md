@@ -188,9 +188,10 @@ standard error. It returns `WriteSomeStatus::Written(count)` or
 `WriteSomeStatus::Error(code)`. Handle short writes by passing the remaining
 bytes in the next call. `std::io::write_some` writes to standard output.
 
-On Linux and macOS, import `enable_termination_notifications` and
-`termination_requested` from `std::process`. Call `enable_termination_notifications()`
-from `main` to receive SIGINT and SIGTERM. If it returns true, poll
+Import `enable_termination_notifications` and `termination_requested` from
+`std::process`. Call `enable_termination_notifications()` from a process entry
+to receive SIGINT and SIGTERM on Linux and macOS, or Ctrl+C and Ctrl+Break in a
+Windows x64 console. If it returns true, poll
 `termination_requested()` between work items and return from `main` to close
 files and release other owned values.
 Import `wait_for_termination` from `std::process` to wait when there is no work
@@ -198,7 +199,7 @@ ready. Pass a timeout in milliseconds. It returns true after a notification and
 false when the wait expires. A zero timeout polls immediately. Negative timeouts
 and calls before enabling notifications return false immediately.
 
-After enabling notifications, use `std::process::wait_for_stdin(1000)` to
+On Linux and macOS, enable notifications before using `std::process::wait_for_stdin(1000)` to
 wait up to one second for input. It returns true when a read can proceed,
 including when the input stream closes. A timeout, termination notification,
 or unavailable input returns false. Check `termination_requested()` to decide

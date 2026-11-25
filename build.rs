@@ -9,6 +9,11 @@ fn main() {
             _ => (),
         }
     }
+    if target == "x86_64-pc-windows-msvc" {
+        cc::Build::new()
+            .file("native/typed_termination.c")
+            .compile("oxid_console_cancellation");
+    }
     if matches!(
         std::env::var("CARGO_CFG_TARGET_OS").as_deref(),
         Ok("linux" | "macos")

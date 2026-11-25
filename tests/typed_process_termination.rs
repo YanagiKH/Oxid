@@ -21,6 +21,11 @@ const SUPPORTED: bool = cfg!(all(
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ));
+const WINDOWS_CONSOLE_SUPPORTED: bool = cfg!(all(
+    target_os = "windows",
+    target_env = "msvc",
+    target_arch = "x86_64"
+));
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 const CLOCK_SUPPORTED: bool = SUPPORTED || cfg!(all(windows, target_arch = "x86_64"));
 #[cfg(unix)]
@@ -731,12 +736,150 @@ fn result_library_and_unsupported_hosts_cannot_install_handlers() {
         .unwrap();
     assert!(!result.status.success());
     assert!(!fixture.0.join("library").exists());
-    if !SUPPORTED {
+    if !SUPPORTED && !WINDOWS_CONSOLE_SUPPORTED {
         let result = fixture.command(&["run"]).output().unwrap();
         assert!(!result.status.success());
         assert!(result.stdout.is_empty());
         assert!(!fixture.0.join("target.dat").exists());
     }
+}
+
+#[cfg(all(target_os = "windows", target_env = "msvc", target_arch = "x86_64"))]
+#[test]
+#[ignore = "requires a Windows console and the qualified LLVM toolchain"]
+fn windows_console_interrupts_interpreted_and_native_programs() {
+    use std::os::windows::process::CommandExt;
+
+    const NEW_CONSOLE: u32 = 0x10;
+    const NEW_PROCESS_GROUP: u32 = 0x200;
+    const CTRL_BREAK_EVENT: u32 = 1;
+    const HELPER: &str = "OXID_TEST_CONSOLE_CHILD";
+    unsafe extern "system" {
+        fn GenerateConsoleCtrlEvent(event: u32, group: u32) -> i32;
+    }
+
+    if std::env::var_os(HELPER).is_none() {
+        // Give the helper its own console even when the runner has none.
+        let result = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "windows_console_interrupts_interpreted_and_native_programs",
+                "--include-ignored",
+                "--nocapture",
+            ])
+            .creation_flags(NEW_CONSOLE)
+            .env(HELPER, "1")
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "console helper: {result:?}");
+        return;
+    }
+
+    let fixture = Fixture::with_entry(
+        r#"
+use std::process::enable_termination_notifications;
+use std::process::termination_requested;
+use std::process::wait_for_termination;
+use std::io::write_some;
+use std::io::WriteSomeStatus;
+fn main() -> i32 {
+    if !enable_termination_notifications() || wait_for_termination(-1)
+        || wait_for_termination(0) || termination_requested() { return 81; }
+    let ready = b"R";
+    let written = write_some(&ready);
+    match written {
+        WriteSomeStatus::Written(count) => { if count != 1 { return 82; } },
+        WriteSomeStatus::Error(code) => { return 82; },
+    }
+    if wait_for_termination(15000) && termination_requested() { return 42; }
+    return 83;
+}
+"#,
+        "process",
+        "bounded",
+    );
+    let run = |command: &mut Command| {
+        let mut guard = ChildGuard(Some(
+            command.creation_flags(NEW_PROCESS_GROUP).spawn().unwrap(),
+        ));
+        let child = guard.0.as_mut().unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        let (send, receive) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            let mut byte = [0];
+            let result = stdout.read_exact(&mut byte).map(|()| byte);
+            let _ = send.send(result);
+        });
+        assert_eq!(
+            receive
+                .recv_timeout(Duration::from_secs(20))
+                .unwrap()
+                .unwrap(),
+            *b"R"
+        );
+        reader.join().unwrap();
+        // SAFETY: the guarded child is the leader of a new process group in
+        // this helper's console. The event is confined to that group.
+        assert_ne!(
+            unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, child.id()) },
+            0,
+            "{}",
+            std::io::Error::last_os_error()
+        );
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "console notification did not wake the child"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .unwrap();
+        assert_eq!(status.code(), Some(42), "{stderr}");
+        assert!(stderr.is_empty(), "{stderr}");
+        drop(guard.0.take());
+    };
+
+    run(&mut fixture.command(&["run"]));
+    let llvm = std::env::var_os("OXID_TEST_LLVM_BIN").expect("OXID_TEST_LLVM_BIN is required");
+    let deployment = Fixture::fresh("console-deployment");
+    let mut binaries = Vec::new();
+    for profile in ["dev", "release"] {
+        let result = fixture
+            .command(&["build", "--profile", profile])
+            .env("OXID_LLVM_BIN", &llvm)
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "{profile}: {result:?}");
+        let binary = deployment.0.join(format!("worker-{profile}.exe"));
+        fs::copy(fixture.0.join(".oxid/bin/worker.exe"), &binary).unwrap();
+        binaries.push(binary);
+    }
+    drop(fixture);
+    for binary in binaries {
+        run(Command::new(binary)
+            .current_dir(&deployment.0)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped()));
+    }
+    let unsupported = Fixture::with_entry(
+        "use std::process::wait_for_stdin; fn main() -> i32 { if wait_for_stdin(0) { return 1; } return 0; }",
+        "process", "bounded",
+    );
+    let result = unsupported.command(&["run"]).output().unwrap();
+    assert!(!result.status.success() && result.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&result.stderr)
+        .contains("standard input readiness requires Linux or macOS"));
 }
 
 #[test]

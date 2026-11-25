@@ -144,6 +144,73 @@ void __oxid_termination_scope_end(void) {
     termination_flag = 0;
     termination_active = 0;
 }
+#elif !defined(OXID_TERMINATION_FORCE_UNSUPPORTED) && defined(_WIN64) && \
+    (defined(_M_X64) || defined(__x86_64__))
+#include <windows.h>
+
+enum {
+    TERMINATION_ACTIVE = 1,
+    TERMINATION_ENABLED = 2,
+    TERMINATION_REQUESTED = 4,
+};
+
+static volatile LONG termination_state;
+
+static LONG termination_load(void) {
+    return InterlockedCompareExchange(&termination_state, 0, 0);
+}
+
+static BOOL WINAPI termination_console_handler(DWORD event) {
+    if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT) return FALSE;
+    LONG current = termination_load();
+    while (current & TERMINATION_ENABLED) {
+        const LONG observed = InterlockedCompareExchange(&termination_state,
+            current | TERMINATION_REQUESTED, current);
+        if (observed == current) return TRUE;
+        current = observed;
+    }
+    return FALSE;
+}
+
+int32_t __oxid_termination_scope_start(void) {
+    return InterlockedCompareExchange(&termination_state, TERMINATION_ACTIVE, 0) == 0 ? 0 : -1;
+}
+
+int32_t __oxid_enable_termination_notifications(void) {
+    const LONG enabled = TERMINATION_ACTIVE | TERMINATION_ENABLED;
+    const LONG previous = InterlockedCompareExchange(&termination_state, enabled, TERMINATION_ACTIVE);
+    if (previous & TERMINATION_ENABLED) return 1;
+    if (previous != TERMINATION_ACTIVE) return 0;
+    if (SetConsoleCtrlHandler(termination_console_handler, TRUE)) return 1;
+    InterlockedExchange(&termination_state, TERMINATION_ACTIVE);
+    return 0;
+}
+
+int32_t __oxid_termination_requested(void) {
+    return (termination_load() & TERMINATION_REQUESTED) != 0;
+}
+
+int32_t __oxid_wait_for_termination(int32_t timeout_ms) {
+    if (timeout_ms < 0 || !(termination_load() & TERMINATION_ENABLED)) return 0;
+    const ULONGLONG started = GetTickCount64();
+    while (!__oxid_termination_requested()) {
+        const ULONGLONG elapsed = GetTickCount64() - started;
+        if (elapsed >= (ULONGLONG)timeout_ms) break;
+        const DWORD remaining = (DWORD)((ULONGLONG)timeout_ms - elapsed);
+        Sleep(remaining < 10 ? remaining : 10);
+    }
+    return __oxid_termination_requested();
+}
+
+int32_t __oxid_wait_for_stdin(int32_t timeout_ms) { (void)timeout_ms; return 0; }
+
+void __oxid_termination_scope_end(void) {
+    const LONG previous = InterlockedExchange(&termination_state, TERMINATION_ACTIVE);
+    if ((previous & TERMINATION_ENABLED) && !SetConsoleCtrlHandler(termination_console_handler, FALSE)) {
+        ExitProcess(74);
+    }
+    InterlockedExchange(&termination_state, 0);
+}
 #else
 int32_t __oxid_termination_scope_start(void) { return -1; }
 int32_t __oxid_enable_termination_notifications(void) { return 0; }
