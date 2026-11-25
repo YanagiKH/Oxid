@@ -1023,6 +1023,74 @@ fn main()->i32{
                        "struct Packet{bytes:ByteBuf}fn main()->i32{let mut value=Packet{bytes:new()};"
                        "try_extend(&mut value.bytes,&value.bytes[0..0]);return 42;}",
         }),
+        ("scalar-vector-ownership-growth-and-slices", 0, True, {
+            "main.ox": '''
+use alloc::vec::Vec as Numbers;
+use alloc::vec::GrowStatus;
+use alloc::vec::new;
+use alloc::vec::len;
+use alloc::vec::capacity;
+use alloc::vec::try_reserve;
+use alloc::vec::try_resize;
+use alloc::vec::try_push;
+use alloc::vec::try_extend;
+use alloc::vec::take;
+use alloc::vec::truncate;
+struct Batch{values:Numbers<i32>}
+fn success(status:GrowStatus)->bool{
+    match status{GrowStatus::Ok=>{return true;},GrowStatus::CapacityOverflow=>{return false;},
+    GrowStatus::AllocationFailed=>{return false;},GrowStatus::MemoryLimit=>{return false;},}
+}
+fn first(view:&[i32])->i32{return view[0];}
+fn score(batch:&Batch)->i32{
+    if len(&*batch.values)!=4{return 1;}
+    return first(&*batch.values[0..1])+first(&*batch.values[1..2])+first(&*batch.values[3..4]);
+}
+fn main()->i32{
+    let mut values:Numbers<i32>=new::<i32>();
+    if !success(try_reserve(&mut values,16))||capacity(&values)<16{return 2;}
+    if !success(try_resize(&mut values,2,20))||!success(try_push(&mut values,8)){return 3;}
+    let tail=[14,9];
+    if !success(try_extend(&mut values,&tail)){return 4;}
+    values[1]=values[2];
+    let mut moved=take(&mut values);
+    if len(&values)!=0||len(&moved)!=5{return 5;}
+    truncate(&mut moved,4);
+    let batch=Batch{values:moved};
+    return score(&batch);
+}
+''',
+        }),
+        ("scalar-vector-booleans-and-characters", 0, True, {
+            "main.ox": '''
+use alloc::vec::new;
+use alloc::vec::try_push;
+fn main()->i32{
+    let mut flags=new::<bool>();
+    try_push(&mut flags,true);
+    try_push(&mut flags,false);
+    if !flags[0]||flags[1]{return 1;}
+    flags[0]=false;
+    if flags[0]{return 2;}
+    let mut characters=new::<char>();
+    try_push(&mut characters,'雪');
+    if characters[0]!='雪'{return 3;}
+    return 42;
+}
+''',
+        }),
+        ("scalar-vector-refuses-a-different-element-type", 65, True, {
+            "main.ox": "use alloc::vec::new;use alloc::vec::try_push;"
+                       "fn main()->i32{let mut values=new::<i32>();try_push(&mut values,1i64);return 0;}",
+        }),
+        ("scalar-vector-refuses-overlapping-loans", 65, True, {
+            "main.ox": "use alloc::vec::new;use alloc::vec::try_extend;"
+                       "fn main()->i32{let mut values=new::<i32>();try_extend(&mut values,&values);return 0;}",
+        }),
+        ("scalar-vector-type-alias-conflicts-with-a-record", 65, True, {
+            "main.ox": "use alloc::vec::Vec as Items;struct Items{number:i32}"
+                       "fn main()->i32{return 42;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",

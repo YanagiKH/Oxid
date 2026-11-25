@@ -50,6 +50,10 @@ whether the operation succeeded. Borrow the buffer as `&[u8]` or
 move between functions and free their storage when their owner goes out of scope.
 Store a buffer in a struct field or enum variant to give that value ownership
 of the bytes. Use `take(&mut field)` to move a buffer out and leave it empty.
+Create a vector with `alloc::vec::new::<i32>()`. Vectors accept
+`i32`, `u8`, `i64`, `u32`, `bool` and `char` elements.
+Use `try_push` to add an element, `values[index]` to read or replace one,
+and `&values[start..end]` to borrow a slice.
 Use `std::fs::open_read(&path)` with a byte path and match `OpenResult`.
 Call `std::fs::read_some(&mut file, &mut bytes)` to read data into a slice.
 The file closes when its owner goes out of scope. Use `std::fs::close`
@@ -160,7 +164,7 @@ Calls can be recursive. Compiled programs allow up to 128 active Oxid function
 calls including `main`. The next call exits with status 1 and reports
 `call depth limit exceeded` on standard error. Non-unit functions must return on
 all paths. Loop conditions are checked conservatively. External package imports,
-nested enums, other reference forms, generics, text strings, nested arrays
+nested enums, other reference forms, user-defined generics, text strings, nested arrays
 and other integer types are unsupported.
 
 Declare `mod math;` in the entry file to load `math.ox`. Inside `math.ox`,
