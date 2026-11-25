@@ -1416,6 +1416,38 @@ fn binary_io_preamble(c: &mut Compiler) -> () {
     return;
 }
 
+fn time_preamble(c: &mut Compiler) -> () {
+    let clocks = b"declare i64 @__oxid_monotonic_millis()\ndeclare i64 @__oxid_unix_millis()\ndeclare i32 @__oxid_sleep_millis(i32)\n";
+    append(&mut *c, 0, &clocks);
+    return;
+}
+
+pub fn clock_millis(c: &mut Compiler, wall_clock: bool) -> Value {
+    let prefix = b"  %v";
+    let monotonic = b" = call i64 @__oxid_monotonic_millis()\n";
+    let unix = b" = call i64 @__oxid_unix_millis()\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
+    if wall_clock { append(&mut *c, 2, &unix); }
+    else { append(&mut *c, 2, &monotonic); }
+    return Value { ty: 5, id: id };
+}
+
+pub fn sleep_millis(c: &mut Compiler, duration: Value) -> Value {
+    let prefix = b"  %v";
+    let sleep = b" = call i32 @__oxid_sleep_millis(i32 ";
+    let suffix = b")\n";
+    let compare = b" = icmp ne i32 %v";
+    let zero = b", 0\n";
+    let status = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, status);
+    append(&mut *c, 2, &sleep); operand(&mut *c, 2, duration); append(&mut *c, 2, &suffix);
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
+    append(&mut *c, 2, &compare); number(&mut *c, 2, status); append(&mut *c, 2, &zero);
+    return Value { ty: 2, id: id };
+}
+
 fn heap_lifetime_declarations(c: &mut Compiler) -> () {
     let lifetime = b"declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_scalar_heap_finish()\n";
     let drop = b"declare void @__oxid_bytebuf_drop(ptr)\n";
@@ -1618,6 +1650,7 @@ fn preamble_resources(c: &mut Compiler) -> () {
     if c.uses_argument_count { argument_preamble(&mut *c); }
     if c.uses_argument_bytes { argument_bytes_preamble(&mut *c); }
     if c.uses_binary_io { binary_io_preamble(&mut *c); }
+    if c.uses_time { time_preamble(&mut *c); }
     if uses_heap(&*c) { heap_lifetime_declarations(&mut *c); }
     if c.byte_buffer >= 0 { byte_buffer_preamble(&mut *c); }
     if c.file_owner >= 0 { file_preamble(&mut *c); file_seek_preamble(&mut *c); }

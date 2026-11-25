@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("scalar_build", ROOT / "build.py")
@@ -1770,6 +1771,62 @@ fn main()->i32{
     return rows
 
 
+def verify_time(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                output: Path, timeout: int) -> list[dict]:
+    evidence = output / "time"
+    evidence.mkdir()
+    source = evidence / "clock.ox"
+    source.write_text("""use std::time::monotonic_millis as clock;
+use std::time::unix_millis;
+use std::time::sleep_millis as pause;
+fn main() -> i64 {
+    if pause(-1) || !pause(0) { return -1i64; }
+    let start = clock();
+    if start < 0i64 || !pause(40) { return -2i64; }
+    let end = clock();
+    if end < start || end - start < 40i64 { return -3i64; }
+    return unix_millis();
+}
+""", encoding="utf-8")
+    rows = []
+
+    def observe(name, command, clear_environment):
+        before = time.time_ns() // 1_000_000
+        result = run(command, evidence, timeout, clear_environment=clear_environment)
+        after = time.time_ns() // 1_000_000
+        require(result.returncode == 0 and not result.stderr and result.stdout.strip().isdigit(),
+                name + ": invalid clock or sleep result")
+        observed = int(result.stdout)
+        require(before <= observed <= after, name + ": Unix timestamp did not match the host clock")
+        rows.append({**record(evidence, name, command, result), "unix_millis": observed,
+                     "observed_between": [before, after]})
+
+    observe("reference", [str(reference), "run", str(source), "--edition=typed-preview",
+                          "--entry-mode=result"], False)
+    binaries = []
+    for profile in ("dev", "release"):
+        binary = evidence / ("time-" + profile)
+        driver.build(compiler, source, clang, runtime, binary, profile, timeout,
+                     evidence / (profile + "-build"))
+        binaries.append((profile, binary))
+    source.rename(evidence / "retained-clock.ox")
+    for profile, binary in binaries:
+        observe(profile, [str(binary)], True)
+
+    for name, imports, expression in (
+        ("wrong-argument", "sleep_millis", "if sleep_millis(true) { return 0; }"),
+        ("extra-argument", "unix_millis", "let unexpected = unix_millis(1);"),
+    ):
+        rejected = evidence / (name + ".ox")
+        rejected.write_text(f"use std::time::{imports}; fn main() -> i32 {{ {expression} return 1; }}",
+                            encoding="utf-8")
+        command = driver.compiler_command(compiler, rejected, driver.host_target())
+        result = run(command, evidence, timeout)
+        check_source_rejection(name, result, rejected)
+        rows.append(record(evidence, name, command, result))
+    return rows
+
+
 def verify_bootstrap_bundle(seed: Path, source: Path, clang: Path, evidence: Path,
                             environment: dict[str, str], expected: dict, timeout: int) -> dict:
     target = driver.host_target()
@@ -1980,6 +2037,9 @@ def verify(args) -> dict:
             report["file_reads"] = verify_file_reads(compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
             report["file_writes"] = verify_file_writes(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            time_compiler = output / "native-rebuild/deployed/c3" if args.verify_rebuild else compiler
+            report["time"] = verify_time(time_compiler, clang, runtime,
                 args.reference.resolve(strict=True), output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"

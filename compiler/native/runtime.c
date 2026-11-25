@@ -2,6 +2,14 @@
 #include "../../native/typed_character.c"
 #include <string.h>
 
+#ifdef OXID_SCALAR_TIME
+#define OXID_TIME_ONLY
+#define OXID_MONOTONIC_MILLIS
+#define OXID_UNIX_MILLIS
+#define OXID_SLEEP_MILLIS
+#include "../../native/typed_termination.c"
+#endif
+
 /* The low word selects the status variant. The high word holds its i32 value. */
 uint64_t __oxid_scalar_binary_io(int32_t operation, uint8_t *bytes, int32_t length) {
     const uint32_t error_tag = operation == 0 ? 2 : 1;

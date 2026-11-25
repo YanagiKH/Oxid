@@ -14,6 +14,9 @@ use crate::model::function;
 use crate::model::function_binding;
 use crate::model::argument_count_binding;
 use crate::model::argument_bytes_binding;
+use crate::model::unix_millis_binding;
+use crate::model::sleep_millis_binding;
+use crate::model::is_time_operation;
 use crate::model::byte_operation_binding;
 use crate::model::is_byte_operation;
 use crate::model::is_byte_buffer;
@@ -385,6 +388,20 @@ fn file_call(c: &mut Compiler, target: i32, depth: i32) -> Value {
     if c.error != 0 { return invalid(); }
     return crate::emit::file_io(&mut *c, operation, file, destination);
 }
+fn time_call(c: &mut Compiler, target: i32, depth: i32) -> Value {
+    expect(&mut *c, 20);
+    if target == sleep_millis_binding() {
+        let duration = expression(&mut *c, 1, depth + 1);
+        if duration.ty != 1 { fail(&mut *c); return invalid(); }
+        expect(&mut *c, 21);
+        if c.error != 0 { return invalid(); }
+        return crate::emit::sleep_millis(&mut *c, duration);
+    }
+    expect(&mut *c, 21);
+    if c.error != 0 { return invalid(); }
+    return crate::emit::clock_millis(&mut *c, target == unix_millis_binding());
+}
+
 fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     if is_vector_operation(target) {
         return vector_call(&mut *c, vector_operation_binding(0) - target, depth);
@@ -395,6 +412,7 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     if is_byte_operation(target) {
         return byte_buffer_call(&mut *c, byte_operation_binding(0) - target, depth);
     }
+    if is_time_operation(target) { return time_call(&mut *c, target, depth); }
     if target == argument_count_binding() {
         expect(&mut *c, 20); expect(&mut *c, 21);
         if c.error != 0 { return invalid(); }
