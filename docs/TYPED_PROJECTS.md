@@ -198,6 +198,12 @@ ready. Pass a timeout in milliseconds. It returns true after a notification and
 false when the wait expires. A zero timeout polls immediately. Negative timeouts
 and calls before enabling notifications return false immediately.
 
+After enabling notifications, use `std::process::wait_for_stdin(1000)` to
+wait up to one second for input. It returns true when a read can proceed,
+including when the input stream closes. A timeout, termination notification,
+or unavailable input returns false. Check `termination_requested()` to decide
+when to exit. Pass zero to check immediately.
+
 ## Measuring elapsed time
 
 Import `monotonic_millis` from `std::time`. Save a reading before your work

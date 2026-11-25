@@ -415,6 +415,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             Function::EnableTermination
             | Function::TerminationRequested
             | Function::WaitForTermination
+            | Function::WaitForStdin
             | Function::MonotonicMillis
             | Function::UnixMillis
             | Function::SleepMillis => {
