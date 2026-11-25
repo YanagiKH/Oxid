@@ -88,9 +88,13 @@ fn normalize(document: Text) -> ByteBuf {
 }
 
 fn normalize_bytes(input: &mut [u8]) -> i32 {
-    let mut offset = 0;
     let mut written = 0;
     let length = input.len();
+    while written < length {
+        if input[written] == 13u8 { break; }
+        written = written + 1;
+    }
+    let mut offset = written;
     while offset < length {
         let value = input[offset];
         let number = value.to_i32();
