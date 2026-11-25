@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run actual scalar-compiler, Clang, differential and deployment acceptance.
 
-The reference compiler is an offline oracle only; it is not passed to
-the Oxid compiler or build driver. No self-rebuild qualification is inferred.
+The reference compiler is an offline oracle. An optional two-generation
+rebuild runs the Linux Oxid compiler and LLVM tools separately.
 """
 from __future__ import annotations
 
@@ -51,6 +51,7 @@ def run(command: list[str], cwd: Path, timeout: int, clear_environment: bool = T
 SOURCE_ERROR = b": error: invalid or unsupported Oxid source\n"
 INPUT_ERROR = b"error: could not read Oxid source\n"
 RESOURCE_ERROR = b"error: compiler resource limit exceeded\n"
+SOURCE_BYTE_LIMIT = 512 * 1024
 
 
 def check_source_rejection(name, result, source: Path | None = None):
@@ -256,13 +257,43 @@ def actual_protocol(compiler: Path, clang: Path, runtime: Path,
     pipe_result = subprocess.CompletedProcess(command, child.returncode, b"", stderr)
     rows.append(record(evidence, "closed-stdout", command, pipe_result))
 
+    maximum = evidence / "maximum-source.ox"
+    maximum.write_bytes(b"fn main()->i32{return 42;}\n".ljust(SOURCE_BYTE_LIMIT, b" "))
+    maximum_command = driver.compiler_command(compiler, maximum, target)
+    maximum_result = run(maximum_command, evidence, timeout)
+    driver.module_from_result(maximum_result, target)
+    rows.append(record(evidence, "maximum-source", maximum_command, maximum_result))
+
     too_large = evidence / "too-large.ox"
-    too_large.write_bytes(b" " * 65537)
+    too_large.write_bytes(b" " * (SOURCE_BYTE_LIMIT + 1))
     large_command = driver.compiler_command(compiler, too_large, target)
     large_result = run(large_command, evidence, timeout)
     require((large_result.returncode, large_result.stdout, large_result.stderr) == (68, b"", RESOURCE_ERROR),
             "input byte limit was not enforced")
     rows.append(record(evidence, "input-limit", large_command, large_result))
+
+    function_source = evidence / "function-limit.ox"
+    functions = "fn main()->i32{return 42;}\n" + "".join(
+        f"fn f{index}()->i32{{return {index};}}\n" for index in range(511)
+    )
+    function_source.write_text(functions, encoding="ascii")
+    function_command = driver.compiler_command(compiler, function_source, target)
+    admitted = run(function_command, evidence, timeout)
+    driver.module_from_result(admitted, target)
+    rows.append(record(evidence, "maximum-functions", function_command, admitted))
+    function_source.write_text(functions + "fn extra()->i32{return 0;}\n", encoding="ascii")
+    refused = run(function_command, evidence, timeout)
+    require((refused.returncode, refused.stdout, refused.stderr) == (68, b"", RESOURCE_ERROR),
+            "function count limit was not enforced")
+    rows.append(record(evidence, "function-limit", function_command, refused))
+
+    tokens = evidence / "token-limit.ox"
+    tokens.write_bytes(b";" * 131073)
+    token_command = driver.compiler_command(compiler, tokens, target)
+    token_result = run(token_command, evidence, timeout)
+    require((token_result.returncode, token_result.stdout, token_result.stderr) == (68, b"", RESOURCE_ERROR),
+            "token count limit was not enforced")
+    rows.append(record(evidence, "token-limit", token_command, token_result))
 
     nested = evidence / "nested"
     nested.mkdir()
@@ -530,7 +561,7 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
         }),
         ("combined-input-limit", 68, False, {
             "main.ox": "mod a;fn main()->i32{return 42;}",
-            "a.ox": " " * 65536,
+            "a.ox": " " * SOURCE_BYTE_LIMIT,
         }),
         ("module-local-records", 0, True, {
             "main.ox": "mod data;#[derive(Copy)]struct Row{local:i32}"
@@ -940,6 +971,23 @@ fn main()->i32{
     if exercise(true)!=42{return 3;}
     return exercise(false);
 }
+''',
+        }),
+        ("return-moves-an-owner-out-of-a-loop", 0, True, {
+            "main.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::len;
+use alloc::bytes::new;
+use alloc::bytes::try_resize;
+fn work(again:bool)->ByteBuf{
+    let mut value=new();
+    while again{
+        try_resize(&mut value,42,7u8);
+        return value;
+    }
+    return value;
+}
+fn main()->i32{let result=work(true);return len(&result);}
 ''',
         }),
         ("byte-buffer-refuses-stale-owner", 65, True, {
@@ -1673,6 +1721,61 @@ fn main()->i32{
     return rows
 
 
+def verify_native_rebuild(compiler: Path, clang: Path, runtime: Path,
+                          output: Path, timeout: int) -> dict:
+    evidence = output / "native-rebuild"
+    evidence.mkdir()
+    source = evidence / "source"
+    shutil.copytree(ROOT / "src", source)
+    files = {path.relative_to(source).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+             for path in sorted(source.rglob("*.ox"))}
+    tools = evidence / "tools"
+    tools.mkdir()
+    llvm_bin = Path(os.environ.get("OXID_LLVM_BIN", clang.parent))
+    linker = (llvm_bin / "ld.lld").resolve(strict=True)
+    require(os.access(linker, os.X_OK), "LLVM linker is not executable")
+    (tools / "ld.lld").symlink_to(linker)
+    environment = {"PATH": str(tools)}
+    if "LD_LIBRARY_PATH" in os.environ:
+        environment["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+
+    first = evidence / "c2"
+    second = evidence / "c3"
+    c2 = driver.build(compiler, source / "main.ox", clang, runtime, first, "release",
+                      timeout, evidence / "c2-build", entry_mode="process",
+                      linker_environment=environment)
+    c3 = driver.build(first, source / "main.ox", clang, runtime, second, "release",
+                      timeout, evidence / "c3-build", entry_mode="process",
+                      linker_environment=environment)
+    require(c2["module_sha256"] == c3["module_sha256"] and c2["sha256"] == c3["sha256"],
+            "Linux native compiler rebuild changed the LLVM or binary")
+    for name, digest in files.items():
+        require(hashlib.sha256((source / name).read_bytes()).hexdigest() == digest,
+                "rebuild changed compiler source: " + name)
+    source.rename(evidence / "retained-source")
+
+    deployed = evidence / "deployed"
+    deployed.mkdir()
+    probe = evidence / "main.ox"
+    probe.write_text("fn main()->i32{let index=3;return 9*(index+2)-3;}\n", encoding="ascii")
+    runs = []
+    programs = []
+    for generation, binary in (("c2", first), ("c3", second)):
+        relocated = deployed / generation
+        binary.rename(relocated)
+        program = deployed / (generation + "-program")
+        driver.build(relocated, probe, clang, runtime, program, "release", timeout,
+                     evidence / (generation + "-probe"), linker_environment=environment)
+        programs.append(program)
+    probe.unlink()
+    for program in programs:
+        command = [str(program)]
+        completed = run(command, deployed, timeout)
+        check_native_behavior({"name": program.name, "kind": "value", "stdout": "42\n"}, completed)
+        runs.append(record(evidence, program.name, command, completed))
+    return {"status": "passed", "source_sha256": files, "c2": c2, "c3": c3, "program_runs": runs}
+
+
 def verify(args) -> dict:
     target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
@@ -1769,6 +1872,9 @@ def verify(args) -> dict:
                 check_native_behavior(case, executed)
             report["cases"].append(row)
         report["protocol"] = actual_protocol(compiler, clang, runtime, output, args.timeout)
+        if getattr(args, "verify_rebuild", False):
+            report["native_compiler_rebuild"] = verify_native_rebuild(
+                compiler, clang, runtime, output, args.timeout)
         if args.reference is not None:
             report["modules"] = verify_modules(compiler, clang, runtime, args.reference.resolve(strict=True),
                                                output, args.timeout)
@@ -1802,13 +1908,18 @@ def main() -> int:
     parser.add_argument("--reference", type=Path, required=True,
                         help="offline differential oracle; never invoked by the compiler or build driver")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--verify-rebuild", action="store_true",
+                        help="rebuild the Linux native compiler twice and compare both outputs")
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
     try:
         report = verify(args)
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         parser.exit(1, f"scalar compiler verification failed: {error}\n")
-    print(json.dumps({"status": report["status"], "cases": len(report["cases"]), "self_hosting": False}))
+    summary = {"status": report["status"], "cases": len(report["cases"]), "self_hosting": False}
+    if args.verify_rebuild:
+        summary["native_compiler_rebuild"] = report["native_compiler_rebuild"]["status"]
+    print(json.dumps(summary))
     return 0
 
 

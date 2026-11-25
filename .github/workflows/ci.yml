@@ -1485,7 +1485,7 @@ jobs:
           python3 -B compiler/native/tests/verify.py \
             --compiler compiler/native/.oxid/bin/oxid-scalar-compiler \
             --clang "$OXID_LLVM_BIN/clang" --reference target/release/oxid \
-            --output "$RUNNER_TEMP/current-scalar-compiler"
+            --verify-rebuild --output "$RUNNER_TEMP/current-scalar-compiler"
       - name: Retain current native evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -1710,7 +1710,7 @@ jobs:
           python3 -B compiler/native/tests/verify.py \
             --compiler compiler/native/.oxid/bin/oxid-scalar-compiler \
             --clang "$OXID_LLVM_BIN/clang" --reference target/release/oxid \
-            --output "$RUNNER_TEMP/linux-arm64-native/scalar-compiler"
+            --verify-rebuild --output "$RUNNER_TEMP/linux-arm64-native/scalar-compiler"
       - name: Verify offline ARM64 exports rebuild and deploy with both compiler profiles
         shell: bash
         run: |

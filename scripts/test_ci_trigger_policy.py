@@ -1514,7 +1514,7 @@ exit 0
             '          python3 -B compiler/native/tests/verify.py \\\n'
             '            --compiler compiler/native/.oxid/bin/oxid-scalar-compiler \\\n'
             '            --clang "$OXID_LLVM_BIN/clang" --reference target/release/oxid \\\n'
-            '            --output "$RUNNER_TEMP/current-scalar-compiler"\n'))
+            '            --verify-rebuild --output "$RUNNER_TEMP/current-scalar-compiler"\n'))
         upload = re.findall(r'^      - name: Retain current native evidence\n'
                             r'(.*?)(?=^      - |\Z)', native, re.M | re.S)
         self.assertEqual(len(upload), 1)

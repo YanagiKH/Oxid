@@ -2,7 +2,7 @@
 
 This experimental compiler reads an Oxid source file and emits LLVM. Its lexer,
 parser, name/type checks, control-flow lowering and emitter are written in Oxid.
-It does not yet compile its own implementation or satisfy the self-hosting gate.
+The Linux native compiler can rebuild itself from source with Clang.
 
 Build and use it from the repository root:
 
@@ -10,6 +10,10 @@ Build and use it from the repository root:
 (cd compiler/native && oxid build --profile=release)
 python3 compiler/native/build.py input.ox output --compiler compiler/native/.oxid/bin/oxid-scalar-compiler --clang /path/to/clang
 ```
+
+To rebuild the compiler, pass `compiler/native/src/main.ox` as the input
+and add `--profile release --entry-mode process`. Use the resulting executable
+as `--compiler` to build another program or repeat the rebuild.
 
 The project uses process entry mode: a successful compiler exits 0 and writes
 only one complete LLVM module to stdout, with no printed main return value.
@@ -178,8 +182,9 @@ Use `pub fn` to expose a function and call it with
 Source files share the input and function limits. The compiler accepts up to
 128 source files including the entry file and up to 32 levels of modules.
 
-Input is limited to 65536 bytes, 32768 tokens, 128 functions, 16 parameters/function,
-128 struct and enum declarations, 4096 call sites and a 32 KiB budget for local storage per function. Expression/block/comment nesting
+Input is limited to 512 KiB, 131072 tokens, 512 functions and 16 parameters per
+function. A project can declare up to 128 structs and enums and use up to 16384
+call sites. Each function has a 32 KiB local storage budget. Expression/block/comment nesting
 is limited to 64 and LLVM output to 8 MiB. Each function also has checked budgets
 of 4096 active bindings, 131072 temporary values and 65536 labels.
 Compiler status 64 means usage, 65 rejected

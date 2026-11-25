@@ -239,6 +239,7 @@ TYPED_MANIFEST_PROJECTS = {
         "compiler/native/src/parser.ox",
         "compiler/native/src/emit.ox",
         "compiler/native/src/delivery.ox",
+        "compiler/native/src/vector_schema.ox",
     ),
     "packages/core_types": (
         "packages/core_types/src/lib.ox",

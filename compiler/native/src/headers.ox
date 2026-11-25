@@ -710,7 +710,7 @@ fn resolve_imports(c: &mut Compiler) -> () {
 
 fn collect_function(c: &mut Compiler, source_module: i32, public: bool) -> () {
     let entry_name = b"main";
-    if len(&*c.functions) >= 128 { c.error = 68; return; }
+    if len(&*c.functions) >= 512 { c.error = 68; return; }
     expect(&mut *c, 3);
     let name = c.cursor;
     expect(&mut *c, 1);

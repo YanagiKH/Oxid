@@ -110,6 +110,9 @@ pub fn kind(c: &Compiler) -> i32 {
     return current.kind;
 }
 
+pub fn source_byte_limit() -> i32 { return 524288; }
+pub fn source_token_limit() -> i32 { return 131072; }
+
 pub fn fail(c: &mut Compiler) -> () {
     if c.error == 0 {
         let t = token(&*c, c.cursor);

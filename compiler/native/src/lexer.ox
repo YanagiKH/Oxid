@@ -7,6 +7,8 @@ use alloc::bytes::len as bytes_len;
 use alloc::bytes::try_push as push_byte;
 use alloc::vec::len;
 use alloc::vec::try_push;
+use crate::model::source_byte_limit;
+use crate::model::source_token_limit;
 
 #[derive(Copy)]
 struct Scalar { value: i32, end: i32 }
@@ -77,7 +79,7 @@ fn pattern_keyword(source: &[u8], start: i32, end: i32) -> i32 {
     return 1;
 }
 fn push(c: &mut Compiler, kind: i32, start: i32, end: i32, value: i64) -> () {
-    if len(&*c.tokens) >= 32768 { c.error = 68; return; }
+    if len(&*c.tokens) >= source_token_limit() { c.error = 68; return; }
     let token = Token { kind: kind, start: start, end: end, value: value, decoded_start: 0, decoded_length: 0 };
     if !grown(try_push(&mut *c.tokens, token)) {
         c.error = 68;
@@ -301,7 +303,7 @@ fn byte_string(c: &mut Compiler, start: i32, size: i32) -> i32 {
         let value = code(&*c.source, i);
         if value == 34 {
             let length = bytes_len(&*c.literals) - first;
-            if len(&*c.tokens) >= 32768 { c.error = 68; return i; }
+            if len(&*c.tokens) >= source_token_limit() { c.error = 68; return i; }
             let row = Token { kind: 50, start: start, end: i + 1, value: 0i64,
                 decoded_start: first, decoded_length: length };
             if !grown(try_push(&mut *c.tokens, row)) { c.error = 68; }
@@ -396,7 +398,7 @@ fn scan_one(c: &mut Compiler, start: i32, size: i32) -> i32 {
     return punctuation(&mut *c, start, size);
 }
 pub fn scan_range(c: &mut Compiler, start: i32, size: i32) -> () {
-    if size > 65536 { c.error = 68; return; }
+    if size > source_byte_limit() { c.error = 68; return; }
     let mut i = start;
     while i < size {
         let scalar = raw_scalar(&*c, i, size);

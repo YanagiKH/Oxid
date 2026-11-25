@@ -959,7 +959,7 @@ pub fn binary(c: &mut Compiler, op: i32, left: Value, right: Value) -> Value {
     return wide_binary(&mut *c, op, left, right);
 }
 
-pub fn call(c: &mut Compiler, function: i32, args: &[Value], result: i32) -> Value {
+pub fn call(c: &mut Compiler, function: i32, args: &Vec<Value>, result: i32) -> Value {
     let literal_bytes_0 = b"  ";
     let literal_bytes_1 = b"%v";
     let literal_bytes_2 = b" = ";

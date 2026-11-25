@@ -453,7 +453,7 @@ fn called(c: &mut Compiler, target: i32, depth: i32) -> Value {
     if count != f.count { fail(&mut *c); return invalid(); }
     // Nested calls keep the loans of their enclosing argument list.
     truncate(&mut *c.loans, outer_loans);
-    if c.call_sites >= 4096 { c.error = 68; return invalid(); }
+    if c.call_sites >= 16384 { c.error = 68; return invalid(); }
     c.call_sites = c.call_sites + 1;
     return crate::emit::call(&mut *c, target, &args, f.result);
 }
@@ -1355,7 +1355,11 @@ fn statement(c: &mut Compiler, break_to: i32, continue_to: i32, depth: i32) -> (
         c.cursor = c.cursor + 1;
         let value_start = c.cursor;
         let mut value = Value { ty: 3, id: -1 };
+        // A return cannot carry a moved owner into another loop iteration.
+        let return_floor = c.loop_move_floor;
+        c.loop_move_floor = 0;
         if kind(&*c) != 25 { value = expression(&mut *c, 1, 0); }
+        c.loop_move_floor = return_floor;
         expect(&mut *c, 25);
         let f = c.functions[c.current];
         if value.ty != f.result {

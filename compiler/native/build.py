@@ -96,7 +96,7 @@ def invoke(command: list[str], timeout: int, cwd: Path,
 
 def build(compiler: Path, source: Path, clang: Path, runtime: Path,
           destination: Path, profile: str, timeout: int = 120, evidence: Path | None = None,
-          entry_mode: str = "result") -> dict:
+          entry_mode: str = "result", linker_environment: dict[str, str] | None = None) -> dict:
     target = host_target()
     compiler = compiler.resolve(strict=True)
     source = source.resolve(strict=True)
@@ -133,7 +133,7 @@ def build(compiler: Path, source: Path, clang: Path, runtime: Path,
             if b"\n@__oxid_record_vector_schemas = " in module:
                 command.append("-DOXID_RECORD_VECTOR_SCHEMAS")
         command.extend([str(module_path), str(runtime), "-o", str(binary)])
-        linked = invoke(command, timeout, staging)
+        linked = invoke(command, timeout, staging, environment=linker_environment)
         if evidence is not None:
             (evidence / "program.ll").write_bytes(module)
             (evidence / "clang.stdout").write_bytes(linked.stdout)
