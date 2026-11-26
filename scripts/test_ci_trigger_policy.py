@@ -1545,7 +1545,7 @@ NATIVE_EVIDENCE_DIRECTORIES = (
     'current-copy-record-native', 'current-copy-record-vector-native',
     'current-owned-record-vector-native', 'current-owned-text-native',
     'current-utf8-characters-native', 'current-utf8-text-application',
-    'current-native-files', 'current-cpu-training', 'current-optimizer-math',
+    'current-native-files', 'current-file-worker', 'current-cpu-training', 'current-optimizer-math',
     'current-optimizer-checkpoints', 'current-optimizer-training',
     'current-data-pipeline', 'current-minibatch-training',
     'current-streaming-training', 'current-seekable-streaming',
@@ -1607,10 +1607,14 @@ class NativeProjectEvidenceTests(unittest.TestCase):
 
     def test_native_checkout_and_complete_explicit_container_evidence_roster(self):
         _, paths = require_native_project_evidence(self.native)
-        self.assertEqual(len(paths), 34)
-        self.assertEqual(len(set(paths)), 34)
-        self.assertIn("${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-scalar-compiler", paths)
-        self.assertEqual(len(set(paths) - {"${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-scalar-compiler"}), 33)
+        self.assertEqual(len(paths), 35)
+        self.assertEqual(len(set(paths)), 35)
+        added = {
+            "${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-scalar-compiler",
+            "${{ env.OXID_NATIVE_EVIDENCE_ROOT }}/current-file-worker",
+        }
+        self.assertTrue(added <= set(paths))
+        self.assertEqual(len(set(paths) - added), 33)
         self.assertNotIn('${{ runner.temp }}', '\n'.join(paths))
         self.assertFalse(any('*' in path or '..' in path for path in paths))
 
