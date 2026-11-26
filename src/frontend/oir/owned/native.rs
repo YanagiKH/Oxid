@@ -1292,6 +1292,10 @@ fn runtime_storage_bytes<W: PlanWitness>(
                 experimental::FILE_DELIVERY_BYTES
             } else {
                 0
+            } + if plan.has_environment_read() {
+                experimental::ENVIRONMENT_DELIVERY_BYTES
+            } else {
+                0
             } + if plan.has_regular_file_open() {
                 byte_buffer::file_regular_control_bytes()
             } else {
@@ -2890,7 +2894,7 @@ fn transfer_inventory_selected<W: PlanWitness, R: EmittedFunctions>(
                 // The sealed binary adapter already commits the status to
                 // the caller; its immediate return emits no transfer tree.
                 if plan.binary_delivery_cost(f.id).is_none()
-                    && plan.file_delivery_cost(f.id).is_none()
+                    && plan.reference_delivery_cost(f.id).is_none()
                     && plan.process_delivery_cost(f.id).is_none()
                     && !vector::delivery(plan, f.id)
                     && !owned_vector::delivery(plan, f.id)
@@ -2987,7 +2991,7 @@ fn transfer_inventory_selected<W: PlanWitness, R: EmittedFunctions>(
             if matches!(
                 block.terminator.as_ref().expect("verified terminator").kind,
                 OwnedTerminatorKind::ReturnScalar(_) | OwnedTerminatorKind::ReturnOwned(_)
-            ) && plan.file_delivery_cost(function.id).is_none()
+            ) && plan.reference_delivery_cost(function.id).is_none()
                 && plan.process_delivery_cost(function.id).is_none()
                 && !vector::delivery(plan, function.id)
                 && !owned_vector::delivery(plan, function.id)
@@ -4084,6 +4088,16 @@ fn emit_selected<W: PlanWitness, R: EmittedFunctions>(
         out.write_str("declare i32 @__oxid_read_stdin_byte(ptr)\n")
             .unwrap();
     }
+    if plan.has_environment_read() {
+        out.write_str("declare i32 @__oxid_environment_bytes(ptr, i32, ptr, i32, ptr, ptr, i64)\n")
+            .unwrap();
+        if out.policy.hosted() {
+            out.write_str(
+                "declare i32 @__oxid_environment_bytes_hosted(ptr, i32, ptr, i32, ptr, ptr, i64)\n",
+            )
+            .unwrap();
+        }
+    }
     if plan.has_program_arguments() {
         out.write_str("declare void @__oxid_arguments_start(i32, ptr)\ndeclare i32 @__oxid_arg_count()\ndeclare i32 @__oxid_arg_bytes(i32, ptr, i32, ptr, ptr, i64)\n").unwrap();
         if out.policy.hosted() {
@@ -4773,7 +4787,7 @@ fn emit_function<W: PlanWitness>(
         }
         if guarded
             && plan.binary_delivery_cost(id).is_none()
-            && plan.file_delivery_cost(id).is_none()
+            && plan.reference_delivery_cost(id).is_none()
             && plan.process_delivery_cost(id).is_none()
             && !vector::delivery(plan, id)
             && !owned_vector::delivery(plan, id)
@@ -6365,7 +6379,7 @@ fn emit_terminator<W: PlanWitness>(
         }
         OwnedTerminatorKind::ReturnOwned(owner) => {
             if plan.binary_delivery_cost(id).is_some()
-                || plan.file_delivery_cost(id).is_some()
+                || plan.reference_delivery_cost(id).is_some()
                 || vector::delivery(plan, id)
                 || owned_vector::delivery(plan, id)
             {

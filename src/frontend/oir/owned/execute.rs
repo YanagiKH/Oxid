@@ -3979,7 +3979,7 @@ impl<'p, 'w, V: StoredValue, W: PlanWitness> ValueMachine<'p, 'w, V, W> {
                         self.process_delivery(frame, operation, destination, span)?;
                         continue;
                     }
-                    if operation.is_file() {
+                    if operation.is_reference_delivery() {
                         self.file_delivery(frame, operation, destination, span)?;
                         continue;
                     }
@@ -4759,8 +4759,12 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
                     binary_delivery_control_bytes()
                 } else {
                     0
-                } + if plan.has_file_delivery() {
+                } + if plan.has_file_delivery() || plan.has_environment_read() {
                     experimental::file_delivery_control_bytes()
+                } else {
+                    0
+                } + if plan.has_environment_read() {
+                    crate::program_environment::control_bytes()
                 } else {
                     0
                 } + if plan.has_regular_file_open() {
@@ -4994,8 +4998,12 @@ fn execute_plan_policy_with_process_delivery<V: StoredValue, W: PlanWitness>(
                     binary_delivery_control_bytes()
                 } else {
                     0
-                } + if plan.has_file_delivery() {
+                } + if plan.has_file_delivery() || plan.has_environment_read() {
                     experimental::file_delivery_control_bytes()
+                } else {
+                    0
+                } + if plan.has_environment_read() {
+                    crate::program_environment::control_bytes()
                 } else {
                     0
                 } + if plan.has_regular_file_open() {

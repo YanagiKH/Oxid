@@ -2,9 +2,54 @@
 #include <assert.h>
 #include <string.h>
 #include "../native/typed_bytebuf.c"
+#if !defined(OXID_ARGUMENTS_UTF16)
+#define OXID_READ_ENVIRONMENT 1
+#endif
 #include "../native/experimental_arguments.c"
 
+#if defined(OXID_READ_ENVIRONMENT)
+static void environment_contract(void) {
+    const uint8_t name[] = "OXID_TEST_C_ENVIRONMENT";
+    const size_t length = sizeof(name) - 1;
+    const uint64_t cost = sizeof(name) + sizeof("abc") + 3 + 7;
+    assert(setenv((const char *)name, "abc", 1) == 0);
+    uint8_t bytes[8];
+    oxid_binary_result result;
+    for (uint64_t budget = 0; budget < cost; ++budget) {
+        memset(bytes, 'x', sizeof(bytes));
+        result = (oxid_binary_result){99, 98};
+        uint64_t fuel = budget;
+        assert(__oxid_environment_bytes(name, length, bytes, sizeof(bytes), &fuel, &result, 7)
+            == OXID_BUFFER_FUEL);
+        assert(fuel == budget && result.tag == 99 && result.value == 98);
+        assert(!memcmp(bytes, "xxxxxxxx", sizeof(bytes)));
+    }
+    uint64_t fuel = cost;
+    assert(__oxid_environment_bytes(name, length, bytes, sizeof(bytes), &fuel, &result, 7) == 0);
+    assert(fuel == 0 && result.tag == 0 && result.value == 3);
+    assert(!memcmp(bytes, "abcxxxxx", sizeof(bytes)));
+    memset(bytes, 'x', sizeof(bytes));
+    fuel = cost - 3;
+    assert(__oxid_environment_bytes(name, length, bytes, 2, &fuel, &result, 7) == 0);
+    assert(fuel == 0 && result.tag == 2 && result.value == ERANGE);
+    assert(!memcmp(bytes, "xxxxxxxx", sizeof(bytes)));
+    fuel = 7;
+    assert(__oxid_environment_bytes_hosted(name, length, bytes, sizeof(bytes), &fuel, &result, 7) == 0);
+    assert(fuel == 7 && result.tag == 0 && result.value == 3);
+    assert(__oxid_environment_bytes(bytes, 3, bytes + 2, 2, &fuel, &result, 7)
+        == OXID_BUFFER_DESCRIPTOR);
+    assert(fuel == 7 && result.tag == 0 && result.value == 3);
+    assert(unsetenv((const char *)name) == 0);
+    fuel = sizeof(name) + 7;
+    assert(__oxid_environment_bytes(name, length, bytes, sizeof(bytes), &fuel, &result, 7) == 0);
+    assert(fuel == 0 && result.tag == 1);
+}
+#endif
+
 int main(void) {
+#if defined(OXID_READ_ENVIRONMENT)
+    environment_contract();
+#endif
 #if defined(OXID_ARGUMENTS_UTF16)
     oxid_argument_unit name[] = {'a', 0}, normal[] = {'a', 'b', 'c', 0}, empty[] = {0};
     oxid_argument_unit raw[] = {'y', 'x', 0};

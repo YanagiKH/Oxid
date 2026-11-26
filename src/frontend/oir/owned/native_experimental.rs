@@ -253,6 +253,33 @@ pub(super) const ARGUMENT_DELIVERY_BYTES: usize = size_of::<ArgumentControl>();
 
 #[allow(dead_code)]
 #[repr(C)]
+struct EnvironmentControl {
+    key: *const u8,
+    key_size: i32,
+    bytes: *mut u8,
+    capacity: i32,
+    fuel: *mut u64,
+    result: *mut (),
+    return_cost: u64,
+    remaining: u64,
+    hosted_budget: u64,
+    selected_result: (i32, i32),
+    #[cfg(not(target_os = "windows"))]
+    key_storage: [u8; 256],
+    #[cfg(target_os = "windows")]
+    wide_key_storage: [u16; 256],
+    source: *const u8,
+    cursor: *const u8,
+    length: u32,
+    codepoint: u32,
+    width: u32,
+    status: i32,
+}
+
+pub(super) const ENVIRONMENT_DELIVERY_BYTES: usize = size_of::<EnvironmentControl>();
+
+#[allow(dead_code)]
+#[repr(C)]
 struct WidePrintFrame {
     value: i64,
     buffer: [u8; 21],
@@ -378,6 +405,10 @@ pub(super) fn operation<W: PlanWitness>(
         file_operation(storage, name, operation, diagnostics, span, out);
         return;
     }
+    if operation == Function::ReadVariable {
+        environment_operation(storage, name, diagnostics, span, out);
+        return;
+    }
     if operation.is_arguments() {
         argument_operation(
             storage,
@@ -493,6 +524,41 @@ pub(super) fn operation<W: PlanWitness>(
         name,
         &format!("%{name}_status"),
         "operation_ok",
+        span,
+        true,
+    );
+}
+
+fn environment_operation<W: PlanWitness>(
+    storage: &NativeFunctionStorage<'_, '_, W>,
+    name: &str,
+    diagnostics: &Diagnostics,
+    span: Span,
+    out: &mut Emission,
+) {
+    let f = &storage.execution().witness().functions()[storage.id().0];
+    let key_param = AccessBase::Parameter(ReferenceParamId(0));
+    let bytes_param = AccessBase::Parameter(ReferenceParamId(1));
+    let key = base_pointer(out, f, &format!("{name}_env_key"), key_param);
+    let key_size = index_length(out, f, &format!("{name}_env_key_size"), key_param);
+    let bytes = base_pointer(out, f, &format!("{name}_env_bytes"), bytes_param);
+    let capacity = index_length(out, f, &format!("{name}_env_capacity"), bytes_param);
+    let cost = storage
+        .execution()
+        .reference_delivery_cost(f.id)
+        .expect("sealed environment delivery");
+    let helper = if out.policy.hosted() {
+        "__oxid_environment_bytes_hosted"
+    } else {
+        "__oxid_environment_bytes"
+    };
+    writeln!(out, "  %{name}_status = call i32 @{helper}(ptr {key}, i32 {key_size}, ptr {bytes}, i32 {capacity}, ptr %fuel, ptr %result, i64 {cost})").unwrap();
+    status(
+        out,
+        diagnostics,
+        name,
+        &format!("%{name}_status"),
+        "environment_ok",
         span,
         true,
     );
@@ -721,7 +787,7 @@ fn file_operation<W: PlanWitness>(
         );
         let cost = storage
             .execution()
-            .file_delivery_cost(f.id)
+            .reference_delivery_cost(f.id)
             .expect("sealed file seek return");
         let helper = if out.policy.hosted() {
             "__oxid_file_seek_absolute_hosted"
@@ -783,7 +849,7 @@ fn file_operation<W: PlanWitness>(
     };
     let cost = storage
         .execution()
-        .file_delivery_cost(f.id)
+        .reference_delivery_cost(f.id)
         .expect("sealed file return");
     let helper = if out.policy.hosted() {
         "__oxid_file_delivery_hosted"

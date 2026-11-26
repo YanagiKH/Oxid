@@ -19,7 +19,7 @@ REVIEWED_SOURCE = "1e551c59aa8ee698ff14093c0be5a2d6084febde"
 REVIEWED_PARENTS = ("a54892ebfb70fdd7db1d0a073db46e81481fbfbd",)
 REVIEWED_TREE = "937a11eb6d1bbefe1cacfb7616bfa39209a5c9a9"
 PUBLIC_TESTS = {
-    "tests/file_open_append.rs",
+    "tests/file_open_append.rs", "tests/typed_environment.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
     "tests/typed_owned_record_element_loans.rs", "tests/typed_registry_ranges.rs",
     "tests/windows_file_io.rs", "tests/windows_file_runtime.c",

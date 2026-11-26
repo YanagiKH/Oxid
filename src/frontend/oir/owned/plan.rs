@@ -293,11 +293,11 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
             .into_iter()
             .any(|operation| self.witness.experimental_function(operation).is_some())
     }
-    pub(super) fn file_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
+    pub(super) fn reference_delivery_cost(&self, function: hir::DefId) -> Option<usize> {
         use crate::frontend::builtin_catalog::experimental::Function;
         Function::ALL
             .into_iter()
-            .filter(|operation| operation.is_file())
+            .filter(|operation| operation.is_reference_delivery())
             .any(|operation| self.witness.experimental_function(operation) == Some(function))
             .then(|| {
                 let term = self.witness.functions()[function.0].blocks[0]
@@ -306,6 +306,12 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
                     .expect("sealed file return");
                 self.terminator_cost(function, &term.kind)
             })
+    }
+    pub(super) fn has_environment_read(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        self.witness
+            .experimental_function(Function::ReadVariable)
+            .is_some()
     }
     pub(super) fn has_program_arguments(&self) -> bool {
         use crate::frontend::builtin_catalog::experimental::Function;
