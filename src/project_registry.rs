@@ -1,5 +1,6 @@
 //! Explicit, immutable private library releases. Registry work stays outside
 //! compiler carriers; ordinary path/Git projects do not allocate this session.
+mod mirror;
 mod resources;
 mod search_catalog;
 #[cfg(test)]
@@ -1957,12 +1958,13 @@ fn command(args: &[String]) -> Result<String, String> {
                 let results = search_file(source, "", &mut budget)?;
                 return render_search(results, true, &mut budget);
             }
+            Some("mirror") => return mirror::command(args),
             Some("yank") => return change_yank_status(args, true),
             Some("unyank") => return change_yank_status(args, false),
             _ => {}
         }
         if args.len() != 3 || args[1] != "init" || args[2].starts_with('-') {
-            return Err("use oxid registry init NEW_DIRECTORY, search FILE_URI_OR_HTTPS_CATALOG [PREFIX], catalog FILE_URI, or yank/unyank FILE_URI PACKAGE VERSION".into());
+            return Err("use oxid registry init NEW_DIRECTORY, search SOURCE [PREFIX], catalog FILE_URI, mirror FILE_URI PACKAGE VERSION HTTPS_BASE --sha256 HEX, or yank/unyank FILE_URI PACKAGE VERSION".into());
         }
         let mut budget = Budget::new()?;
         if args[2].len() > 8192 {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise catalog export and authenticated HTTPS search with a local TLS server."""
+"""Exercise HTTPS catalog search, package restore and mirroring with a local TLS server."""
 import argparse
 from contextlib import contextmanager
 import hashlib
@@ -68,8 +68,30 @@ def source_package(compiler, root, environment):
     return archive.read_bytes()
 
 
+def release_files(compiler, root, environment):
+    registry = root / "index"
+    library = root / "library"
+    (library / "src").mkdir(parents=True)
+    (library / "oxid.toml").write_text(
+        '[project]\nname = "bridge"\nversion = "1.0.0"\n'
+        'edition = "typed-preview"\nkind = "lib"\n'
+        '[dependencies]\n'
+        f'math = {{ registry = "{registry.as_uri()}", package = "math", version = "1.2.0" }}\n'
+    )
+    (library / "src/lib.ox").write_text(
+        "use crate::math::value;\npub fn answer() -> i32 { return value(); }\n"
+    )
+    invoke(compiler, library, environment, ["lock"])
+    invoke(compiler, library, environment, ["publish", "--registry", registry.as_uri()])
+    return {
+        f"/packages/{name}/{version}/{filename}": (registry / "packages" / name / version / filename).read_bytes()
+        for name, version in (("math", "1.2.0"), ("bridge", "1.0.0"))
+        for filename in ("release.toml", "artifact.tar")
+    }
+
+
 @contextmanager
-def serve(root, catalog, package):
+def serve(root, catalog, package, releases):
     private_key = root / "key.pem"
     certificate = root / "cert.pem"
     subprocess.run([
@@ -96,6 +118,13 @@ def serve(root, catalog, package):
                 self.respond(200, catalog)
             elif self.path == "/package":
                 self.respond(200, package)
+            elif self.path in releases:
+                self.respond(200, releases[self.path])
+            elif self.path.startswith("/damaged/") and self.path.removeprefix("/damaged") in releases:
+                data = releases[self.path.removeprefix("/damaged")]
+                if self.path.endswith("artifact.tar"):
+                    data = bytes([data[0] ^ 1]) + data[1:]
+                self.respond(200, data)
             elif self.path == "/corrupt":
                 self.respond(200, b"damaged source archive")
             elif self.path == "/oversized-package":
@@ -188,6 +217,52 @@ def verify_source_download(compiler, root, base, body, authorized, requests):
                 "failed HTTPS extraction left output or staging files")
 
 
+def verify_registry_mirror(compiler, root, base, releases, authorized, requests):
+    registry = root / "mirror"
+    invoke(compiler, root, authorized, ["registry", "init", str(registry)])
+    credentials = ["--token-env", "OXID_REGISTRY_TOKEN"]
+    expected = {path: hashlib.sha256(data).hexdigest()
+                for path, data in releases.items() if path.endswith("artifact.tar")}
+
+    def mirror(name, version, origin=base, digest=None, token=credentials, status=0):
+        sha256 = expected[f"/packages/{name}/{version}/artifact.tar"] if digest is None else digest
+        return invoke(compiler, root, authorized, [
+            "registry", "mirror", registry.as_uri(), name, version, origin, "--sha256", sha256, *token,
+        ], status=status)
+
+    failures = ((base, "0" * 64, credentials, b"does not match the supplied SHA-256", 1),
+                (base, None, [], b"authorization failed", 1),
+                (base + "/damaged", None, credentials, b"does not match its SHA-256/length", 2))
+    for origin, digest, token, error, request_count in failures:
+        before = len(requests)
+        result = mirror("math", "1.2.0", origin, digest, token, status=1)
+        require(error in result.stderr and len(requests) == before + request_count
+                and not any((registry / "packages").iterdir()), "a failed mirror left files or fetched extra data")
+    mirror("math", "1.2.0")
+    mirror("bridge", "1.0.0")
+    before = len(requests)
+    result = mirror("math", "1.2.0", base + "/unreachable")
+    require(result.stdout.startswith(b"already mirrored ") and len(requests) == before,
+            "a retry downloaded an existing release")
+    mirror("math", "1.2.0", digest="0" * 64, status=1)
+    for path, data in releases.items():
+        require((registry / path.lstrip("/")).read_bytes() == data, "mirroring changed release bytes")
+
+    app = root / "mirror-client"
+    (app / "src").mkdir(parents=True)
+    (app / "oxid.toml").write_text(
+        '[project]\nname = "mirror-client"\nedition = "typed-preview"\n'
+        '[build]\nentry-mode = "result"\n[dependencies]\n'
+        f'bridge = {{ registry = "{registry.as_uri()}", package = "bridge", version = "^1.0.0" }}\n'
+    )
+    (app / "src/main.ox").write_text("use crate::bridge::answer;\nfn main() -> i32 { return answer(); }\n")
+    invoke(compiler, app, authorized, ["lock"])
+    registry.rename(root / "moved-mirror")
+    result = invoke(compiler, app, authorized, ["run", "--frozen"])
+    require(result.stdout == b"42\n" and len(requests) == before,
+            "the mirrored dependency graph could not run offline")
+
+
 def verify(compiler, root):
     environment = dict(os.environ, NO_PROXY="127.0.0.1", no_proxy="127.0.0.1")
     for key in ("CURL_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR", "OXID_REGISTRY_TOKEN"):
@@ -198,7 +273,8 @@ def verify(compiler, root):
     environment["CURL_HOME"] = str(settings)
     catalog = export(compiler, root, environment)
     package = source_package(compiler, root, environment)
-    with serve(root, catalog, package) as (base, certificate, requests):
+    releases = release_files(compiler, root, environment)
+    with serve(root, catalog, package, releases) as (base, certificate, requests):
         trusted = dict(environment, CURL_CA_BUNDLE=str(certificate))
         authorized = dict(trusted, OXID_REGISTRY_TOKEN=TOKEN)
 
@@ -238,7 +314,8 @@ def verify(compiler, root):
         require(b"unique and sorted" in search("/malformed", status=1).stderr, "duplicate names were accepted")
         require(requests[0] == ("/catalog", "Bearer " + TOKEN), "request did not authenticate")
         verify_source_download(compiler, root, base, package, authorized, requests)
-    print("HTTPS catalog search and verified source package download passed")
+        verify_registry_mirror(compiler, root, base, releases, authorized, requests)
+    print("HTTPS search, source package restore and registry mirroring passed")
 
 
 def main():
