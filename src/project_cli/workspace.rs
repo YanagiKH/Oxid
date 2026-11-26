@@ -517,16 +517,14 @@ impl Workspace {
         options.validate_lock_options()?;
         let selected = self.selected(options)?;
         if options.command() == "fmt" {
-            validate_project_format(options)?;
-            let mut changed = BTreeSet::new();
-            for index in selected {
-                let member = &self.members[index];
-                changed.extend(check_project_format(
-                    &member.root,
-                    &member.snapshot.manifest,
-                )?);
-            }
-            return report_formatting(&self.root, changed);
+            return formatting::execute(
+                options,
+                &self.root,
+                selected.into_iter().map(|index| {
+                    let member = &self.members[index];
+                    (member.root.as_path(), &member.snapshot.manifest)
+                }),
+            );
         }
         let documentation_version = if options.versioned_docs {
             let [index] = selected.as_slice() else {

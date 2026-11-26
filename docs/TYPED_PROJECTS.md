@@ -72,6 +72,7 @@ for source limits and path rules.
 | `oxid build --profile release` | Build with native optimization enabled. |
 | `oxid fmt src/main.ox` | Print formatted source; add `--check` to check formatting. |
 | `oxid fmt --check` | List files in the project that need formatting. |
+| `oxid fmt --write` | Apply formatting to project source files. |
 | `oxid doc` | Generate public API documentation under `.oxid/doc/`. |
 | `oxid lsp --stdio` | Check open editor buffers and provide formatting. |
 | `oxid lock` | Record local dependency inputs in `oxid.lock`. |
@@ -81,9 +82,9 @@ Use `oxid test --jobs 4` to run up to four tests at a time. The runner reports r
 
 The commands find `oxid.toml` above the current directory. Build failures preserve
 the previous executable. `fmt` with a file path prints its result to stdout.
-Run `oxid fmt --check --workspace` to check every workspace member, or use
-`oxid fmt --check -p NAME` to select one. The check reads the entry, its modules
-and the tests declared in `oxid.toml`. It leaves files unchanged.
+Both project formatting commands cover the entry, its modules and the tests
+declared in `oxid.toml`. Add `--workspace` to select every member or `-p NAME`
+to select one.
 
 ## Edit with live diagnostics
 

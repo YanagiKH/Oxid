@@ -727,11 +727,11 @@ impl PreparedPackageProject<'_> {
         Ok(())
     }
 
-    pub(crate) fn check_formatting(
+    pub(crate) fn visit_format_changes(
         &self,
         root: &Path,
         checked: &mut BTreeSet<PathBuf>,
-        changed: &mut BTreeSet<PathBuf>,
+        visit: &mut impl FnMut(&Path, &str, &str) -> Result<(), String>,
     ) -> Result<(), String> {
         let project = self.project();
         for module in project.modules() {
@@ -747,7 +747,7 @@ impl PreparedPackageProject<'_> {
                 let formatted = super::format::format_source(source)
                     .map_err(|errors| preparation_message(project.sources(), &errors))?;
                 if formatted != source.text() {
-                    changed.insert(path.to_path_buf());
+                    visit(path, source.text(), &formatted)?;
                 }
             }
         }
