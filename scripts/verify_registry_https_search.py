@@ -69,7 +69,9 @@ def serve(root, catalog):
         def do_GET(self):
             authorization = self.headers.get("Authorization")
             requests.append((self.path, authorization))
-            if not authorization:
+            if self.path == "/public":
+                self.respond(200, catalog)
+            elif not authorization:
                 self.respond(401)
             elif authorization != "Bearer " + TOKEN:
                 self.respond(403)
@@ -124,20 +126,31 @@ def verify(compiler, root):
         trusted = dict(environment, CURL_CA_BUNDLE=str(certificate))
         authorized = dict(trusted, OXID_REGISTRY_TOKEN=TOKEN)
 
-        def search(path, env=authorized, prefix=None, status=0):
+        def search(path, env=authorized, prefix=None, status=0, token_env="OXID_REGISTRY_TOKEN"):
             args = ["registry", "search", base + path]
             if prefix:
                 args.append(prefix)
+            if token_env:
+                args.extend(["--token-env", token_env])
             return invoke(compiler, root, env, args, status=status)
 
         require(search("/catalog").stdout == b"bytes 1.0.0\nmath 1.2.0\n", "complete search failed")
         require(search("/catalog", prefix="ma").stdout == b"math 1.2.0\n", "prefix search failed")
         require(search("/catalog", prefix="nomatch").stdout == b"No packages match.\n", "empty search failed")
-        for env in (trusted, dict(trusted, OXID_REGISTRY_TOKEN="wrong-token")):
-            result = search("/catalog", env, status=1)
-            require(b"authorization failed" in result.stderr and not result.stdout, "missing authentication error")
+        public = search("/public", authorized, token_env=None)
+        require(public.stdout == b"bytes 1.0.0\nmath 1.2.0\n" and requests[-1] == ("/public", None),
+                "public search sent an inherited token")
+        result = search("/catalog", authorized, status=1, token_env=None)
+        require(b"authorization failed" in result.stderr and requests[-1] == ("/catalog", None),
+                "curl received a token without an explicit option")
+        result = search("/catalog", dict(trusted, OXID_REGISTRY_TOKEN="wrong-token"), status=1)
+        require(b"authorization failed" in result.stderr and not result.stdout, "missing authentication error")
         before = len(requests)
-        result = search("/catalog", environment, status=1)
+        result = search("/catalog", trusted, status=1)
+        require(b"variable is unset" in result.stderr and len(requests) == before, "unset token reached the registry")
+        result = search("/catalog", authorized, status=1, token_env="invalid=variable")
+        require(b"variable name" in result.stderr and len(requests) == before, "invalid variable reached the registry")
+        result = search("/catalog", dict(environment, OXID_REGISTRY_TOKEN=TOKEN), status=1)
         require(b"certificate" in result.stderr and len(requests) == before, "untrusted TLS reached the registry")
         result = search("/catalog", dict(trusted, OXID_REGISTRY_TOKEN="bad\nheader"), status=1)
         require(b"valid bearer token" in result.stderr and len(requests) == before, "invalid token reached the registry")

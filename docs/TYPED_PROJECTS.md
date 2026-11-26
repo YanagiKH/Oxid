@@ -392,10 +392,14 @@ oxid registry catalog file:///home/me/oxid-registry > packages.txt
 oxid registry search https://packages.example.com/ox/packages.txt math
 ```
 
-HTTPS search uses curl. If your server requires bearer authentication, set
-`OXID_REGISTRY_TOKEN` in the environment before searching. Packages found
-through HTTPS search are listed by version. The dependency examples below
-use the local registry directory to install them.
+HTTPS search uses curl. If your server requires a bearer token, put it in
+an environment variable and pass the variable's name with `--token-env`.
+
+```sh
+oxid registry search https://packages.example.com/ox/packages.txt math --token-env OXID_REGISTRY_TOKEN
+```
+
+Use the local registry directory to install packages, as shown below.
 
 Choose an alias, package name and version for each dependency.
 
