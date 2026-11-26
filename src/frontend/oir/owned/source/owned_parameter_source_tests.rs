@@ -101,6 +101,7 @@ fn source_owned_parameter_results_use_finite_roots_and_exact_owner_cleanup() {
 const OWNED_VECTOR_FIELDS: &str = r#"
 use alloc::vec::Vec;
 use alloc::vec::new;
+use alloc::vec::len;
 use alloc::vec::try_reserve;
 use alloc::vec::push_reserved;
 use alloc::vec::pop_last;
@@ -116,6 +117,8 @@ struct Holder<T> { values: Vec<T> }
 fn wrap<T>(values: Vec<T>) -> Holder<T> { return Holder::<T> { values: values }; }
 fn unwrap<T>(holder: Holder<T>) -> Vec<T> { let Holder { values } = holder; return values; }
 fn discard<T>(holder: Holder<T>) -> () { return; }
+fn size<T>(holder: &Holder<T>) -> i32 { return len(&*holder.values); }
+fn pop<T>(holder: &mut Holder<T>) -> T { return pop_last(&mut *holder.values); }
 
 fn make(value: i32) -> Message {
     let mut bytes = bytes_new();
@@ -134,9 +137,10 @@ fn main() -> i32 {
     }
     push_reserved(&mut values, make(0));
     push_reserved(&mut values, make(41));
-    let mut unwrapped = unwrap(wrap(values));
-    let last = pop_last(&mut unwrapped);
-    discard(wrap(unwrapped));
+    let mut holder = wrap(values);
+    if size(&holder) != 2 { return -4; }
+    let last = pop(&mut holder);
+    discard(wrap(unwrap(holder)));
     let Message { value, bytes } = last;
     return value + bytes_len(&bytes);
 }

@@ -2517,8 +2517,12 @@ fn projected_array_access(
         ValueTy::Owned(AggregateTy::RecordVector(record)) => {
             Some(ValueTy::Owned(AggregateTy::Record(record)))
         }
-        ValueTy::Owned(AggregateTy::File) if borrow => None,
-        ValueTy::Owned(AggregateTy::Record(_)) if borrow => None,
+        ValueTy::Owned(
+            AggregateTy::File
+            | AggregateTy::Record(_)
+            | AggregateTy::OwnedRecordVector(_)
+            | AggregateTy::OwnedEnumVector(_),
+        ) if borrow => None,
         _ => {
             return Err(error(
                 "E0305",
@@ -3074,6 +3078,8 @@ fn expression_type(
                                         | AggregateTy::ByteBuf
                                         | AggregateTy::Vector(_)
                                         | AggregateTy::RecordVector(_)
+                                        | AggregateTy::OwnedRecordVector(_)
+                                        | AggregateTy::OwnedEnumVector(_)
                                         | AggregateTy::File),
                                     ) => BorrowedTy::Exact(resource),
                                     _ => match element.expect("array borrowing has an element") {
