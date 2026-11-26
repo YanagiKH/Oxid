@@ -359,12 +359,18 @@ length and capacity. A failed `try_reserve` preserves the existing length,
 capacity, records, and any separate incoming record owned by the caller.
 
 A generic struct can own a `Vec<T>` field. When the struct moves, its vector
-moves with it. Use a complete record pattern to take the vector out.
+moves with it. Borrow the field to use it in place, or use a complete record
+pattern to take the vector out.
 
 ```oxid
 use alloc::vec::Vec;
+use alloc::vec::len;
 
 struct Store<T> { values: Vec<T> }
+
+fn count<T>(store: &Store<T>) -> i32 {
+    return len(&*store.values);
+}
 
 fn into_values<T>(store: Store<T>) -> Vec<T> {
     let Store { values } = store;
