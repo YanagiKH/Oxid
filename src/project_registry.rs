@@ -1778,18 +1778,29 @@ fn check_release_record(
 }
 
 fn search(args: &[String]) -> Result<String, String> {
-    let (source, prefix) = match args {
-        [_, _, source] => (source, ""),
-        [_, _, source, prefix] => {
+    let usage = "use oxid registry search SOURCE [PREFIX] [--token-env NAME]";
+    let [_, _, source, options @ ..] = args else {
+        return Err(usage.into());
+    };
+    let (prefix, variable) = match options {
+        [prefix @ .., flag, variable] if flag == "--token-env" => (prefix, Some(variable.as_str())),
+        _ => (options, None),
+    };
+    let prefix = match prefix {
+        [] => "",
+        [prefix] if !prefix.starts_with("--") => {
             name(prefix)?;
-            (source, prefix.as_str())
+            prefix.as_str()
         }
-        _ => return Err("use oxid registry search FILE_URI_OR_HTTPS_CATALOG [PREFIX]".into()),
+        _ => return Err(usage.into()),
     };
     let mut budget = Budget::new()?;
     let results = if source.starts_with("https://") {
-        search_catalog::search(source, prefix, &mut budget)?
+        search_catalog::search(source, prefix, variable, &mut budget)?
     } else {
+        if variable.is_some() {
+            return Err("--token-env requires an HTTPS catalog".into());
+        }
         qualified()?;
         search_file(source, prefix, &mut budget)?
     };

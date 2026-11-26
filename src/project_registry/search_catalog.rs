@@ -33,23 +33,31 @@ fn check_token(token: &str) -> Result<(), String> {
             byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'+' | b'/')
         })
     {
-        return Err("OXID_REGISTRY_TOKEN must contain a valid bearer token".into());
+        return Err("registry token environment variable must contain a valid bearer token".into());
     }
     Ok(())
 }
 
-fn fetch(url: &str, budget: &mut Budget) -> Result<Vec<u8>, String> {
+fn read_token(variable: &str) -> Result<String, String> {
+    if variable.is_empty()
+        || variable.len() > 64
+        || !variable.bytes().enumerate().all(|(index, byte)| {
+            byte == b'_' || byte.is_ascii_alphabetic() || index != 0 && byte.is_ascii_digit()
+        })
+    {
+        return Err("--token-env requires an environment variable name".into());
+    }
+    let token = env::var(variable).map_err(|error| match error {
+        env::VarError::NotPresent => "registry token environment variable is unset",
+        env::VarError::NotUnicode(_) => "registry token environment variable is not valid text",
+    })?;
+    check_token(&token)?;
+    Ok(token)
+}
+
+fn fetch(url: &str, variable: Option<&str>, budget: &mut Budget) -> Result<Vec<u8>, String> {
     check_url(url)?;
-    let token = match env::var("OXID_REGISTRY_TOKEN") {
-        Ok(token) => {
-            check_token(&token)?;
-            Some(token)
-        }
-        Err(env::VarError::NotPresent) => None,
-        Err(env::VarError::NotUnicode(_)) => {
-            return Err("OXID_REGISTRY_TOKEN must contain a valid bearer token".into())
-        }
-    };
+    let token = variable.map(read_token).transpose()?;
     let mut body = Vec::new();
     budget.reserve(&mut body, CATALOG_LIMIT + 1)?;
     let mut command = Command::new("curl");
@@ -73,10 +81,12 @@ fn fetch(url: &str, budget: &mut Budget) -> Result<Vec<u8>, String> {
             url,
         ])
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env_remove("OXID_REGISTRY_TOKEN");
-    if token.is_some() {
-        command.args(["--header", "@-"]).stdin(Stdio::piped());
+        .stderr(Stdio::piped());
+    if let Some(variable) = variable {
+        command
+            .env_remove(variable)
+            .args(["--header", "@-"])
+            .stdin(Stdio::piped());
     } else {
         command.stdin(Stdio::null());
     }
@@ -128,7 +138,7 @@ fn fetch(url: &str, budget: &mut Budget) -> Result<Vec<u8>, String> {
         match &status {
             b"200" => Ok(body),
             b"401" | b"403" => {
-                Err("registry authorization failed; check OXID_REGISTRY_TOKEN".into())
+                Err("registry authorization failed; check your token and --token-env".into())
             }
             _ => Err(format!(
                 "registry catalog returned HTTP {}",
@@ -177,8 +187,9 @@ fn parse(body: &[u8], prefix: &str, budget: &mut Budget) -> Result<Vec<(String, 
 pub(super) fn search(
     url: &str,
     prefix: &str,
+    variable: Option<&str>,
     budget: &mut Budget,
 ) -> Result<Vec<(String, String)>, String> {
-    let body = fetch(url, budget)?;
+    let body = fetch(url, variable, budget)?;
     parse(&body, prefix, budget)
 }
