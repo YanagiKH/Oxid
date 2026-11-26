@@ -380,6 +380,12 @@ impl<'a, W: PlanWitness> ExecutionPlan<'a, W> {
     pub(super) fn has_file_delivery(&self) -> bool {
         self.witness.has_file_delivery()
     }
+    pub(super) fn has_regular_file_open(&self) -> bool {
+        use crate::frontend::builtin_catalog::experimental::Function;
+        self.witness
+            .experimental_function(Function::OpenRegularRead)
+            .is_some()
+    }
     pub(super) fn has_file_seek(&self) -> bool {
         self.witness
             .experimental_function(

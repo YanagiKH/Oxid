@@ -4763,6 +4763,10 @@ fn execute_plan_policy<V: StoredValue, W: PlanWitness>(
                     experimental::file_delivery_control_bytes()
                 } else {
                     0
+                } + if plan.has_regular_file_open() {
+                    byte_buffer::file_regular_control_bytes()
+                } else {
+                    0
                 } + if plan.has_file_seek() {
                     experimental::file_seek_control_bytes::<V>()
                 } else {
@@ -4992,6 +4996,10 @@ fn execute_plan_policy_with_process_delivery<V: StoredValue, W: PlanWitness>(
                     0
                 } + if plan.has_file_delivery() {
                     experimental::file_delivery_control_bytes()
+                } else {
+                    0
+                } + if plan.has_regular_file_open() {
+                    byte_buffer::file_regular_control_bytes()
                 } else {
                     0
                 } + if plan.has_file_seek() {

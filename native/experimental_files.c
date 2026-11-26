@@ -1,10 +1,10 @@
 /* Included after experimental_bytebuf.c: files use the same checked registry,
  * allocation charge and execution lifetime, with a distinct resource class. */
 #include <fcntl.h>
+#include <sys/stat.h>
 #if defined(_WIN32)
 #include <io.h>
 #include <stdio.h>
-#include <sys/stat.h>
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -82,6 +82,24 @@ static int overlaps(const void *left, size_t left_size, const void *right, size_
     uintptr_t a = (uintptr_t)left, b = (uintptr_t)right;
     return a <= b ? b - a < left_size : a - b < right_size;
 }
+/* Validate the opened descriptor so a concurrent path replacement cannot
+ * turn a successful regular-file open into a stream or device. */
+__attribute__((noinline))
+static int32_t regular_file_error(int fd) {
+#if defined(_WIN32)
+    HANDLE handle = (HANDLE)_get_osfhandle(fd);
+    FILE_STANDARD_INFO info;
+    if (GetFileType(handle) != FILE_TYPE_DISK ||
+        !GetFileInformationByHandleEx(handle, FileStandardInfo, &info, sizeof(info))) return EINVAL;
+    return info.Directory ? EISDIR : 0;
+#else
+    struct stat metadata;
+    if (fstat(fd, &metadata) != 0) return errno;
+    if (S_ISREG(metadata.st_mode)) return 0;
+    return S_ISDIR(metadata.st_mode) ? EISDIR : EINVAL;
+#endif
+}
+
 static int32_t open_file(oxid_byte_heap *heap, const uint8_t *bytes, int32_t length,
     int mode, oxid_file_open_result *result) {
     result->tag = 1;
@@ -136,12 +154,20 @@ static int32_t open_file(oxid_byte_heap *heap, const uint8_t *bytes, int32_t len
     int access = O_RDONLY;
     if (mode == 1) access = O_WRONLY | O_CREAT | O_TRUNC;
     if (mode == 6) access = O_WRONLY | O_CREAT | O_APPEND;
+    if (mode == 7) access |= O_NONBLOCK;
     int flags = O_CLOEXEC | O_NOCTTY | access;
     int fd = open(path, flags, 0600);
 #endif
     if (fd < 0) {
         int error = errno;
         unlink_node(heap, node); result->value.error = error; return 0;
+    }
+    if (mode == 7) {
+        int error = regular_file_error(fd);
+        if (error) {
+            (void)oxid_close_descriptor(fd);
+            unlink_node(heap, node); result->value.error = error; return 0;
+        }
     }
     /* The pending allocation and complete return were admitted before open. */
     node->initialized = (uint32_t)fd;
@@ -151,13 +177,13 @@ static int32_t open_file(oxid_byte_heap *heap, const uint8_t *bytes, int32_t len
 }
 
 /* Operation 0=open_read, 1=create, 2=read_some, 3=write_some, 4=sync_all,
- * 5=close, 6=open_append. All are private to the independently checked canonical emitter. */
+ * 5=close, 6=open_append, 7=open_regular_read. These are private to the emitter. */
 int32_t __oxid_file_delivery(int32_t operation, oxid_file *file, uint8_t *bytes,
     int32_t length, uint64_t *fuel, void *result, uint64_t return_cost) {
-    if (operation < 0 || operation > 6 || !fuel || !result) return OXID_BUFFER_DESCRIPTOR;
+    if (operation < 0 || operation > 7 || !fuel || !result) return OXID_BUFFER_DESCRIPTOR;
     if (length < 0) return OXID_BUFFER_BOUNDS;
     if (length && !bytes) return OXID_BUFFER_DESCRIPTOR;
-    int opening = operation < 2 || operation == 6;
+    int opening = operation < 2 || operation >= 6;
     size_t result_size = opening ? sizeof(oxid_file_open_result) : sizeof(oxid_binary_result);
     if (overlaps(bytes, (size_t)length, result, result_size) ||
         (!opening && (overlaps(file, sizeof(*file), result, result_size) ||

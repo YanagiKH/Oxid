@@ -46,6 +46,7 @@ impl FileDescriptor {
 #[derive(Clone, Copy)]
 pub(in crate::frontend::oir::owned) enum FileOpenMode {
     Read,
+    ReadRegular,
     Create,
     Append,
 }
@@ -154,6 +155,35 @@ pub(super) const fn seek_helper_control_bytes() -> usize {
             0
         }
     }
+}
+
+/// Additional roles used only by regular-file validation.
+#[allow(dead_code)]
+struct RegularFileCarriers {
+    descriptor: i32,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    metadata: std::mem::MaybeUninit<libc::stat>,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    file_mode: libc::mode_t,
+    #[cfg(target_os = "windows")]
+    os_handle: isize,
+    #[cfg(target_os = "windows")]
+    file_type: u32,
+    #[cfg(all(
+        target_os = "windows",
+        target_env = "msvc",
+        target_arch = "x86_64",
+        target_pointer_width = "64",
+        target_endian = "little"
+    ))]
+    file_info: std::mem::MaybeUninit<windows::FileStandardInfo>,
+    syscall_result: i32,
+    validation: std::result::Result<(), i32>,
+    errno_value: i32,
+}
+
+pub(in crate::frontend::oir::owned) const fn regular_file_control_bytes() -> usize {
+    size_of::<RegularFileCarriers>()
 }
 
 impl Heap {
@@ -356,6 +386,7 @@ impl Heap {
                 | libc::O_NOCTTY
                 | match mode {
                     FileOpenMode::Read => libc::O_RDONLY,
+                    FileOpenMode::ReadRegular => libc::O_RDONLY | libc::O_NONBLOCK,
                     FileOpenMode::Create => libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
                     FileOpenMode::Append => libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND,
                 };
@@ -394,7 +425,16 @@ impl Heap {
                     return Ok(OpenValue::Error(error));
                 }
             };
-            // No fallible operation remains between open and ownership commit.
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            if matches!(mode, FileOpenMode::ReadRegular) {
+                if let Err(error) = require_regular(fd) {
+                    // SAFETY: This descriptor has not entered the registry.
+                    let _ = unsafe { libc::close(fd) };
+                    self.unlink(node);
+                    return Ok(OpenValue::Error(error));
+                }
+            }
+            // No fallible operation remains after validation and before ownership commit.
             // SAFETY: This execution owns the live pending registry header.
             unsafe {
                 (*node.as_ptr()).initialized = fd as u32;
@@ -547,6 +587,22 @@ impl Heap {
         Ok(result)
     }
 }
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[inline(never)]
+fn require_regular(fd: i32) -> std::result::Result<(), i32> {
+    let mut metadata = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: fd is live and the kernel initializes metadata on success.
+    if unsafe { libc::fstat(fd, metadata.as_mut_ptr()) } < 0 {
+        return Err(errno());
+    }
+    let mode = unsafe { metadata.assume_init_ref() }.st_mode & libc::S_IFMT;
+    match mode {
+        libc::S_IFREG => Ok(()),
+        libc::S_IFDIR => Err(libc::EISDIR),
+        _ => Err(libc::EINVAL),
+    }
+}
+
 fn errno() -> i32 {
     std::io::Error::last_os_error().raw_os_error().unwrap_or(5)
 }

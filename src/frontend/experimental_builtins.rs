@@ -43,9 +43,10 @@ pub(in crate::frontend) enum Item {
     OpenAppend,
     WriteStderr,
     WaitForStdin,
+    OpenRegularRead,
 }
 impl Item {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 31] = [
         Self::ByteBuf,
         Self::GrowStatus,
         Self::ReadSomeStatus,
@@ -76,6 +77,7 @@ impl Item {
         Self::SeekAbsolute,
         Self::OpenAppend,
         Self::WriteStderr,
+        Self::OpenRegularRead,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -98,6 +100,7 @@ impl Item {
             Self::OpenResult => "OpenResult",
             Self::FileStatus => "FileStatus",
             Self::OpenRead => "open_read",
+            Self::OpenRegularRead => "open_regular_read",
             Self::Create => "create",
             Self::FileReadSome => "read_some",
             Self::FileWriteSome => "write_some",
@@ -126,6 +129,7 @@ impl Item {
             | Self::OpenResult
             | Self::FileStatus
             | Self::OpenRead
+            | Self::OpenRegularRead
             | Self::Create
             | Self::FileReadSome
             | Self::FileWriteSome
@@ -166,6 +170,7 @@ impl Item {
             Self::WriteSome => Function::WriteSome,
             Self::Take => Function::Take,
             Self::OpenRead => Function::OpenRead,
+            Self::OpenRegularRead => Function::OpenRegularRead,
             Self::Create => Function::Create,
             Self::FileReadSome => Function::FileReadSome,
             Self::FileWriteSome => Function::FileWriteSome,
@@ -287,6 +292,7 @@ pub(in crate::frontend) enum Function {
     OpenAppend,
     WriteStderr,
     WaitForStdin,
+    OpenRegularRead,
 }
 impl Function {
     pub const PROCESS_IO: [Self; 3] = [Self::ReadSome, Self::WriteSome, Self::WriteStderr];
@@ -321,7 +327,7 @@ impl Function {
     pub fn is_arguments(self) -> bool {
         self.item().family() == 4
     }
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::New,
         Self::Len,
         Self::Capacity,
@@ -344,6 +350,7 @@ impl Function {
         Self::SeekAbsolute,
         Self::OpenAppend,
         Self::WriteStderr,
+        Self::OpenRegularRead,
     ];
     pub fn item(self) -> Item {
         match self {
@@ -359,6 +366,7 @@ impl Function {
             Self::WriteSome => Item::WriteSome,
             Self::Take => Item::Take,
             Self::OpenRead => Item::OpenRead,
+            Self::OpenRegularRead => Item::OpenRegularRead,
             Self::Create => Item::Create,
             Self::FileReadSome => Item::FileReadSome,
             Self::FileWriteSome => Item::FileWriteSome,
@@ -383,7 +391,9 @@ impl Function {
             Self::Reserve | Self::Push | Self::Extend | Self::Resize => Some(Enumeration::Grow),
             Self::ReadSome | Self::FileReadSome => Some(Enumeration::Read),
             Self::WriteSome | Self::WriteStderr | Self::FileWriteSome => Some(Enumeration::Write),
-            Self::OpenRead | Self::Create | Self::OpenAppend => Some(Enumeration::Open),
+            Self::OpenRead | Self::OpenRegularRead | Self::Create | Self::OpenAppend => {
+                Some(Enumeration::Open)
+            }
             Self::SyncAll | Self::Close | Self::SeekAbsolute => Some(Enumeration::File),
             Self::ArgBytes => Some(Enumeration::Arguments),
             _ => None,
@@ -421,7 +431,7 @@ impl Function {
             Extend => ([exclusive, bytes(BorrowKind::Shared), unit], 2),
             Resize => ([exclusive, scalar(Ty::I32), scalar(Ty::U8)], 3),
             ReadSome => ([bytes(BorrowKind::Exclusive), unit, unit], 1),
-            WriteSome | WriteStderr | OpenRead | Create | OpenAppend => {
+            WriteSome | WriteStderr | OpenRead | OpenRegularRead | Create | OpenAppend => {
                 ([bytes(BorrowKind::Shared), unit, unit], 1)
             }
             FileReadSome => ([file, bytes(BorrowKind::Exclusive), unit], 2),
@@ -492,11 +502,13 @@ const PROCESS_ITEM_START: usize = 40;
 const FILE_APPEND_ITEM_BIT: usize = 46;
 const STDERR_ITEM_BIT: usize = 47;
 const STDIN_WAIT_ITEM_BIT: usize = 48;
+const FILE_REGULAR_READ_ITEM_BIT: usize = 49;
 impl Item {
     const fn inventory_bit(self) -> usize {
         match self {
             Self::SeekAbsolute => SEEK_ITEM_BIT,
             Self::OpenAppend => FILE_APPEND_ITEM_BIT,
+            Self::OpenRegularRead => FILE_REGULAR_READ_ITEM_BIT,
             Self::WriteStderr => STDERR_ITEM_BIT,
             Self::EnableTermination => PROCESS_ITEM_START,
             Self::TerminationRequested => PROCESS_ITEM_START + 1,
@@ -586,7 +598,8 @@ impl Inventory {
             assert!(
                 FILE_APPEND_ITEM_BIT < STDERR_ITEM_BIT && STDERR_ITEM_BIT < STDIN_WAIT_ITEM_BIT
             );
-            assert!(STDIN_WAIT_ITEM_BIT < 60);
+            assert!(STDIN_WAIT_ITEM_BIT < FILE_REGULAR_READ_ITEM_BIT);
+            assert!(FILE_REGULAR_READ_ITEM_BIT < 60);
         }
         debug_assert!(legacy < 9);
         ((self.bits() << 4) | u64::from(legacy)).to_le_bytes()
@@ -957,7 +970,7 @@ mod tests {
         let all = Item::ALL
             .into_iter()
             .fold(Inventory::default(), Inventory::admit);
-        assert_eq!((all.enums(), all.functions()), (6, 22));
+        assert_eq!((all.enums(), all.functions()), (6, 23));
         for (index, item) in Function::ALL.into_iter().enumerate() {
             assert_eq!(all.function_rank(item), Some(index));
         }
