@@ -100,7 +100,7 @@ impl OwnedRunFailure {
             Self::TerminationHost(span, operation) => Diagnostic::new(
                 "E0608",
                 "oir-owned-run",
-                operation.host_requirement(),
+                process::termination_host_requirement(*operation),
                 Some(*span).filter(|span| sources.is_valid_span(*span)),
             ),
             Self::BinaryEntry(span) => Diagnostic::new(
@@ -4551,7 +4551,7 @@ fn checked_entry_policy<W: PlanWitness>(
                 if policy != EntryPolicy::Process {
                     return Err(OwnedRunFailure::TerminationEntry(span));
                 }
-                if !operation.supported_host() {
+                if !process::termination_supported(operation) {
                     return Err(OwnedRunFailure::TerminationHost(span, operation));
                 }
             }

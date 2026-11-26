@@ -706,8 +706,11 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
                         None,
                     ));
                 }
-                if !operation.supported_host() {
-                    return Err(reject(operation.host_requirement(), None));
+                if !super::process::termination_supported(operation) {
+                    return Err(reject(
+                        super::process::termination_host_requirement(operation),
+                        None,
+                    ));
                 }
             }
         }
