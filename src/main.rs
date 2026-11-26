@@ -3179,6 +3179,7 @@ fn help() {
     println!("  oxid build --debug-info           Include source line information for debuggers");
     println!("  oxid build --incremental          Reuse matching native objects");
     println!("  oxid fmt <file.ox>                Print formatted source");
+    println!("  oxid fmt --check [--workspace]   Check project formatting");
     println!("  oxid lsp --stdio                 Start editor diagnostics and formatting");
     println!("  oxid doctor --native              Check native build tools");
     println!("  oxid check --workspace            Check all workspace members");
