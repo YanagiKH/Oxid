@@ -228,6 +228,12 @@ TYPED_MANIFEST_PROJECTS = {
         'apps/streaming-training/tests/seek.ox',
         'apps/streaming-training/reader/src/lib.ox',
     ),
+    "apps/file-worker": (
+        "apps/file-worker/src/main.ox",
+        "apps/file-worker/src/jobs.ox",
+        "apps/file-worker/src/report.ox",
+        "apps/file-worker/src/records_test.ox",
+    ),
     "packages/owned_vec": ("packages/owned_vec/src/lib.ox",),
     "packages/file_io": ("packages/file_io/src/lib.ox",),
     "examples/owned-vector-results": ("examples/owned-vector-results/src/main.ox",),
@@ -291,6 +297,8 @@ TYPED_CHECK_ONLY_MANIFEST_PROJECTS = (
     "apps/cpu-training",
     "apps/minibatch-training",
     "apps/streaming-training",
+    # The dedicated verifier feeds jobs, exercises retries and sends signals.
+    "apps/file-worker",
     "packages/owned_vec",
     "packages/file_io",
     "packages/core_types",

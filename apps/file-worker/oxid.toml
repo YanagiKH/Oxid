@@ -1,0 +1,16 @@
+[project]
+name = "file-worker"
+version = "0.1.0"
+edition = "typed-preview"
+entry = "src/main.ox"
+
+[build]
+profile = "release"
+entry-mode = "process"
+reproducible = true
+
+[execution]
+policy = "hosted"
+
+[tests]
+records = "src/records_test.ox"

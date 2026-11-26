@@ -51,7 +51,7 @@ class ManifestApplications(unittest.TestCase):
                     "examples/projects/owned_enum_payload_acceptance/values",
                     "examples/projects/owned_enum_payload_acceptance/library", "examples/typed-unicode-range",
                     "packages/float_vector", "examples/typed-float-vector", "examples/typed-vectors", "packages/matrix", "examples/typed-matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training",
-                    "packages/owned_vec", "packages/file_io", "examples/owned-vector-results", "compiler/native",
+                    "apps/file-worker", "packages/owned_vec", "packages/file_io", "examples/owned-vector-results", "compiler/native",
                     "packages/core_types", "examples/typed-option-result", "packages/int_map", "examples/typed-int-map",
                     "packages/json", "examples/typed-json", "packages/logging", "examples/typed-logging",
                     "packages/random", "examples/typed-random", "packages/utf8_stream", "examples/typed-utf8-stream")
@@ -184,7 +184,7 @@ class GenericOwnedVectorApplications(unittest.TestCase):
     def test_both_exact_projects_keep_their_own_members_and_real_dependency(self):
         self.assertEqual({name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
                           if name in self.PROJECTS}, self.PROJECTS)
-        added_projects = {"compiler/native", "packages/file_io", "packages/core_types", "examples/typed-option-result",
+        added_projects = {"compiler/native", "apps/file-worker", "packages/file_io", "packages/core_types", "examples/typed-option-result",
                           "packages/int_map", "examples/typed-int-map", "packages/json", "examples/typed-json",
                           "packages/random", "examples/typed-random", "packages/utf8_stream", "examples/typed-utf8-stream",
                           "packages/logging", "examples/typed-logging"}

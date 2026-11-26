@@ -156,6 +156,11 @@ CPU_PROJECTS = {
     )),
 }
 
+FILE_WORKER = "apps/file-worker"
+FILE_WORKER_MEMBERS = tuple(f"{FILE_WORKER}/src/{name}.ox"
+                            for name in ("main", "jobs", "report", "records_test"))
+
+
 CPU_MEMBERS = {member for members in CPU_PROJECTS.values() for member in members}
 
 WIDE_FILES = tuple("fixtures/typed-parser-wide-span/" + name + ".ox" for name in (
@@ -454,7 +459,7 @@ LIBRARY_PROJECTS = {
 
 
 def compiler_and_library_predecessor_report(text):
-    """Project the verified compiler and library example additions."""
+    """Project the verified compiler, file worker and library additions."""
     data = list(re.finditer(r"^fixture-data validation passed: (?P<data>\d+) source-only files", text, re.M))
     report = list(re.finditer(
         r"^repository verification passed: (?P<language>\d+) language sources, "
@@ -468,7 +473,8 @@ def compiler_and_library_predecessor_report(text):
     if len(data) != 1 or len(report) != 1:
         raise AssertionError("expected one complete repository summary and DATA summary")
     changes = ((data[0], {"data": 11}),
-               (report[0], {"language": 23, "checks": 12, "members": 23, "projects": 12,
+               (report[0], {"language": 23 + len(FILE_WORKER_MEMBERS), "checks": 13,
+                            "members": 23 + len(FILE_WORKER_MEMBERS), "projects": 13,
                             "runs": 5, "entries": 5, "project_runs": 5, "project_tests": 5}))
     edits = []
     for match, deltas in changes:
@@ -522,6 +528,18 @@ class PublishedRegistrationTests(unittest.TestCase):
                          [(root / "compiler/native", True)])
         self.assertNotIn(root / "compiler/native", typed_entries)
         self.assertFalse(any(path in compiler_data | compiler_members for path, _ in checks))
+        worker_root = root / FILE_WORKER
+        worker_members = {root / name for name in FILE_WORKER_MEMBERS}
+        self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS[FILE_WORKER], FILE_WORKER_MEMBERS)
+        self.assertEqual(verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS.count(FILE_WORKER), 1)
+        self.assertTrue(worker_members <= set(sources))
+        self.assertEqual([row for row in checks if row[0] == worker_root], [(worker_root, True)])
+        self.assertNotIn(worker_root, typed_entries)
+        self.assertFalse(any(path in worker_members for path, _ in checks))
+        self.assertFalse(worker_members & verify_repo.fixture_data_sources(root))
+        sources = [path for path in sources if path not in worker_members]
+        checks = [row for row in checks if row[0] != worker_root]
+        typed_members -= len(worker_members)
         file_io_root = root / FILE_IO_PROJECT
         file_io_member = root / FILE_IO_MEMBER
         self.assertEqual(verify_repo.TYPED_MANIFEST_PROJECTS[FILE_IO_PROJECT], (FILE_IO_MEMBER,))
@@ -583,7 +601,7 @@ class PublishedRegistrationTests(unittest.TestCase):
         self.assertEqual(len(verify_repo.fixture_data_sources(root) - compiler_data), 569)
         self.assertEqual(len(verify_repo.TYPED_MANIFEST_PROJECTS.keys() - GENERIC_OWNED_VECTOR_PROJECTS.keys()
                              - CORE_TYPE_PROJECTS.keys() - LIBRARY_PROJECTS.keys()
-                             - {"compiler/native", FILE_IO_PROJECT}), 22)
+                             - {"compiler/native", FILE_IO_PROJECT, FILE_WORKER}), 22)
         self.assertEqual(len(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS), 15)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-option-result"), 1)
         self.assertEqual(verify_repo.TYPED_TESTED_MANIFEST_PROJECTS.count("examples/typed-int-map"), 1)
@@ -671,7 +689,7 @@ class PublishedRegistrationTests(unittest.TestCase):
             name: members for name, members in verify_repo.TYPED_MANIFEST_PROJECTS.items()
             if name not in OWNED_RECORD_VECTOR_PROJECTS and name not in OWNED_TEXT_PROJECTS
             and name not in GENERIC_OWNED_VECTOR_PROJECTS and name not in CORE_TYPE_PROJECTS
-            and name not in LIBRARY_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT}}
+            and name not in LIBRARY_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT, FILE_WORKER}}
         language = [name for name in language if name not in OWNED_RECORD_VECTOR_MEMBERS]
         check_inventory = [row for row in check_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
         run_inventory = [row for row in run_inventory if row[0] not in OWNED_RECORD_VECTOR_PROJECTS]
@@ -750,7 +768,7 @@ class PublishedRegistrationTests(unittest.TestCase):
                          {application: application_members, **ENUM_PROJECTS, **BUFFER_PROJECTS, **TEXT_PROJECTS, **UNICODE_PROJECTS, **VECTOR_PROJECTS, **MATRIX_PROJECTS, **CPU_PROJECTS, **GROWABLE_VECTOR_PROJECTS})
         self.assertEqual(tuple(name for name in verify_repo.TYPED_CHECK_ONLY_MANIFEST_PROJECTS
                                if name not in GENERIC_OWNED_VECTOR_PROJECTS and name not in CORE_TYPE_PROJECTS
-                               and name not in LIBRARY_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT}),
+                               and name not in LIBRARY_PROJECTS and name not in {"compiler/native", FILE_IO_PROJECT, FILE_WORKER}),
                          (ENUM_LIBRARY, "apps/byte-reverse", "packages/utf8_text", "apps/utf8-normalize", "examples/typed-unicode-range", "packages/float_vector", "packages/matrix", "apps/cpu-training", "apps/minibatch-training", "apps/streaming-training"))
         self.assertEqual(len(CPU_MEMBERS), 35)
         self.assertEqual(sorted(name for name in language if name in CPU_MEMBERS), sorted(CPU_MEMBERS))
@@ -1047,9 +1065,15 @@ class PublishedRegistrationTests(unittest.TestCase):
             self.assertEqual([call.args[0] for call in calls],
                              [[str(Path(sys.executable).resolve()), command] for command in expected])
             self.assertTrue(all(call.kwargs.get("input_text") == "" for call in calls[1:]))
+        worker_root = verify_repo.ROOT / FILE_WORKER
+        worker_calls = [call for call in run.call_args_list if call.kwargs.get("cwd") == worker_root]
+        self.assertEqual([call.args[0] for call in worker_calls],
+                         [[str(Path(sys.executable).resolve()), "check"]])
+        self.assertFalse(any(str(verify_repo.ROOT / name) in call.args[0]
+                             for name in FILE_WORKER_MEMBERS for call in run.call_args_list))
         library_roots = {verify_repo.ROOT / name for name in CORE_TYPE_PROJECTS | LIBRARY_PROJECTS}
         before_compiler_calls = [call for call in run.call_args_list
-                                 if call.kwargs.get("cwd") not in {compiler_root, file_io_root} | library_roots]
+                                 if call.kwargs.get("cwd") not in {compiler_root, file_io_root, worker_root} | library_roots]
         owned_text_data = verify_repo.owned_text_fixture_data_sources(verify_repo.ROOT)
         self.assertEqual(owned_text_data, {verify_repo.ROOT / name for name in OWNED_TEXT_DATA_SOURCES})
         self.assertFalse(any(str(path) in call.args[0] for path in owned_text_data for call in run.call_args_list))
