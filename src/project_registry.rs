@@ -1,6 +1,7 @@
 //! Explicit, immutable private library releases. Registry work stays outside
 //! compiler carriers; ordinary path/Git projects do not allocate this session.
 mod resources;
+mod search_catalog;
 #[cfg(test)]
 mod tests;
 
@@ -1783,10 +1784,24 @@ fn search(args: &[String]) -> Result<String, String> {
             name(prefix)?;
             (source, prefix.as_str())
         }
-        _ => return Err("use oxid registry search FILE_URI [PREFIX]".into()),
+        _ => return Err("use oxid registry search FILE_URI_OR_HTTPS_CATALOG [PREFIX]".into()),
     };
     let mut budget = Budget::new()?;
-    let packages = registry_packages_path(source, &mut budget)?;
+    let results = if source.starts_with("https://") {
+        search_catalog::search(source, prefix, &mut budget)?
+    } else {
+        qualified()?;
+        search_file(source, prefix, &mut budget)?
+    };
+    render_search(results, false, &mut budget)
+}
+
+fn search_file(
+    source: &str,
+    prefix: &str,
+    budget: &mut Budget,
+) -> Result<Vec<(String, String)>, String> {
+    let packages = registry_packages_path(source, budget)?;
     ordinary(&packages, false)?;
     let entries = fs::read_dir(packages)
         .map_err(|error| format!("cannot inspect registry packages: {error}"))?;
@@ -1805,21 +1820,31 @@ fn search(args: &[String]) -> Result<String, String> {
             continue;
         }
         let path = budget.scoped(8192, || Ok(entry.path()), |path| Ok(path.capacity()))?;
-        if let Some(version) = newest_release(&path, |_| true, &mut remaining, &mut budget)? {
-            check_release_record(&path, package_name, &version, &mut budget)?;
+        if let Some(version) = newest_release(&path, |_| true, &mut remaining, budget)? {
+            check_release_record(&path, package_name, &version, budget)?;
             budget.reserve(&mut results, 1)?;
             results.push((budget.text(package_name)?, version));
         }
     }
-    if results.is_empty() {
+    results.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    Ok(results)
+}
+
+fn render_search(
+    results: Vec<(String, String)>,
+    catalog: bool,
+    budget: &mut Budget,
+) -> Result<String, String> {
+    if results.is_empty() && !catalog {
         return budget.text("No packages match.\n");
     }
-    results.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-    let length = results
+    let length: usize = results
         .iter()
         .map(|(package, version)| package.len() + version.len() + 2)
         .sum();
-    let mut message = budget.string(length)?;
+    let header = if catalog { search_catalog::HEADER } else { "" };
+    let mut message = budget.string(header.len() + length)?;
+    message.push_str(header);
     use std::fmt::Write as _;
     for (package, version) in results {
         writeln!(message, "{package} {version}")
@@ -1907,16 +1932,26 @@ pub(crate) fn dispatch(args: &[String]) -> Option<i32> {
 }
 
 fn command(args: &[String]) -> Result<String, String> {
+    if matches!(args, [command, operation, ..] if command == "registry" && operation == "search") {
+        return search(args);
+    }
     qualified()?;
     if args.first().is_some_and(|word| word == "registry") {
         match args.get(1).map(String::as_str) {
-            Some("search") => return search(args),
+            Some("catalog") => {
+                let [_, _, source] = args else {
+                    return Err("use oxid registry catalog FILE_URI".into());
+                };
+                let mut budget = Budget::new()?;
+                let results = search_file(source, "", &mut budget)?;
+                return render_search(results, true, &mut budget);
+            }
             Some("yank") => return change_yank_status(args, true),
             Some("unyank") => return change_yank_status(args, false),
             _ => {}
         }
         if args.len() != 3 || args[1] != "init" || args[2].starts_with('-') {
-            return Err("use oxid registry init NEW_DIRECTORY, search FILE_URI [PREFIX], or yank/unyank FILE_URI PACKAGE VERSION".into());
+            return Err("use oxid registry init NEW_DIRECTORY, search FILE_URI_OR_HTTPS_CATALOG [PREFIX], catalog FILE_URI, or yank/unyank FILE_URI PACKAGE VERSION".into());
         }
         let mut budget = Budget::new()?;
         if args[2].len() > 8192 {
