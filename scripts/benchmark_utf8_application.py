@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import random
 import shutil
 import statistics
 import subprocess
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = Path("apps/utf8-normalize")
 LIBRARY = Path("packages/utf8_text")
 MINIMUM_BYTES = 32 * 1024 * 1024
+BOOTSTRAP_DRAWS = 2000
 WORKLOADS = {
     "ascii-log": b"2026-11-25T17:30:00Z INFO worker completed task 42 in 7 ms\n",
     "mixed-newlines": b"A" * 4095 + "\r\n🦀\0雪\r".encode(),
@@ -116,13 +118,37 @@ def compare(work: Path, commands: dict, runs: int) -> dict:
     return reports
 
 
+def record_confidence_intervals(report: dict) -> None:
+    """Resample paired Oxid and Rust measurements from each benchmark round."""
+    generator = random.Random(0)
+    draws_by_workload = []
+
+    def interval(samples):
+        cuts = statistics.quantiles(samples, n=40, method="inclusive")
+        return [cuts[0], cuts[-1]]
+
+    for workload in report["workloads"].values():
+        samples = workload["times_ns"]
+        pairs = list(zip(samples["oxid"], samples["rust"], strict=True))
+        draws = []
+        for _ in range(BOOTSTRAP_DRAWS):
+            oxid, rust = zip(*generator.choices(pairs, k=len(pairs)))
+            draws.append(statistics.median(oxid) / statistics.median(rust))
+        workload["oxid_over_rust_ci95"] = interval(draws)
+        draws_by_workload.append(draws)
+    report["geometric_mean_ratio_ci95"] = interval([
+        statistics.geometric_mean(draw) for draw in zip(*draws_by_workload, strict=True)
+    ])
+    report["bootstrap_draws"] = BOOTSTRAP_DRAWS
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--oxid", type=Path, required=True)
     parser.add_argument("--rustc", type=Path, default=Path(shutil.which("rustc") or "rustc"))
     parser.add_argument("--llvm-bin", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--runs", type=int, default=9)
+    parser.add_argument("--runs", type=int, default=30)
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be positive")
@@ -136,12 +162,17 @@ def main() -> int:
             report["workloads"] = compare(work, commands, args.runs)
             report["geometric_mean_ratio"] = statistics.geometric_mean(
                 workload["oxid_over_rust"] for workload in report["workloads"].values())
+            record_confidence_intervals(report)
+            if hasattr(os, "sched_getaffinity"):
+                report["cpu_affinity"] = sorted(os.sched_getaffinity(0))
         with args.output.open("x", encoding="utf-8") as stream:
             json.dump(report, stream, indent=2)
             stream.write("\n")
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"UTF-8 benchmark failed: {error}\n")
-    print(f"Oxid/Rust median ratio across workloads {report['geometric_mean_ratio']:.3f}")
+    lower, upper = report["geometric_mean_ratio_ci95"]
+    print(f"Oxid/Rust median ratio across workloads {report['geometric_mean_ratio']:.3f} "
+          f"(95% confidence interval {lower:.3f} to {upper:.3f})")
     return 0
 
 
