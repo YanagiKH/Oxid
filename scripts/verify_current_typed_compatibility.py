@@ -25,7 +25,8 @@ PUBLIC_TESTS = {
     "tests/windows_file_io.rs", "tests/windows_file_runtime.c",
 }
 PUBLIC_TEST_UPDATES = {"tests/typed_frontend.rs", "tests/typed_language_server.rs",
-                       "tests/typed_documentation.rs"}
+                       "tests/typed_documentation.rs", "tests/typed_path_dependencies.rs",
+                       "tests/typed_workspace.rs"}
 PUBLIC_VECTOR_UPDATES = {
     "examples/owned-vector-results/src/main.ox",
     "packages/owned_vec/src/lib.ox",
