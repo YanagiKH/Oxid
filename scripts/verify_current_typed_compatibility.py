@@ -15,9 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "8ca0bcaa49a02aa203142eb1018da25ace12c15b"
-REVIEWED_PARENTS = ("2cccd918be669d5d7aa01e22aef8c0c559a16dea",)
-REVIEWED_TREE = "808d69393b5c61a2fd55ba6d3484268a4ba9a41c"
+REVIEWED_SOURCE = "a54892ebfb70fdd7db1d0a073db46e81481fbfbd"
+REVIEWED_PARENTS = ("8ca0bcaa49a02aa203142eb1018da25ace12c15b",)
+REVIEWED_TREE = "a2d2dcef9260dc0f01d6062a07551028dd0a79bc"
 PUBLIC_TESTS = {
     "tests/file_open_append.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
