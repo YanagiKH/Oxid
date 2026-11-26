@@ -893,6 +893,7 @@ fn native_module_policy_accounted_with_selection<W: PlanWitness, R: EmittedFunct
     ))]
     let windows_resources = plan.has_file_delivery()
         || plan.has_binary_delivery()
+        || plan.has_environment_read()
         || plan.has_program_arguments()
         || plan.has_clock()
         || plan.has_unix_clock()
