@@ -178,7 +178,8 @@ fn function_owned_vector_values_reject_duplicate_moves_loans_and_unsupported_pos
         "fn bad<T>(v:Vec<T>)->T{return v[0];}",
         "fn bad<T>(v:Vec<T>)->(){let alias=&v;let moved=v;return;}",
         "fn bad<T>(v:Vec<T>)->Vec<Vec<T>>{return v;}",
-        "struct Holder<T>{values:Vec<T>}fn bad<T>(v:Vec<T>)->(){return;}",
+        "struct Holder<T>{values:Vec<Vec<T>>}fn bad<T>(v:Vec<T>)->(){return;}",
+        "struct Holder<T>{values:Vec<T>}fn bad<T>(h:Holder<T>)->Holder<T>{let moved=h;return h;}",
         "enum Holder<T>{Values(Vec<T>)}fn bad<T>(v:Vec<T>)->(){return;}",
         "fn bad<T,U>(v:Vec<T>)->Vec<T>{return new::<U>();}",
     ] {
@@ -202,6 +203,27 @@ fn function_owned_vector_values_reject_duplicate_moves_loans_and_unsupported_pos
             "{declaration}: {errors:?}"
         );
     }
+}
+
+#[test]
+fn abstract_owned_vector_record_fields_have_no_concrete_layout() {
+    let source = format!("{IMPORTS}struct Holder<T>{{values:Vec<T>}}fn wrap<T>(values:Vec<T>)->Holder<T>{{return Holder::<T>{{values:values}};}}fn main()->i32{{return 0;}}");
+    let fixture = Fixture::new(&source);
+    let project = fixture.project();
+    let index = candidate(
+        &project,
+        MAX_STORAGE,
+        &WorkMeter::default(),
+        &mut Allocator::default(),
+    )
+    .unwrap();
+    assert!(index.owned_vector_source_needed());
+    assert!(index.owned_vector_functions().is_empty());
+    assert!(index.vector_functions().is_empty());
+    assert_eq!(index.source_function_count(), 1);
+    index
+        .validate_owned_vector_candidate(&WorkMeter::default(), &mut Allocator::default())
+        .unwrap();
 }
 
 #[test]
