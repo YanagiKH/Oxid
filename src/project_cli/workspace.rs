@@ -622,6 +622,7 @@ impl Workspace {
                 true,
             ));
         }
+        let mut timings = BuildTimings::start(options);
         let mut registry_budget = self.registry_budget.clone();
         let existing = project_lock::read_with_registry(
             &self.root,
@@ -642,6 +643,9 @@ impl Workspace {
             options.update,
             registry_budget,
         )?;
+        if let Some(timings) = &mut timings {
+            timings.record("Resolve dependencies");
+        }
         let mut prepared = Vec::new();
         let mut files = 0usize;
         let mut bytes = 0usize;
@@ -814,6 +818,9 @@ impl Workspace {
                 execution_policy(&self.members[selected[0]].snapshot.manifest)?,
             ));
         }
+        if let Some(timings) = &mut timings {
+            timings.record("Prepare sources and verify lock");
+        }
         let mut failed = 0;
         for (selection, &index) in selected.iter().enumerate() {
             let slot = scope
@@ -864,6 +871,12 @@ impl Workspace {
                 "ok"
             };
             output(options, &format!("{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"workspace-member\",\"member\":{},\"status\":{}}}", json_string(&member.path), json_string(state)), &format!("{}: {state}", member.path))?;
+        }
+        if failed == 0 {
+            if let Some(mut timings) = timings {
+                timings.record("Build selected members");
+                timings.report(options)?;
+            }
         }
         summary(options, selected.len(), failed)?;
         Ok(i32::from(failed != 0))
