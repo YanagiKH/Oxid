@@ -19,14 +19,13 @@ REVIEWED_SOURCE = "e10a0aa33dc86d68a116b30076e7f09c829d327d"
 REVIEWED_PARENTS = ("c6184a49b923ba4e71444cf72b94686353707355",)
 REVIEWED_TREE = "177f6749c2b3a438422580e4f5a2ddb6edcad1bf"
 PUBLIC_TESTS = {
-    "tests/file_open_append.rs", "tests/typed_environment.rs",
+    "tests/file_open_append.rs", "tests/typed_environment.rs", "tests/typed_test_filter.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
     "tests/typed_owned_record_element_loans.rs", "tests/typed_registry_ranges.rs",
     "tests/windows_file_io.rs", "tests/windows_file_runtime.c",
 }
 PUBLIC_TEST_UPDATES = {"tests/typed_frontend.rs", "tests/typed_language_server.rs",
-                       "tests/typed_documentation.rs", "tests/typed_path_dependencies.rs",
-                       "tests/typed_workspace.rs"}
+                       "tests/typed_documentation.rs"}
 PUBLIC_VECTOR_UPDATES = {
     "examples/owned-vector-results/src/main.ox",
     "packages/owned_vec/src/lib.ox",

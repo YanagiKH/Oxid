@@ -868,41 +868,6 @@ fn tests_preflight_all_declared_entries_and_report_nonzero_status_with_clean_std
     workspace.no_outputs();
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-#[test]
-fn qualified_test_filter_skips_other_members_and_keeps_the_workspace_lock() {
-    let workspace = Workspace::new();
-    success(workspace.run("", &["lock"]));
-    let path = workspace.root.join("oxid.lock");
-    let lock = fs::read(&path).unwrap();
-    workspace.write("apps/one/tests/smoke.ox", "fn incomplete(");
-    let output = success(workspace.run(
-        "",
-        &[
-            "test",
-            "--workspace",
-            "--filter=apps/two::smoke",
-            "--frozen",
-            "--message-format=json",
-        ],
-    ));
-    let text = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        text.contains("\"member\":\"apps/two\"") && text.contains("\"total\":1"),
-        "{text}"
-    );
-    assert_eq!(
-        text.matches("\"kind\":\"test-result\"").count(),
-        1,
-        "{text}"
-    );
-    assert_eq!(fs::read(path).unwrap(), lock);
-    failure(
-        workspace.run("", &["test", "-p", "one", "--filter=apps/two::smoke"]),
-        "no declared test matches",
-    );
-}
-
 #[cfg(unix)]
 #[test]
 fn symbolic_members_manifests_and_shared_locks_cannot_redirect_workspace_effects() {

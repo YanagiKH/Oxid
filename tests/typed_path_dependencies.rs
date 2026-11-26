@@ -218,62 +218,6 @@ fn declared_tests_retain_the_dependency_graph_and_report_nonzero_results() {
 }
 
 #[test]
-fn test_filter_selects_declared_tests_and_keeps_locked_dependencies() {
-    if !PROCESS_HOST {
-        return;
-    }
-    let packages = Packages::new();
-    packages.app(
-        "math=\"../math\"\n[tests]\nsmoke=\"tests/smoke.ox\"\nother=\"tests/other.ox\"\n",
-        "fn main()->i32{return 0;}\n",
-    );
-    packages.package("math", "math", "", "pub fn answer()->i32{return 42;}\n");
-    packages.write(
-        "app/tests/smoke.ox",
-        "use crate::math::answer;fn main()->i32{if answer()==42{return 0;}else{return 1;}}\n",
-    );
-    packages.write("app/tests/other.ox", "fn incomplete(");
-    success(packages.run(&["lock"]));
-    let output = success(packages.run(&[
-        "test",
-        "--filter",
-        "mok",
-        "--jobs=2",
-        "--frozen",
-        "--message-format=json",
-    ]));
-    let text = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        text.contains("\"name\":\"smoke\"") && text.contains("\"passed\":1"),
-        "{text}"
-    );
-    assert_eq!(
-        text.matches("\"kind\":\"test-result\"").count(),
-        1,
-        "{text}"
-    );
-    failure(
-        packages.run(&["test", "--filter=absent"]),
-        "no declared test matches",
-    );
-    for args in [
-        &["test", "--filter"][..],
-        &["test", "--filter="],
-        &["test", "--filter=smoke", "--filter=other"],
-    ] {
-        failure(
-            packages.run(args),
-            "--filter requires one nonempty test name",
-        );
-    }
-    packages.package("math", "math", "", "pub fn answer()->i32{return 99;}\n");
-    failure(
-        packages.run(&["test", "--filter=smoke", "--frozen"]),
-        "lock is out of date",
-    );
-}
-
-#[test]
 fn invalid_dependency_graphs_fail_before_running_or_creating_outputs() {
     for (extra, expected) in [
         ("", "edition"),
