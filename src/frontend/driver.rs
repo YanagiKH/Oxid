@@ -9,7 +9,10 @@ use super::{
     source::SourceMap,
 };
 use sha2::{Digest, Sha256};
-use std::path::Path;
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 pub(crate) enum PackageCommand<'a> {
     Check,
@@ -718,6 +721,33 @@ impl PreparedPackageProject<'_> {
                         .and_then(Path::to_str)
                         .ok_or("retained source must remain inside its package root")?;
                     visit(0, path, source.text().as_bytes())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn check_formatting(
+        &self,
+        root: &Path,
+        checked: &mut BTreeSet<PathBuf>,
+        changed: &mut BTreeSet<PathBuf>,
+    ) -> Result<(), String> {
+        let project = self.project();
+        for module in project.modules() {
+            let source = project.sources().get(module.file);
+            let path = module
+                .canonical_path
+                .as_deref()
+                .unwrap_or_else(|| Path::new(source.path()));
+            if !path.starts_with(root) {
+                return Err("formatting sources must remain inside their package".into());
+            }
+            if checked.insert(path.to_path_buf()) {
+                let formatted = super::format::format_source(source)
+                    .map_err(|errors| preparation_message(project.sources(), &errors))?;
+                if formatted != source.text() {
+                    changed.insert(path.to_path_buf());
                 }
             }
         }

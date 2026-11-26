@@ -14,7 +14,7 @@ pub(crate) use package::package_source_plan;
 pub(crate) use registry::control_bytes as registry_control_bytes;
 pub(crate) use registry::{registry_recheck_release, registry_release_plan};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fs,
     io::{self, Write},
     num::NonZeroUsize,
@@ -326,8 +326,12 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
     }
     let operands = operands(&options.words);
     let explicit = options.edition.is_some();
+    let format_project = command == "fmt"
+        && operands.is_empty()
+        && options.words.iter().any(|word| word == "--check");
     let project_operation = matches!(command, "lock" | "build" | "test" | "doc" | "new" | "init")
-        || (matches!(command, "check" | "run") && operands.is_empty());
+        || (matches!(command, "check" | "run") && operands.is_empty())
+        || format_project;
     if explicit && !project_operation {
         return None;
     }
@@ -481,6 +485,11 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         "build" => build(root, &snapshot, &options, process),
         "test" => test(root, &snapshot, &options),
         "doc" => documentation::command(root, &snapshot, &options),
+        "fmt" if format_project => validate_project_format(&options).and_then(|()| {
+            let root = fs::canonicalize(root)
+                .map_err(|error| format!("cannot locate project: {error}"))?;
+            report_formatting(&root, check_project_format(&root, manifest)?)
+        }),
         "check" | "run" if operands.is_empty() => {
             if options
                 .words
@@ -628,6 +637,48 @@ fn entry_path(root: &Path, manifest: &runtime::ProjectManifest) -> Result<PathBu
         }
     }
     Err("project entry not found; set [project] entry or create src/main.ox".into())
+}
+
+fn validate_project_format(options: &Options) -> Result<(), String> {
+    if options.words != ["fmt", "--check"] || options.entry_mode.is_some() || options.json() {
+        return Err("use oxid fmt --check for a project, or specify one file to format".into());
+    }
+    Ok(())
+}
+
+fn check_project_format(
+    root: &Path,
+    manifest: &runtime::ProjectManifest,
+) -> Result<BTreeSet<PathBuf>, String> {
+    let package = [frontend::PackageSpec {
+        root: root.to_path_buf(),
+        entry: entry_path(root, manifest)?,
+        dependencies: Vec::new(),
+    }];
+    let mut checked = BTreeSet::new();
+    let mut changed = BTreeSet::new();
+    let main =
+        frontend::prepare_package_project(&package, None).map_err(|error| error.message())?;
+    main.check_formatting(root, &mut checked, &mut changed)?;
+    drop(main);
+    for path in manifest.tests.values() {
+        let entry = local_source(root, path)?;
+        let test = frontend::prepare_package_project(&package, Some(&entry))
+            .map_err(|error| error.message())?;
+        test.check_formatting(root, &mut checked, &mut changed)?;
+    }
+    Ok(changed)
+}
+
+fn report_formatting(root: &Path, changed: BTreeSet<PathBuf>) -> Result<i32, String> {
+    let status = i32::from(!changed.is_empty());
+    let mut stderr = io::stderr().lock();
+    for path in changed {
+        let relative = path.strip_prefix(root).unwrap_or(&path);
+        writeln!(stderr, "formatting required for {}", relative.display())
+            .map_err(|error| format!("cannot report formatting changes: {error}"))?;
+    }
+    Ok(status)
 }
 
 /// Canonical package directories own identities; aliases are local graph edges.
