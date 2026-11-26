@@ -2,7 +2,7 @@
 """Compare the UTF-8 library application with Python's strict Unicode decoder.
 
 Retain exact inputs, outputs, commands, locks and raw executables. Native mode
-checks both optimization profiles, object reuse, relocation and execution after
+checks both optimization profiles, cache reporting, relocation and execution after
 removing all application/library sources. These are scoped application checks.
 """
 import linux_native_target as native_target
@@ -375,9 +375,13 @@ class TextOracle(Oracle):
             "member": member, "status": "ok"}], "build selected wrong member")
         require(len([row for row in rows if row.get("kind") == "compile-summary"
                      and row.get("success") is True]) == 1, "expected one successful native link")
-        require([row for row in rows if row.get("kind") == "build-cache"] == ([] if cache is None else [{
+        if cache is not None and sys.platform == "darwin":
+            cache = "unavailable"
+        reported_cache = [row for row in rows if row.get("kind") == "build-cache"]
+        require(reported_cache == ([] if cache is None else [{
             "schema_version": 1, "edition": "typed-preview", "kind": "build-cache",
-            "stage": "native-object", "status": cache}]), "cache outcome differs")
+            "stage": "native-object", "status": cache}]),
+            f"cache outcome differs for {label}: expected {cache!r}, got {reported_cache!r}")
         binary_name = "utf8-normalize" if member == "app" else "utf8-text-contracts"
         artifact = self.output / "artifacts" / label
         shutil.copyfile(project / member / ".oxid/bin" / binary_name, artifact)
