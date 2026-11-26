@@ -358,6 +358,26 @@ removed records; `take` moves the allocation and leaves the source with zero
 length and capacity. A failed `try_reserve` preserves the existing length,
 capacity, records, and any separate incoming record owned by the caller.
 
+A generic struct can own a `Vec<T>` field. When the struct moves, its vector
+moves with it. Borrow the field to use it in place, or use a complete record
+pattern to take the vector out.
+
+```oxid
+use alloc::vec::Vec;
+use alloc::vec::len;
+
+struct Store<T> { values: Vec<T> }
+
+fn count<T>(store: &Store<T>) -> i32 {
+    return len(&*store.values);
+}
+
+fn into_values<T>(store: Store<T>) -> Vec<T> {
+    let Store { values } = store;
+    return values;
+}
+```
+
 Finite user-defined enums and built-in status enums use the same eight owned
 operations. Enum values move into reserved space and out through `pop_last`.
 Only the active variant's payload is initialized, moved, or released. Payloads

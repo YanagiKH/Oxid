@@ -98,6 +98,92 @@ fn source_owned_parameter_results_use_finite_roots_and_exact_owner_cleanup() {
     });
 }
 
+const OWNED_VECTOR_FIELDS: &str = r#"
+use alloc::vec::Vec;
+use alloc::vec::new;
+use alloc::vec::len;
+use alloc::vec::try_reserve;
+use alloc::vec::push_reserved;
+use alloc::vec::pop_last;
+use alloc::vec::GrowStatus;
+use alloc::bytes::ByteBuf;
+use alloc::bytes::new as bytes_new;
+use alloc::bytes::try_push as bytes_push;
+use alloc::bytes::len as bytes_len;
+
+struct Message { value: i32, bytes: ByteBuf }
+struct Holder<T> { values: Vec<T> }
+
+fn wrap<T>(values: Vec<T>) -> Holder<T> { return Holder::<T> { values: values }; }
+fn unwrap<T>(holder: Holder<T>) -> Vec<T> { let Holder { values } = holder; return values; }
+fn discard<T>(holder: Holder<T>) -> () { return; }
+fn size<T>(holder: &Holder<T>) -> i32 { return len(&*holder.values); }
+fn pop<T>(holder: &mut Holder<T>) -> T { return pop_last(&mut *holder.values); }
+
+fn make(value: i32) -> Message {
+    let mut bytes = bytes_new();
+    bytes_push(&mut bytes, 9u8);
+    return Message { value: value, bytes: bytes };
+}
+
+fn main() -> i32 {
+    let mut values = new::<Message>();
+    let grow = try_reserve(&mut values, 2);
+    match grow {
+        GrowStatus::Ok => {},
+        GrowStatus::CapacityOverflow => { return -1; },
+        GrowStatus::AllocationFailed => { return -2; },
+        GrowStatus::MemoryLimit => { return -3; },
+    }
+    push_reserved(&mut values, make(0));
+    push_reserved(&mut values, make(41));
+    let mut holder = wrap(values);
+    if size(&holder) != 2 { return -4; }
+    let last = pop(&mut holder);
+    discard(wrap(unwrap(holder)));
+    let Message { value, bytes } = last;
+    return value + bytes_len(&bytes);
+}
+"#;
+
+#[test]
+fn source_generic_records_own_vector_fields_and_release_all_children() {
+    use super::super::super::byte_buffer;
+    with_typed(OWNED_VECTOR_FIELDS, |typed| {
+        let associated =
+            super::super::association::lower_and_associate_owned_vector(typed).unwrap();
+        let witness = verified::VerifiedOwnedVectorProgram::verify_associated(
+            associated,
+            super::super::super::budget::Limits::DEFAULT,
+            &mut Allocator::default(),
+        )
+        .unwrap();
+        for policy in [ExecutionPolicy::Bounded, ExecutionPolicy::Hosted] {
+            for fault in [None, Some((byte_buffer::Boundary::Allocate, 1))] {
+                let control = byte_buffer::testing::Control {
+                    fault,
+                    ..Default::default()
+                };
+                let ((result, _), observed) = byte_buffer::testing::capture(control, || {
+                    execute::observe_witness(
+                        &witness,
+                        typed.entry(),
+                        execute::Limits::default(),
+                        policy,
+                    )
+                });
+                assert_eq!(result, Ok(Scalar::I32(42)));
+                let expected = if fault.is_some() { 2 } else { 3 };
+                assert_eq!(observed.fault_applied, fault.is_some());
+                assert_eq!(observed.after_cleanup.allocations, expected);
+                assert_eq!(observed.after_cleanup.releases, expected);
+                assert_eq!(observed.after_cleanup.live_allocations, 0);
+                assert_eq!(observed.after_cleanup.live_bytes, 0);
+            }
+        }
+    });
+}
+
 #[test]
 fn source_function_vector_owners_transfer_detach_and_drop_without_new_allocations() {
     with_typed(cases::OWNERSHIP, |typed| {
