@@ -53,10 +53,7 @@ struct RecordVectorKeyControls {
 }
 
 impl Nominals {
-    /// Only the outer value of a function signature may defer a Vec element.
-    /// Field layouts, type arguments and explicit local types still use syntax.
-    /// The opaque identity is checked abstractly and must be substituted before
-    /// any concrete parameter, result, layout or executable key is produced.
+    /// A function signature may refer to Vec<T> before T is specialized.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn function_value_syntax(
         &mut self,
@@ -71,6 +68,37 @@ impl Nominals {
     ) -> Result<Type, Box<Diagnostic>> {
         #[cfg(test)]
         super::owned_candidate::record_function_helper(false);
+        self.outer_value_syntax(
+            index,
+            work,
+            storage,
+            allocator,
+            module,
+            declaration,
+            arguments,
+            syntax,
+            0,
+        )
+    }
+
+    /// Only direct parameters can defer a Vec element. The value must be
+    /// specialized before producing a concrete layout or executable identity.
+    #[allow(clippy::too_many_arguments)]
+    fn outer_value_syntax(
+        &mut self,
+        index: &DeclarationIndex<'_>,
+        work: &WorkMeter,
+        storage: &mut Storage,
+        allocator: &mut Allocator,
+        module: ModuleId,
+        declaration: Span,
+        arguments: &[Value],
+        syntax: ast::TypeSyntax,
+        depth: usize,
+    ) -> Result<Type, Box<Diagnostic>> {
+        if depth > MAX_DEPTH {
+            return Err(exhausted(syntax.span));
+        }
         let (Some(_), TypeSyntaxKind::Applied(id)) = (index.owned_vector_builder(), syntax.kind)
         else {
             return self.syntax(
@@ -82,7 +110,7 @@ impl Nominals {
                 declaration,
                 arguments,
                 syntax,
-                0,
+                depth,
             );
         };
         work.debit(1, syntax.span, "owned vector function value admission")?;
@@ -126,7 +154,7 @@ impl Nominals {
                         declaration,
                         arguments,
                         argument,
-                        1,
+                        depth + 1,
                     )?
                     .value(argument.span)?;
                 Ok(Type::Value(Value::Vector(
@@ -151,7 +179,7 @@ impl Nominals {
                     declaration,
                     arguments,
                     *argument,
-                    1,
+                    depth + 1,
                 )?
                 .value(argument.span)?;
             storage.push(&mut values, value, allocator, work, argument.span)?;
@@ -165,7 +193,7 @@ impl Nominals {
                 record,
                 values,
                 syntax.span,
-                1,
+                depth + 1,
             )?,
             NominalId::Enum(enumeration) if enumeration.0 < self.template_enum_count => self
                 .enumeration(
@@ -176,7 +204,7 @@ impl Nominals {
                     enumeration,
                     values,
                     syntax.span,
-                    1,
+                    depth + 1,
                 )?,
             _ => {
                 return Err(error(
@@ -625,8 +653,8 @@ impl Nominals {
         let len = self.records[id].arguments.len();
         environment[..len].copy_from_slice(&self.records[id].arguments);
         for field in &declaration.fields {
-            let value = self
-                .syntax(
+            let value = if concrete {
+                self.syntax(
                     index,
                     work,
                     storage,
@@ -636,8 +664,21 @@ impl Nominals {
                     &environment[..len],
                     field.ty,
                     depth + 1,
-                )?
-                .value(field.ty.span)?;
+                )
+            } else {
+                self.outer_value_syntax(
+                    index,
+                    work,
+                    storage,
+                    allocator,
+                    module,
+                    declaration.name,
+                    &environment[..len],
+                    field.ty,
+                    depth + 1,
+                )
+            }?
+            .value(field.ty.span)?;
             if declaration.derive_copy.is_some() && !self.copy(value) {
                 return Err(error(
                     "Copy record fields require scalars or checked Copy records",

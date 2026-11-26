@@ -626,10 +626,10 @@ impl DeclarationIndex<'_> {
         }
         Ok(())
     }
-    /// References, outer function values and empty construction may defer an
-    /// unbounded element.
+    /// References, outer function values, generic record fields and empty
+    /// construction may defer an unbounded element.
     /// Concrete specialization still uses candidate_element and its finite-root
-    /// checks. Field layouts and slices still require a concrete/Copy element.
+    /// checks. Concrete layouts and slices still enforce their element rules.
     pub(super) fn candidate_deferred_element(
         &self,
         value: Value,
