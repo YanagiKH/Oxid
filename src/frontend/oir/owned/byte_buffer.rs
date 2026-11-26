@@ -30,6 +30,8 @@ pub(super) const fn file_supported_host() -> bool {
 pub(super) const fn file_helper_control_bytes() -> usize {
     files::helper_control_bytes()
 }
+pub(super) use files::regular_file_control_bytes as file_regular_control_bytes;
+
 pub(super) const fn file_seek_helper_control_bytes() -> usize {
     files::seek_helper_control_bytes()
 }

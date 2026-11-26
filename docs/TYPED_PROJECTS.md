@@ -237,6 +237,11 @@ to draw a number from 0 to 99. Reuse the seed to repeat the same sequence.
 
 ## Reading and writing file buffers
 
+Use `open_regular_read(&path)` from `std::fs` to read a regular file.
+It returns `OpenResult::Opened(file)` or an error. On Linux and macOS it
+rejects named pipes immediately, even when the path is a symbolic link.
+Use `open_read(&path)` when you want to read from a pipe.
+
 Use `open_append(&path)` from `std::fs` to add bytes at the end of a file.
 It creates the file when needed and preserves existing contents.
 

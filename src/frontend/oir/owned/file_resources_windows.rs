@@ -43,8 +43,25 @@ pub(super) const fn seek_control_bytes() -> usize {
     size_of::<SeekCarriers>()
 }
 
+#[repr(C)]
+pub(super) struct FileStandardInfo {
+    allocation_size: i64,
+    end_of_file: i64,
+    number_of_links: u32,
+    delete_pending: u8,
+    directory: u8,
+}
+
 #[link(name = "kernel32")]
 unsafe extern "system" {
+    fn GetFileType(handle: *mut std::ffi::c_void) -> u32;
+    fn GetFileInformationByHandleEx(
+        handle: *mut std::ffi::c_void,
+        kind: i32,
+        info: *mut std::ffi::c_void,
+        size: u32,
+    ) -> i32;
+
     fn MultiByteToWideChar(
         code_page: u32,
         flags: u32,
@@ -55,6 +72,7 @@ unsafe extern "system" {
     ) -> i32;
 }
 unsafe extern "C" {
+    fn _get_osfhandle(fd: i32) -> isize;
     fn _wopen(path: *const u16, flags: i32, ...) -> i32;
     fn _read(fd: i32, bytes: *mut std::ffi::c_void, count: u32) -> i32;
     fn _write(fd: i32, bytes: *const std::ffi::c_void, count: u32) -> i32;
@@ -98,7 +116,7 @@ pub(super) fn open(path: &[u8], mode: FileOpenMode) -> Result<i32, i32> {
             .write(0);
     }
     let access = match mode {
-        FileOpenMode::Read => 0,
+        FileOpenMode::Read | FileOpenMode::ReadRegular => 0,
         FileOpenMode::Create => 0x0001 | 0x0100 | 0x0200,
         FileOpenMode::Append => 0x0001 | 0x0100 | 0x0008,
     };
@@ -106,11 +124,43 @@ pub(super) fn open(path: &[u8], mode: FileOpenMode) -> Result<i32, i32> {
     // _O_BINARY | _O_NOINHERIT; create uses _S_IREAD | _S_IWRITE.
     let fd = unsafe { _wopen(wide.as_ptr().cast(), flags, 0x0180i32) };
     if fd < 0 {
-        Err(errno())
-    } else {
-        Ok(fd)
+        return Err(errno());
     }
+    if matches!(mode, FileOpenMode::ReadRegular) {
+        if let Err(error) = require_regular(fd) {
+            let _ = close(fd);
+            return Err(error);
+        }
+    }
+    Ok(fd)
 }
+
+#[inline(never)]
+fn require_regular(fd: i32) -> Result<(), i32> {
+    const FILE_TYPE_DISK: u32 = 1;
+    const FILE_STANDARD_INFO: i32 = 1;
+    // SAFETY: fd is a live CRT descriptor. These calls only borrow its handle,
+    // and Windows sets the info buffer on success.
+    unsafe {
+        let handle = _get_osfhandle(fd) as *mut std::ffi::c_void;
+        let mut info = MaybeUninit::<FileStandardInfo>::uninit();
+        if GetFileType(handle) != FILE_TYPE_DISK
+            || GetFileInformationByHandleEx(
+                handle,
+                FILE_STANDARD_INFO,
+                info.as_mut_ptr().cast(),
+                size_of::<FileStandardInfo>() as u32,
+            ) == 0
+        {
+            return Err(22);
+        }
+        if info.assume_init_ref().directory != 0 {
+            return Err(21);
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn read(fd: i32, bytes: &mut [u8]) -> Result<usize, i32> {
     if bytes.len() > i32::MAX as usize {
         return Err(22);

@@ -2,7 +2,7 @@ use std::fs::File;
 use std::fs::FileStatus;
 use std::fs::OpenResult;
 use std::fs::close;
-use std::fs::open_read;
+use std::fs::open_regular_read;
 use std::fs::read_some;
 use std::io::ReadSomeStatus;
 use std::process::termination_requested;
@@ -85,7 +85,7 @@ pub fn submit(path: &[u8], too_long: bool, buffer: &mut [u8]) -> i32 {
     let mut attempts = 0;
     while !termination_requested() {
         attempts = attempts + 1;
-        let opened = open_read(&*path);
+        let opened = open_regular_read(&*path);
         match opened {
             OpenResult::Opened(handle) => {
                 let mut file = handle;

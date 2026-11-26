@@ -11,7 +11,7 @@ printf '%s\n' oxid.toml README.md | .oxid/bin/file-worker
 Send regular file paths relative to the worker's current directory, or use
 absolute paths. The worker accepts LF and CRLF line endings and reads a final
 line without a newline. Spaces in paths are preserved. Each path can contain
-up to 4,095 bytes.
+up to 4,095 bytes. Paths to directories and named pipes produce an error.
 
 The worker processes jobs in order and writes one line per finished job.
 

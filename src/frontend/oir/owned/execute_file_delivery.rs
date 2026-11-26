@@ -268,10 +268,14 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 .ok_or(RunFailure::Fuel(span))?;
         }
         let value = match operation {
-            Function::OpenRead | Function::Create | Function::OpenAppend => {
+            Function::OpenRead
+            | Function::OpenRegularRead
+            | Function::Create
+            | Function::OpenAppend => {
                 use byte_buffer::FileOpenMode;
                 let mode = match operation {
                     Function::OpenRead => FileOpenMode::Read,
+                    Function::OpenRegularRead => FileOpenMode::ReadRegular,
                     Function::Create => FileOpenMode::Create,
                     Function::OpenAppend => FileOpenMode::Append,
                     _ => unreachable!("sealed file open operation"),

@@ -1292,6 +1292,10 @@ fn runtime_storage_bytes<W: PlanWitness>(
                 experimental::FILE_DELIVERY_BYTES
             } else {
                 0
+            } + if plan.has_regular_file_open() {
+                byte_buffer::file_regular_control_bytes()
+            } else {
+                0
             } + if plan.has_file_seek() {
                 experimental::FILE_SEEK_BYTES
             } else {

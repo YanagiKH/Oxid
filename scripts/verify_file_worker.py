@@ -130,6 +130,9 @@ def exercise(command, cwd, environment, *, native):
     (cwd / "empty").touch()
     (cwd / "data with spaces").write_bytes(bytes(range(256)) * 513)
     (cwd / "directory").mkdir()
+    os.mkfifo(cwd / "pipe")
+    (cwd / "file-link").symlink_to("data with spaces")
+    (cwd / "pipe-link").symlink_to("pipe")
     payload = (b"x" * 4093 + b"\0\n" + b"data with spaces\r\n"
                + b"missing\n" + b"directory\n\r\n" + b"y" * 4097
                + b"\r\n" + b"empty")
@@ -141,16 +144,19 @@ def exercise(command, cwd, environment, *, native):
     started = time.monotonic()
     run(command, cwd, environment, payload=payload, stdout=expected)
     require(time.monotonic() - started >= 0.45, "missing file retries returned without waiting")
+    absent = f"ERR io:{errno.EINVAL} 1\n".encode()
+    run(command, cwd, environment, payload=b"pipe\npipe-link\nfile-link\n",
+        stdout=absent * 2 + b"OK 131328 1\n")
     run(command, cwd, environment, stdout=b"")
     usage = b"Usage: file-worker [--help] < paths.txt\n"
     run([*command, "--help"], cwd, environment, stdout=usage)
     run([*command, "unexpected"], cwd, environment, status=64, stdout=b"", stderr=usage)
     stop_worker(command, cwd, environment, signal.SIGTERM, partial=False)
     stop_worker(command, cwd, environment, signal.SIGINT, partial=True)
-    cases = ["records-and-retries", "eof", "help", "usage", "sigterm", "sigint"]
+    cases = ["records-and-retries", "file-and-pipe-links", "eof", "help", "usage", "sigterm", "sigint"]
     if native:
-        run(command, cwd, environment, payload=b"empty\n" * 1500,
-            stdout=b"OK 0 1\n" * 1500, preexec=limit_files)
+        run(command, cwd, environment, payload=b"empty\npipe\nempty\n" * 500,
+            stdout=(b"OK 0 1\n" + absent + b"OK 0 1\n") * 500, preexec=limit_files)
         closed_output(command, cwd, environment)
         cases += ["1500-jobs-under-24-descriptors", "closed-output"]
         if platform.system() == "Linux":

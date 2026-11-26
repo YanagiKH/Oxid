@@ -2087,16 +2087,16 @@ mod process_suffix_tests {
                 );
             }
         }
-        assert_eq!(experimental::Function::ALL.len(), 22);
+        assert_eq!(experimental::Function::ALL.len(), 23);
         assert!(
             HirPlan::calculate_with_vectors(
                 HirCounts {
                     functions: 1,
-                    signatures: 24,
+                    signatures: 25,
                     ..Default::default()
                 },
                 at,
-                23,
+                24,
                 0
             )
             .is_err(),

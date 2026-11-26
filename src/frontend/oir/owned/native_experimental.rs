@@ -748,9 +748,10 @@ fn file_operation<W: PlanWitness>(
         Function::SyncAll => 4,
         Function::Close => 5,
         Function::OpenAppend => 6,
+        Function::OpenRegularRead => 7,
         _ => unreachable!("closed file primitive"),
     };
-    let opening = code < 2 || code == 6;
+    let opening = matches!(code, 0 | 1 | 6 | 7);
     let file = if opening {
         "null".to_owned()
     } else {

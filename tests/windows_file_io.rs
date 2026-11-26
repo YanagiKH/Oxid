@@ -398,3 +398,79 @@ fn windows_file_native_invalid_paths_keep_exact_error_and_prefix_bytes() {
         }
     }
 }
+
+fn regular_file_fixture(project: &Project) {
+    fs::write(project.bytes(), b"Q").unwrap();
+    fs::create_dir(project.0.join("folder")).unwrap();
+    fs::write(
+        project.0.join("src/main.ox"),
+        r#"
+use std::fs::open_regular_read;
+use std::fs::read_some;
+use std::fs::OpenResult;
+use std::io::ReadSomeStatus;
+
+fn rejected(path: &[u8]) -> bool {
+    let opened = open_regular_read(&*path);
+    match opened {
+        OpenResult::Opened(file) => { return false; },
+        OpenResult::Error(code) => { return code != 0; },
+        OpenResult::MemoryLimit => { return false; },
+        OpenResult::AllocationFailed => { return false; },
+    }
+}
+
+fn main() -> i32 {
+    let directory = b"folder";
+    let device = b"NUL";
+    if !rejected(&directory) || !rejected(&device) { return -1; }
+    let path = b"資料-😀.bin";
+    let opened = open_regular_read(&path);
+    match opened {
+        OpenResult::Opened(handle) => {
+            let mut file = handle;
+            let mut byte = [0u8];
+            let read = read_some(&mut file, &mut byte);
+            match read {
+                ReadSomeStatus::Data(count) => {
+                    if count == 1 && byte[0] == 81u8 { return 42; }
+                    return -2;
+                },
+                ReadSomeStatus::Eof => { return -3; },
+                ReadSomeStatus::Error(code) => { return -4; },
+            }
+        },
+        OpenResult::Error(code) => { return -5; },
+        OpenResult::MemoryLimit => { return -6; },
+        OpenResult::AllocationFailed => { return -7; },
+    }
+}
+"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn windows_regular_file_vm_rejects_directories_and_devices() {
+    let project = Project::new();
+    regular_file_fixture(&project);
+    success(project.invoke(&["run"]), b"42\n");
+}
+
+#[test]
+#[ignore = "requires actual Windows MSVC SDK and LLVM 19.1.7"]
+fn windows_regular_file_native_profiles_reject_directories_and_devices() {
+    let project = Project::new();
+    regular_file_fixture(&project);
+    for profile in ["dev", "release"] {
+        let built = project.invoke(&["build", "--profile", profile]);
+        assert!(built.status.success(), "{built:?}");
+        success(
+            Command::new(project.0.join(".oxid/bin/file-copy.exe"))
+                .current_dir(&project.0)
+                .output()
+                .unwrap(),
+            b"42\n",
+        );
+    }
+}
