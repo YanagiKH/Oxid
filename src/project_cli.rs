@@ -5,6 +5,7 @@
 use crate::{frontend, project_lock, runtime};
 mod documentation;
 mod editor;
+mod formatting;
 mod package;
 mod registry;
 mod test_runner;
@@ -14,7 +15,7 @@ pub(crate) use package::package_source_plan;
 pub(crate) use registry::control_bytes as registry_control_bytes;
 pub(crate) use registry::{registry_recheck_release, registry_release_plan};
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fs,
     io::{self, Write},
     num::NonZeroUsize,
@@ -304,10 +305,22 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             false,
         ));
     }
-    if options.invalid || options.edition.as_deref() == Some("legacy-0.9") {
+    if options.invalid {
         return None;
     }
     let command = options.command();
+    let format_write = command == "fmt"
+        && options.words.iter().any(|word| word == "--write")
+        && operands(&options.words).is_empty();
+    if options.edition.as_deref() == Some("legacy-0.9") {
+        return format_write.then(|| {
+            report_error(
+                &options,
+                "formatting in place requires a typed project",
+                false,
+            )
+        });
+    }
     if options.edition.as_deref() == Some("typed-preview")
         && command == "run"
         && options.entry_mode.as_deref() == Some("process")
@@ -326,9 +339,10 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
     }
     let operands = operands(&options.words);
     let explicit = options.edition.is_some();
-    let format_project = command == "fmt"
-        && operands.is_empty()
-        && options.words.iter().any(|word| word == "--check");
+    let format_project = format_write
+        || (command == "fmt"
+            && operands.is_empty()
+            && options.words.iter().any(|word| word == "--check"));
     let project_operation = matches!(command, "lock" | "build" | "test" | "doc" | "new" | "init")
         || (matches!(command, "check" | "run") && operands.is_empty())
         || format_project;
@@ -401,7 +415,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             // this request, including its JSON and process stderr contracts.
             return None;
         }
-        return if explicit || options.versioned_docs {
+        return if explicit || options.versioned_docs || format_write {
             Some(report_error(
                 &options,
                 "typed-preview project commands require an oxid.toml manifest",
@@ -415,6 +429,13 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         match runtime::manifest_edition(&manifest_path) {
             Ok(edition) => match edition.as_deref() {
                 None | Some("legacy-0.9") => {
+                    if format_write {
+                        return Some(report_error(
+                            &options,
+                            "formatting in place requires a typed project",
+                            false,
+                        ));
+                    }
                     return options.versioned_docs.then(|| {
                         report_error(&options, "versioned docs require a typed project", false)
                     });
@@ -485,11 +506,11 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
         "build" => build(root, &snapshot, &options, process),
         "test" => test(root, &snapshot, &options),
         "doc" => documentation::command(root, &snapshot, &options),
-        "fmt" if format_project => validate_project_format(&options).and_then(|()| {
+        "fmt" if format_project => (|| {
             let root = fs::canonicalize(root)
                 .map_err(|error| format!("cannot locate project: {error}"))?;
-            report_formatting(&root, check_project_format(&root, manifest)?)
-        }),
+            formatting::execute(&options, &root, [(&*root, manifest)])
+        })(),
         "check" | "run" if operands.is_empty() => {
             if options
                 .words
@@ -637,48 +658,6 @@ fn entry_path(root: &Path, manifest: &runtime::ProjectManifest) -> Result<PathBu
         }
     }
     Err("project entry not found; set [project] entry or create src/main.ox".into())
-}
-
-fn validate_project_format(options: &Options) -> Result<(), String> {
-    if options.words != ["fmt", "--check"] || options.entry_mode.is_some() || options.json() {
-        return Err("use oxid fmt --check for a project, or specify one file to format".into());
-    }
-    Ok(())
-}
-
-fn check_project_format(
-    root: &Path,
-    manifest: &runtime::ProjectManifest,
-) -> Result<BTreeSet<PathBuf>, String> {
-    let package = [frontend::PackageSpec {
-        root: root.to_path_buf(),
-        entry: entry_path(root, manifest)?,
-        dependencies: Vec::new(),
-    }];
-    let mut checked = BTreeSet::new();
-    let mut changed = BTreeSet::new();
-    let main =
-        frontend::prepare_package_project(&package, None).map_err(|error| error.message())?;
-    main.check_formatting(root, &mut checked, &mut changed)?;
-    drop(main);
-    for path in manifest.tests.values() {
-        let entry = local_source(root, path)?;
-        let test = frontend::prepare_package_project(&package, Some(&entry))
-            .map_err(|error| error.message())?;
-        test.check_formatting(root, &mut checked, &mut changed)?;
-    }
-    Ok(changed)
-}
-
-fn report_formatting(root: &Path, changed: BTreeSet<PathBuf>) -> Result<i32, String> {
-    let status = i32::from(!changed.is_empty());
-    let mut stderr = io::stderr().lock();
-    for path in changed {
-        let relative = path.strip_prefix(root).unwrap_or(&path);
-        writeln!(stderr, "formatting required for {}", relative.display())
-            .map_err(|error| format!("cannot report formatting changes: {error}"))?;
-    }
-    Ok(status)
 }
 
 /// Canonical package directories own identities; aliases are local graph edges.
