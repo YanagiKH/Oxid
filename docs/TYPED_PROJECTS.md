@@ -384,6 +384,23 @@ of each match and skips releases that have been yanked.
 oxid registry search file:///home/me/oxid-registry math
 ```
 
+To let people browse your registry over HTTPS, export its catalog and serve
+the resulting file at an HTTPS address.
+
+```sh
+oxid registry catalog file:///home/me/oxid-registry > packages.txt
+oxid registry search https://packages.example.com/ox/packages.txt math
+```
+
+HTTPS search uses curl. If your server requires a bearer token, put it in
+an environment variable and pass the variable's name with `--token-env`.
+
+```sh
+oxid registry search https://packages.example.com/ox/packages.txt math --token-env OXID_REGISTRY_TOKEN
+```
+
+Use the local registry directory to install packages, as shown below.
+
 Choose an alias, package name and version for each dependency.
 
 ```toml

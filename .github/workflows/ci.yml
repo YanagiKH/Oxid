@@ -77,6 +77,7 @@ jobs:
           python3 -B scripts/verify_characters.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-character-reference" --reference-only
           python3 scripts/verify_repo.py target/release/oxid
+          python3 -B scripts/verify_registry_https_search.py target/release/oxid
           python3 -B scripts/verify_typed_package_app.py target/debug/oxid target/release/oxid \
             --output "$RUNNER_TEMP/current-package-interpreter"
           python3 -B scripts/verify_typed_package_lock.py target/debug/oxid target/release/oxid \
