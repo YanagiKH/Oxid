@@ -1026,7 +1026,7 @@ fn read_archive(path: &Path) -> Result<(archive::Archive, archive::Info), String
     Ok(result)
 }
 
-fn same_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+pub(crate) fn same_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
     let same = left.is_file() == right.is_file()
         && left.len() == right.len()
         && left.modified().ok() == right.modified().ok();
