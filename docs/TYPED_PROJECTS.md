@@ -418,7 +418,17 @@ an environment variable and pass the variable's name with `--token-env`.
 oxid registry search https://packages.example.com/ox/packages.txt math --token-env OXID_REGISTRY_TOKEN
 ```
 
-Use the local registry directory to install packages, as shown below.
+To mirror a published release, serve your registry's `packages/` directory
+over HTTPS and share the SHA-256 printed by `oxid publish`. On the receiving
+machine, create a local registry and mirror the release and its dependencies.
+
+```sh
+oxid registry init /home/me/oxid-registry
+oxid registry mirror file:///home/me/oxid-registry math 1.2.0 \
+  https://packages.example.com/ox --sha256 "$MATH_SHA256"
+```
+
+Add `--token-env OXID_REGISTRY_TOKEN` for a private HTTPS server.
 
 Choose an alias, package name and version for each dependency.
 

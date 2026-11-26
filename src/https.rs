@@ -21,7 +21,7 @@ impl From<&str> for Error {
     }
 }
 
-fn check_url(url: &str) -> Result<(), String> {
+pub(crate) fn check_url(url: &str) -> Result<(), String> {
     let Some(rest) = url.strip_prefix("https://") else {
         return Err("source downloads require an HTTPS URL".into());
     };
