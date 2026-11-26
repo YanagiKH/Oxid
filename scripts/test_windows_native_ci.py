@@ -24,6 +24,7 @@ LLVM_STEP = 'Verify and extract the complete LLVM 19.1.7 toolchain'
 BUILD_STEP = 'Build both compiler profiles'
 TEST_STEP = 'Verify Windows diagnosis, capture limits and source admission'
 TIMING_STEP = 'Verify Windows native clocks and timers'
+ENVIRONMENT_STEP = 'Verify Windows native environment reads'
 VERIFY_STEP = 'Verify PE execution, publication and standalone deployment'
 UPLOAD_STEP = 'Retain PE programs and raw transcripts'
 EXIT_CHECK = 'if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
@@ -33,6 +34,8 @@ SCOPE_COMMAND = ('cargo test --locked --test native_doctor --test typed_windows_
                  '-- --include-ignored --test-threads=1')
 TIMING_COMMAND = ('cargo test --locked --test typed_process_termination '
                   '-- --include-ignored --test-threads=1')
+ENVIRONMENT_COMMAND = ('cargo test --locked --test typed_environment '
+                       '-- --include-ignored --test-threads=1')
 VERIFIER_COMMAND = ('python -B scripts/verify_windows_native.py '
                     'target/debug/oxid.exe target/release/oxid.exe '
                     '--llvm-bin "$env:OXID_LLVM_BIN" '
@@ -281,6 +284,7 @@ def validate_windows_native_job(workflow):
         BUILD_STEP: ['cargo build --locked', EXIT_CHECK, 'cargo build --release --locked', EXIT_CHECK],
         TEST_STEP: [DOCTOR_COMMAND, EXIT_CHECK, SCOPE_COMMAND, EXIT_CHECK],
         TIMING_STEP: ['$env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN', TIMING_COMMAND, EXIT_CHECK],
+        ENVIRONMENT_STEP: ['$env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN', ENVIRONMENT_COMMAND, EXIT_CHECK],
         VERIFY_STEP: [VERIFIER_COMMAND, EXIT_CHECK],
     }
     for name, commands in expected_commands.items():

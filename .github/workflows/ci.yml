@@ -1186,6 +1186,9 @@ jobs:
           $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN
           cargo test --locked --test typed_process_termination -- --include-ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows native environment reads
+        run: |
+          $env:OXID_TEST_LLVM_BIN = $env:OXID_LLVM_BIN
           cargo test --locked --test typed_environment -- --include-ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify PE execution, publication and standalone deployment

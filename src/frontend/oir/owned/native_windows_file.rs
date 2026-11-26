@@ -74,8 +74,8 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
     {
         return false;
     }
-    let time = raw.builtins.process();
-    if time.has_signals() {
+    let process = raw.builtins.process();
+    if process.contains(termination::Function::WaitStdin) {
         return false;
     }
     let mut has_byte_io = false;
@@ -88,7 +88,7 @@ pub(super) fn allowed<W: PlanWitness>(witness: &W, entry: hir::DefId) -> bool {
             has_byte_io = true;
         }
     }
-    if !has_byte_io && (time.is_empty() || !raw.enums.is_empty()) {
+    if !has_byte_io && (process.is_empty() || !raw.enums.is_empty()) {
         return false;
     }
     let mut enumerations = [None; STATUS_ENUMS.len()];
@@ -214,7 +214,7 @@ mod tests {
             "fn other(value:f64)->f64{return value;}",
             "fn other(value:u8)->u8{return value;}",
             "fn other(bytes:&[u8])->u8{return bytes[0];}",
-            "use std::process::termination_requested;fn other()->bool{return termination_requested();}",
+            "use std::process::wait_for_stdin;fn other()->bool{return wait_for_stdin(0);}",
         ] {
             let rejected = checked_enum_project(&format!("{api}{declaration}{main}"));
             assert!(!allowed(&rejected.witness, rejected.entry), "{declaration}");
@@ -223,6 +223,38 @@ mod tests {
             "{api}fn main()->i64{{return monotonic_millis();}}"
         ));
         assert!(!allowed(&wide_entry.witness, wide_entry.entry));
+    }
+
+    #[test]
+    fn native_console_notifications_compose_with_byte_io_and_time() {
+        let source = "
+            use std::process::enable_termination_notifications;
+            use std::process::termination_requested;
+            use std::process::wait_for_termination;
+            use std::io::write_some;
+            use std::io::WriteSomeStatus;
+            use std::time::monotonic_millis;
+            fn main() -> i32 {
+                if !enable_termination_notifications() { return 1; }
+                let ready = b\"ready\";
+                let written = write_some(&ready);
+                match written {
+                    WriteSomeStatus::Written(count) => { if count != 5 { return 2; } },
+                    WriteSomeStatus::Error(code) => { return 2; },
+                }
+                let started = monotonic_millis();
+                if wait_for_termination(100) && termination_requested()
+                    && monotonic_millis() >= started { return 42; }
+                return 3;
+            }
+        ";
+        let accepted = checked_enum_project(source);
+        assert!(allowed(&accepted.witness, accepted.entry));
+        let unsupported =
+            checked_enum_project(&format!("use std::process::wait_for_stdin; {source}"));
+        assert!(!allowed(&unsupported.witness, unsupported.entry));
+        let unrelated = checked_enum_project(&format!("struct Unrelated{{field:i32}} {source}"));
+        assert!(!allowed(&unrelated.witness, unrelated.entry));
     }
 
     #[cfg(all(
