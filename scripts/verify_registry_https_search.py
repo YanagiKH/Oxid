@@ -2,7 +2,9 @@
 """Exercise catalog export and authenticated HTTPS search with a local TLS server."""
 import argparse
 from contextlib import contextmanager
+import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 from pathlib import Path
 import ssl
@@ -51,8 +53,23 @@ def export(compiler, root, environment):
     return body
 
 
+def source_package(compiler, root, environment):
+    project = root / "package-source"
+    (project / "src").mkdir(parents=True)
+    (project / "oxid.toml").write_text(
+        '[project]\nname = "package-source"\nversion = "0.1.0"\n'
+        'edition = "typed-preview"\nentry = "src/main.ox"\n'
+        '[build]\nentry-mode = "result"\n'
+    )
+    (project / "src/main.ox").write_text("fn main() -> i32 { return 42; }\n")
+    archive = root / "published.oxpkg.tar"
+    invoke(compiler, project, environment, ["lock", "--offline"])
+    invoke(compiler, project, environment, ["package", "--frozen", "--output", str(archive)])
+    return archive.read_bytes()
+
+
 @contextmanager
-def serve(root, catalog):
+def serve(root, catalog, package):
     private_key = root / "key.pem"
     certificate = root / "cert.pem"
     subprocess.run([
@@ -77,6 +94,14 @@ def serve(root, catalog):
                 self.respond(403)
             elif self.path == "/catalog":
                 self.respond(200, catalog)
+            elif self.path == "/package":
+                self.respond(200, package)
+            elif self.path == "/corrupt":
+                self.respond(200, b"damaged source archive")
+            elif self.path == "/oversized-package":
+                self.send_response(200)
+                self.send_header("Content-Length", str(64 * 1024 * 1024 + 1))
+                self.end_headers()
             elif self.path == "/redirect":
                 self.respond(302, extra=("Location", "/secret-target"))
             elif self.path == "/large":
@@ -113,6 +138,56 @@ def serve(root, catalog):
             server_thread.join()
 
 
+def verify_source_download(compiler, root, base, body, authorized, requests):
+    sha256 = hashlib.sha256(body).hexdigest()
+    url = base + "/package"
+    authorization = ["--token-env", "OXID_REGISTRY_TOKEN"]
+    target = root / "extracted"
+    result = invoke(compiler, root, authorized, [
+        "package", "--verify", url, "--sha256", sha256, "--message-format=json",
+        *authorization,
+    ])
+    summary = json.loads(result.stdout)
+    require(summary["success"] and summary["archive"] == url and summary["sha256"] == sha256,
+            "HTTPS verify returned the wrong package identity")
+    result = invoke(compiler, root, authorized, [
+        "package", "--extract", url, "--sha256", sha256, "--output", str(target),
+        "--message-format=json", *authorization,
+    ])
+    summary = json.loads(result.stdout)
+    require(summary["success"] and summary["output"] == str(target), "HTTPS extraction failed")
+    result = invoke(compiler, target / summary["root"], authorized, ["run", "--frozen"])
+    require(result.stdout == b"42\n", "the HTTPS package could not run offline")
+
+    errors = root / "failed-extractions"
+    errors.mkdir()
+    bad = errors / "unpublished"
+    missing = ["package", "--extract", url, "--output", str(bad), *authorization]
+    before = len(requests)
+    result = invoke(compiler, root, authorized, missing, status=1)
+    require(b"require --sha256" in result.stderr and len(requests) == before,
+            "an HTTPS request started before digest admission")
+    result = invoke(compiler, root, authorized, [
+        "package", "--extract", url, "--sha256", sha256, "--output", str(target), *authorization,
+    ], status=1)
+    require(b"already exists" in result.stderr and len(requests) == before,
+            "an existing output triggered an HTTPS request")
+    for route, digest, credentials, expected in (
+        ("/package", "0" * 64, authorization, b"does not match the supplied SHA-256"),
+        ("/corrupt", sha256, authorization, b"does not match the supplied SHA-256"),
+        ("/corrupt", hashlib.sha256(b"damaged source archive").hexdigest(),
+         authorization, b"invalid source package"),
+        ("/package", sha256, [], b"authorization failed"),
+        ("/oversized-package", sha256, authorization, b"exceeds 64 MiB"),
+    ):
+        result = invoke(compiler, root, authorized, [
+            "package", "--extract", base + route, "--sha256", digest, "--output", str(bad),
+            *credentials,
+        ], status=1)
+        require(expected in result.stderr and not any(errors.iterdir()),
+                "failed HTTPS extraction left output or staging files")
+
+
 def verify(compiler, root):
     environment = dict(os.environ, NO_PROXY="127.0.0.1", no_proxy="127.0.0.1")
     for key in ("CURL_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR", "OXID_REGISTRY_TOKEN"):
@@ -122,7 +197,8 @@ def verify(compiler, root):
     (settings / ".curlrc").write_text("location\n")
     environment["CURL_HOME"] = str(settings)
     catalog = export(compiler, root, environment)
-    with serve(root, catalog) as (base, certificate, requests):
+    package = source_package(compiler, root, environment)
+    with serve(root, catalog, package) as (base, certificate, requests):
         trusted = dict(environment, CURL_CA_BUNDLE=str(certificate))
         authorized = dict(trusted, OXID_REGISTRY_TOKEN=TOKEN)
 
@@ -161,7 +237,8 @@ def verify(compiler, root):
                 "search skipped validation of nonmatching packages")
         require(b"unique and sorted" in search("/malformed", status=1).stderr, "duplicate names were accepted")
         require(requests[0] == ("/catalog", "Bearer " + TOKEN), "request did not authenticate")
-    print("HTTPS catalog export, authentication, TLS, filtering, redirect and response limits passed")
+        verify_source_download(compiler, root, base, package, authorized, requests)
+    print("HTTPS catalog search and verified source package download passed")
 
 
 def main():

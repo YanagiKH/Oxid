@@ -1,157 +1,9 @@
 //! Bounded registry search over a trusted HTTPS connection.
 use super::{name, version, Budget, MAX_SEARCH_ENTRIES};
-use std::{
-    env,
-    io::{Read, Write},
-    process::{Command, Stdio},
-};
+use crate::https;
 
 pub(super) const HEADER: &str = "Oxid registry catalog 1\n";
 const CATALOG_LIMIT: usize = 1024 * 1024;
-
-fn check_url(url: &str) -> Result<(), String> {
-    let Some(rest) = url.strip_prefix("https://") else {
-        return Err("registry catalogs require an HTTPS URL".into());
-    };
-    let authority = rest.split('/').next().unwrap_or_default();
-    if url.len() > 2048
-        || !url.bytes().all(|byte| byte.is_ascii_graphic())
-        || url.contains(['\\', '#', '?'])
-        || authority.is_empty()
-        || authority.contains(['@', '%'])
-    {
-        return Err("invalid registry catalog URL; use an HTTPS URL without credentials, query, or fragment".into());
-    }
-    Ok(())
-}
-
-fn check_token(token: &str) -> Result<(), String> {
-    let body = token.trim_end_matches('=');
-    if token.len() > 4096
-        || body.is_empty()
-        || !body.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'+' | b'/')
-        })
-    {
-        return Err("registry token environment variable must contain a valid bearer token".into());
-    }
-    Ok(())
-}
-
-fn read_token(variable: &str) -> Result<String, String> {
-    if variable.is_empty()
-        || variable.len() > 64
-        || !variable.bytes().enumerate().all(|(index, byte)| {
-            byte == b'_' || byte.is_ascii_alphabetic() || index != 0 && byte.is_ascii_digit()
-        })
-    {
-        return Err("--token-env requires an environment variable name".into());
-    }
-    let token = env::var(variable).map_err(|error| match error {
-        env::VarError::NotPresent => "registry token environment variable is unset",
-        env::VarError::NotUnicode(_) => "registry token environment variable is not valid text",
-    })?;
-    check_token(&token)?;
-    Ok(token)
-}
-
-fn fetch(url: &str, variable: Option<&str>, budget: &mut Budget) -> Result<Vec<u8>, String> {
-    check_url(url)?;
-    let token = variable.map(read_token).transpose()?;
-    let mut body = Vec::new();
-    budget.reserve(&mut body, CATALOG_LIMIT + 1)?;
-    let mut command = Command::new("curl");
-    command
-        .args([
-            "--disable",
-            "--silent",
-            "--globoff",
-            "--proto",
-            "=https",
-            "--tlsv1.2",
-            "--connect-timeout",
-            "5",
-            "--max-time",
-            "30",
-            "--max-filesize",
-            "1048576",
-            "--write-out",
-            "%{stderr}%{http_code}",
-            "--url",
-            url,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(variable) = variable {
-        command
-            .env_remove(variable)
-            .args(["--header", "@-"])
-            .stdin(Stdio::piped());
-    } else {
-        command.stdin(Stdio::null());
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("cannot start curl for registry search: {error}"))?;
-    let result = (|| {
-        if let Some(token) = token {
-            let mut headers = child
-                .stdin
-                .take()
-                .ok_or("cannot send registry authorization")?;
-            headers
-                .write_all(b"Authorization: Bearer ")
-                .and_then(|()| headers.write_all(token.as_bytes()))
-                .and_then(|()| headers.write_all(b"\n"))
-                .map_err(|_| "cannot send registry authorization")?;
-        }
-        let mut stream = child.stdout.take().ok_or("cannot read registry catalog")?;
-        let mut used = 0;
-        body.resize(CATALOG_LIMIT + 1, 0);
-        while used < body.len() {
-            let read = stream
-                .read(&mut body[used..])
-                .map_err(|_| "cannot read registry catalog")?;
-            if read == 0 {
-                break;
-            }
-            used += read;
-        }
-        if used > CATALOG_LIMIT {
-            return Err("registry catalog exceeds 1 MiB".into());
-        }
-        body.truncate(used);
-        let mut status = [0; 3];
-        let received_status = child
-            .stderr
-            .take()
-            .ok_or("cannot read registry status")?
-            .read_exact(&mut status)
-            .is_ok();
-        let exit = child.wait().map_err(|_| "cannot finish registry request")?;
-        if exit.code() == Some(63) {
-            return Err("registry catalog exceeds 1 MiB".into());
-        }
-        if !exit.success() || !received_status || !status.iter().all(u8::is_ascii_digit) {
-            return Err("HTTPS registry request failed; check the address and certificate".into());
-        }
-        match &status {
-            b"200" => Ok(body),
-            b"401" | b"403" => {
-                Err("registry authorization failed; check your token and --token-env".into())
-            }
-            _ => Err(format!(
-                "registry catalog returned HTTP {}",
-                std::str::from_utf8(&status).unwrap()
-            )),
-        }
-    })();
-    if result.is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    result
-}
 
 fn parse(body: &[u8], prefix: &str, budget: &mut Budget) -> Result<Vec<(String, String)>, String> {
     let rows = std::str::from_utf8(body)
@@ -190,6 +42,13 @@ pub(super) fn search(
     variable: Option<&str>,
     budget: &mut Budget,
 ) -> Result<Vec<(String, String)>, String> {
-    let body = fetch(url, variable, budget)?;
+    let mut body = Vec::new();
+    budget.reserve(&mut body, CATALOG_LIMIT)?;
+    https::download(url, variable, CATALOG_LIMIT as u64, 30, &mut body).map_err(
+        |error| match error {
+            https::Error::TooLarge => "registry catalog exceeds 1 MiB".into(),
+            https::Error::Request(message) => message,
+        },
+    )?;
     parse(&body, prefix, budget)
 }

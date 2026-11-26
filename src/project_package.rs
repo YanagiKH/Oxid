@@ -29,9 +29,11 @@ pub(crate) fn library_control_bytes() -> usize {
     archive::library_control_bytes()
 }
 
+use crate::https;
+use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Component, Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
@@ -562,22 +564,23 @@ impl Operation {
 
 struct Options {
     operation: Operation,
-    input: Option<PathBuf>,
+    input: Option<String>,
     output: Option<PathBuf>,
     sha256: Option<String>,
+    token_env: Option<String>,
     workspace: bool,
     json: bool,
 }
 
 struct Summary {
     operation: Operation,
-    archive: PathBuf,
+    archive: String,
     output: Option<PathBuf>,
     root: String,
     info: archive::Info,
 }
 
-const HELP: &str = "Typed source packages (experimental):\n  oxid package [--frozen|--locked|--offline] [--workspace] [--output ARCHIVE]\n  oxid package --verify ARCHIVE [--sha256 HEX]\n  oxid package --extract ARCHIVE --output NEW_DIRECTORY [--sha256 HEX]\n\nCreation requires a matching existing typed lock and includes the whole workspace.\nIt includes cached Git libraries as local sources and never fetches.\nIt checks retained source and declared tests without executing them. Verification\nchecks archive integrity; extraction also checks the isolated project and lock.\n--edition=typed-preview and --message-format=text|json are accepted.\n";
+const HELP: &str = "Typed source packages (experimental):\n  oxid package [--frozen|--locked|--offline] [--workspace] [--output ARCHIVE]\n  oxid package --verify ARCHIVE [--sha256 HEX]\n  oxid package --extract ARCHIVE --output NEW_DIRECTORY [--sha256 HEX]\n  oxid package --extract HTTPS_URL --sha256 HEX --output NEW_DIRECTORY [--token-env NAME]\n\nCreation requires a matching existing typed lock and includes the whole workspace.\nIt includes cached Git libraries as local sources and never fetches.\nIt checks retained source and declared tests without executing them. Verification\nchecks archive integrity; extraction also checks the isolated project and lock.\n--edition=typed-preview and --message-format=text|json are accepted.\n";
 
 /// Own `package` before project discovery so verify/extract need no local
 /// manifest. A source filename or argument of another command is never stolen.
@@ -642,6 +645,7 @@ fn parse_options(args: &[String], command: usize) -> Result<Options, String> {
         input: None,
         output: None,
         sha256: None,
+        token_env: None,
         workspace: false,
         json: false,
     };
@@ -670,7 +674,13 @@ fn parse_options(args: &[String], command: usize) -> Result<Options, String> {
         }
         if !matches!(
             name,
-            "--edition" | "--message-format" | "--output" | "--verify" | "--extract" | "--sha256"
+            "--edition"
+                | "--message-format"
+                | "--output"
+                | "--verify"
+                | "--extract"
+                | "--sha256"
+                | "--token-env"
         ) {
             return Err(format!("unsupported package option: {name}"));
         }
@@ -701,8 +711,9 @@ fn parse_options(args: &[String], command: usize) -> Result<Options, String> {
                 } else {
                     Operation::Extract
                 };
-                options.input = Some(PathBuf::from(value));
+                options.input = Some(value.to_owned());
             }
+            "--token-env" => options.token_env = Some(value.to_owned()),
             "--sha256"
                 if value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
             {
@@ -729,6 +740,16 @@ fn parse_options(args: &[String], command: usize) -> Result<Options, String> {
         if options.operation == Operation::Extract && options.output.is_none() {
             return Err("--extract requires --output NEW_DIRECTORY".into());
         }
+    }
+    let remote = options
+        .input
+        .as_deref()
+        .is_some_and(|input| input.starts_with("https://"));
+    if options.token_env.is_some() && !remote {
+        return Err("--token-env requires an HTTPS source archive".into());
+    }
+    if remote && options.sha256.is_none() {
+        return Err("HTTPS package verification and extraction require --sha256".into());
     }
     Ok(options)
 }
@@ -781,7 +802,7 @@ fn create(options: &Options) -> Result<Summary, String> {
     })?;
     Ok(Summary {
         operation: Operation::Create,
-        archive: output.clone(),
+        archive: output.to_string_lossy().into_owned(),
         output: Some(output),
         root: archive.root,
         info,
@@ -793,8 +814,14 @@ fn verify_or_extract(options: &Options) -> Result<Summary, String> {
         .input
         .as_deref()
         .ok_or("package operation requires an archive")?;
-    let input = absolute_path(input)?;
-    let (archive, info) = read_archive(&input)?;
+    let (input, archive, info) = if input.starts_with("https://") {
+        let (archive, info) = download_archive(input, options)?;
+        (input.to_owned(), archive, info)
+    } else {
+        let input = absolute_path(Path::new(input))?;
+        let (archive, info) = read_archive(&input)?;
+        (input.to_string_lossy().into_owned(), archive, info)
+    };
     if options
         .sha256
         .as_ref()
@@ -833,6 +860,53 @@ fn verify_or_extract(options: &Options) -> Result<Summary, String> {
         root: archive.root,
         info,
     })
+}
+
+fn download_archive(
+    url: &str,
+    options: &Options,
+) -> Result<(archive::Archive, archive::Info), String> {
+    let expected = options
+        .sha256
+        .as_deref()
+        .ok_or("HTTPS packages require --sha256")?;
+    let parent = if let Some(output) = options.output.as_deref() {
+        let output = destination(output, false)?;
+        require_absent(&output)?;
+        output
+            .parent()
+            .ok_or("package destination has no parent")?
+            .to_owned()
+    } else {
+        fs::canonicalize(std::env::temp_dir())
+            .map_err(|error| format!("cannot resolve temporary download directory: {error}"))?
+    };
+    let stage = PrivateDirectory::create(&parent)?;
+    let path = stage.path.join("archive.oxpkg.tar");
+    let mut file = new_file(&path)?;
+    https::download(
+        url,
+        options.token_env.as_deref(),
+        archive::MAX_ARCHIVE_BYTES,
+        180,
+        &mut file,
+    )
+    .map_err(|error| match error {
+        https::Error::TooLarge => "HTTPS source package exceeds 64 MiB".into(),
+        https::Error::Request(message) => message,
+    })?;
+    drop(file);
+
+    // Check the expected identity before the archive decoder reads any member.
+    let file =
+        File::open(&path).map_err(|error| format!("cannot open downloaded package: {error}"))?;
+    let mut hash = Sha256::new();
+    let bytes = io::copy(&mut file.take(archive::MAX_ARCHIVE_BYTES + 1), &mut hash)
+        .map_err(|error| format!("cannot hash downloaded package: {error}"))?;
+    if bytes > archive::MAX_ARCHIVE_BYTES || format!("{:x}", hash.finalize()) != expected {
+        return Err("package archive does not match the supplied SHA-256".into());
+    }
+    read_archive(&path)
 }
 
 fn validate_materialized(archive: &archive::Archive, stage: &Path) -> Result<(), String> {
@@ -1237,13 +1311,14 @@ fn report(operation: Operation, json: bool, result: Result<Summary, String>) -> 
     let success = result.is_ok();
     let message = match result {
         Ok(summary) if json => format!("{{\"schema\":\"oxid-typed-package-summary-v1\",\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"package-summary\",\"operation\":{},\"success\":true,\"archive\":{},\"sha256\":{},\"bytes\":{},\"files\":{},\"root\":{},\"output\":{}}}\n",
-            json_string(summary.operation.name()), json_string(&summary.archive.to_string_lossy()), json_string(&summary.info.sha256), summary.info.bytes, summary.info.file_count,
+            json_string(summary.operation.name()), json_string(&summary.archive), json_string(&summary.info.sha256), summary.info.bytes, summary.info.file_count,
             json_string(&summary.root), summary.output.as_ref().map_or("null".into(), |path| json_string(&path.to_string_lossy()))),
         Ok(summary) => {
             let location = if summary.operation == Operation::Extract {
-                summary.output.as_ref().map_or_else(|| summary.archive.clone(), |path| path.join(&summary.root))
+                summary.output.as_ref().map_or_else(|| summary.archive.clone(),
+                    |path| path.join(&summary.root).to_string_lossy().into_owned())
             } else { summary.archive.clone() };
-            format!("package {}: {}\nSHA-256: {}\nproject root: {}\n", summary.operation.name(), location.display(), summary.info.sha256, summary.root)
+            format!("package {}: {}\nSHA-256: {}\nproject root: {}\n", summary.operation.name(), location, summary.info.sha256, summary.root)
         }
         Err(error) if json => format!("{{\"schema\":\"oxid-typed-package-summary-v1\",\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"package-summary\",\"operation\":{},\"success\":false,\"error\":{}}}\n", json_string(operation.name()), json_string(&error)),
         Err(error) => format!("error[E0001] (package): {error}\n"),
