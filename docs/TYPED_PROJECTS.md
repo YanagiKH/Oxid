@@ -501,6 +501,17 @@ oxid package --verify application.oxpkg.tar
 oxid package --extract application.oxpkg.tar --output restored
 ```
 
+To restore a package from an HTTPS server, use its URL in place of the archive
+path and supply the publisher's SHA-256 checksum.
+
+```sh
+oxid package --extract https://packages.example.com/application.oxpkg.tar --sha256 "$PACKAGE_SHA256" --output restored
+```
+
+HTTPS downloads use curl. Add `--token-env OXID_REGISTRY_TOKEN` if the server
+requires a bearer token. Use `--verify` with the same URL and checksum to
+check the archive before extracting it.
+
 A source package includes the project, local dependencies, declared tests and
 matching lock. Extraction requires a new directory. Enter the project root
 printed by extraction, then run `oxid build --frozen` to rebuild offline.

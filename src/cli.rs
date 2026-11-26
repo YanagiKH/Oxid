@@ -9,6 +9,7 @@ mod runtime {
 
 mod doctor_cli;
 mod frontend;
+mod https;
 mod lsp_cli;
 mod program_arguments;
 mod program_environment;
