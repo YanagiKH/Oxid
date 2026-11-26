@@ -19,6 +19,7 @@ REVIEWED_SOURCE = "a6d5c88deec00acbbaa1a2cac330ccd4e4d205d9"
 REVIEWED_PARENTS = ("c877188d5cffe8df2e43f22726d9f53d6a7a0ac1",)
 REVIEWED_TREE = "93b92ac72db2c603505b614e510a60fab1788e88"
 PUBLIC_TESTS = {
+    "tests/typed_build_timings.rs",
     "tests/file_open_append.rs", "tests/typed_environment.rs", "tests/typed_test_filter.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
     "tests/typed_owned_record_element_loans.rs", "tests/typed_registry_ranges.rs",

@@ -20,6 +20,7 @@ use std::{
     io::{self, Write},
     num::NonZeroUsize,
     path::{Component, Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 pub(crate) use editor::project_graphs as editor_project_graphs;
@@ -38,6 +39,7 @@ struct Options {
     update: bool,
     workspace: bool,
     versioned_docs: bool,
+    build_timings: bool,
     package: Option<String>,
     workspace_option_error: Option<String>,
     lock_option_error: Option<String>,
@@ -177,6 +179,7 @@ impl Options {
                 "--update" => Some(&mut result.update),
                 "--workspace" => Some(&mut result.workspace),
                 "--versioned" if result.command() == "doc" => Some(&mut result.versioned_docs),
+                "--timings" if result.command() == "build" => Some(&mut result.build_timings),
                 _ => None,
             };
             if let Some(flag) = flag {
@@ -1392,6 +1395,50 @@ pub(crate) fn native_doctor_project() -> Result<Option<String>, String> {
         graph.specs.len(), if existing.is_some() { "oxid.lock verified against retained inputs" } else { "oxid.lock absent (optional); reproducibility is not locked" })))
 }
 
+struct BuildTimings {
+    last: Instant,
+    stages: Vec<(&'static str, Duration)>,
+}
+
+impl BuildTimings {
+    fn start(options: &Options) -> Option<Self> {
+        options.build_timings.then(|| Self {
+            last: Instant::now(),
+            stages: Vec::new(),
+        })
+    }
+
+    fn record(&mut self, stage: &'static str) {
+        let now = Instant::now();
+        self.stages.push((stage, now.duration_since(self.last)));
+        self.last = now;
+    }
+
+    fn report(&self, options: &Options) -> Result<(), String> {
+        let result = if options.json() {
+            let stages = self
+                .stages
+                .iter()
+                .map(|(name, elapsed)| {
+                    format!(
+                        "{{\"name\":{},\"elapsed_ns\":{}}}",
+                        json_string(name),
+                        elapsed.as_nanos()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            writeln!(io::stdout().lock(), "{{\"schema_version\":1,\"edition\":\"typed-preview\",\"kind\":\"build-timings\",\"stages\":[{stages}]}}")
+        } else {
+            let mut stderr = io::stderr().lock();
+            self.stages.iter().try_for_each(|(name, elapsed)| {
+                writeln!(stderr, "{name} {:.2} ms", elapsed.as_secs_f64() * 1000.0)
+            })
+        };
+        result.map_err(|error| format!("cannot report build timings: {error}"))
+    }
+}
+
 fn execute_project(
     root: &Path,
     snapshot: &runtime::ManifestSnapshot,
@@ -1411,6 +1458,7 @@ fn execute_project(
             true,
         ));
     }
+    let mut timings = BuildTimings::start(options);
     let (existing, graph) = project_operation_graph(
         root,
         snapshot,
@@ -1420,6 +1468,9 @@ fn execute_project(
         false,
         false,
     )?;
+    if let Some(timings) = &mut timings {
+        timings.record("Resolve dependencies");
+    }
     let entry_override = entry_override
         .map(|entry| local_source(&graph.specs[0].root, entry))
         .transpose()?;
@@ -1438,7 +1489,10 @@ fn execute_project(
     if pure_test {
         return Ok(prepared.execute_test(execution_policy(&snapshot.manifest)?));
     }
-    Ok(match native_settings {
+    if let Some(timings) = &mut timings {
+        timings.record("Prepare sources and verify lock");
+    }
+    let status = match native_settings {
         Some(settings) => prepared.execute_with_native_settings(
             command,
             options.json(),
@@ -1452,7 +1506,14 @@ fn execute_project(
             process,
             execution_policy(&snapshot.manifest)?,
         ),
-    })
+    };
+    if status == 0 {
+        if let Some(mut timings) = timings {
+            timings.record("Compile and link");
+            timings.report(options)?;
+        }
+    }
+    Ok(status)
 }
 
 fn lock_project(

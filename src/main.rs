@@ -3181,6 +3181,7 @@ fn help() {
     println!("  oxid fmt <file.ox>                Print formatted source");
     println!("  oxid fmt --check [--workspace]   Check project formatting");
     println!("  oxid fmt --write [--workspace]   Format project source files");
+    println!("  oxid build --timings            Show build times by stage");
     println!("  oxid lsp --stdio                 Start editor diagnostics and formatting");
     println!("  oxid doctor --native              Check native build tools");
     println!("  oxid check --workspace            Check all workspace members");
