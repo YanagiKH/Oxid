@@ -202,8 +202,8 @@ mod tests {
     }
     #[test]
     fn process_items_are_a_separate_authority() {
-        assert_eq!(experimental::Item::ALL.len(), 31);
-        assert_eq!(experimental::Function::ALL.len(), 23);
+        assert_eq!(experimental::Item::ALL.len(), 32);
+        assert_eq!(experimental::Function::ALL.len(), 24);
         let empty = BuiltinSet::None;
         for item in Function::ALL {
             let selected = empty.admit(BuiltinItem::Process(item));

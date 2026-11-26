@@ -448,7 +448,8 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             Function::ReadSome
             | Function::WriteSome
             | Function::WriteStderr
-            | Function::ArgBytes => {
+            | Function::ArgBytes
+            | Function::ReadVariable => {
                 return Err(bad("binary operation requires prepared delivery", span));
             }
             Function::Len | Function::Capacity => {

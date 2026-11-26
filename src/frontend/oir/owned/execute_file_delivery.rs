@@ -102,7 +102,8 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
         span: Span,
     ) -> Result<Delivery> {
         let id = self.frames[frame].function;
-        if self.plan.witness().experimental_function(operation) != Some(id) || !operation.is_file()
+        if self.plan.witness().experimental_function(operation) != Some(id)
+            || !operation.is_reference_delivery()
         {
             return Err(bad("file primitive identity", span));
         }
@@ -199,7 +200,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             releases,
             cost: self
                 .plan
-                .file_delivery_cost(id)
+                .reference_delivery_cost(id)
                 .ok_or_else(|| bad("file return cost", span))?,
         })
     }
@@ -236,6 +237,79 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
             .map_err(|failure| heap_failure(failure, span))?;
         Ok((place, value))
     }
+    fn read_environment(&mut self, frame: usize, fuel: &mut usize, span: Span) -> Result<Value> {
+        use crate::program_environment::{self, Name, Read};
+        let name = match self.byte_region(
+            frame,
+            AccessBase::Parameter(ReferenceParamId(0)),
+            Access::Read,
+            span,
+        )? {
+            ByteRegion::Activation { frame, bytes } => {
+                let place = BufferPlace::Activation { frame, bytes };
+                Name::from_bytes(self.resource_bytes(&place), fuel)
+            }
+            ByteRegion::Cell(address) => {
+                let place = BufferPlace::Cell(address);
+                Name::from_bytes(self.resource_bytes(&place), fuel)
+            }
+            ByteRegion::Buffer { value, start, end } => {
+                let bytes = self
+                    .heap
+                    .range(&value, start, end)
+                    .map_err(|failure| heap_failure(failure, span))?;
+                Name::from_bytes(bytes, fuel)
+            }
+            ByteRegion::Vector { value, start, end } => {
+                let bytes = self
+                    .heap
+                    .vector_range(&value, byte_buffer::VectorElement::U8, start, end)
+                    .map_err(|failure| heap_failure(failure, span))?;
+                Name::from_bytes(bytes, fuel)
+            }
+        }
+        .map_err(|()| RunFailure::Fuel(span))?;
+        let region = self.byte_region(
+            frame,
+            AccessBase::Parameter(ReferenceParamId(1)),
+            Access::Write,
+            span,
+        )?;
+        let read = match region {
+            ByteRegion::Activation { frame, bytes } => {
+                let place = BufferPlace::Activation { frame, bytes };
+                program_environment::read(name, self.resource_bytes_mut(&place), fuel)
+            }
+            ByteRegion::Cell(address) => {
+                let place = BufferPlace::Cell(address);
+                program_environment::read(name, self.resource_bytes_mut(&place), fuel)
+            }
+            ByteRegion::Buffer { value, start, end } => {
+                let bytes = self
+                    .heap
+                    .range_mut(&value, start, end)
+                    .map_err(|failure| heap_failure(failure, span))?;
+                program_environment::read(name, bytes, fuel)
+            }
+            ByteRegion::Vector { value, start, end } => {
+                // SAFETY: The U8 element slice and exclusive loan were
+                // validated above. Every returned byte is a valid U8.
+                let bytes = unsafe {
+                    self.heap
+                        .vector_range_mut(&value, byte_buffer::VectorElement::U8, start, end)
+                }
+                .map_err(|failure| heap_failure(failure, span))?;
+                program_environment::read(name, bytes, fuel)
+            }
+        }
+        .map_err(|()| RunFailure::Fuel(span))?;
+        Ok(match read {
+            Read::Data(length) => Value::status(0, Some(length), 4),
+            Read::Missing => Value::status(1, None, 0),
+            Read::Error(code) => Value::status(2, Some(code), 4),
+        })
+    }
+
     fn commit_file_result(&mut self, frame: usize, place: ResultPlace, value: &Value) {
         let ResultPlace::Owner {
             owner,
@@ -268,6 +342,7 @@ impl<V: StoredValue, W: PlanWitness> ValueMachine<'_, '_, V, W> {
                 .ok_or(RunFailure::Fuel(span))?;
         }
         let value = match operation {
+            Function::ReadVariable => self.read_environment(frame, &mut fuel, span)?,
             Function::OpenRead
             | Function::OpenRegularRead
             | Function::Create

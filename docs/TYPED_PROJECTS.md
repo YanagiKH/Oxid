@@ -209,6 +209,22 @@ including when the input stream closes. A timeout, termination notification,
 or unavailable input returns false. Check `termination_requested()` to decide
 when to exit. Pass zero to check immediately.
 
+## Reading environment variables
+
+In a process entry, import `std::env::read_variable` and
+`std::io::ReadSomeStatus`. Pass the variable's name and a separate mutable byte buffer.
+
+```oxid
+let name = b"TERM";
+let mut value = b"                                ";
+let received = read_variable(&name, &mut value);
+```
+
+`Data(n)` means the first `n` bytes are available. An empty value returns
+`Data(0)`. A missing variable returns `Eof`. The buffer stays intact if the
+name is invalid or the value does not fit. Names are ASCII and may contain up
+to 255 bytes. The largest value this call copies is 32 KiB.
+
 ## Measuring elapsed time
 
 Import `monotonic_millis` from `std::time`. Save a reading before your work
