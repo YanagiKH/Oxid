@@ -121,3 +121,104 @@ int32_t __oxid_arg_bytes_hosted(int32_t index, uint8_t *bytes, int32_t capacity,
     uint64_t operation_budget = UINT64_MAX;
     return __oxid_arg_bytes(index, bytes, capacity, &operation_budget, result, return_cost);
 }
+
+#if defined(OXID_READ_ENVIRONMENT)
+#if defined(_WIN32)
+#include <wchar.h>
+#endif
+enum { ENV_NAME_LIMIT = 255, ENV_VALUE_LIMIT = 32768 };
+_Static_assert(EINVAL == 22 && ERANGE == 34, "environment error codes must match the interpreter");
+
+static int32_t environment_descriptor(const uint8_t *name, int32_t name_length,
+    uint8_t *bytes, int32_t capacity, uint64_t *fuel, oxid_binary_result *result) {
+    if (name_length < 0) return OXID_BUFFER_BOUNDS;
+    if (name_length && !name) return OXID_BUFFER_DESCRIPTOR;
+    int32_t status = argument_descriptor(bytes, capacity, fuel, result);
+    if (status) return status;
+    size_t length = (size_t)name_length;
+    if (overlaps(name, length, bytes, (size_t)capacity) ||
+        overlaps(name, length, result, sizeof(*result)) ||
+        overlaps(name, length, fuel, sizeof(*fuel))) return OXID_BUFFER_DESCRIPTOR;
+    return 0;
+}
+
+int32_t __oxid_environment_bytes(const uint8_t *name, int32_t name_length,
+    uint8_t *bytes, int32_t capacity, uint64_t *fuel, oxid_binary_result *result,
+    uint64_t return_cost) {
+    int32_t status = environment_descriptor(name, name_length, bytes, capacity, fuel, result);
+    if (status) return status;
+    if (*fuel < return_cost) return OXID_BUFFER_FUEL;
+    uint64_t remaining = *fuel - return_cost;
+    oxid_binary_result value = {2, EINVAL};
+    const oxid_argument_unit *source = NULL;
+    uint32_t length = 0;
+    if (name_length > 0 && name_length <= ENV_NAME_LIMIT) {
+        if (remaining < (uint64_t)name_length + 1) return OXID_BUFFER_FUEL;
+        remaining -= (uint64_t)name_length + 1;
+        oxid_argument_unit terminated[ENV_NAME_LIMIT + 1];
+        int valid = 1;
+        for (int32_t index = 0; index < name_length; ++index) {
+            uint8_t character = name[index];
+            if (!character || character == '=' || character > 127) {
+                valid = 0;
+                break;
+            }
+            terminated[index] = (oxid_argument_unit)character;
+        }
+        if (valid) {
+            terminated[name_length] = 0;
+#if defined(_WIN32)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            source = (const oxid_argument_unit *)_wgetenv((const wchar_t *)terminated);
+#pragma clang diagnostic pop
+#else
+            source = getenv(terminated);
+#endif
+            value = (oxid_binary_result){1, 0};
+        }
+    }
+    if (source) {
+#if defined(_WIN32) || defined(OXID_ARGUMENTS_UTF16)
+        const oxid_argument_unit *cursor = source;
+        for (;;) {
+            uint32_t character = argument_character(&cursor);
+            uint32_t width = argument_width(character);
+            if (remaining < width) return OXID_BUFFER_FUEL;
+            remaining -= width;
+            if (!character) break;
+            length += width;
+            if (length > ENV_VALUE_LIMIT) break;
+        }
+#else
+        for (;;) {
+            if (!remaining) return OXID_BUFFER_FUEL;
+            --remaining;
+            if (!source[length]) break;
+            ++length;
+            if (length > ENV_VALUE_LIMIT) break;
+        }
+#endif
+        if (length > ENV_VALUE_LIMIT || length > (uint32_t)capacity) {
+            value = (oxid_binary_result){2, ERANGE};
+        } else {
+            if (remaining < length) return OXID_BUFFER_FUEL;
+            remaining -= length;
+            value = (oxid_binary_result){0, (int32_t)length};
+        }
+    }
+    *fuel = remaining;
+    if (!value.tag && length) argument_copy(bytes, source, length);
+    *result = value;
+    return 0;
+}
+
+int32_t __oxid_environment_bytes_hosted(const uint8_t *name, int32_t name_length,
+    uint8_t *bytes, int32_t capacity, uint64_t *fuel, oxid_binary_result *result,
+    uint64_t return_cost) {
+    int32_t status = environment_descriptor(name, name_length, bytes, capacity, fuel, result);
+    if (status) return status;
+    uint64_t budget = UINT64_MAX;
+    return __oxid_environment_bytes(name, name_length, bytes, capacity, &budget, result, return_cost);
+}
+#endif

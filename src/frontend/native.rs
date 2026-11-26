@@ -532,7 +532,9 @@ fn compile_inner(
         fs::write(workspace.0.join("experimental_files.c"), FILE_CORE).map_err(io)?;
         fs::write(workspace.0.join("experimental_arguments.c"), ARGUMENT_CORE).map_err(io)?;
         fs::write(workspace.0.join("typed_bytebuf.c"), BYTEBUF_RUNTIME).map_err(io)?;
-        let arguments = if module.contains("declare void @__oxid_arguments_start(i32, ptr)") {
+        let arguments = if module.contains("declare i32 @__oxid_environment_bytes(") {
+            "#define OXID_READ_ENVIRONMENT 1\n#include \"experimental_arguments.c\"\n"
+        } else if module.contains("declare void @__oxid_arguments_start(i32, ptr)") {
             "#include \"experimental_arguments.c\"\n"
         } else {
             ""

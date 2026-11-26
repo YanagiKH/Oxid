@@ -44,9 +44,10 @@ pub(in crate::frontend) enum Item {
     WriteStderr,
     WaitForStdin,
     OpenRegularRead,
+    ReadVariable,
 }
 impl Item {
-    pub const ALL: [Self; 31] = [
+    pub const ALL: [Self; 32] = [
         Self::ByteBuf,
         Self::GrowStatus,
         Self::ReadSomeStatus,
@@ -78,6 +79,7 @@ impl Item {
         Self::OpenAppend,
         Self::WriteStderr,
         Self::OpenRegularRead,
+        Self::ReadVariable,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -101,6 +103,7 @@ impl Item {
             Self::FileStatus => "FileStatus",
             Self::OpenRead => "open_read",
             Self::OpenRegularRead => "open_regular_read",
+            Self::ReadVariable => "read_variable",
             Self::Create => "create",
             Self::FileReadSome => "read_some",
             Self::FileWriteSome => "write_some",
@@ -137,7 +140,7 @@ impl Item {
             | Self::Close
             | Self::SeekAbsolute
             | Self::OpenAppend => 3,
-            Self::ArgStatus | Self::ArgCount | Self::ArgBytes => 4,
+            Self::ArgStatus | Self::ArgCount | Self::ArgBytes | Self::ReadVariable => 4,
             Self::EnableTermination
             | Self::TerminationRequested
             | Self::WaitForTermination
@@ -171,6 +174,7 @@ impl Item {
             Self::Take => Function::Take,
             Self::OpenRead => Function::OpenRead,
             Self::OpenRegularRead => Function::OpenRegularRead,
+            Self::ReadVariable => Function::ReadVariable,
             Self::Create => Function::Create,
             Self::FileReadSome => Function::FileReadSome,
             Self::FileWriteSome => Function::FileWriteSome,
@@ -293,9 +297,15 @@ pub(in crate::frontend) enum Function {
     WriteStderr,
     WaitForStdin,
     OpenRegularRead,
+    ReadVariable,
 }
 impl Function {
-    pub const PROCESS_IO: [Self; 3] = [Self::ReadSome, Self::WriteSome, Self::WriteStderr];
+    pub const PROCESS_IO: [Self; 4] = [
+        Self::ReadSome,
+        Self::WriteSome,
+        Self::WriteStderr,
+        Self::ReadVariable,
+    ];
     pub const BINARY_DELIVERY: [Self; 4] = [
         Self::ReadSome,
         Self::WriteSome,
@@ -324,10 +334,13 @@ impl Function {
     pub fn is_file(self) -> bool {
         self.item().family() == 3
     }
+    pub fn is_reference_delivery(self) -> bool {
+        self.is_file() || self == Self::ReadVariable
+    }
     pub fn is_arguments(self) -> bool {
         self.item().family() == 4
     }
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 24] = [
         Self::New,
         Self::Len,
         Self::Capacity,
@@ -351,6 +364,7 @@ impl Function {
         Self::OpenAppend,
         Self::WriteStderr,
         Self::OpenRegularRead,
+        Self::ReadVariable,
     ];
     pub fn item(self) -> Item {
         match self {
@@ -367,6 +381,7 @@ impl Function {
             Self::Take => Item::Take,
             Self::OpenRead => Item::OpenRead,
             Self::OpenRegularRead => Item::OpenRegularRead,
+            Self::ReadVariable => Item::ReadVariable,
             Self::Create => Item::Create,
             Self::FileReadSome => Item::FileReadSome,
             Self::FileWriteSome => Item::FileWriteSome,
@@ -389,7 +404,7 @@ impl Function {
     pub fn result_enum(self) -> Option<Enumeration> {
         match self {
             Self::Reserve | Self::Push | Self::Extend | Self::Resize => Some(Enumeration::Grow),
-            Self::ReadSome | Self::FileReadSome => Some(Enumeration::Read),
+            Self::ReadSome | Self::FileReadSome | Self::ReadVariable => Some(Enumeration::Read),
             Self::WriteSome | Self::WriteStderr | Self::FileWriteSome => Some(Enumeration::Write),
             Self::OpenRead | Self::OpenRegularRead | Self::Create | Self::OpenAppend => {
                 Some(Enumeration::Open)
@@ -434,6 +449,14 @@ impl Function {
             WriteSome | WriteStderr | OpenRead | OpenRegularRead | Create | OpenAppend => {
                 ([bytes(BorrowKind::Shared), unit, unit], 1)
             }
+            ReadVariable => (
+                [
+                    bytes(BorrowKind::Shared),
+                    bytes(BorrowKind::Exclusive),
+                    unit,
+                ],
+                2,
+            ),
             FileReadSome => ([file, bytes(BorrowKind::Exclusive), unit], 2),
             FileWriteSome => ([file, bytes(BorrowKind::Shared), unit], 2),
             SyncAll | Close => ([file, unit, unit], 1),
@@ -503,12 +526,14 @@ const FILE_APPEND_ITEM_BIT: usize = 46;
 const STDERR_ITEM_BIT: usize = 47;
 const STDIN_WAIT_ITEM_BIT: usize = 48;
 const FILE_REGULAR_READ_ITEM_BIT: usize = 49;
+const READ_VARIABLE_ITEM_BIT: usize = 50;
 impl Item {
     const fn inventory_bit(self) -> usize {
         match self {
             Self::SeekAbsolute => SEEK_ITEM_BIT,
             Self::OpenAppend => FILE_APPEND_ITEM_BIT,
             Self::OpenRegularRead => FILE_REGULAR_READ_ITEM_BIT,
+            Self::ReadVariable => READ_VARIABLE_ITEM_BIT,
             Self::WriteStderr => STDERR_ITEM_BIT,
             Self::EnableTermination => PROCESS_ITEM_START,
             Self::TerminationRequested => PROCESS_ITEM_START + 1,
@@ -599,7 +624,8 @@ impl Inventory {
                 FILE_APPEND_ITEM_BIT < STDERR_ITEM_BIT && STDERR_ITEM_BIT < STDIN_WAIT_ITEM_BIT
             );
             assert!(STDIN_WAIT_ITEM_BIT < FILE_REGULAR_READ_ITEM_BIT);
-            assert!(FILE_REGULAR_READ_ITEM_BIT < 60);
+            assert!(FILE_REGULAR_READ_ITEM_BIT < READ_VARIABLE_ITEM_BIT);
+            assert!(READ_VARIABLE_ITEM_BIT < 60);
         }
         debug_assert!(legacy < 9);
         ((self.bits() << 4) | u64::from(legacy)).to_le_bytes()
@@ -970,7 +996,7 @@ mod tests {
         let all = Item::ALL
             .into_iter()
             .fold(Inventory::default(), Inventory::admit);
-        assert_eq!((all.enums(), all.functions()), (6, 23));
+        assert_eq!((all.enums(), all.functions()), (6, 24));
         for (index, item) in Function::ALL.into_iter().enumerate() {
             assert_eq!(all.function_rank(item), Some(index));
         }
