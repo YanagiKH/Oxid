@@ -1,5 +1,6 @@
 """Check independent UTF-8 oracle coverage and lock-refusal controls."""
 import copy
+import json
 from pathlib import Path
 import platform
 import shutil
@@ -13,6 +14,42 @@ import verify_utf8_text_app as app
 
 
 class Utf8Oracle(unittest.TestCase):
+    def test_native_build_requires_host_specific_cache_outcomes(self):
+        schema = {"schema_version": 1, "edition": "typed-preview"}
+
+        def build_result(outcome):
+            rows = [{**schema, "kind": "workspace-member", "member": "app", "status": "ok"},
+                    {**schema, "kind": "compile-summary", "success": True}]
+            if outcome is not None:
+                rows.append({**schema, "kind": "build-cache", "stage": "native-object",
+                             "status": outcome})
+            rows.append({**schema, "kind": "workspace-summary", "operation": "build",
+                         "success": True, "total": 1, "failed": 0})
+            return SimpleNamespace(stdout="\n".join(map(json.dumps, rows)).encode(), stderr=b""), 0
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "app/.oxid/bin/utf8-normalize"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"\x7fELF\x02\x01\x01" + bytes(9) + b"\x03\x00\x3e\x00")
+            oracle = app.TextOracle(root, {}, {"builds": []})
+            for host, wanted, accepted in (("linux", None, None), ("linux", "miss", "miss"),
+                                            ("linux", "hit", "hit"), ("darwin", None, None),
+                                            ("darwin", "miss", "unavailable"),
+                                            ("darwin", "hit", "unavailable")):
+                label = f"{host}-{wanted}"
+                with self.subTest(host=host, incremental=wanted), patch.object(app.sys, "platform", host), \
+                        patch.object(app.platform, "machine", return_value="x86_64"), \
+                        patch.object(app.native_target, "elf_identity", return_value=b"\x03\x00\x3e\x00"), \
+                        patch.object(app, "macho"), patch.object(oracle, "command") as command:
+                    command.return_value = build_result(accepted)
+                    oracle.build("mock", root, "dev", label, wanted)
+                    self.assertEqual(oracle.report["builds"][-1]["cache"], accepted)
+                    self.assertEqual("--incremental" in command.call_args.args[1], wanted is not None)
+                    command.return_value = build_result("miss" if accepted != "miss" else "unavailable")
+                    with self.assertRaisesRegex(ValueError, "cache outcome differs"):
+                        oracle.build("mock", root, "dev", label + "-wrong", wanted)
+
     @unittest.skipUnless(platform.system() == "Linux", "command capture uses /dev/full")
     def test_memory_boundary_input_allowance_does_not_expand_other_capture_limits(self):
         with tempfile.TemporaryDirectory() as temporary:

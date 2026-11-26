@@ -1,7 +1,7 @@
 //! Public source-bundle contracts. Python's independent tar oracle lives in
 //! scripts/verify_typed_package_bundle.py; these tests exercise the actual CLI.
 #![cfg(all(
-    target_os = "linux",
+    any(target_os = "linux", target_os = "macos"),
     target_pointer_width = "64",
     target_endian = "little",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -30,7 +30,7 @@ impl Fixture {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root).unwrap();
-        let fixture = Self(root);
+        let fixture = Self(root.canonicalize().unwrap());
         fixture.write("app/oxid.toml", "[project]\nname = \"app\"\nedition = \"typed-preview\"\nentry = \"src/main.ox\"\n[dependencies]\nmath = \"../math\"\n[tests]\nsmoke = \"tests/smoke.ox\"\n");
         fixture.write(
             "app/src/main.ox",
@@ -228,6 +228,7 @@ fn creation_always_requires_a_matching_existing_lock_and_reports_the_archive_dig
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn ordinary_graph_checks_release_manifest_bytes_and_packaging_enforces_its_own_cap() {
     use std::os::unix::process::CommandExt;
 
