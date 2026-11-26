@@ -70,6 +70,7 @@ for source limits and path rules.
 | `oxid test [--filter NAME] [--jobs N]` | Run tests declared in `oxid.toml`. |
 | `oxid build` | Build an executable under `.oxid/bin/` using project settings. |
 | `oxid build --profile release` | Build with native optimization enabled. |
+| `oxid build --timings` | Show how much time each build stage takes. |
 | `oxid fmt src/main.ox` | Print formatted source; add `--check` to check formatting. |
 | `oxid fmt --check` | List files in the project that need formatting. |
 | `oxid fmt --write` | Apply formatting to project source files. |
@@ -84,6 +85,7 @@ In a workspace, `--filter apps/server::smoke` selects by member path and test na
 
 The commands find `oxid.toml` above the current directory. Build failures preserve
 the previous executable. `fmt` with a file path prints its result to stdout.
+Use `oxid build --timings --workspace` to measure a workspace build.
 Both project formatting commands cover the entry, its modules and the tests
 declared in `oxid.toml`. Add `--workspace` to select every member or `-p NAME`
 to select one.
