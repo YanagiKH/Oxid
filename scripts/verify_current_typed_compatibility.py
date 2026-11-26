@@ -15,9 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "a1142bf59619438f6426aeff37c584f148b838ef"
-REVIEWED_PARENTS = ("2a65c0270b117a8f1c18bfb38234fa7a2948a1a7",)
-REVIEWED_TREE = "1b565dd49ba41ba30645e38bbd6875a36ce98dd1"
+REVIEWED_SOURCE = "0b8be97e75e8273844e18eac1ffd3fc6f970e91f"
+REVIEWED_PARENTS = ("a1142bf59619438f6426aeff37c584f148b838ef",)
+REVIEWED_TREE = "7ebf6a89f9d2d709af086cb481e1c9da77fa8451"
 PUBLIC_TESTS = {
     "tests/file_open_append.rs", "tests/typed_environment.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
@@ -77,11 +77,11 @@ def reviewed_delta(repo):
             "wrong reviewed integrated typed source")
     raw = git(repo, "diff", "--name-status", "--no-renames", "-z", PREDECESSOR, REVIEWED_SOURCE)
     words = raw.decode("utf-8").split("\0")
-    require(words[-1] == "" and len(words) == 331, "invalid reviewed compiler delta")
+    require(words[-1] == "" and len(words) == 333, "invalid reviewed compiler delta")
     rows = list(zip(words[:-1:2], words[1:-1:2]))
     added = {name for status, name in rows if status == "A"}
     modified = {name for status, name in rows if status == "M"}
-    require(len(added) == 32 and len(modified) == 133 and not added & modified,
+    require(len(added) == 33 and len(modified) == 133 and not added & modified,
             "wrong reviewed compiler delta membership")
     updates = PUBLIC_TEST_UPDATES | PUBLIC_VECTOR_UPDATES | PUBLIC_TEXT_UPDATES | PUBLIC_BUILD_UPDATES
     require(PUBLIC_TESTS <= added and updates <= modified
@@ -109,7 +109,7 @@ def capture_sources(repo, baseline, parent):
                 path = Path(directory) / name
                 require(not path.is_symlink(), "symlink compiler input")
                 (directories if name in dirs else actual).add(path.relative_to(repo).as_posix())
-    require(actual == compiler and directories == expected_dirs and len(compiler) == 524,
+    require(actual == compiler and directories == expected_dirs and len(compiler) == 525,
             "wrong compiler source membership")
     inputs = {name: regular(repo, name) for name in sorted(expected)}
     for name, body in inputs.items():
@@ -194,7 +194,7 @@ def run(args):
             retained = json.loads(body)
             require(retained.get("status") == ("prepared" if args.prepare_only else "passed")
                     and retained.get("semantic_pass") is (not args.prepare_only)
-                    and retained.get("current_input_members") == 635
+                    and retained.get("current_input_members") == 636
                     and retained.get("historical_results_apply_to_current") is False
                     and context.get("output") == delegated.output, "incomplete retained compiler results")
             if not args.prepare_only:
