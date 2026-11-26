@@ -11,9 +11,21 @@ import unittest
 from unittest.mock import patch
 
 import verify_utf8_text_app as app
+from benchmark_utf8_application import record_confidence_intervals
 
 
 class Utf8Oracle(unittest.TestCase):
+    def test_utf8_benchmark_confidence_resamples_matching_rounds(self):
+        reference = [7, 23, 41, 13, 19] * 6
+        report = {"workloads": {
+            "twice": {"times_ns": {"oxid": [2 * value for value in reference], "rust": reference}},
+            "half": {"times_ns": {"oxid": reference, "rust": [2 * value for value in reference]}},
+        }}
+        record_confidence_intervals(report)
+        self.assertEqual(report["workloads"]["twice"]["oxid_over_rust_ci95"], [2.0, 2.0])
+        self.assertEqual(report["workloads"]["half"]["oxid_over_rust_ci95"], [0.5, 0.5])
+        self.assertEqual(report["geometric_mean_ratio_ci95"], [1.0, 1.0])
+
     def test_native_build_requires_host_specific_cache_outcomes(self):
         schema = {"schema_version": 1, "edition": "typed-preview"}
 
