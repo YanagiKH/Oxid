@@ -15,11 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 PREDECESSOR = "197ab7cad557038c40b9bac3b3019f9cdffcbab4"
 PREDECESSOR_POLICY = "scripts/verify_windows_local_package_compatibility.py"
 PREDECESSOR_POLICY_PIN = (82644, "91c0ffa8cf3727dbcd97984defb6f2ab09524366978446fd24d3fb502257a62c")
-REVIEWED_SOURCE = "0b8be97e75e8273844e18eac1ffd3fc6f970e91f"
-REVIEWED_PARENTS = ("a1142bf59619438f6426aeff37c584f148b838ef",)
-REVIEWED_TREE = "7ebf6a89f9d2d709af086cb481e1c9da77fa8451"
+REVIEWED_SOURCE = "c877188d5cffe8df2e43f22726d9f53d6a7a0ac1"
+REVIEWED_PARENTS = ("c6184a49b923ba4e71444cf72b94686353707355",)
+REVIEWED_TREE = "a7c3a29b0728f8217843041af4c6e9b8ab790db0"
 PUBLIC_TESTS = {
-    "tests/file_open_append.rs", "tests/typed_environment.rs",
+    "tests/file_open_append.rs", "tests/typed_environment.rs", "tests/typed_test_filter.rs",
     "tests/termination_runtime.c", "tests/typed_process_termination.rs",
     "tests/typed_owned_record_element_loans.rs", "tests/typed_registry_ranges.rs",
     "tests/windows_file_io.rs", "tests/windows_file_runtime.c",
@@ -77,11 +77,11 @@ def reviewed_delta(repo):
             "wrong reviewed integrated typed source")
     raw = git(repo, "diff", "--name-status", "--no-renames", "-z", PREDECESSOR, REVIEWED_SOURCE)
     words = raw.decode("utf-8").split("\0")
-    require(words[-1] == "" and len(words) == 333, "invalid reviewed compiler delta")
+    require(words[-1] == "" and len(words) == 335, "invalid reviewed compiler delta")
     rows = list(zip(words[:-1:2], words[1:-1:2]))
     added = {name for status, name in rows if status == "A"}
     modified = {name for status, name in rows if status == "M"}
-    require(len(added) == 33 and len(modified) == 133 and not added & modified,
+    require(len(added) == 34 and len(modified) == 133 and not added & modified,
             "wrong reviewed compiler delta membership")
     updates = PUBLIC_TEST_UPDATES | PUBLIC_VECTOR_UPDATES | PUBLIC_TEXT_UPDATES | PUBLIC_BUILD_UPDATES
     require(PUBLIC_TESTS <= added and updates <= modified
@@ -194,7 +194,7 @@ def run(args):
             retained = json.loads(body)
             require(retained.get("status") == ("prepared" if args.prepare_only else "passed")
                     and retained.get("semantic_pass") is (not args.prepare_only)
-                    and retained.get("current_input_members") == 636
+                    and retained.get("current_input_members") == 637
                     and retained.get("historical_results_apply_to_current") is False
                     and context.get("output") == delegated.output, "incomplete retained compiler results")
             if not args.prepare_only:

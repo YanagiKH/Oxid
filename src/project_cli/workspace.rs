@@ -515,7 +515,7 @@ impl Workspace {
 
     pub(super) fn execute(&self, options: &Options) -> Result<i32, String> {
         options.validate_lock_options()?;
-        let selected = self.selected(options)?;
+        let mut selected = self.selected(options)?;
         if options.command() == "fmt" {
             return formatting::execute(
                 options,
@@ -544,6 +544,7 @@ impl Workspace {
         };
         if options.command() == "test" {
             options.test_parallelism()?;
+            options.validate_test_filter()?;
         }
         let build_options = match options.command() {
             "build" => validate_build_options(options)?,
@@ -581,6 +582,20 @@ impl Workspace {
                 "workspace {} does not accept --entry-mode",
                 options.command()
             ));
+        }
+        if options.command() == "test" && options.test_filter.is_some() {
+            selected.retain(|&index| {
+                let member = &self.members[index];
+                member
+                    .snapshot
+                    .manifest
+                    .tests
+                    .keys()
+                    .any(|name| options.test_matches(Some(&member.path), name))
+            });
+            if selected.is_empty() {
+                return Err(options.unmatched_test_filter());
+            }
         }
         let test_child = options.project_test.is_some();
         if options.command() == "run"
@@ -632,8 +647,11 @@ impl Workspace {
         let mut bytes = 0usize;
         for (slot, &index) in scope.iter().enumerate() {
             let member = &self.members[index];
+            let select_test_entry = (options.command() == "test"
+                && (options.test_filter.is_none() || selected.contains(&index)))
+                || (test_child && (options.test_filter.is_none() || selected == [index]));
             let entry =
-                if !member.library() && (options.command() == "test" || test_child) {
+                if !member.library() && select_test_entry {
                     let name = if selected == [index] {
                         options.project_test.as_ref()
                     } else {
@@ -651,6 +669,7 @@ impl Workspace {
                                 .manifest
                                 .tests
                                 .iter()
+                                .filter(|(name, _)| options.test_matches(Some(&member.path), name))
                                 .min_by_key(|(name, _)| *name)
                                 .map(|(_, path)| path),
                         };
@@ -870,7 +889,13 @@ impl Workspace {
                 .iter()
                 .position(|candidate| *candidate == index)
                 .expect("selected session");
-            let mut declared = member.snapshot.manifest.tests.iter().collect::<Vec<_>>();
+            let mut declared = member
+                .snapshot
+                .manifest
+                .tests
+                .iter()
+                .filter(|(name, _)| options.test_matches(Some(&member.path), name))
+                .collect::<Vec<_>>();
             declared.sort_by_key(|(name, _)| *name);
             for (name, path) in declared {
                 if name.len() > 255 || name.is_empty() || name.chars().any(char::is_control) {

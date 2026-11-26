@@ -44,6 +44,8 @@ struct Options {
     profile_value_missing: bool,
     test_jobs: Option<NonZeroUsize>,
     invalid_test_jobs: bool,
+    test_filter: Option<String>,
+    invalid_test_filter: bool,
     words: Vec<String>,
     invalid: bool,
 }
@@ -122,8 +124,10 @@ impl Options {
             {
                 result.profile_value_missing = true;
             }
-            if name == "--jobs" && result.words.first().is_some_and(|word| word == "test") {
-                let jobs = if let Some((_, value)) = args[index].split_once('=') {
+            if (matches!(name, "--jobs" | "--filter") && result.command() == "test")
+                || (name == "--filter" && result.project_test_seen)
+            {
+                let value = if let Some((_, value)) = args[index].split_once('=') {
                     Some(value)
                 } else if let Some(value) =
                     args.get(index + 1).filter(|value| !value.starts_with('-'))
@@ -133,9 +137,15 @@ impl Options {
                 } else {
                     None
                 };
-                let jobs = jobs.and_then(|value| value.parse::<NonZeroUsize>().ok());
-                result.invalid_test_jobs |= result.test_jobs.is_some() || jobs.is_none();
-                result.test_jobs = jobs;
+                if name == "--jobs" {
+                    let jobs = value.and_then(|value| value.parse::<NonZeroUsize>().ok());
+                    result.invalid_test_jobs |= result.test_jobs.is_some() || jobs.is_none();
+                    result.test_jobs = jobs;
+                } else {
+                    let filter = value.filter(|value| !value.is_empty());
+                    result.invalid_test_filter |= result.test_filter.is_some() || filter.is_none();
+                    result.test_filter = filter.map(str::to_owned);
+                }
                 index += 1;
                 continue;
             }
@@ -228,6 +238,25 @@ impl Options {
         Ok(self.test_jobs.unwrap_or(NonZeroUsize::MIN))
     }
 
+    fn validate_test_filter(&self) -> Result<(), String> {
+        if self.invalid_test_filter {
+            return Err("--filter requires one nonempty test name or substring and may only be specified once".into());
+        }
+        Ok(())
+    }
+
+    fn test_matches(&self, member: Option<&str>, name: &str) -> bool {
+        self.test_filter.as_ref().is_none_or(|filter| {
+            name.contains(filter)
+                || member.is_some_and(|member| format!("{member}::{name}").contains(filter))
+        })
+    }
+
+    fn unmatched_test_filter(&self) -> String {
+        let filter = self.test_filter.as_deref().expect("test filter");
+        format!("no declared test matches {filter:?}")
+    }
+
     fn json(&self) -> bool {
         self.format.as_deref() == Some("json")
     }
@@ -289,6 +318,7 @@ pub(crate) fn dispatch(args: &mut Vec<String>) -> Option<i32> {
             || options.words.len() != 1
             || options.edition.as_deref() != Some("typed-preview")
             || options.entry_mode.as_deref() != Some("process")
+            || options.invalid_test_filter
             || options.json()
             || options.has_workspace_options())
     {
@@ -1615,12 +1645,13 @@ fn test(
     options: &Options,
 ) -> Result<i32, String> {
     options.test_parallelism()?;
+    options.validate_test_filter()?;
     let manifest = &snapshot.manifest;
     if options.words.len() != 1 || options.entry_mode.is_some() {
         return Err(if frontend::NativeBuildSettings::windows_msvc_host() {
-            "typed-preview test accepts --jobs, edition, message-format and locking options; declared tests require fn main() -> i32 with no parameters"
+            "oxid test accepts --jobs, --filter, edition, message format and locking options. Declare each test as fn main() -> i32 with no parameters."
         } else {
-            "typed-preview test accepts --jobs, edition, message-format and locking options; test entries always use process mode"
+            "oxid test accepts --jobs, --filter, edition, message format and locking options."
         }.into());
     }
     if manifest.tests.is_empty() {
@@ -1628,9 +1659,16 @@ fn test(
             "no typed test entries declared; add name = \"tests/name.ox\" under [tests]".into(),
         );
     }
-    let mut entries: Vec<_> = manifest.tests.iter().collect();
+    let mut entries: Vec<_> = manifest
+        .tests
+        .iter()
+        .filter(|(name, _)| options.test_matches(None, name))
+        .collect();
+    if entries.is_empty() {
+        return Err(options.unmatched_test_filter());
+    }
     entries.sort_by_key(|(name, _)| *name);
-    // Validate every configured path before running the first user test.
+    // Validate every selected path before running the first user test.
     let entries = entries
         .into_iter()
         .map(|(name, path)| {
