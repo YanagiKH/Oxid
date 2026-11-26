@@ -1,4 +1,4 @@
-//! Named-file formatting uses the package edition without loading dependencies.
+//! Typed formatting follows project source declarations without loading dependencies.
 use std::{
     fs,
     path::PathBuf,
@@ -77,6 +77,100 @@ fn package_format_check_reports_only_formatting_drift_and_preserves_input() {
     assert!(clean.stdout.is_empty());
     assert!(clean.stderr.is_empty());
     project.unchanged(std::str::from_utf8(&formatted.stdout).unwrap());
+}
+
+#[test]
+fn project_format_check_visits_modules_and_declared_tests_without_dependencies() {
+    let main = "mod helper;fn main()->i32{return crate::helper::value();}";
+    let helper = "pub fn value()->i32{return 42;}";
+    let test = "fn main()->i32{return 0;}";
+    let project = Project::new(main);
+    let root = &project.0;
+    fs::write(root.join("src/helper.ox"), helper).unwrap();
+    fs::write(root.join("src/unrelated.ox"), "!").unwrap();
+    fs::create_dir(root.join("tests")).unwrap();
+    fs::write(root.join("tests/smoke.ox"), test).unwrap();
+    let manifest = root.join("oxid.toml");
+    let mut contents = fs::read_to_string(&manifest).unwrap();
+    contents.push_str("[tests]\nsmoke = \"tests/smoke.ox\"\n");
+    fs::write(&manifest, &contents).unwrap();
+
+    let files = [
+        ("src/helper.ox", helper),
+        ("src/main.ox", main),
+        ("tests/smoke.ox", test),
+    ];
+    let result = project.run(&["fmt", "--check"]);
+    assert_eq!(result.status.code(), Some(1), "{result:?}");
+    assert!(result.stdout.is_empty());
+    let reported = String::from_utf8(result.stderr).unwrap().replace('\\', "/");
+    assert_eq!(
+        reported,
+        files
+            .map(|(path, _)| format!("formatting required for {path}\n"))
+            .concat()
+    );
+    for (path, before) in files {
+        assert_eq!(fs::read_to_string(root.join(path)).unwrap(), before);
+        let formatted = project.run(&["fmt", path]);
+        assert!(formatted.status.success(), "{formatted:?}");
+        fs::write(root.join(path), formatted.stdout).unwrap();
+    }
+    let clean = project.run(&["fmt", "--check", "--edition=typed-preview"]);
+    assert!(
+        clean.status.success() && clean.stdout.is_empty() && clean.stderr.is_empty(),
+        "{clean:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("src/unrelated.ox")).unwrap(),
+        "!"
+    );
+    assert_eq!(fs::read_to_string(manifest).unwrap(), contents);
+    for path in [".oxid", "cache", "oxid.lock"] {
+        assert!(!root.join(path).exists(), "{path}");
+    }
+}
+
+#[test]
+fn workspace_format_check_uses_default_explicit_and_all_member_selection() {
+    let project = Project::new("");
+    let root = &project.0;
+    fs::write(root.join("oxid.toml"), "[workspace]\nedition=\"typed-preview\"\nmembers=[\"app\",\"lib\"]\ndefault-members=[\"app\"]\n").unwrap();
+    fs::create_dir_all(root.join("app/src")).unwrap();
+    fs::create_dir_all(root.join("lib/src")).unwrap();
+    fs::write(root.join("app/oxid.toml"), "[project]\nname=\"app\"\nedition=\"typed-preview\"\nentry=\"src/main.ox\"\n[dependencies]\nexternal=\"../missing\"\n").unwrap();
+    fs::write(root.join("lib/oxid.toml"), "[project]\nname=\"library\"\nedition=\"typed-preview\"\nkind=\"lib\"\nentry=\"src/lib.ox\"\n").unwrap();
+    let app = root.join("app/src/main.ox");
+    let library = root.join("lib/src/lib.ox");
+    fs::write(&app, "fn main()->i32{return 42;}").unwrap();
+    fs::write(&library, "pub fn value()->i32{return 42;}").unwrap();
+    let formatted = project.run(&["fmt", "--edition=typed-preview", "app/src/main.ox"]);
+    assert!(formatted.status.success(), "{formatted:?}");
+    fs::write(&app, &formatted.stdout).unwrap();
+
+    let default = project.run(&["fmt", "--check"]);
+    assert!(
+        default.status.success() && default.stderr.is_empty(),
+        "{default:?}"
+    );
+    for args in [
+        &["fmt", "--check", "--workspace"][..],
+        &["fmt", "--check", "-p", "library"],
+    ] {
+        let result = project.run(args);
+        assert_eq!(result.status.code(), Some(1), "{result:?}");
+        assert!(result.stdout.is_empty());
+        assert_eq!(
+            String::from_utf8(result.stderr).unwrap().replace('\\', "/"),
+            "formatting required for lib/src/lib.ox\n"
+        );
+    }
+    assert_eq!(fs::read(app).unwrap(), formatted.stdout);
+    assert_eq!(
+        fs::read_to_string(library).unwrap(),
+        "pub fn value()->i32{return 42;}"
+    );
+    assert!(!root.join("oxid.lock").exists() && !root.join(".oxid").exists());
 }
 
 #[test]

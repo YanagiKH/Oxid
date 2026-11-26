@@ -516,6 +516,18 @@ impl Workspace {
     pub(super) fn execute(&self, options: &Options) -> Result<i32, String> {
         options.validate_lock_options()?;
         let selected = self.selected(options)?;
+        if options.command() == "fmt" {
+            validate_project_format(options)?;
+            let mut changed = BTreeSet::new();
+            for index in selected {
+                let member = &self.members[index];
+                changed.extend(check_project_format(
+                    &member.root,
+                    &member.snapshot.manifest,
+                )?);
+            }
+            return report_formatting(&self.root, changed);
+        }
         let documentation_version = if options.versioned_docs {
             let [index] = selected.as_slice() else {
                 return Err("versioned docs require one package; select it with --package".into());
