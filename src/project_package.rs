@@ -1253,15 +1253,16 @@ fn require_absent(path: &Path) -> Result<(), String> {
 }
 
 pub(crate) fn publish_directory(source: &Path, destination: &Path) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         use std::{ffi::CString, os::unix::ffi::OsStrExt};
         let source = CString::new(source.as_os_str().as_bytes())
             .map_err(|_| "package stage contains NUL")?;
         let destination = CString::new(destination.as_os_str().as_bytes())
             .map_err(|_| "package destination contains NUL")?;
-        // RENAME_NOREPLACE preserves all existing destinations, including
-        // empty directories and symlinks, even between concurrent extractors.
+        // Exclusive rename preserves existing destinations, including empty
+        // directories and symlinks, even between concurrent extractors.
+        #[cfg(target_os = "linux")]
         let result = unsafe {
             libc::renameat2(
                 libc::AT_FDCWD,
@@ -1271,6 +1272,9 @@ pub(crate) fn publish_directory(source: &Path, destination: &Path) -> Result<(),
                 libc::RENAME_NOREPLACE,
             )
         };
+        #[cfg(target_os = "macos")]
+        let result =
+            unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
         if result == 0 {
             Ok(())
         } else {
@@ -1280,10 +1284,10 @@ pub(crate) fn publish_directory(source: &Path, destination: &Path) -> Result<(),
             ))
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = (source, destination);
-        Err("atomic package extraction is currently qualified only on Linux".into())
+        Err("atomic package extraction requires Linux or macOS".into())
     }
 }
 
