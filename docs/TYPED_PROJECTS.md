@@ -67,7 +67,7 @@ for source limits and path rules.
 |---|---|
 | `oxid check` | Check the project without running it. |
 | `oxid run` | Run its entry point. |
-| `oxid test [--jobs N]` | Run tests declared in `oxid.toml`. |
+| `oxid test [--filter NAME] [--jobs N]` | Run tests declared in `oxid.toml`. |
 | `oxid build` | Build an executable under `.oxid/bin/` using project settings. |
 | `oxid build --profile release` | Build with native optimization enabled. |
 | `oxid fmt src/main.ox` | Print formatted source; add `--check` to check formatting. |
@@ -79,6 +79,8 @@ for source limits and path rules.
 | `oxid doctor --native` | Check the native tools, SDK and project configuration. |
 
 Use `oxid test --jobs 4` to run up to four tests at a time. The runner reports results in the usual order. Omit `--jobs` to run tests one at a time.
+Use `oxid test --filter smoke` to run tests with `smoke` in their name.
+In a workspace, `--filter apps/server::smoke` selects by member path and test name.
 
 The commands find `oxid.toml` above the current directory. Build failures preserve
 the previous executable. `fmt` with a file path prints its result to stdout.

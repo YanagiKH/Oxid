@@ -32,6 +32,9 @@ pub(super) fn run(
                 .args(["run", "--edition=typed-preview", "--entry-mode=process"])
                 .arg(format!("--project-test={}", test.name))
                 .stdin(Stdio::null());
+            if let Some(filter) = &options.test_filter {
+                child.arg(format!("--filter={filter}"));
+            }
             if options.frozen {
                 child.arg("--frozen");
             } else {
