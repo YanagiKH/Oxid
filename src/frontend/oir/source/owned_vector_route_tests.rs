@@ -164,8 +164,10 @@ fn main() -> i32 {{
     )
     .unwrap_err();
     assert!(
-        errors.iter().any(|error| error.code.starts_with("E03")
-            && (error.message.contains("borrow") || error.message.contains("overlap"))),
+        errors.iter().any(|error| error.code == "E0311"
+            && error
+                .message
+                .contains("conflicting borrows of the same record field")),
         "{errors:?}"
     );
     assert!(
