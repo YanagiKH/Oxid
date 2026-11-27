@@ -4,7 +4,10 @@ use alloc::bytes::new;
 use alloc::bytes::try_resize;
 use crate::logging::Level;
 use crate::logging::Line;
+use crate::logging::FieldsResult;
 use crate::logging::encode_at;
+use crate::logging::encode_at_with_fields;
+use crate::logging::parse_fields;
 
 fn equals(bytes: &[u8], expected: &[u8]) -> bool {
     if bytes.len() != expected.len() { return false; }
@@ -66,11 +69,48 @@ fn zero_timestamp() -> bool {
     return is_record(debug_line, &zero);
 }
 
+fn invalid_fields(input: &[u8], expected: i32) -> bool {
+    let parsed = parse_fields(&*input);
+    match parsed {
+        FieldsResult::Invalid(offset) => { return offset == expected; },
+        FieldsResult::Ready(fields) => { return false; },
+        FieldsResult::CapacityOverflow => { return false; },
+        FieldsResult::AllocationFailed => { return false; },
+        FieldsResult::MemoryLimit => { return false; },
+    }
+}
+
+fn structured_fields() -> bool {
+    let list = b"[1,2]";
+    let multiline = b"{}\n{\"extra\":true}";
+    let broken = b"{\"a\":\"\xFF\"}";
+    if !invalid_fields(&list, 0) || !invalid_fields(&multiline, 2) || !invalid_fields(&broken, 6) {
+        return false;
+    }
+    let data = b"{\"attempt\":2,\"details\":{\"name\":\"\xE9\x9B\xAA\\n\",\"ready\":true}}";
+    let selected = parse_fields(&data);
+    match selected {
+        FieldsResult::Ready(fields) => {
+            let message = b"job complete";
+            let expected = b"{\"timestamp_ms\":8,\"level\":\"info\",\"message\":\"job complete\",\"fields\":{\"attempt\":2,\"details\":{\"name\":\"\xE9\x9B\xAA\\n\",\"ready\":true}}}\n";
+            let first = encode_at_with_fields(Level::Info, 8i64, &message, &fields);
+            if !is_record(first, &expected) { return false; }
+            let second = encode_at_with_fields(Level::Info, 8i64, &message, &fields);
+            return is_record(second, &expected);
+        },
+        FieldsResult::Invalid(offset) => { return false; },
+        FieldsResult::CapacityOverflow => { return false; },
+        FieldsResult::AllocationFailed => { return false; },
+        FieldsResult::MemoryLimit => { return false; },
+    }
+}
+
 fn main() -> i32 {
     if !reports_memory_limit() { return 10; }
     if !signed_minimum() { return 1; }
     if !signed_maximum() { return 2; }
     if !zero_timestamp() { return 3; }
+    if !structured_fields() { return 11; }
     let bad = b"x\xFF";
     let invalid = encode_at(Level::Info, 0i64, &bad);
     match invalid {
