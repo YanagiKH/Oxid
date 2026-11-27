@@ -108,6 +108,7 @@ struct FactoryBank {
     limits: IndexLimits,
     work: &'static WorkMeter,
     allocator: &'static mut Allocator,
+    owned_imports_admitted: &'static mut bool,
     source_fact: SourceFactRoles,
     borrowed_element: BorrowedElementRoles,
     // Fixed per-candidate prepayment: old concrete owned vectors and borrowed

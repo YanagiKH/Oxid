@@ -129,6 +129,51 @@ fn owned_vector_public_route_zero_key_types_and_unused_new_imports_choose_real_d
     }
 }
 
+#[test]
+fn owned_vector_public_route_explains_overlapping_field_borrows_at_the_call() {
+    let source = format!(
+        r#"{TYPES}
+use alloc::vec::pop_last;
+use alloc::vec::new;
+use alloc::vec::len;
+struct Store<T> {{ first: Vec<T>, second: Vec<T> }}
+fn sum<T>(left: &mut Vec<T>, right: &mut Vec<T>) -> i32 {{ return len(&*left) + len(&*right); }}
+fn count<T>(store: &mut Store<T>) -> i32 {{ return sum(&mut *store.first, &mut *store.second); }}
+fn main() -> i32 {{
+    let mut store = Store::<Message> {{ first: new::<Message>(), second: new::<Message>() }};
+    return count(&mut store);
+}}
+"#
+    );
+    let valid = Fixture::new(&source);
+    let project = valid.project();
+    assert_eq!(
+        checked(&project, &mut Allocator::default())
+            .run_test_i32()
+            .unwrap(),
+        0
+    );
+
+    let invalid = Fixture::new(&source.replace("&mut *store.second", "&mut *store.first"));
+    let project = invalid.project();
+    let errors = check_project_executable_candidate(
+        &project,
+        IndexLimits::default(),
+        &WorkMeter::default(),
+        &mut Allocator::default(),
+    )
+    .unwrap_err();
+    assert!(
+        errors.iter().any(|error| error.code.starts_with("E03")
+            && (error.message.contains("borrow") || error.message.contains("overlap"))),
+        "{errors:?}"
+    );
+    assert!(
+        errors.iter().all(|error| error.code != "E0205"),
+        "{errors:?}"
+    );
+}
+
 #[cfg(any(
     target_os = "linux",
     target_os = "macos",

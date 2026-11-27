@@ -124,7 +124,9 @@ impl WorkMeter {
     }
 }
 
+#[cfg(test)]
 pub(super) use sealed::collect_owned_vector_candidate;
+pub(super) use sealed::collect_owned_vector_candidate_with_imports;
 pub(in crate::frontend) use sealed::process_lookup_carrier_bytes;
 #[cfg(test)]
 pub(super) use sealed::{

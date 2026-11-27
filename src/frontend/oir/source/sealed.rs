@@ -314,11 +314,9 @@ struct OwnedVectorRouteBank {
     returned: Result<Checked<'static>, Vec<Diagnostic>>,
     signature_entry: Option<hir::DefId>,
     summary: CheckedProjectTypes,
-    inventory: crate::frontend::builtin_catalog::experimental::Inventory,
     source_needed: bool,
-    new_imports: bool,
+    owned_imports_admitted: bool,
     user_error: bool,
-    import_presence: [bool; 2],
     diagnostic_capacity: usize,
     held_bytes: usize,
     metadata: usize,
@@ -438,22 +436,29 @@ fn owned_vector_fallback<'s>(
     };
     #[cfg(test)]
     observations.candidate_started();
-    let candidate = match index::collect_owned_vector_candidate(
+    let mut owned_imports_admitted = false;
+    let candidate = match index::collect_owned_vector_candidate_with_imports(
         sources,
         candidate_limits,
         metadata,
         work,
         allocator,
+        &mut owned_imports_admitted,
     ) {
         Ok(candidate) => candidate,
+        Err(errors)
+            if owned_imports_admitted
+                && !errors.is_empty()
+                && errors.iter().all(|error| {
+                    work.debit(1, at, "owned vector type diagnostic").is_ok()
+                        && error.code.starts_with("E03")
+                }) =>
+        {
+            return Err(errors);
+        }
         Err(_) => return Err(original),
     };
-    let inventory = candidate.builtin_set().experimental();
-    let new_imports = inventory
-        .contains_owned_vector(crate::frontend::builtin_catalog::owned_vector::Item::PushReserved)
-        || inventory
-            .contains_owned_vector(crate::frontend::builtin_catalog::owned_vector::Item::PopLast);
-    if !candidate.owned_vector_source_needed() && !new_imports {
+    if !candidate.owned_vector_source_needed() && !owned_imports_admitted {
         return Err(original);
     }
     #[cfg(test)]
