@@ -1,5 +1,5 @@
 //! Lockfile selection of compatible releases through the normal project commands.
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 
 use std::{
     fs,

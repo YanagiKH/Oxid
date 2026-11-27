@@ -66,7 +66,7 @@ pub(super) fn command(args: &[String]) -> Result<String, String> {
     ))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn exchange_cache(stage: &Path, cache: &Path, previous: &fs::Metadata) -> Result<(), String> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt, os::unix::fs::MetadataExt};
     ordinary(cache, false)?;
@@ -85,6 +85,7 @@ fn exchange_cache(stage: &Path, cache: &Path, previous: &fs::Metadata) -> Result
     let cache = CString::new(cache.as_os_str().as_bytes()).map_err(|_| "invalid cache path")?;
     // Exchange the complete directories on the same filesystem. The private
     // stage guard removes the replaced cache after the new entry is installed.
+    #[cfg(target_os = "linux")]
     let renamed = unsafe {
         libc::renameat2(
             libc::AT_FDCWD,
@@ -94,6 +95,8 @@ fn exchange_cache(stage: &Path, cache: &Path, previous: &fs::Metadata) -> Result
             libc::RENAME_EXCHANGE,
         )
     };
+    #[cfg(target_os = "macos")]
+    let renamed = unsafe { libc::renamex_np(stage.as_ptr(), cache.as_ptr(), libc::RENAME_SWAP) };
     if renamed == 0 {
         Ok(())
     } else {
@@ -104,7 +107,7 @@ fn exchange_cache(stage: &Path, cache: &Path, previous: &fs::Metadata) -> Result
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn exchange_cache(_stage: &Path, _cache: &Path, _previous: &fs::Metadata) -> Result<(), String> {
-    Err("registry cache repair requires Linux".into())
+    Err("registry cache repair requires Linux or macOS".into())
 }
