@@ -1,6 +1,8 @@
 use crate::logging::Level;
 use crate::logging::Line;
-use crate::logging::encode;
+use crate::logging::FieldsResult;
+use crate::logging::encode_with_fields;
+use crate::logging::parse_fields;
 use std::io::WriteSomeStatus;
 use std::io::write_some;
 
@@ -19,9 +21,7 @@ fn emit(bytes: &[u8]) -> i32 {
     return 0;
 }
 
-fn main() -> i32 {
-    let message = b"service ready";
-    let record = encode(Level::Info, &message);
+fn emit_record(record: Line) -> i32 {
     match record {
         Line::Encoded(bytes) => { return emit(&bytes); },
         Line::InvalidMessage(offset) => { return 2; },
@@ -29,5 +29,20 @@ fn main() -> i32 {
         Line::CapacityOverflow => { return 4; },
         Line::AllocationFailed => { return 5; },
         Line::MemoryLimit => { return 6; },
+    }
+}
+
+fn main() -> i32 {
+    let message = b"service ready";
+    let context = b"{\"service\":\"worker\",\"attempt\":1}";
+    let parsed = parse_fields(&context);
+    match parsed {
+        FieldsResult::Ready(fields) => {
+            return emit_record(encode_with_fields(Level::Info, &message, &fields));
+        },
+        FieldsResult::Invalid(offset) => { return 7; },
+        FieldsResult::CapacityOverflow => { return 4; },
+        FieldsResult::AllocationFailed => { return 5; },
+        FieldsResult::MemoryLimit => { return 6; },
     }
 }

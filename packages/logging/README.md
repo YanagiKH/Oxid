@@ -16,6 +16,12 @@ Match `Line::Encoded(bytes)` to get the line, including its newline. An
 invalid message reports the byte offset. The remaining results report an
 unavailable clock or insufficient space for the record.
 
+To add structured data, pass a single-line JSON object to `parse_fields`.
+Match `FieldsResult::Ready(fields)` and pass `&fields` to `encode_with_fields`
+or `encode_at_with_fields`. The object appears under `fields` and can be
+reused across events. `FieldsResult::Invalid(offset)` reports malformed input,
+including a literal newline.
+
 Try writing an event to standard output on Linux or macOS.
 [Example source](../../examples/typed-logging/src/main.ox).
 
