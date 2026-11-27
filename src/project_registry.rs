@@ -1,6 +1,7 @@
 //! Explicit, immutable private library releases. Registry work stays outside
 //! compiler carriers; ordinary path/Git projects do not allocate this session.
 mod mirror;
+mod repair;
 mod resources;
 mod search_catalog;
 #[cfg(test)]
@@ -1297,46 +1298,12 @@ impl Session {
         {
             return Err("immutable registry release differs from the trusted lock; choose a new version instead of updating the same tuple".into());
         }
-        budget.wire(record.bytes)?;
-        let artifact_path = budget.join(&release, "artifact.tar")?;
-        ordinary(&artifact_path, true)?;
-        if fs::symlink_metadata(&artifact_path)
-            .map_err(|e| e.to_string())?
-            .len()
-            != record.bytes
-        {
-            return Err("registry artifact length differs from its release record".into());
-        }
-        let (archive, info) = package::read_library(&artifact_path, &mut budget)?;
-        if info.bytes != record.bytes || info.sha256 != record.artifact {
-            return Err(
-                "registry artifact does not match its release record SHA-256/length".into(),
-            );
-        }
-        validate_manifest(&archive, &record, &mut budget)?;
+        let (archive, info) = read_release_archive(&release, &record, &mut budget)?;
         if existing {
             verify_tree(&cache, &archive, &mut budget)?;
         } else {
-            for directory in [budget.join(&self.owner, ".oxid")?, budget.path(&parent)?] {
-                match fs::symlink_metadata(&directory) {
-                    Ok(_) => ordinary(&directory, false)?,
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        fs::create_dir(&directory)
-                            .map_err(|e| format!("cannot create registry cache: {e}"))?;
-                    }
-                    Err(error) => return Err(format!("cannot inspect registry cache: {error}")),
-                }
-            }
-            let mut stage = private_stage(&parent, &mut budget)?;
-            materialize(&archive, &stage.path, &mut budget)?;
-            write(&budget.join(&stage.path, "release.toml")?, &raw)?;
-            let mut file = package::new_file(&budget.join(&stage.path, "artifact.tar")?)?;
-            let copied = package::write_library(&archive, &mut file, &mut budget)?;
-            file.sync_all().map_err(|e| e.to_string())?;
-            if copied != info {
-                return Err("library artifact changed during staging".into());
-            }
-            verify_tree(&stage.path, &archive, &mut budget)?;
+            prepare_cache(&self.owner, &parent, &mut budget)?;
+            let mut stage = stage_cache(&parent, &archive, &info, &raw, &mut budget)?;
             package::publish_directory(&stage.path, &cache)?;
             stage.published = true;
             fs::File::open(&parent)
@@ -1376,6 +1343,72 @@ impl Session {
         self.origins.push(origin);
         Ok(root)
     }
+}
+
+fn read_release_archive(
+    release: &Path,
+    record: &Record,
+    budget: &mut Budget,
+) -> Result<(package::LibraryArchive, package::LibraryInfo), String> {
+    budget.wire(record.bytes)?;
+    let artifact = budget.join(release, "artifact.tar")?;
+    ordinary(&artifact, true)?;
+    if fs::symlink_metadata(&artifact)
+        .map_err(|error| error.to_string())?
+        .len()
+        != record.bytes
+    {
+        return Err("registry artifact length differs from its release record".into());
+    }
+    let (archive, info) = package::read_library(&artifact, budget)?;
+    if info.bytes != record.bytes || info.sha256 != record.artifact {
+        return Err("registry artifact does not match its release record SHA-256/length".into());
+    }
+    validate_manifest(&archive, record, budget)?;
+    Ok((archive, info))
+}
+
+fn prepare_cache(owner: &Path, parent: &Path, budget: &mut Budget) -> Result<(), String> {
+    let root = budget.join(owner, ".oxid")?;
+    for directory in [root.as_path(), parent] {
+        match fs::symlink_metadata(directory) {
+            Ok(_) => ordinary(directory, false)?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                match fs::create_dir(directory) {
+                    Ok(()) => (),
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                        ordinary(directory, false)?
+                    }
+                    Err(error) => return Err(format!("cannot create registry cache: {error}")),
+                }
+            }
+            Err(error) => return Err(format!("cannot inspect registry cache: {error}")),
+        }
+    }
+    Ok(())
+}
+
+fn stage_cache(
+    parent: &Path,
+    archive: &package::LibraryArchive,
+    info: &package::LibraryInfo,
+    raw: &[u8],
+    budget: &mut Budget,
+) -> Result<package::PrivateDirectory, String> {
+    let stage = private_stage(parent, budget)?;
+    materialize(archive, &stage.path, budget)?;
+    write(&budget.join(&stage.path, "release.toml")?, raw)?;
+    let mut file = package::new_file(&budget.join(&stage.path, "artifact.tar")?)?;
+    let copied = package::write_library(archive, &mut file, budget)?;
+    file.sync_all().map_err(|error| error.to_string())?;
+    if copied != *info {
+        return Err("library artifact changed during staging".into());
+    }
+    verify_tree(&stage.path, archive, budget)?;
+    fs::File::open(&stage.path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("cannot sync staged registry cache: {error}"))?;
+    Ok(stage)
 }
 
 pub(crate) fn parse_manifest(
@@ -1959,12 +1992,13 @@ fn command(args: &[String]) -> Result<String, String> {
                 return render_search(results, true, &mut budget);
             }
             Some("mirror") => return mirror::command(args),
+            Some("repair-cache") => return repair::command(args),
             Some("yank") => return change_yank_status(args, true),
             Some("unyank") => return change_yank_status(args, false),
             _ => {}
         }
         if args.len() != 3 || args[1] != "init" || args[2].starts_with('-') {
-            return Err("use oxid registry init NEW_DIRECTORY, search SOURCE [PREFIX], catalog FILE_URI, mirror FILE_URI PACKAGE VERSION HTTPS_BASE --sha256 HEX, or yank/unyank FILE_URI PACKAGE VERSION".into());
+            return Err("use oxid registry init NEW_DIRECTORY, search SOURCE [PREFIX], catalog FILE_URI, mirror FILE_URI PACKAGE VERSION HTTPS_BASE --sha256 HEX, repair-cache FILE_URI PACKAGE VERSION, or yank/unyank FILE_URI PACKAGE VERSION".into());
         }
         let mut budget = Budget::new()?;
         if args[2].len() > 8192 {
