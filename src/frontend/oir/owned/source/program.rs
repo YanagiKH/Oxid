@@ -352,6 +352,10 @@ fn lower_array_consumer<'s>(
 }
 
 impl SourceProgram {
+    pub(in crate::frontend::oir) fn has_termination_notifications(&self) -> bool {
+        self.witness.raw_program().builtins.process().has_signals()
+    }
+
     pub(in crate::frontend::oir) fn windows_file_or_time_candidate(&self) -> bool {
         let time = self.witness.raw_program().builtins.process();
         self.witness.has_file_delivery() || (!time.is_empty() && !time.has_signals())

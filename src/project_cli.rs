@@ -1710,7 +1710,7 @@ fn test(
     let manifest = &snapshot.manifest;
     if options.words.len() != 1 || options.entry_mode.is_some() {
         return Err(if frontend::NativeBuildSettings::windows_msvc_host() {
-            "oxid test accepts --jobs, --filter, edition, message format and locking options. Declare each test as fn main() -> i32 with no parameters."
+            "oxid test accepts --jobs, --filter, edition, message format and locking options. On Windows, declared tests require fn main() -> i32 with no parameters."
         } else {
             "oxid test accepts --jobs, --filter, edition, message format and locking options."
         }.into());
