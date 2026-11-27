@@ -256,6 +256,10 @@ pub(super) fn load_roster(
 }
 
 impl Workspace {
+    pub(super) fn into_root(self) -> PathBuf {
+        self.root
+    }
+
     pub(super) fn publication(
         &self,
         selection: Option<&str>,

@@ -243,3 +243,90 @@ fn yanked_versions_leave_existing_locks_and_artifacts_intact() {
     assert!(!rejected.status.success() && rejected.stdout.is_empty());
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("artifact length differs"));
 }
+
+#[test]
+fn restore_locked_registry_cache_in_projects_and_workspaces() {
+    use std::os::unix::fs::symlink;
+    let fixture = Fixture::new();
+    let root = &fixture.0;
+    let registry = root.join("registry");
+    success(root, &["registry", "init", registry.to_str().unwrap()]);
+    let uri = format!("file://{}", registry.display());
+    publish(root, &uri, "1.2.0", 42);
+    let release = registry.join("packages/numbers/1.2.0/artifact.tar");
+    let original = fs::read(&release).unwrap();
+
+    for workspace in [false, true] {
+        let owner = root.join(if workspace { "workspace" } else { "project" });
+        let app = if workspace {
+            owner.join("app")
+        } else {
+            owner.clone()
+        };
+        fs::create_dir_all(app.join("src")).unwrap();
+        if workspace {
+            fs::write(
+                owner.join("oxid.toml"),
+                "[workspace]\nedition=\"typed-preview\"\nmembers=[\"app\"]\n",
+            )
+            .unwrap();
+        }
+        fs::write(app.join("oxid.toml"), format!("[project]\nname=\"app\"\nedition=\"typed-preview\"\n[build]\nentry-mode=\"result\"\n[dependencies]\nnumbers={{registry=\"{uri}\",package=\"numbers\",version=\"^1.2.0\"}}\n")).unwrap();
+        fs::write(
+            app.join("src/main.ox"),
+            "fn main()->i32{return crate::numbers::value();}\n",
+        )
+        .unwrap();
+        let repair = ["registry", "repair-cache", &uri, "numbers", "1.2.0"];
+        let refused = oxid(&app, &repair);
+        assert!(!refused.status.success());
+        assert!(String::from_utf8_lossy(&refused.stderr).contains("requires an existing oxid.lock"));
+        let locked = oxid(&app, &["lock"]);
+        assert!(locked.status.success(), "{locked:?}");
+        let lock = owner.join("oxid.lock");
+        let locked = fs::read(&lock).unwrap();
+        let refused = oxid(
+            &app,
+            &["registry", "repair-cache", &uri, "numbers", "1.3.0"],
+        );
+        assert!(!refused.status.success());
+        assert!(String::from_utf8_lossy(&refused.stderr).contains("absent from oxid.lock"));
+        let cache = owner.join(".oxid/registry");
+        let entry = fs::read_dir(&cache)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let stored = entry.join("source/src/lib.ox");
+        let damaged = b"pub fn value()->i32{return 99;}\n";
+        fs::write(&stored, damaged).unwrap();
+        assert!(!oxid(&app, &["run", "--frozen"]).status.success());
+        let mut bad_archive = original.clone();
+        bad_archive[0] ^= 1;
+        fs::write(&release, bad_archive).unwrap();
+        assert!(!oxid(&app, &repair).status.success());
+        assert_eq!(fs::read(&stored).unwrap(), damaged);
+        assert_eq!(fs::read(&lock).unwrap(), locked);
+        fs::write(&release, &original).unwrap();
+
+        success(&app, &repair);
+        assert_eq!(success(&app, &["run", "--frozen"]).stdout, b"42\n");
+        let moved = owner.join("old-cache");
+        fs::rename(&entry, &moved).unwrap();
+        symlink(&moved, &entry).unwrap();
+        assert!(!oxid(&app, &repair).status.success());
+        assert!(fs::symlink_metadata(&entry)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        fs::remove_file(&entry).unwrap();
+        success(&app, &repair);
+        let moved_registry = root.join("offline-registry");
+        fs::rename(&registry, &moved_registry).unwrap();
+        assert_eq!(success(&app, &["run", "--frozen"]).stdout, b"42\n");
+        fs::rename(moved_registry, &registry).unwrap();
+        assert_eq!(fs::read(&lock).unwrap(), locked);
+        assert_eq!(fs::read_dir(cache).unwrap().count(), 1);
+    }
+}

@@ -463,6 +463,15 @@ only. Cached source changes are refused and preserved. Trust the registry
 directory you select: hashes check integrity against the selected inputs, not
 the publisher's identity. Keep `oxid.lock` in version control.
 
+To restore a damaged or missing cached release from its registry, run the
+following inside the project or workspace. The command uses the version and
+checksum recorded in `oxid.lock` and replaces the cached copy after verification.
+
+```sh
+oxid registry repair-cache file:///home/me/oxid-registry math 1.2.0
+oxid run --frozen
+```
+
 `oxid package --frozen` includes cached registry libraries as local sources.
 The extracted source bundle can be checked and built offline without the
 registry or original cache. See the [private registry contract](../rfcs/0075-typed-private-registry.md)
