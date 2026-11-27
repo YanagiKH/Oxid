@@ -5,6 +5,8 @@ use alloc::vec::try_reserve;
 use alloc::vec::push_reserved;
 use alloc::vec::pop_last;
 use alloc::vec::take;
+use alloc::vec::truncate;
+use alloc::vec::try_extend;
 
 pub fn transfer<T>(values: Vec<T>) -> Vec<T> {
     return values;
@@ -66,6 +68,32 @@ pub fn pop<T>(values: &mut Vec<T>) -> PopResult<T> {
         return PopResult::<T>::Empty;
     }
     return PopResult::<T>::Value(pop_last(&mut *values));
+}
+
+/// Remove the last Copy value. An empty vector returns `PopResult::Empty`.
+pub fn pop_copy<T: Copy>(values: &mut Vec<T>) -> PopResult<T> {
+    let length = len(&*values);
+    if length == 0 {
+        return PopResult::<T>::Empty;
+    }
+    let index = length - 1;
+    let value = values[index];
+    truncate(&mut *values, index);
+    return PopResult::<T>::Value(value);
+}
+
+/// Append Copy values in order, leaving the source empty only on success.
+pub fn try_append_copy<T: Copy>(destination: &mut Vec<T>, source: &mut Vec<T>) -> GrowStatus {
+    let status = try_extend(&mut *destination, &*source);
+    match status {
+        GrowStatus::Ok => {
+            truncate(&mut *source, 0);
+            return GrowStatus::Ok;
+        },
+        GrowStatus::CapacityOverflow => { return GrowStatus::CapacityOverflow; },
+        GrowStatus::AllocationFailed => { return GrowStatus::AllocationFailed; },
+        GrowStatus::MemoryLimit => { return GrowStatus::MemoryLimit; },
+    }
 }
 
 pub fn try_append<T>(destination: &mut Vec<T>, source: &mut Vec<T>, buffer: &mut Vec<T>) -> GrowStatus {

@@ -131,6 +131,8 @@ that function supply a supported element type.
 The package's `transfer` moves a vector, `detach` transfers its storage while
 leaving the original empty, and `discard` releases it and any remaining elements.
 These ownership helpers also accept existing scalar and Copy-record vectors.
+For scalars and Copy records, `pop_copy` removes the last element and
+`try_append_copy` moves elements to the end of another vector in order.
 
 Run the [complete example](../examples/owned-vector-results):
 
