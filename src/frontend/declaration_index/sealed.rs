@@ -411,8 +411,7 @@ fn tables_builtin_endpoint(
     }
 }
 
-/// Inert source-index candidate only. No public collector selects this route;
-/// the returned origin is deliberately rejected by executable source admission.
+/// Prepare the declarations for checked owned-vector source.
 pub(in crate::frontend) fn collect_owned_vector_candidate<'s>(
     sources: SourceOwner<'s>,
     limits: IndexLimits,
@@ -420,6 +419,20 @@ pub(in crate::frontend) fn collect_owned_vector_candidate<'s>(
     work: &WorkMeter,
     allocator: &mut Allocator,
 ) -> Result<DeclarationIndex<'s>, Vec<Diagnostic>> {
+    collect_owned_vector_candidate_with_imports(
+        sources, limits, metadata, work, allocator, &mut false,
+    )
+}
+
+pub(in crate::frontend) fn collect_owned_vector_candidate_with_imports<'s>(
+    sources: SourceOwner<'s>,
+    limits: IndexLimits,
+    metadata: usize,
+    work: &WorkMeter,
+    allocator: &mut Allocator,
+    owned_imports_admitted: &mut bool,
+) -> Result<DeclarationIndex<'s>, Vec<Diagnostic>> {
+    *owned_imports_admitted = false;
     let starting_work = work.used();
     let bank = super::generics::owned_candidate::factory_bytes();
     let fail = || {
@@ -452,6 +465,8 @@ pub(in crate::frontend) fn collect_owned_vector_candidate<'s>(
         CollectionSyntax::OwnedVectorCandidate,
     )
     .map_err(|e| vec![*e])?;
+    // Retain the checked import fact across a subsequent type error.
+    *owned_imports_admitted = facts.builtin_set().experimental().owned_vector_templates() != 0;
     state.set_collection_request(facts.plan.retained, facts.plan.scratch);
     let ranges = matches!(
         facts.tables.candidate_source_origin,
