@@ -1021,14 +1021,15 @@ impl CheckedSourceProgram<'_> {
             || (crate::frontend::build_config::NativeBuildSettings::windows_msvc_host()
                 && (matches!(self.body, CheckedBody::Scalar(_))
                     || self.windows_binary_io_candidate()
-                    || self.windows_arguments_candidate()))
+                    || self.windows_arguments_candidate()
+                    || matches!(&self.body, CheckedBody::Owned(program) if program.has_termination_notifications())))
         {
             Ok(())
         } else {
             Err(Diagnostic::new(
                 "E0608",
                 "oir-run",
-                "process execution supports Linux and macOS on x86_64 or ARM64, and scalar, argument or binary stream programs on Windows MSVC x64",
+                "process execution supports Linux and macOS on x86_64 or ARM64. On Windows MSVC x64 it supports scalar programs, arguments, byte streams and console notifications",
                 None,
             ))
         }
