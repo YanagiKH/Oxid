@@ -609,6 +609,19 @@ fn operands(words: &[String]) -> Vec<String> {
     result
 }
 
+pub(crate) fn registry_cache_owner() -> Result<PathBuf, String> {
+    if let Some(workspace) = workspace::discover()? {
+        return Ok(workspace.into_root());
+    }
+    let manifest =
+        find_manifest(None)?.ok_or("repair-cache requires a typed project or workspace")?;
+    if runtime::manifest_edition(&manifest)?.as_deref() != Some("typed-preview") {
+        return Err("repair-cache requires a typed project or workspace".into());
+    }
+    fs::canonicalize(manifest.parent().ok_or("project manifest has no parent")?)
+        .map_err(|error| format!("cannot find project cache: {error}"))
+}
+
 fn find_manifest(source: Option<&Path>) -> Result<Option<PathBuf>, String> {
     let cwd = std::env::current_dir().map_err(|e| format!("cannot read current directory: {e}"))?;
     let location = source.map_or_else(|| cwd.clone(), |path| cwd.join(path));

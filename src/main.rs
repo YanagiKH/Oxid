@@ -3200,6 +3200,7 @@ fn help() {
     println!("  oxid registry init NEW_DIRECTORY          Create a private file registry (Linux)");
     println!("  oxid registry search SOURCE [PREFIX] [--token-env NAME]");
     println!("  oxid registry mirror FILE_URI PACKAGE VERSION HTTPS_BASE --sha256 HEX");
+    println!("  oxid registry repair-cache FILE_URI PACKAGE VERSION");
     println!("  oxid registry catalog FILE_URI            Export a catalog for HTTPS search");
     println!("  oxid registry yank FILE_URI NAME VERSION Stop selecting a version for new ranges");
     println!("  oxid registry unyank FILE_URI NAME VERSION Restore a version for new ranges");
