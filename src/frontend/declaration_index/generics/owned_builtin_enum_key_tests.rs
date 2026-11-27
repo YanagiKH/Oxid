@@ -620,7 +620,7 @@ fn builtin_enum_fixup_all_factory_and_frame_transports_have_independent_role_ora
         boxed: Box<[OwnedGenericPlan; 1]>, boxed_result: Result<Box<[OwnedGenericPlan; 1]>, ReserveFailure>,
         returned: Result<DeclarationIndex<'static>, Vec<Diagnostic>>, source: SourceOwner<'static>,
         limits: IndexLimits, work: &'static WorkMeter, allocator: &'static mut Allocator,
-        source_fact: SourceFactRoles,
+        owned_imports_admitted: &'static mut bool, source_fact: SourceFactRoles,
         borrowed_element: BorrowedElementRoles, function_value: FunctionValueRoles,
     });
     let factory_growth = 6 * 512 + (16 + 8 + 8);
@@ -629,7 +629,9 @@ fn builtin_enum_fixup_all_factory_and_frame_transports_have_independent_role_ora
         size_of::<EnumFactory>() - size_of::<BeforeFactory>(),
         factory_growth
     );
-    let generic_growth = size_of::<BorrowedElementRoles>() + size_of::<FunctionValueRoles>();
+    let generic_growth = size_of::<BorrowedElementRoles>()
+        + size_of::<FunctionValueRoles>()
+        + size_of::<&mut bool>();
     assert_eq!(
         size_of::<FactoryBank>() - size_of::<EnumFactory>(),
         generic_growth
