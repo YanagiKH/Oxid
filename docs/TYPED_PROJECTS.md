@@ -509,6 +509,8 @@ still checked, and the runtime and executable are rebuilt. The cache reports
 
 ## Share source packages
 
+Use Linux or macOS on x86_64 or ARM64 to create and extract source packages.
+
 ```sh
 oxid lock
 oxid package --frozen --output application.oxpkg.tar
