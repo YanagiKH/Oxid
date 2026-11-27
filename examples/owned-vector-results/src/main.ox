@@ -6,16 +6,21 @@ use alloc::vec::new;
 use alloc::vec::len;
 use alloc::vec::capacity;
 use alloc::vec::GrowStatus;
+use alloc::vec::try_push as copy_push;
 use crate::owned_vec::PushFailure;
 use crate::owned_vec::PushResult;
 use crate::owned_vec::PopResult;
 use crate::owned_vec::try_push;
 use crate::owned_vec::try_append;
 use crate::owned_vec::pop;
+use crate::owned_vec::pop_copy;
+use crate::owned_vec::try_append_copy;
 use alloc::vec::Vec;
 
 struct Message { bytes: ByteBuf }
 enum Token { Empty, Data(ByteBuf), Wide(i128) }
+#[derive(Copy)]
+struct Point { x: i32, y: i32 }
 
 fn push_message(messages: &mut Vec<Message>, value: u8) -> bool {
     let mut bytes = bytes_new();
@@ -62,8 +67,43 @@ fn append_messages() -> bool {
         && message_value(&mut destination) == 10 && len(&destination) == 0;
 }
 
+fn append_points() -> bool {
+    let mut destination = new::<Point>();
+    let mut pending = new::<Point>();
+    copy_push(&mut destination, Point { x: 10, y: 1 });
+    copy_push(&mut pending, Point { x: 20, y: 2 });
+    copy_push(&mut pending, Point { x: 30, y: 3 });
+    let reserved = capacity(&pending);
+    let appended = try_append_copy(&mut destination, &mut pending);
+    match appended {
+        GrowStatus::Ok => {},
+        GrowStatus::CapacityOverflow => { return false; },
+        GrowStatus::AllocationFailed => { return false; },
+        GrowStatus::MemoryLimit => { return false; },
+    }
+    if len(&pending) != 0 || capacity(&pending) != reserved || len(&destination) != 3 {
+        return false;
+    }
+    let empty = pop_copy(&mut pending);
+    match empty {
+        PopResult::Empty => {},
+        PopResult::Value(unexpected) => { return false; },
+    }
+    let removed = pop_copy(&mut destination);
+    match removed {
+        PopResult::Empty => { return false; },
+        PopResult::Value(last) => {
+            let first = destination[0];
+            let second = destination[1];
+            return last.x == 30 && last.y == 3 && len(&destination) == 2
+                && first.x == 10 && second.x == 20;
+        },
+    }
+}
+
 fn main() -> i32 {
     if !append_messages() { return -15; }
+    if !append_points() { return -16; }
     let mut messages = new::<Message>();
     let initially_empty = pop(&mut messages);
     match initially_empty {
