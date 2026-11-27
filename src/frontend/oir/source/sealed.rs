@@ -450,8 +450,9 @@ fn owned_vector_fallback<'s>(
             if owned_imports_admitted
                 && !errors.is_empty()
                 && errors.iter().all(|error| {
-                    work.debit(1, at, "owned vector type diagnostic").is_ok()
-                        && error.code.starts_with("E03")
+                    work.debit(1, at, "owned vector field loan diagnostic")
+                        .is_ok()
+                        && error.code == "E0311"
                 }) =>
         {
             return Err(errors);

@@ -3385,6 +3385,17 @@ impl<'a, 's> Walker<'a, 's> {
                 && (loan.kind == BorrowKind::Exclusive || kind == BorrowKind::Exclusive)
                 && self.paths_overlap(loan.path, name)?
             {
+                for path in [name, loan.path] {
+                    let mut fields = self.path_fields(path)?;
+                    if self.next_path_field(&mut fields, path)?.is_some() {
+                        return Err(diagnostic(
+                            "E0311",
+                            "generics",
+                            "conflicting borrows of the same record field",
+                            at,
+                        ));
+                    }
+                }
                 return Err(error("conflicting borrows of the same value", at));
             }
         }
