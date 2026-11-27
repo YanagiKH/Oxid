@@ -788,6 +788,343 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
                        "fn main()->i32{let mut row=Row{pair:Pair{left:Item{value:21},right:Item{value:21}}};"
                        "return evaluate(&mut row.pair.left,row.pair.left.value);}",
         }),
+        ("argument-count-wrong-arity", 65, True, {
+            "main.ox": "use std::env::arg_count;fn main()->i32{return arg_count(1);}",
+        }),
+        ("argument-count-alias-shadowing", 65, True, {
+            "main.ox": "use std::env::arg_count as total;"
+                       "fn main()->i32{let total=42;return total;}",
+        }),
+        ("forward-copy-record-fields", 0, True, {
+            "main.ox": "#[derive(Copy)]struct Parent{child:Child}"
+                       "#[derive(Copy)]struct Child{number:i32}"
+                       "fn read(parent:Parent)->i32{return parent.child.number;}"
+                       "fn main()->i32{let value=Parent{child:Child{number:21}};return read(value)+read(value);}",
+        }),
+        ("forward-record-field-import", 0, True, {
+            "main.ox": "mod parts;use crate::parts::Leaf as Entry;struct Parent{child:Entry}"
+                       "fn main()->i32{let value=Parent{child:crate::parts::open()};return value.child.number;}",
+            "parts.ox": "pub struct Leaf{pub number:i32}pub fn open()->Leaf{return Leaf{number:42};}",
+        }),
+        ("forward-struct-enum-payload", 0, True, {
+            "main.ox": "enum Command{None,Send(Body)}struct Body{number:i32}"
+                       "fn main()->i32{let value=Command::Send(Body{number:42});"
+                       "match value{Command::None=>{return 0;},Command::Send(body)=>{return body.number;},}}",
+        }),
+        ("recursive-record-layout", 65, True, {
+            "main.ox": "struct Node{child:Node}fn read(node:Node)->i32{return 42;}"
+                       "fn main()->i32{return 42;}",
+        }),
+        ("cross-module-record-layout-cycle", 65, True, {
+            "main.ox": "mod branches;pub struct Root{branch:crate::branches::Branch}"
+                       "fn read(root:Root)->i32{return 42;}fn main()->i32{return 42;}",
+            "branches.ox": "pub struct Branch{root:crate::Root}",
+        }),
+        ("public-enum-import-alias", 0, True, {
+            "main.ox": "mod responses;use crate::responses::Reply as Answer;"
+                       "fn read(reply:Answer)->i32{match reply{Answer::Missing=>{return 0;},"
+                       "Answer::Number(amount)=>{return amount;},}}"
+                       "fn main()->i32{return read(crate::responses::open());}",
+            "responses.ox": "pub enum Reply{Missing,Number(i32)}"
+                            "pub fn open()->Reply{return Reply::Number(42);}",
+        }),
+        ("public-enum-qualified-constructor-and-match", 0, True, {
+            "main.ox": "mod responses;fn main()->i32{let reply=crate::responses::Reply::Number(42);"
+                       "match reply{crate::responses::Reply::Number(amount)=>{return amount;},"
+                       "crate::responses::Reply::Missing=>{return 0;},}}",
+            "responses.ox": "pub enum Reply{Missing,Number(i32)}",
+        }),
+        ("private-enum-import-rejected", 65, True, {
+            "main.ox": "mod responses;use crate::responses::Reply;fn main()->i32{return 42;}",
+            "responses.ox": "enum Reply{Missing,Number(i32)}",
+        }),
+        ("qualified-match-preserves-enum-identity", 65, True, {
+            "main.ox": "mod responses;fn main()->i32{let reply=crate::responses::Reply::Number(42);"
+                       "match reply{crate::responses::Wrong::Number(amount)=>{return amount;},}}",
+            "responses.ox": "pub enum Reply{Number(i32)}pub enum Wrong{Number(i32)}",
+        }),
+        ("public-enum-private-payload", 65, True, {
+            "main.ox": "mod responses;fn main()->i32{let reply=crate::responses::open();"
+                       "match reply{crate::responses::Reply::Number(amount)=>{return 42;},}}",
+            "responses.ox": "struct Hidden{value:i32}pub enum Reply{Number(Hidden)}"
+                            "pub fn open()->Reply{return Reply::Number(Hidden{value:42});}",
+        }),
+        ("standard-io-status-identities-are-distinct", 65, True, {
+            "main.ox": "use std::io::ReadSomeStatus;use std::io::WriteSomeStatus;"
+                       "fn main()->i32{let value=WriteSomeStatus::Written(42);"
+                       "match value{ReadSomeStatus::Data(n)=>{return n;},"
+                       "ReadSomeStatus::Eof=>{return 0;},ReadSomeStatus::Error(e)=>{return 0;},}}",
+        }),
+        ("byte-buffer-moves-and-borrows", 0, True, {
+            "main.ox": '''
+mod buffers;
+use alloc::bytes::ByteBuf;
+use alloc::bytes::len;
+use alloc::bytes::truncate;
+use alloc::bytes::take;
+fn view(bytes:&[u8])->i32{
+    let first=bytes[0];
+    let second=bytes[1];
+    return first.to_i32()+second.to_i32();
+}
+fn set_first(bytes:&mut [u8])->i32{
+    bytes[0]=5u8;
+    let first=bytes[0];
+    return first.to_i32();
+}
+fn choose(value:ByteBuf)->ByteBuf{return value;}
+fn main()->i32{
+    let mut bytes=crate::buffers::make();
+    let mut moved=choose(take(&mut bytes));
+    if len(&bytes)!=0||len(&moved)!=5{return 1;}
+    truncate(&mut moved,4);
+    let score=set_first(&mut moved)+view(&moved[2..4]);
+    moved=crate::buffers::make();
+    crate::buffers::make();
+    if len(&moved)!=5{return 2;}
+    return score;
+}
+''',
+            "buffers.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::capacity;
+use alloc::bytes::try_reserve;
+use alloc::bytes::try_resize;
+use alloc::bytes::try_push;
+use alloc::bytes::try_extend;
+fn grew(status:GrowStatus)->bool{
+    match status{GrowStatus::Ok=>{return true;},
+    GrowStatus::CapacityOverflow=>{return false;},GrowStatus::AllocationFailed=>{return false;},
+    GrowStatus::MemoryLimit=>{return false;},}
+}
+fn fill(bytes:&mut ByteBuf)->bool{
+    if !grew(try_reserve(&mut *bytes,8))||capacity(&*bytes)<8{return false;}
+    if !grew(try_resize(&mut *bytes,2,11u8))||!grew(try_push(&mut *bytes,7u8)){return false;}
+    let extra=b"\\x1eZ";
+    return grew(try_extend(&mut *bytes,&extra));
+}
+pub fn make()->ByteBuf{
+    let mut bytes=new();
+    if !fill(&mut bytes){return new();}
+    return bytes;
+}
+''',
+        }),
+        ("byte-buffer-drop-on-control-flow", 0, True, {
+            "main.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::GrowStatus;
+use alloc::bytes::new;
+use alloc::bytes::try_reserve;
+fn reserve(buffer:&mut ByteBuf)->bool{
+    let status=try_reserve(&mut *buffer,2097152);
+    match status{GrowStatus::Ok=>{return true;},GrowStatus::CapacityOverflow=>{return false;},
+    GrowStatus::AllocationFailed=>{return false;},GrowStatus::MemoryLimit=>{return false;},}
+}
+fn dispose(buffer:ByteBuf)->(){return;}
+fn exercise(transfer:bool)->i32{
+    let mut outer=new();
+    if !reserve(&mut outer){return 1;}
+    if transfer{dispose(outer);}
+    for i in 0..12{
+        let mut nested=new();
+        if !reserve(&mut nested){return 2;}
+        if i==11{break;}
+        if i%2==0{continue;}
+    }
+    return 42;
+}
+fn main()->i32{
+    if exercise(true)!=42{return 3;}
+    return exercise(false);
+}
+''',
+        }),
+        ("byte-buffer-refuses-stale-owner", 65, True, {
+            "main.ox": "use alloc::bytes::new;use alloc::bytes::len;"
+                       "fn main()->i32{let bytes=new();let moved=bytes;return len(&bytes);}",
+        }),
+        ("byte-buffer-refuses-overlapping-loans", 65, True, {
+            "main.ox": "use alloc::bytes::new;use alloc::bytes::try_extend;"
+                       "fn main()->i32{let mut bytes=new();"
+                       "try_extend(&mut bytes,&bytes[0..0]);return 42;}",
+        }),
+        ("owned-record-fields-can-be-borrowed-and-moved", 0, True, {
+            "main.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::new;
+use alloc::bytes::try_resize;
+use alloc::bytes::take;
+use alloc::bytes::len;
+struct Pair{left:ByteBuf,right:ByteBuf}
+struct Envelope{data:Pair}
+fn sum(left:&mut [u8],right:&mut [u8])->i32{
+    left[0]=19u8;
+    right[0]=23u8;
+    let a=left[0];
+    let b=right[0];
+    return a.to_i32()+b.to_i32();
+}
+fn measure(owner:&mut Envelope)->i32{
+    try_resize(&mut *owner.data.left,1,0u8);
+    try_resize(&mut *owner.data.right,1,0u8);
+    let score=sum(&mut *owner.data.left,&mut *owner.data.right);
+    let extracted_buffer=take(&mut *owner.data.right);
+    if len(&*owner.data.right)!=0||len(&extracted_buffer)!=1{return 1;}
+    return score;
+}
+fn main()->i32{
+    let mut item=Envelope{data:Pair{left:new(),right:new()}};
+    let score=measure(&mut item);
+    let Envelope{data:extracted}=item;
+    let Pair{left:previous,right:empty}=extracted;
+    if len(&previous)!=1||len(&empty)!=0{return 2;}
+    return score;
+}
+''',
+        }),
+        ("active-enum-payloads-release-owned-fields", 0, True, {
+            "main.ox": '''
+use alloc::bytes::ByteBuf;
+use alloc::bytes::new;
+use alloc::bytes::try_resize;
+use alloc::bytes::len;
+struct Record{data:ByteBuf}
+enum Parcel{Bytes(ByteBuf),Empty,Wrapped(Record)}
+fn make(which:i32)->Parcel{
+    let mut buffer=new();
+    try_resize(&mut buffer,64,1u8);
+    if which==0{return Parcel::Bytes(buffer);}
+    if which==1{return Parcel::Wrapped(Record{data:buffer});}
+    return Parcel::Empty;
+}
+fn main()->i32{
+    for variant in 0..3{
+        let value=make(variant);
+        match value{
+            Parcel::Bytes(bytes)=>{if len(&bytes)!=64{return 1;}},
+            Parcel::Empty=>{},
+            Parcel::Wrapped(record)=>{if len(&record.data)!=64{return 2;}},
+        }
+        make(variant);
+    }
+    return 42;
+}
+''',
+        }),
+        ("owned-byte-fields-cannot-derive-copy", 65, True, {
+            "main.ox": "use alloc::bytes::ByteBuf;"
+                       "#[derive(Copy)]struct Pair{left:ByteBuf}fn main()->i32{return 42;}",
+        }),
+        ("owned-byte-field-refuses-overlapping-loans", 65, True, {
+            "main.ox": "use alloc::bytes::ByteBuf;use alloc::bytes::new;use alloc::bytes::try_extend;"
+                       "struct Packet{bytes:ByteBuf}fn main()->i32{let mut value=Packet{bytes:new()};"
+                       "try_extend(&mut value.bytes,&value.bytes[0..0]);return 42;}",
+        }),
+        ("scalar-vector-ownership-growth-and-slices", 0, True, {
+            "main.ox": '''
+use alloc::vec::Vec as Numbers;
+use alloc::vec::GrowStatus;
+use alloc::vec::new;
+use alloc::vec::len;
+use alloc::vec::capacity;
+use alloc::vec::try_reserve;
+use alloc::vec::try_resize;
+use alloc::vec::try_push;
+use alloc::vec::try_extend;
+use alloc::vec::take;
+use alloc::vec::truncate;
+struct Batch{values:Numbers<i32>}
+fn success(status:GrowStatus)->bool{
+    match status{GrowStatus::Ok=>{return true;},GrowStatus::CapacityOverflow=>{return false;},
+    GrowStatus::AllocationFailed=>{return false;},GrowStatus::MemoryLimit=>{return false;},}
+}
+fn first(view:&[i32])->i32{return view[0];}
+fn score(batch:&Batch)->i32{
+    if len(&*batch.values)!=4{return 1;}
+    return first(&*batch.values[0..1])+first(&*batch.values[1..2])+first(&*batch.values[3..4]);
+}
+fn main()->i32{
+    let mut values:Numbers<i32>=new::<i32>();
+    if !success(try_reserve(&mut values,16))||capacity(&values)<16{return 2;}
+    if !success(try_resize(&mut values,2,20))||!success(try_push(&mut values,8)){return 3;}
+    let tail=[14,9];
+    if !success(try_extend(&mut values,&tail)){return 4;}
+    values[1]=values[2];
+    let mut moved=take(&mut values);
+    if len(&values)!=0||len(&moved)!=5{return 5;}
+    truncate(&mut moved,4);
+    let batch=Batch{values:moved};
+    return score(&batch);
+}
+''',
+        }),
+        ("scalar-vector-booleans-and-characters", 0, True, {
+            "main.ox": '''
+use alloc::vec::new;
+use alloc::vec::try_push;
+fn main()->i32{
+    let mut flags=new::<bool>();
+    try_push(&mut flags,true);
+    try_push(&mut flags,false);
+    if !flags[0]||flags[1]{return 1;}
+    flags[0]=false;
+    if flags[0]{return 2;}
+    let mut characters=new::<char>();
+    try_push(&mut characters,'雪');
+    if characters[0]!='雪'{return 3;}
+    return 42;
+}
+''',
+        }),
+        ("scalar-vector-refuses-a-different-element-type", 65, True, {
+            "main.ox": "use alloc::vec::new;use alloc::vec::try_push;"
+                       "fn main()->i32{let mut values=new::<i32>();try_push(&mut values,1i64);return 0;}",
+        }),
+        ("scalar-vector-refuses-overlapping-loans", 65, True, {
+            "main.ox": "use alloc::vec::new;use alloc::vec::try_extend;"
+                       "fn main()->i32{let mut values=new::<i32>();try_extend(&mut values,&values);return 0;}",
+        }),
+        ("scalar-vector-type-alias-conflicts-with-a-record", 65, True, {
+            "main.ox": "use alloc::vec::Vec as Items;struct Items{number:i32}"
+                       "fn main()->i32{return 42;}",
+        }),
+        ("nested-vector-field-index-and-length", 0, True, {
+            "main.ox": '''
+use alloc::vec::Vec;
+use alloc::vec::new;
+use alloc::vec::try_push;
+struct Row{values:Vec<i32>,phase:i32}
+struct Table{row:Row}
+fn replacement(table:&mut Table)->i32{
+    table.row.phase=1;
+    return 42;
+}
+fn select(table:&Table)->i32{
+    if table.row.phase==1{return 0;}
+    return 9;
+}
+fn update(table:&mut Table)->i32{
+    try_push(&mut *table.row.values,7);
+    if table.row.values.len()!=1{return 1;}
+    table.row.values[select(&*table)]=replacement(&mut *table);
+    return table.row.values[0];
+}
+fn main()->i32{
+    let values=new::<i32>();
+    if values.len()!=0{return 2;}
+    let mut table=Table{row:Row{values:values,phase:0}};
+    return update(&mut table);
+}
+''',
+        }),
+        ("nested-vector-field-write-requires-exclusive-access", 65, True, {
+            "main.ox": "use alloc::vec::Vec;struct Row{values:Vec<i32>}"
+                       "fn replace(row:&Row)->(){row.values[0]=42;}"
+                       "fn main()->i32{return 42;}",
+        }),
         ("private-record-import", 65, True, {
             "main.ox": "mod data;use crate::data::Row;fn main()->i32{return 42;}",
             "data.ox": "#[derive(Copy)]struct Row{pub number:i32}",
@@ -865,6 +1202,419 @@ def verify_modules(compiler: Path, clang: Path, runtime: Path, reference: Path,
     return rows
 
 
+def verify_process_entries(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                           output: Path, timeout: int) -> list[dict]:
+    target = driver.host_target()
+    evidence = output / "process-entries"
+    evidence.mkdir()
+    rows = []
+    cases = (
+        ("zero", "return 0;", 0, b""),
+        ("status-42", "return 42;", 42, b""),
+        ("maximum-status", "return 255;", 255, b""),
+        ("negative-status", "return -1;", 1, b"process main must return a status in 0..255"),
+        ("large-status", "return 256;", 1, b"process main must return a status in 0..255"),
+        ("division-error", "let zero=0;return 1/zero;", 1, b"division by zero"),
+    )
+
+    def check(name, command, work, status, error, clear_env):
+        observed = run(command, work, timeout, clear_environment=clear_env)
+        require((observed.returncode, observed.stdout) == (status, b""), name + ": incorrect process outcome")
+        require(error in observed.stderr if error else not observed.stderr, name + ": incorrect process diagnostic")
+        if error:
+            read_fd, write_fd = os.pipe()
+            os.close(read_fd)
+            try:
+                refused = subprocess.run(command, cwd=work, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                         stderr=write_fd, timeout=timeout, env={} if clear_env else None)
+            finally:
+                os.close(write_fd)
+            require((refused.returncode, refused.stdout) == (74, b""), name + ": closed stderr outcome")
+        return record(work, name, command, observed)
+
+    for name, body, status, error in cases:
+        work = evidence / name
+        work.mkdir()
+        source = work / "main.ox"
+        source.write_text("fn main()->i32{" + body + "}", encoding="ascii")
+        reference_command = [str(reference), "run", str(source), "--edition=typed-preview", "--entry-mode=process"]
+        row = {"name": name, "reference": check("reference", reference_command, work, status, error, False),
+               "profiles": []}
+        for profile in ("dev", "release"):
+            built = driver.build(compiler, source, clang, runtime, work / profile, profile,
+                                 timeout, work / (profile + "-build"), entry_mode="process")
+            require(built["entry_mode"] == "process", "incorrect process build receipt")
+            row["profiles"].append(built)
+        source.unlink()
+        for built in row["profiles"]:
+            moved = work / ("moved-" + built["profile"])
+            Path(built["output"]).rename(moved)
+            built["run"] = check("run-" + built["profile"], [str(moved)], work, status, error, True)
+        rows.append(row)
+
+    work = evidence / "invalid-signature"
+    work.mkdir()
+    source = work / "main.ox"
+    source.write_text("fn main()->bool{return true;}", encoding="ascii")
+    command = driver.compiler_command(compiler, source, target, "process")
+    rejected = run(command, work, timeout)
+    check_source_rejection("process return type", rejected, source)
+    require(rejected.stdout == b"", "process signature rejection emitted a module")
+    rows.append({"name": "invalid-signature", "compiler": record(work, "compiler", command, rejected)})
+    return rows
+
+
+def verify_argument_counts(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                           output: Path, timeout: int) -> list[dict]:
+    evidence = output / "argument-counts"
+    evidence.mkdir()
+    source = evidence / "main.ox"
+    source.write_text("mod arguments;fn main()->i32{return crate::arguments::count();}", encoding="ascii")
+    child = evidence / "arguments.ox"
+    child.write_text("use std::env::arg_count as argc;pub fn count()->i32{return argc();}", encoding="ascii")
+    samples = ((), ("", "--entry-mode=result"), (os.fsdecode(b"\xff"), "a b", "--"))
+    results = []
+
+    def observe(label, command, mode, count, clear_env):
+        observed = run(command, evidence, timeout, clear_environment=clear_env)
+        expected = (count, b"", b"") if mode == "process" else (0, f"{count}\n".encode(), b"")
+        require((observed.returncode, observed.stdout, observed.stderr) == expected,
+                label + ": argument count did not match")
+        return record(evidence, label, command, observed)
+
+    for entry_mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={entry_mode}", "--"]
+        for n, arguments in enumerate(samples):
+            results.append(observe(f"{entry_mode}-reference-{n}", [*command, *arguments],
+                                   entry_mode, len(arguments) + 1, False))
+        for profile in ("dev", "release"):
+            name = f"{entry_mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=entry_mode)
+    source.unlink()
+    child.unlink()
+    for entry_mode in ("result", "process"):
+        for profile in ("dev", "release"):
+            name = f"{entry_mode}-{profile}"
+            moved = evidence / ("moved-" + name)
+            (evidence / name).rename(moved)
+            for n, arguments in enumerate(samples):
+                results.append(observe(f"{name}-run-{n}", [str(moved), *arguments],
+                                       entry_mode, len(arguments) + 1, True))
+    return results
+
+
+def verify_argument_bytes(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                          output: Path, timeout: int) -> list[dict]:
+    evidence = output / "argument-bytes"
+    evidence.mkdir()
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::env::arg_bytes as copy;
+use std::env::ArgStatus as Status;
+fn count(index:i32,bytes:&mut [u8])->i32{
+    let status=copy(index,&mut *bytes);
+    match status{
+        Status::Copied(n)=>{return n;},
+        Status::TooSmall(n)=>{return -n;},
+        Status::Missing=>{return -100;},
+        Status::TooLong=>{return -101;},
+    }
+}
+fn main()->i32{
+    let mut bytes=b"xxxx";
+    if count(0,&mut bytes[0..0])>=0{return 1;}
+    if count(1,&mut bytes[1..2])!=-2||bytes[1]!=120u8{return 2;}
+    if count(1,&mut bytes[1..4])!=2{return 3;}
+    if bytes[0]!=120u8||bytes[1]!=255u8||bytes[2]!=65u8||bytes[3]!=120u8{return 4;}
+    if count(2,&mut bytes[0..0])!=0{return 5;}
+    if count(-1,&mut bytes)!=-100||count(3,&mut bytes)!=-100{return 6;}
+    if bytes[0]!=120u8||bytes[1]!=255u8||bytes[2]!=65u8||bytes[3]!=120u8{return 7;}
+    return 42;
+}
+''', encoding="ascii")
+    arguments = [os.fsdecode(b"\xffA"), ""]
+    results = []
+    builds = []
+
+    def observe(label, command, mode, clear_env):
+        observed = run([*command, *arguments], evidence, timeout, clear_environment=clear_env)
+        expected = (42, b"", b"") if mode == "process" else (0, b"42\n", b"")
+        require((observed.returncode, observed.stdout, observed.stderr) == expected,
+                label + ": argument bytes did not match")
+        results.append(record(evidence, label, [*command, *arguments], observed))
+
+    for mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={mode}", "--"]
+        observe(f"{mode}-reference", command, mode, False)
+        for profile in ("dev", "release"):
+            name = f"{mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=mode)
+            builds.append((mode, name))
+    source.unlink()
+    for mode, name in builds:
+        moved = evidence / ("moved-" + name)
+        (evidence / name).rename(moved)
+        observe(name, [str(moved)], mode, True)
+    return results
+
+
+def verify_binary_io(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                     output: Path, timeout: int) -> list[dict]:
+    evidence = output / "binary-io"
+    evidence.mkdir()
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::io::ReadSomeStatus as Read;
+use std::io::WriteSomeStatus as Write;
+use std::io::read_some as input;
+use std::io::write_some;
+use std::io::write_stderr;
+fn read_size(value:Read)->i32{
+    match value{Read::Data(n)=>{return n;},Read::Eof=>{return -1;},Read::Error(e)=>{return -2;},}
+}
+fn main()->i32{
+    let mut bytes=b"xxxx";
+    if read_size(input(&mut bytes[0..0]))!=0{return 1;}
+    if read_size(input(&mut bytes))!=3||bytes[3]!=120u8{return 2;}
+    let echoed=write_some(&bytes[0..3]);
+    match echoed{Write::Written(n)=>{if n!=3{return 3;}},Write::Error(e)=>{return 4;},}
+    if read_size(input(&mut bytes))!=-1{return 5;}
+    let message=b"e\x00\xff";
+    let logged=write_stderr(&message);
+    match logged{Write::Written(n)=>{if n!=3{return 6;}},Write::Error(e)=>{if e>0{return 74;}return 7;},}
+    return 42;
+}
+''', encoding="ascii")
+    payload = b"\xff\x00\r"
+    rows = []
+
+    def observe(name, command, environment):
+        completed = subprocess.run(command, cwd=evidence, input=payload, capture_output=True,
+                                   timeout=timeout, env=environment)
+        require((completed.returncode, completed.stdout, completed.stderr) == (42, payload, b"e\x00\xff"),
+                name + ": binary streams did not match")
+        rows.append(record(evidence, name, command, completed))
+        reader, writer = os.pipe()
+        os.close(reader)
+        try:
+            closed = subprocess.run(command, cwd=evidence, input=payload, stdout=subprocess.PIPE,
+                                    stderr=writer, timeout=timeout, env=environment)
+        finally:
+            os.close(writer)
+        require((closed.returncode, closed.stdout) == (74, payload), name + ": closed stderr did not match")
+        closed.stderr = b""
+        rows.append(record(evidence, name + "-closed", command, closed))
+
+    reference_command = [str(reference), "run", str(source), "--edition=typed-preview", "--entry-mode=process"]
+    observe("reference", reference_command, None)
+    command = driver.compiler_command(compiler, source, driver.host_target())
+    rejected = run(command, evidence, timeout)
+    check_source_rejection("binary I/O in result entry mode", rejected, source)
+    require(rejected.stdout == b"", "binary I/O in result mode emitted LLVM")
+    for profile in ("dev", "release"):
+        driver.build(compiler, source, clang, runtime, evidence / profile, profile,
+                     timeout, evidence / (profile + "-build"), entry_mode="process")
+    source.unlink()
+    for profile in ("dev", "release"):
+        moved = evidence / ("moved-" + profile)
+        (evidence / profile).rename(moved)
+        observe(profile, [str(moved)], {})
+    return rows
+
+
+def verify_file_reads(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                      output: Path, timeout: int) -> list[dict]:
+    evidence = output / "file-reads"
+    evidence.mkdir()
+    payload = evidence / "input.bin"
+    content = b"\xff\x00\r"
+    payload.write_bytes(content)
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::fs::File;
+use std::fs::OpenResult;
+use std::fs::FileStatus;
+use std::fs::open_read;
+use std::fs::read_some as file_read;
+use std::fs::close;
+use std::io::ReadSomeStatus;
+fn count(file:&mut File,bytes:&mut [u8])->i32{
+    let status=file_read(&mut *file,&mut *bytes);
+    match status{
+        ReadSomeStatus::Data(n)=>{return n;},
+        ReadSomeStatus::Eof=>{return -1;},
+        ReadSomeStatus::Error(e)=>{return -e;},
+    }
+}
+fn inspect(file:&mut File)->i32{
+    let mut buffer=b"xxxx";
+    if count(&mut *file,&mut buffer[0..0])!=0{return 1;}
+    if count(&mut *file,&mut buffer)!=3{return 2;}
+    if buffer[0]!=255u8||buffer[1]!=0u8||buffer[2]!=13u8||buffer[3]!=120u8{return 3;}
+    if count(&mut *file,&mut buffer)!=-1{return 4;}
+    let closed=close(&mut *file);
+    match closed{FileStatus::Ok=>{},FileStatus::Error(e)=>{return 5;},}
+    if count(&mut *file,&mut buffer)!=-9{return 6;}
+    return 42;
+}
+fn errno_for(path:&[u8])->i32{
+    let opened=open_read(&*path);
+    match opened{
+        OpenResult::Opened(file)=>{return 0;},OpenResult::Error(e)=>{return e;},
+        OpenResult::MemoryLimit=>{return -1;},OpenResult::AllocationFailed=>{return -2;},
+    }
+}
+fn main()->i32{
+    let path=b"input.bin";
+    let missing=b"missing.bin";
+    let invalid=b"bad\x00path";
+    if errno_for(&missing)!=2||errno_for(&invalid)!=22{return 7;}
+    for attempt in 0..16{open_read(&path);}
+    let opened=open_read(&path);
+    match opened{
+        OpenResult::Opened(file)=>{let mut handle=file;return inspect(&mut handle);},
+        OpenResult::Error(e)=>{return 8;},
+        OpenResult::MemoryLimit=>{return 9;},OpenResult::AllocationFailed=>{return 10;},
+    }
+}
+''', encoding="ascii")
+    rows = []
+    builds = []
+
+    def observe(name, command, mode, clear_env):
+        executed = run(command, evidence, timeout, clear_environment=clear_env)
+        rows.append(record(evidence, name, command, executed))
+        expected = (42, b"", b"") if mode == "process" else (0, b"42\n", b"")
+        require((executed.returncode, executed.stdout, executed.stderr) == expected,
+                name + ": file behavior did not match")
+        require(payload.read_bytes() == content, name + ": reading modified the file")
+
+    for mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={mode}"]
+        observe(f"{mode}-reference", command, mode, False)
+        for profile in ("dev", "release"):
+            name = f"{mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=mode)
+            builds.append((mode, name))
+    source.unlink()
+    for mode, name in builds:
+        moved = evidence / ("moved-" + name)
+        (evidence / name).rename(moved)
+        observe(name, [str(moved)], mode, True)
+    return rows
+
+
+def verify_file_writes(compiler: Path, clang: Path, runtime: Path, reference: Path,
+                       output: Path, timeout: int) -> list[dict]:
+    evidence = output / "file-writes"
+    evidence.mkdir()
+    payload = evidence / "output.bin"
+    source = evidence / "main.ox"
+    source.write_text(r'''
+use std::fs::OpenResult;
+use std::fs::FileStatus;
+use std::fs::create;
+use std::fs::open_append;
+use std::fs::open_read;
+use std::fs::write_some;
+use std::fs::read_some;
+use std::fs::sync_all;
+use std::fs::seek_absolute;
+use std::io::WriteSomeStatus;
+use std::io::ReadSomeStatus;
+fn success(status:FileStatus)->bool{
+    match status{FileStatus::Ok=>{return true;},FileStatus::Error(e)=>{return false;},}
+}
+fn writer(path:&[u8],append_only:bool)->OpenResult{
+    if append_only{return open_append(&*path);}
+    return create(&*path);
+}
+fn save(path:&[u8],bytes:&[u8],append_only:bool)->bool{
+    let opened=writer(&*path,append_only);
+    match opened{
+        OpenResult::Opened(file)=>{
+            let mut handle=file;
+            if !success(seek_absolute(&mut handle,0i64)){return false;}
+            let written=write_some(&mut handle,&*bytes);
+            match written{
+                WriteSomeStatus::Written(n)=>{if n!=bytes.len(){return false;}},
+                WriteSomeStatus::Error(e)=>{return false;},
+            }
+            return success(sync_all(&mut handle));
+        },
+        OpenResult::Error(e)=>{return false;},
+        OpenResult::MemoryLimit=>{return false;},OpenResult::AllocationFailed=>{return false;},
+    }
+}
+fn verify_file(path:&[u8])->i32{
+    let opened=open_read(&*path);
+    match opened{
+        OpenResult::Opened(file)=>{
+            let mut handle=file;
+            let invalid=seek_absolute(&mut handle,-1i64);
+            match invalid{FileStatus::Ok=>{return 4;},FileStatus::Error(e)=>{if e!=22{return 5;}},}
+            if !success(seek_absolute(&mut handle,1i64)){return 6;}
+            let mut tail=b"xxxx";
+            let read=read_some(&mut handle,&mut tail);
+            match read{
+                ReadSomeStatus::Data(n)=>{
+                    if n==2&&tail[0]==0u8&&tail[1]==13u8&&tail[2]==120u8{return 42;}
+                    return 7;
+                },
+                ReadSomeStatus::Eof=>{return 8;},ReadSomeStatus::Error(e)=>{return 9;},
+            }
+        },
+        OpenResult::Error(e)=>{return 10;},
+        OpenResult::MemoryLimit=>{return 11;},OpenResult::AllocationFailed=>{return 12;},
+    }
+}
+fn main()->i32{
+    let path=b"output.bin";
+    let beginning=b"\xff\x00";
+    let suffix=b"\r";
+    if !save(&path,&beginning,false){return 1;}
+    if !save(&path,&suffix,true){return 2;}
+    let invalid_path=b"output.bin\x00";
+    let bad_open=create(&invalid_path);
+    match bad_open{
+        OpenResult::Error(e)=>{if e!=22{return 3;}},
+        OpenResult::Opened(file)=>{return 3;},
+        OpenResult::MemoryLimit=>{return 3;},OpenResult::AllocationFailed=>{return 3;},
+    }
+    return verify_file(&path);
+}
+''', encoding="ascii")
+    rows = []
+    builds = []
+
+    def observe(name, command, mode, clear_env):
+        payload.write_bytes(b"older contents")
+        executed = run(command, evidence, timeout, clear_environment=clear_env)
+        rows.append(record(evidence, name, command, executed))
+        expected = (42, b"", b"") if mode == "process" else (0, b"42\n", b"")
+        require((executed.returncode, executed.stdout, executed.stderr) == expected,
+                name + ": file operations did not match")
+        require(payload.read_bytes() == b"\xff\x00\r", name + ": written bytes did not match")
+
+    for mode in ("result", "process"):
+        command = [str(reference), "run", str(source), "--edition=typed-preview", f"--entry-mode={mode}"]
+        observe(f"{mode}-reference", command, mode, False)
+        for profile in ("dev", "release"):
+            name = f"{mode}-{profile}"
+            driver.build(compiler, source, clang, runtime, evidence / name, profile,
+                         timeout, evidence / (name + "-build"), entry_mode=mode)
+            builds.append((mode, name))
+    source.unlink()
+    for mode, name in builds:
+        moved = evidence / ("moved-" + name)
+        (evidence / name).rename(moved)
+        observe(name, [str(moved)], mode, True)
+    return rows
+
+
 def verify(args) -> dict:
     target = driver.host_target()
     cases, authenticated_sources = fixture_data.load_cases(ROOT.parents[1])
@@ -885,7 +1635,11 @@ def verify(args) -> dict:
               "driver_sha256": hashlib.sha256((ROOT / "build.py").read_bytes()).hexdigest(),
               "cases_sha256": hashlib.sha256((ROOT / "tests/cases.json").read_bytes()).hexdigest()}
     if runtime == driver.DEFAULT_RUNTIME:
-        runtime_sources = ("native/typed_preview.c", "native/typed_character.c")
+        runtime_sources = (
+            "native/typed_preview.c", "native/typed_character.c", "native/typed_bytebuf.c",
+            "native/typed_vector.c", "native/experimental_bytebuf.c", "native/experimental_bytebuf.h",
+            "native/experimental_vector.c", "native/experimental_vector.h", "native/experimental_files.c",
+        )
         report["runtime_sources_sha256"] = {
             name: hashlib.sha256((ROOT.parents[1] / name).read_bytes()).hexdigest()
             for name in runtime_sources
@@ -960,6 +1714,18 @@ def verify(args) -> dict:
         if args.reference is not None:
             report["modules"] = verify_modules(compiler, clang, runtime, args.reference.resolve(strict=True),
                                                output, args.timeout)
+            report["process_entries"] = verify_process_entries(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["argument_counts"] = verify_argument_counts(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["argument_bytes"] = verify_argument_bytes(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["binary_io"] = verify_binary_io(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["file_reads"] = verify_file_reads(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
+            report["file_writes"] = verify_file_writes(compiler, clang, runtime,
+                args.reference.resolve(strict=True), output, args.timeout)
         report["reference_used_only_as_offline_oracle"] = args.reference is not None
         report["status"] = "passed"
         return report

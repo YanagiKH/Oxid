@@ -2,6 +2,7 @@ use crate::model::Compiler;
 use crate::model::Value;
 use crate::model::grown;
 use crate::model::Binding;
+use crate::model::Record;
 use crate::model::Token;
 use crate::model::token;
 use crate::model::array_type;
@@ -12,10 +13,19 @@ use crate::model::is_slice;
 use crate::model::slice_element;
 use crate::model::is_record_reference;
 use crate::model::record_value_type;
+use crate::model::record_type;
 use crate::model::value_cells;
+use crate::model::read_some_binding;
 use crate::model::code;
 use crate::model::is_record;
 use crate::model::record_index;
+use crate::model::is_byte_buffer;
+use crate::model::is_file;
+use crate::model::needs_drop;
+use crate::model::uses_heap;
+use crate::model::vector_element;
+use crate::model::vector_scalar_tag;
+use crate::model::referent_record;
 use alloc::vec::len as vector_len;
 use alloc::vec::Vec;
 use alloc::bytes::len;
@@ -362,7 +372,7 @@ pub fn load_element(c: &mut Compiler, pointer: i32, element: i32) -> Value {
     let line = b"\n";
     let id = fresh(&mut *c);
     append(&mut *c, 2, &name); number(&mut *c, 2, id); append(&mut *c, 2, &load_instruction);
-    write_scalar_type(&mut *c, 2, element, false);
+    write_type(&mut *c, 2, element, false);
     append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &line);
     return Value { ty: element, id: id };
 }
@@ -435,7 +445,7 @@ pub fn store_element(c: &mut Compiler, pointer: i32, value: Value) -> () {
     let address = b", ptr %v";
     let line = b"\n";
     append(&mut *c, 2, &store_instruction);
-    write_scalar_type(&mut *c, 2, value.ty, false);
+    write_type(&mut *c, 2, value.ty, false);
     append(&mut *c, 2, &space); operand(&mut *c, 2, value);
     append(&mut *c, 2, &address); number(&mut *c, 2, pointer); append(&mut *c, 2, &line);
     return;
@@ -464,6 +474,182 @@ pub fn borrow_record(c: &mut Compiler, binding: Binding, ty: i32) -> Value {
     write_type(&mut *c, 2, binding.ty, false); append(&mut *c, 2, &slot_prefix);
     number(&mut *c, 2, binding.slot); append(&mut *c, 2, &end);
     return Value { ty: ty, id: pointer };
+}
+
+pub fn byte_buffer_view(c: &mut Compiler, buffer: Value, ty: i32) -> Value {
+    let prefix = b"  %v";
+    let invocation = b" = call ptr @__oxid_scalar_bytebuf_view(ptr ";
+    let extent = b", ptr %s";
+    let end = b")\n";
+    let output = slot(&mut *c, 1);
+    let pointer = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, pointer); append(&mut *c, 2, &invocation);
+    operand(&mut *c, 2, buffer); append(&mut *c, 2, &extent); number(&mut *c, 2, output);
+    append(&mut *c, 2, &end);
+    let count = load(&mut *c, output, 1);
+    return slice_value(&mut *c, ty, count, pointer, false);
+}
+
+pub fn vector_view(c: &mut Compiler, buffer: Value, element: i32, ty: i32) -> Value {
+    let prefix = b"  %v";
+    let invocation = b" = call ptr @__oxid_scalar_vector_view(ptr ";
+    let type_id = b", i32 ";
+    let extent = b", ptr %s";
+    let end = b")\n";
+    let output = slot(&mut *c, 1);
+    let pointer = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, pointer); append(&mut *c, 2, &invocation);
+    operand(&mut *c, 2, buffer); append(&mut *c, 2, &type_id);
+    number(&mut *c, 2, vector_scalar_tag(element)); append(&mut *c, 2, &extent);
+    number(&mut *c, 2, output); append(&mut *c, 2, &end);
+    let count = load(&mut *c, output, 1);
+    return slice_value(&mut *c, ty, count, pointer, false);
+}
+
+pub fn vector_index(c: &mut Compiler, buffer: Value, index: Value, element: i32) -> i32 {
+    let prefix = b"  %v";
+    let invocation = b" = call ptr @__oxid_scalar_vector_index(ptr ";
+    let integer = b", i32 ";
+    let end = b")\n";
+    let result = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, result); append(&mut *c, 2, &invocation);
+    operand(&mut *c, 2, buffer); append(&mut *c, 2, &integer);
+    number(&mut *c, 2, vector_scalar_tag(element)); append(&mut *c, 2, &integer);
+    operand(&mut *c, 2, index); append(&mut *c, 2, &end);
+    return result;
+}
+
+fn vector_scalar(c: &mut Compiler, value: Value) -> Value {
+    if value.ty == 2 { return widen(&mut *c, value, 4); }
+    return value;
+}
+
+pub fn vector_store(c: &mut Compiler, pointer: i32, value: Value) -> () {
+    let item = vector_scalar(&mut *c, value);
+    store_element(&mut *c, pointer, item);
+    return;
+}
+
+fn vector_operation_arguments(c: &mut Compiler, count: Value, scalar_slot: i32) -> () {
+    let integer = b", i32 ";
+    let zero = b"0";
+    let pointer = b", ptr ";
+    let local = b"%s";
+    let null_pointer = b"null";
+    append(&mut *c, 2, &integer);
+    if count.ty == 1 { operand(&mut *c, 2, count); } else { append(&mut *c, 2, &zero); }
+    append(&mut *c, 2, &pointer);
+    if scalar_slot >= 0 { append(&mut *c, 2, &local); number(&mut *c, 2, scalar_slot); }
+    else { append(&mut *c, 2, &null_pointer); }
+    return;
+}
+
+pub fn vector_operation(c: &mut Compiler, operation: i32, buffer: Value,
+    count: Value, scalar: Value, view: Value) -> Value {
+    let ty = referent_record(buffer.ty);
+    if operation == 8 {
+        let moved = load_element(&mut *c, buffer.id, ty);
+        store_element(&mut *c, buffer.id, Value { ty: ty, id: -1 });
+        return moved;
+    }
+    let prefix = b"  %v";
+    let invocation = b" = call i32 @__oxid_scalar_vector_operation(i32 ";
+    let integer = b", i32 ";
+    let pointer = b", ptr ";
+    let null_source = b", ptr null, i32 0)\n";
+    let mut scalar_slot = -1;
+    if operation == 4 || operation == 6 {
+        let item = vector_scalar(&mut *c, scalar);
+        scalar_slot = slot(&mut *c, item.ty);
+        store(&mut *c, scalar_slot, item);
+    }
+    let mut base = Value { ty: 0, id: -1 };
+    let mut length = Value { ty: 0, id: -1 };
+    if operation == 5 {
+        base = extract_field(&mut *c, view, 0, 0);
+        length = extract_field(&mut *c, view, 1, 1);
+    }
+    let tag = vector_scalar_tag(vector_element(&*c, ty));
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invocation);
+    number(&mut *c, 2, operation); append(&mut *c, 2, &integer); number(&mut *c, 2, tag);
+    append(&mut *c, 2, &pointer); operand(&mut *c, 2, buffer);
+    vector_operation_arguments(&mut *c, count, scalar_slot);
+    if operation == 5 {
+        let end = b")\n";
+        append(&mut *c, 2, &pointer); operand(&mut *c, 2, base);
+        append(&mut *c, 2, &integer); operand(&mut *c, 2, length); append(&mut *c, 2, &end);
+    } else { append(&mut *c, 2, &null_source); }
+    let score = Value { ty: 1, id: id };
+    if operation == 1 || operation == 2 { return score; }
+    if operation == 7 { return Value { ty: 3, id: -1 }; }
+    let aggregate = Value { ty: record_type(c.growth_status), id: -1 };
+    return insert_field(&mut *c, aggregate, score, 0);
+}
+
+fn drop_callee(c: &mut Compiler, destination: i32, ty: i32) -> () {
+    let buffer = b"@__oxid_bytebuf_drop";
+    let file = b"@__oxid_file_drop";
+    let record = b"@drop_r";
+    if is_byte_buffer(&*c, ty) { append(&mut *c, destination, &buffer); }
+    else if is_file(&*c, ty) { append(&mut *c, destination, &file); }
+    else {
+        append(&mut *c, destination, &record);
+        number(&mut *c, destination, record_index(ty));
+    }
+    return;
+}
+
+pub fn drop_owner(c: &mut Compiler, ty: i32, slot_id: i32) -> () {
+    if !needs_drop(&*c, ty) { return; }
+    let invocation = b"  call void ";
+    let slot_prefix = b"(ptr %s";
+    let end = b")\n";
+    append(&mut *c, 2, &invocation); drop_callee(&mut *c, 2, ty);
+    append(&mut *c, 2, &slot_prefix); number(&mut *c, 2, slot_id); append(&mut *c, 2, &end);
+    return;
+}
+
+pub fn byte_buffer_operation(c: &mut Compiler, operation: i32, buffer: Value,
+    size: Value, fill: Value, view: Value) -> Value {
+    if operation == 10 {
+        let ty = record_type(c.byte_buffer);
+        let moved = load_element(&mut *c, buffer.id, ty);
+        store_element(&mut *c, buffer.id, Value { ty: ty, id: -1 });
+        return moved;
+    }
+    let prefix = b"  %v";
+    let invocation = b" = call i32 @__oxid_scalar_bytebuf_operation(i32 ";
+    let ptr = b", ptr ";
+    let i32_parameter = b", i32 ";
+    let zero = b"0";
+    let empty = b"null, i32 0";
+    let end = b")\n";
+    let mut base = Value { ty: 0, id: -1 };
+    let mut count = Value { ty: 0, id: -1 };
+    if operation == 5 {
+        base = extract_field(&mut *c, view, 0, 0);
+        count = extract_field(&mut *c, view, 1, 1);
+    }
+    let mut wide_fill = Value { ty: 0, id: -1 };
+    if fill.ty == 4 { wide_fill = widen(&mut *c, fill, 1); }
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invocation);
+    number(&mut *c, 2, operation); append(&mut *c, 2, &ptr); operand(&mut *c, 2, buffer);
+    append(&mut *c, 2, &i32_parameter);
+    if size.ty == 1 { operand(&mut *c, 2, size); } else { append(&mut *c, 2, &zero); }
+    append(&mut *c, 2, &i32_parameter);
+    if wide_fill.ty == 1 { operand(&mut *c, 2, wide_fill); } else { append(&mut *c, 2, &zero); }
+    append(&mut *c, 2, &ptr);
+    if operation == 5 {
+        operand(&mut *c, 2, base); append(&mut *c, 2, &i32_parameter); operand(&mut *c, 2, count);
+    } else { append(&mut *c, 2, &empty); }
+    append(&mut *c, 2, &end);
+    let score = Value { ty: 1, id: id };
+    if operation == 1 || operation == 2 { return score; }
+    if operation == 7 { return Value { ty: 3, id: -1 }; }
+    let aggregate = Value { ty: record_type(c.growth_status), id: -1 };
+    return insert_field(&mut *c, aggregate, score, 0);
 }
 
 pub fn record_field_address(c: &mut Compiler, binding: Binding, field: i32) -> i32 {
@@ -580,7 +766,7 @@ pub fn widen(c: &mut Compiler, value: Value, ty: i32) -> Value {
     let line = b"\n";
     let id = fresh(&mut *c);
     append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
-    if value.ty == 4 || value.ty == 7 { append(&mut *c, 2, &unsigned); }
+    if value.ty == 2 || value.ty == 4 || value.ty == 7 { append(&mut *c, 2, &unsigned); }
     else { append(&mut *c, 2, &signed); }
     write_type(&mut *c, 2, value.ty, false); append(&mut *c, 2, &space);
     operand(&mut *c, 2, value); append(&mut *c, 2, &to);
@@ -994,6 +1180,15 @@ fn record_preamble(c: &mut Compiler) -> () {
         if row.cells > 4096 { c.error = 68; return; }
         append(&mut *c, 0, &prefix); number(&mut *c, 0, index);
         append(&mut *c, 0, &declaration);
+        if index == c.byte_buffer || index == c.file_owner || row.vector_element != 0 {
+            let buffer = b"i64, i32, i32";
+            let file = b"i64, i64";
+            if index == c.file_owner { append(&mut *c, 0, &file); }
+            else { append(&mut *c, 0, &buffer); }
+            append(&mut *c, 0, &end);
+            index = index + 1;
+            continue;
+        }
         if row.tagged {
             let tag = b"i32, ";
             append(&mut *c, 0, &tag);
@@ -1010,17 +1205,332 @@ fn record_preamble(c: &mut Compiler) -> () {
     }
     return;
 }
+fn drop_record_field(c: &mut Compiler, ty: i32, tag: i32, field: i32, field_type: i32) -> () {
+    let prefix = b"  %field";
+    let address = b" = getelementptr inbounds ";
+    let position = b", ptr %owner, i32 0, i32 ";
+    let invocation = b"\n  call void ";
+    let parameter = b"(ptr %field";
+    let end = b")\n";
+    append(&mut *c, 0, &prefix); number(&mut *c, 0, tag); append(&mut *c, 0, &address);
+    write_type(&mut *c, 0, ty, false); append(&mut *c, 0, &position);
+    number(&mut *c, 0, field); append(&mut *c, 0, &invocation);
+    drop_callee(&mut *c, 0, field_type); append(&mut *c, 0, &parameter);
+    number(&mut *c, 0, tag); append(&mut *c, 0, &end);
+    return;
+}
+
+fn drop_variant_switch(c: &mut Compiler, row: Record) -> () {
+    let head = b"  %tag = load i32, ptr %owner\n  switch i32 %tag, label %done [\n";
+    let entry = b"    i32 ";
+    let target = b", label %variant";
+    let line = b"\n";
+    let end = b"  ]\n";
+    append(&mut *c, 0, &head);
+    for index in 0..row.field_count {
+        let field = c.fields[row.first_field + index];
+        if needs_drop(&*c, field.ty) {
+            append(&mut *c, 0, &entry); number(&mut *c, 0, index); append(&mut *c, 0, &target);
+            number(&mut *c, 0, index); append(&mut *c, 0, &line);
+        }
+    }
+    append(&mut *c, 0, &end);
+    return;
+}
+
+fn drop_record_body(c: &mut Compiler, ty: i32, row: Record) -> () {
+    let label_name = b"variant";
+    let start = b":\n";
+    let done = b"  br label %done\n";
+    let exit_label = b"done:\n";
+    if row.tagged {
+        drop_variant_switch(&mut *c, row);
+        for index in 0..row.field_count {
+            let field = c.fields[row.first_field + index];
+            if needs_drop(&*c, field.ty) {
+                append(&mut *c, 0, &label_name); number(&mut *c, 0, index); append(&mut *c, 0, &start);
+                drop_record_field(&mut *c, ty, index, index + 1, field.ty);
+                append(&mut *c, 0, &done);
+            }
+        }
+        append(&mut *c, 0, &exit_label);
+    } else {
+        let mut remaining = row.field_count;
+        while remaining > 0 {
+            remaining = remaining - 1;
+            let member = c.fields[row.first_field + remaining];
+            if needs_drop(&*c, member.ty) { drop_record_field(&mut *c, ty, remaining, remaining, member.ty); }
+        }
+    }
+    return;
+}
+
+fn drop_vector_body(c: &mut Compiler, element: i32) -> () {
+    let invocation = b"  call void @__oxid_vector_drop(ptr %owner, i32 ";
+    let end = b")\n";
+    append(&mut *c, 0, &invocation); number(&mut *c, 0, vector_scalar_tag(element));
+    append(&mut *c, 0, &end);
+    return;
+}
+
+fn drop_record_functions(c: &mut Compiler) -> () {
+    let define = b"define internal void ";
+    let signature = b"(ptr %owner) {\nentry:\n";
+    let end = b"  ret void\n}\n";
+    for index in 0..vector_len(&*c.records) {
+        let row = c.records[index];
+        if row.needs_drop && index != c.byte_buffer && index != c.file_owner {
+            let ty = record_type(index);
+            append(&mut *c, 0, &define); drop_callee(&mut *c, 0, ty);
+            append(&mut *c, 0, &signature);
+            if row.vector_element != 0 { drop_vector_body(&mut *c, row.vector_element); }
+            else { drop_record_body(&mut *c, ty, row); }
+            append(&mut *c, 0, &end);
+        }
+    }
+    return;
+}
+fn process_preamble(c: &mut Compiler) -> () {
+    let mode = b"; entry mode = process\ndeclare i32 @__oxid_process_setup()\n";
+    let message = b"@status_error = private constant [44 x i8] c\"process main must return a status in 0..255\\0A\"\n";
+    append(&mut *c, 0, &mode);
+    append(&mut *c, 0, &message);
+    return;
+}
+
+fn argument_preamble(c: &mut Compiler) -> () {
+    let count = b"@argument_count = internal global i32 0, align 4\n";
+    append(&mut *c, 0, &count);
+    return;
+}
+
+fn argument_bytes_preamble(c: &mut Compiler) -> () {
+    let start = b"declare void @__oxid_scalar_arguments_start(i32, ptr)\n";
+    let bytes = b"declare i64 @__oxid_scalar_arg_bytes(i32, ptr, i32)\n";
+    append(&mut *c, 0, &start); append(&mut *c, 0, &bytes);
+    return;
+}
+
+pub fn argument_count(c: &mut Compiler) -> Value {
+    let prefix = b"  %v";
+    let load_count = b" = load i32, ptr @argument_count, align 4\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
+    append(&mut *c, 2, &load_count);
+    return Value { ty: 1, id: id };
+}
+
+fn binary_io_preamble(c: &mut Compiler) -> () {
+    let io = b"declare i64 @__oxid_scalar_binary_io(i32, ptr, i32)\n";
+    append(&mut *c, 0, &io);
+    return;
+}
+
+fn heap_lifetime_declarations(c: &mut Compiler) -> () {
+    let lifetime = b"declare void @__oxid_bytebuf_start()\ndeclare void @__oxid_scalar_heap_finish()\n";
+    let drop = b"declare void @__oxid_bytebuf_drop(ptr)\n";
+    append(&mut *c, 0, &lifetime); append(&mut *c, 0, &drop);
+    return;
+}
+
+fn byte_buffer_preamble(c: &mut Compiler) -> () {
+    let operation = b"declare i32 @__oxid_scalar_bytebuf_operation(i32, ptr, i32, i32, ptr, i32)\n";
+    let view = b"declare ptr @__oxid_scalar_bytebuf_view(ptr, ptr)\n";
+    append(&mut *c, 0, &operation); append(&mut *c, 0, &view);
+    return;
+}
+fn file_preamble(c: &mut Compiler) -> () {
+    let drop = b"declare void @__oxid_file_drop(ptr)\n";
+    let open_api = b"declare i32 @__oxid_scalar_file_open(i32, ptr, i32, ptr, ptr)\n";
+    let io_api = b"declare i64 @__oxid_scalar_file_io(i32, ptr, ptr, i32)\n";
+    append(&mut *c, 0, &drop); append(&mut *c, 0, &open_api); append(&mut *c, 0, &io_api);
+    return;
+}
+fn file_seek_preamble(c: &mut Compiler) -> () {
+    let seek_api = b"declare i64 @__oxid_scalar_file_seek(ptr, i64)\n";
+    append(&mut *c, 0, &seek_api);
+    return;
+}
+fn vector_preamble(c: &mut Compiler) -> () {
+    let drop_api = b"declare void @__oxid_vector_drop(ptr, i32)\n";
+    let view_api = b"declare ptr @__oxid_scalar_vector_view(ptr, i32, ptr)\n";
+    let index_api = b"declare ptr @__oxid_scalar_vector_index(ptr, i32, i32)\n";
+    append(&mut *c, 0, &drop_api); append(&mut *c, 0, &view_api); append(&mut *c, 0, &index_api);
+    return;
+}
+fn vector_operation_preamble(c: &mut Compiler) -> () {
+    let operation = b"declare i32 @__oxid_scalar_vector_operation(i32, i32, ptr, i32, ptr, ptr, i32)\n";
+    append(&mut *c, 0, &operation);
+    return;
+}
+
+fn transfer_call(c: &mut Compiler, input: Value, view: Value, argument: bool) -> i32 {
+    let prefix = b"  %v";
+    let io = b" = call i64 @__oxid_scalar_binary_io(i32 ";
+    let bytes = b" = call i64 @__oxid_scalar_arg_bytes(i32 ";
+    let pointer = b", ptr ";
+    let size = b", i32 ";
+    let line = b")\n";
+    let address = extract_field(&mut *c, view, 0, 0);
+    let count = extract_field(&mut *c, view, 1, 1);
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id);
+    if argument { append(&mut *c, 2, &bytes); } else { append(&mut *c, 2, &io); }
+    operand(&mut *c, 2, input); append(&mut *c, 2, &pointer); operand(&mut *c, 2, address);
+    append(&mut *c, 2, &size); operand(&mut *c, 2, count); append(&mut *c, 2, &line);
+    return id;
+}
+
+fn transfer_word(c: &mut Compiler, pair: i32, high: bool) -> Value {
+    let prefix = b"  %v";
+    let truncate_word = b" = trunc i64 %v";
+    let end = b" to i32\n";
+    let mut word_id = pair;
+    if high {
+        let shift_prefix = b" = lshr i64 %v";
+        let width = b", 32\n";
+        word_id = fresh(&mut *c);
+        append(&mut *c, 2, &prefix); number(&mut *c, 2, word_id); append(&mut *c, 2, &shift_prefix);
+        number(&mut *c, 2, pair); append(&mut *c, 2, &width);
+    }
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &truncate_word);
+    number(&mut *c, 2, word_id); append(&mut *c, 2, &end);
+    return Value { ty: 1, id: id };
+}
+
+pub fn binary_io(c: &mut Compiler, binding: i32, view: Value, status: i32) -> Value {
+    let operation = read_some_binding() - binding;
+    let selector = constant(&mut *c, 1, operation.to_i64());
+    let pair = transfer_call(&mut *c, selector, view, false);
+    return binary_status(&mut *c, pair, status, operation == 0);
+}
+
+fn binary_status(c: &mut Compiler, pair: i32, status: i32, reading: bool) -> Value {
+    let tag = transfer_word(&mut *c, pair, false);
+    let payload = transfer_word(&mut *c, pair, true);
+    let initial = Value { ty: record_type(status), id: -1 };
+    let tagged = insert_field(&mut *c, initial, tag, 0);
+    let value = insert_field(&mut *c, tagged, payload, 1);
+    let mut error_field = 2;
+    if reading { error_field = 3; }
+    return insert_field(&mut *c, value, payload, error_field);
+}
+
+pub fn argument_bytes(c: &mut Compiler, index: Value, view: Value) -> Value {
+    let pair = transfer_call(&mut *c, index, view, true);
+    let tag = transfer_word(&mut *c, pair, false);
+    let payload = transfer_word(&mut *c, pair, true);
+    let initial = Value { ty: record_type(c.argument_status), id: -1 };
+    let tagged = insert_field(&mut *c, initial, tag, 0);
+    let copied = insert_field(&mut *c, tagged, payload, 1);
+    return insert_field(&mut *c, copied, payload, 2);
+}
+
+pub fn file_open(c: &mut Compiler, operation: i32, path: Value) -> Value {
+    let prefix = b"  %v";
+    let invocation = b" = call i32 @__oxid_scalar_file_open(i32 ";
+    let pointer = b", ptr ";
+    let width = b", i32 ";
+    let output = b", ptr %s";
+    let end = b")\n";
+    let bytes = extract_field(&mut *c, path, 0, 0);
+    let count = extract_field(&mut *c, path, 1, 1);
+    let file_type = record_type(c.file_owner);
+    let file_slot = slot(&mut *c, file_type);
+    let error_slot = slot(&mut *c, 1);
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invocation);
+    number(&mut *c, 2, operation); append(&mut *c, 2, &pointer);
+    operand(&mut *c, 2, bytes); append(&mut *c, 2, &width); operand(&mut *c, 2, count);
+    append(&mut *c, 2, &output); number(&mut *c, 2, file_slot);
+    append(&mut *c, 2, &output); number(&mut *c, 2, error_slot); append(&mut *c, 2, &end);
+    let initial = Value { ty: record_type(c.file_open_result), id: -1 };
+    let tagged = insert_field(&mut *c, initial, Value { ty: 1, id: id }, 0);
+    let handle = load(&mut *c, file_slot, file_type);
+    let opened = insert_field(&mut *c, tagged, handle, 1);
+    let error = load(&mut *c, error_slot, 1);
+    return insert_field(&mut *c, opened, error, 2);
+}
+
+fn file_status(c: &mut Compiler, pair: i32) -> Value {
+    let tag = transfer_word(&mut *c, pair, false);
+    let payload = transfer_word(&mut *c, pair, true);
+    let status = Value { ty: record_type(c.file_status), id: -1 };
+    let tagged = insert_field(&mut *c, status, tag, 0);
+    return insert_field(&mut *c, tagged, payload, 2);
+}
+
+pub fn file_io(c: &mut Compiler, operation: i32, file: Value, bytes: Value) -> Value {
+    let prefix = b"  %v";
+    let invocation = b" = call i64 @__oxid_scalar_file_io(i32 ";
+    let empty = b", ptr null, i32 0";
+    let pointer = b", ptr ";
+    let size = b", i32 ";
+    let end = b")\n";
+    let mut address = Value { ty: 0, id: -1 };
+    let mut count = Value { ty: 0, id: -1 };
+    let transfers = operation == 2 || operation == 3;
+    if transfers {
+        address = extract_field(&mut *c, bytes, 0, 0);
+        count = extract_field(&mut *c, bytes, 1, 1);
+    }
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invocation);
+    number(&mut *c, 2, operation); append(&mut *c, 2, &pointer);
+    operand(&mut *c, 2, file);
+    if transfers {
+        append(&mut *c, 2, &pointer); operand(&mut *c, 2, address);
+        append(&mut *c, 2, &size); operand(&mut *c, 2, count);
+    } else { append(&mut *c, 2, &empty); }
+    append(&mut *c, 2, &end);
+    if operation == 2 {
+        let read_type = c.read_status;
+        return binary_status(&mut *c, id, read_type, true);
+    }
+    if operation == 3 {
+        let write_type_index = c.write_status;
+        return binary_status(&mut *c, id, write_type_index, false);
+    }
+    return file_status(&mut *c, id);
+}
+
+pub fn file_seek(c: &mut Compiler, file: Value, offset: Value) -> Value {
+    let prefix = b"  %v";
+    let invocation = b" = call i64 @__oxid_scalar_file_seek(ptr ";
+    let number_type = b", i64 ";
+    let end = b")\n";
+    let id = fresh(&mut *c);
+    append(&mut *c, 2, &prefix); number(&mut *c, 2, id); append(&mut *c, 2, &invocation);
+    operand(&mut *c, 2, file); append(&mut *c, 2, &number_type); operand(&mut *c, 2, offset);
+    append(&mut *c, 2, &end);
+    return file_status(&mut *c, id);
+}
+
+fn preamble_scalar_printing(c: &mut Compiler) -> () {
+    let print_long = b"declare i32 @__oxid_print_i64(i64)\n";
+    let print_character = b"declare i32 @__oxid_print_char(i32)\n";
+    append(&mut *c, 0, &print_long); append(&mut *c, 0, &print_character);
+    return;
+}
 fn preamble_resources(c: &mut Compiler) -> () {
     let depth_error = b"@depth_error_text = private constant [26 x i8] c\"call depth limit exceeded\\0A\"\n";
     let int_error = b"@int_conversion = private constant [28 x i8] c\"i32 conversion out of range\\0A\"\n";
-    let print_long = b"declare i32 @__oxid_print_i64(i64)\n";
-    let print_character = b"declare i32 @__oxid_print_char(i32)\n";
     preamble_text_0_0(&mut *c);
+    if c.process_entry { process_preamble(&mut *c); }
+    if c.uses_argument_count { argument_preamble(&mut *c); }
+    if c.uses_argument_bytes { argument_bytes_preamble(&mut *c); }
+    if c.uses_binary_io { binary_io_preamble(&mut *c); }
+    if uses_heap(&*c) { heap_lifetime_declarations(&mut *c); }
+    if c.byte_buffer >= 0 { byte_buffer_preamble(&mut *c); }
+    if c.file_owner >= 0 { file_preamble(&mut *c); file_seek_preamble(&mut *c); }
+    if vector_len(&*c.vector_types) > 0 { vector_preamble(&mut *c); vector_operation_preamble(&mut *c); }
     record_preamble(&mut *c);
+    if uses_heap(&*c) { drop_record_functions(&mut *c); }
     preamble_text_1_0(&mut *c); preamble_text_1_1(&mut *c);
     preamble_text_2_0(&mut *c); preamble_text_2_1(&mut *c);
-    append(&mut *c, 0, &depth_error); append(&mut *c, 0, &int_error); append(&mut *c, 0, &print_long);
-    append(&mut *c, 0, &print_character);
+    append(&mut *c, 0, &depth_error); append(&mut *c, 0, &int_error);
+    preamble_scalar_printing(&mut *c);
     return;
 }
 fn preamble_unsigned(c: &mut Compiler) -> () {
@@ -1093,6 +1603,11 @@ pub fn preamble(c: &mut Compiler) -> () {
     return;
 }
 fn wrapper_text_0_0(c: &mut Compiler) -> () {
+    if c.uses_argument_count {
+        let text = b"define i32 @main(i32 %argc, ptr %argv) {\nentry:\n  ";
+        append(&mut *c, 0, &text);
+        return;
+    }
     let text = b"define i32 @main() {\nentry:\n  ";
     append(&mut *c, 0, &text);
     return;
@@ -1142,6 +1657,39 @@ fn wrapper_text_8_0(c: &mut Compiler) -> () {
     append(&mut *c, 0, &text);
     return;
 }
+fn process_setup(c: &mut Compiler) -> () {
+    let setup = b"%setup = call i32 @__oxid_process_setup()\n  %ready = icmp eq i32 %setup, 0\n";
+    let edges = b"  br i1 %ready, label %process, label %setup_error\nsetup_error:\n  ret i32 74\nprocess:\n  ";
+    append(&mut *c, 0, &setup); append(&mut *c, 0, &edges);
+    return;
+}
+fn process_exit(c: &mut Compiler) -> () {
+    let check = b"  %accepted = icmp ule i32 %value, 255\n  br i1 %accepted, label %exit, label %bad_status\n";
+    let failure = b"bad_status:\n  call void @__oxid_overflow(ptr @status_error, i64 44)\n  unreachable\n";
+    let success = b"exit:\n  ret i32 %value\n}\n; Oxid scalar compiler end\n";
+    append(&mut *c, 0, &check); append(&mut *c, 0, &failure); append(&mut *c, 0, &success);
+    return;
+}
+fn install_argument_count(c: &mut Compiler) -> () {
+    let count = b"store i32 %argc, ptr @argument_count, align 4\n  ";
+    append(&mut *c, 0, &count);
+    if c.uses_argument_bytes {
+        let start = b"call void @__oxid_scalar_arguments_start(i32 %argc, ptr %argv)\n  ";
+        append(&mut *c, 0, &start);
+    }
+    return;
+}
+fn heap_lifetime(c: &mut Compiler, start: bool) -> () {
+    if !uses_heap(&*c) { return; }
+    if start {
+        let begin = b"call void @__oxid_bytebuf_start()\n  ";
+        append(&mut *c, 0, &begin);
+    } else {
+        let finish = b"  call void @__oxid_scalar_heap_finish()\n";
+        append(&mut *c, 0, &finish);
+    }
+    return;
+}
 pub fn wrapper(c: &mut Compiler) -> () {
     let print_long = b"  %status = call i32 @__oxid_print_i64(i64 %value)\n";
     let print_character = b"  %status = call i32 @__oxid_print_char(i32 %value)\n";
@@ -1150,9 +1698,14 @@ pub fn wrapper(c: &mut Compiler) -> () {
     let entry = c.main;
     let f = c.functions[entry];
     wrapper_text_0_0(&mut *c);
+    if c.process_entry { process_setup(&mut *c); }
+    if c.uses_argument_count { install_argument_count(&mut *c); }
+    heap_lifetime(&mut *c, true);
     if f.result != 3 { wrapper_text_1_0(&mut *c); }
     wrapper_text_2_0(&mut *c); write_type(&mut *c, 0, f.result, true);
     wrapper_text_3_0(&mut *c); number(&mut *c, 0, entry); wrapper_text_4_0(&mut *c);
+    heap_lifetime(&mut *c, false);
+    if c.process_entry { process_exit(&mut *c); return; }
     if f.result == 1 { wrapper_text_5_0(&mut *c); }
     if f.result == 2 { wrapper_text_6_0(&mut *c); }
     if f.result == 3 { wrapper_text_7_0(&mut *c); }
