@@ -1663,8 +1663,8 @@ fn compare_regular(path: &Path, expected: &[u8]) -> Result<(), String> {
 }
 
 fn qualified() -> Result<(), String> {
-    if !cfg!(target_os = "linux") {
-        return Err("private registry publication and materialization are currently qualified only on Linux".into());
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        return Err("private file registries require Linux or macOS".into());
     }
     Ok(())
 }

@@ -366,8 +366,8 @@ source bodies remain editable.
 
 ## Private registry libraries
 
-On Linux, use a private file registry to share versioned libraries between
-projects.
+Use a private file registry on Linux or macOS to share versioned libraries
+between projects.
 
 Create a new registry directory:
 
