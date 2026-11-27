@@ -11,10 +11,19 @@ import unittest
 from unittest.mock import patch
 
 import verify_utf8_text_app as app
-from benchmark_utf8_application import record_confidence_intervals
+from benchmark_utf8_application import record_confidence_intervals, rss_bytes
 
 
 class Utf8Oracle(unittest.TestCase):
+    def test_peak_rss_reports_use_host_units(self):
+        self.assertEqual(rss_bytes(b"1536\n", "Linux"), 1572864)
+        self.assertEqual(rss_bytes(
+            b" 0.04 real 0.02 user 0.01 sys\n 1638400 maximum resident set size\n"
+            b" 667648 peak memory footprint\n", "Darwin"), 1638400)
+        for invalid in (b"", b"0\n", b"1536\n2048\n", b"unexpected stderr\n1536\n"):
+            with self.assertRaisesRegex(ValueError, "could not read peak RSS"):
+                rss_bytes(invalid, "Linux")
+
     def test_utf8_benchmark_confidence_resamples_matching_rounds(self):
         reference = [7, 23, 41, 13, 19] * 6
         report = {"workloads": {

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import platform
 import random
+import re
 import shutil
 import statistics
 import subprocess
@@ -21,6 +22,7 @@ APP = Path("apps/utf8-normalize")
 LIBRARY = Path("packages/utf8_text")
 MINIMUM_BYTES = 32 * 1024 * 1024
 BOOTSTRAP_DRAWS = 2000
+RSS_SAMPLES = 3
 WORKLOADS = {
     "ascii-log": b"2026-11-25T17:30:00Z INFO worker completed task 42 in 7 ms\n",
     "mixed-newlines": b"A" * 4095 + "\r\n🦀\0雪\r".encode(),
@@ -96,7 +98,36 @@ def measure(command: list, work: Path, source: Path, sink: Path) -> int:
     return elapsed
 
 
-def compare(work: Path, commands: dict, runs: int) -> dict:
+def rss_bytes(report: bytes, system: str) -> int:
+    if system == "Linux":
+        match = re.fullmatch(rb"([0-9]+)", report.strip())
+        matches = [match[1]] if match else []
+        scale = 1024
+    elif system == "Darwin":
+        matches = re.findall(rb"^\s*([0-9]+)\s+maximum resident set size\s*$", report, re.MULTILINE)
+        scale = 1
+    else:
+        raise ValueError(f"peak RSS measurement is unavailable on {system}")
+    if len(matches) != 1 or int(matches[0]) == 0:
+        raise ValueError(f"could not read peak RSS from {system} time output: {report!r}")
+    return int(matches[0]) * scale
+
+
+def measure_rss(timer: Path, command: list, work: Path, source: Path) -> int:
+    system = platform.system()
+    flags = {"Linux": ["--format=%M"], "Darwin": ["-l"]}.get(system)
+    if flags is None:
+        raise ValueError(f"peak RSS measurement is unavailable on {system}")
+    with source.open("rb") as stdin:
+        result = subprocess.run([timer, *flags, *command], cwd=work, env={"LC_ALL": "C"},
+                                stdin=stdin, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                timeout=120)
+    if result.returncode:
+        raise RuntimeError(f"{command[0].name} exited with {result.returncode}: {result.stderr!r}")
+    return rss_bytes(result.stderr, system)
+
+
+def compare(work: Path, commands: dict, runs: int, timer: Path) -> dict:
     reports = {}
     source, capture = work / "input.bin", work / "output.bin"
     for name, sample in WORKLOADS.items():
@@ -110,10 +141,17 @@ def compare(work: Path, commands: dict, runs: int) -> dict:
             for key in commands if run % 2 == 0 else reversed(commands):
                 samples[key].append(measure(commands[key], work, source, Path(os.devnull)))
         medians = {key: statistics.median(values) for key, values in samples.items()}
+        memory = {key: [] for key in commands}
+        for run in range(RSS_SAMPLES):
+            for key in commands if run % 2 == 0 else reversed(commands):
+                memory[key].append(measure_rss(timer, commands[key], work, source))
+        peaks = {key: max(values) for key, values in memory.items()}
         reports[name] = {
             "input_bytes": source.stat().st_size, "input_sha256": digest(source),
             "output_sha256": expected, "times_ns": samples, "median_ns": medians,
             "oxid_over_rust": medians["oxid"] / medians["rust"],
+            "rss_samples_bytes": memory, "peak_rss_bytes": peaks,
+            "peak_rss_oxid_over_rust": peaks["oxid"] / peaks["rust"],
         }
     return reports
 
@@ -147,6 +185,8 @@ def main() -> int:
     parser.add_argument("--oxid", type=Path, required=True)
     parser.add_argument("--rustc", type=Path, default=Path(shutil.which("rustc") or "rustc"))
     parser.add_argument("--llvm-bin", type=Path, required=True)
+    parser.add_argument("--time-bin", type=Path, default=Path("/usr/bin/time"),
+                        help="GNU time on Linux or system time on macOS")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--runs", type=int, default=30)
     args = parser.parse_args()
@@ -156,10 +196,13 @@ def main() -> int:
         parser.error("--output already exists")
     try:
         env = dict(os.environ, OXID_LLVM_BIN=str(args.llvm_bin.resolve(strict=True)))
+        timer = args.time_bin.resolve(strict=True)
         with tempfile.TemporaryDirectory(prefix="oxid-utf8-benchmark-") as directory:
             work = Path(directory)
             commands, report = prepare(work, args.oxid.resolve(strict=True), args.rustc.absolute(), env)
-            report["workloads"] = compare(work, commands, args.runs)
+            report["workloads"] = compare(work, commands, args.runs, timer)
+            report["rss_timer"] = {"path": str(timer), "sha256": digest(timer),
+                                   "samples_per_workload": RSS_SAMPLES}
             report["geometric_mean_ratio"] = statistics.geometric_mean(
                 workload["oxid_over_rust"] for workload in report["workloads"].values())
             record_confidence_intervals(report)
@@ -168,7 +211,7 @@ def main() -> int:
         with args.output.open("x", encoding="utf-8") as stream:
             json.dump(report, stream, indent=2)
             stream.write("\n")
-    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"UTF-8 benchmark failed: {error}\n")
     lower, upper = report["geometric_mean_ratio_ci95"]
     print(f"Oxid/Rust median ratio across workloads {report['geometric_mean_ratio']:.3f} "
