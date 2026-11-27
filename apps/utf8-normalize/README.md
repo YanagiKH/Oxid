@@ -77,7 +77,9 @@ oxid test --frozen
 
 From the repository root, compare the streaming build with an equivalent Rust
 program on the same inputs. The comparison checks the output bytes before
-recording timings.
+recording timings and peak resident memory. It uses GNU `time` on Linux and
+the system `time` utility on macOS. Use `--time-bin` if the utility is installed
+outside `/usr/bin/time`.
 
 ```sh
 python3 scripts/benchmark_utf8_application.py --oxid "$(command -v oxid)" \
